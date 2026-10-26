@@ -2,13 +2,20 @@
 
 [Back to the experiment design](experiment-design.md)
 
-These Mermaid diagrams provide editable, GitHub-native views of the accepted design. The linked static SVGs contain the same operational content and remain readable without Mermaid support. They describe the protocol and conceptual architecture, not completed software or collected results.
+These diagrams show the accepted design as directly viewable static SVGs. They describe the protocol and conceptual architecture, not completed software or collected results.
+
+**Rendering note:** GitHub reported “Unable to render rich display” for the Mermaid views during browser verification. The existing SVGs are therefore shown below. The unchanged Mermaid source is retained in expandable text blocks for editing in a compatible Mermaid renderer.
 
 ## Participant flow
 
 [View the accessible static flowchart](assets/participant-flow.svg)
 
-```mermaid
+![Participant flow, including screening, practice retry, four blocks, ratings, rest, and safety interruption.](assets/participant-flow.svg)
+
+<details>
+<summary>Editable Mermaid source</summary>
+
+```text
 flowchart TD
     AUTH["Required ethics and lab authorization before recruitment"] --> SCREEN["Approved consent and Ishihara red–green screening<br/>Genuine materials; edition and rule to confirm"]
     SCREEN --> SETUP["Actual-headset colour and button familiarisation<br/>Word understanding, fit, calibration and validation"]
@@ -27,21 +34,30 @@ flowchart TD
     SAFETY["Pause or withdraw at any time<br/>Hide word and avatar; freeze both clocks<br/>Interrupted trial is not an error<br/>If continuing, use the next planned trial"]
 ```
 
+</details>
+
 The safety node applies throughout the session, not only after a block. Condition order is assigned from **ABDC, BCAD, CDBA, DACB**. There are four conditions and 96 planned main trials; interruption can reduce the number of valid completed trials.
 
 ## Seven second gaze cycle
 
 [View the scaled static timeline](assets/gaze-timeline.svg)
 
-The SVG uses a proportional time axis. This Mermaid view is a state sequence, **not** a time-scaled plot.
+![Seven-second gaze cycle with proportional settled dwell and transition durations.](assets/gaze-timeline.svg)
 
-```mermaid
+The SVG uses a proportional time axis. The Mermaid source describes a state sequence, **not** a time-scaled plot.
+
+<details>
+<summary>Editable Mermaid source</summary>
+
+```text
 flowchart LR
     P["Participant directed<br/>3.0 s settled dwell<br/>0.0–3.0 s"] --> PT["Turn to task<br/>0.5 s<br/>3.0–3.5 s"]
     PT --> T["Task directed<br/>3.0 s settled dwell<br/>3.5–6.5 s"]
     T --> TP["Turn to participant<br/>0.5 s<br/>6.5–7.0 s"]
     TP --> P
 ```
+
+</details>
 
 - This illustration begins at the participant target. Counterbalance the initial target independently of condition order; reverse the target labels for a task-first block.
 - Begin with the first main-trial onset. Stop at block end and freeze the active clock during pauses.
@@ -52,7 +68,12 @@ flowchart LR
 
 [View the accessible static architecture](assets/control-logging.svg)
 
-```mermaid
+![Conceptual automatic and operator control routes with separate task, eye-tracking, survey, safety, and logging responsibilities.](assets/control-logging.svg)
+
+<details>
+<summary>Editable Mermaid source</summary>
+
+```text
 flowchart TD
     CONFIG["Locked block configuration and active clock<br/>Condition, mode, list or seed, initial B target"]
     CONFIG --> AUTO["Automatic preset scheduler<br/>Recommended participant mode"]
@@ -69,6 +90,8 @@ flowchart TD
     STOP["Always-available safety stop<br/>Hide word and avatar; freeze both clocks"] -.-> CONFIG
     STOP -.-> TRIAL
 ```
+
+</details>
 
 Choose **one control route per block**. Both routes use the same task, animation and logging design; free manual apparatus exploration is kept separate from standardized participant testing. The diagram does not create eight participant conditions.
 
