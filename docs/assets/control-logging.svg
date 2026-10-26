@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="965" viewBox="0 0 1120 965" role="img" aria-labelledby="title desc">
+<title id="title">Conceptual control and logging architecture</title><desc id="desc">Conceptual design only, not implemented or validated. Locked condition, mode and trial list with an active clock feed either an automatic preset scheduler or a cue-following operator route, then the same head-and-eye animator. Responses feed Stroop trials, eye-tracking samples feed validity and area-of-interest classification, and five questionnaire items feed separate ratings. All streams enter a common timestamped audit log. Safety controls hide the word and avatar and freeze clocks. Eye gaze and responses never feed the target policy.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill="#718198"/></marker><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#edf0f4"/><path d="M -2 2 L 2 -2 M 0 8 L 8 0 M 6 10 L 10 6" stroke="#c0c9d4" stroke-width="1.5"/></pattern></defs>
+<style>text {font-family: Arial, Helvetica, sans-serif; fill:#172b4d} .title {font-size:30px;font-weight:700} .sub {font-size:17px;fill:#4f6178} .label {font-size:18px;font-weight:700} .body {font-size:17px} .small {font-size:15px;fill:#4f6178} .tiny {font-size:14px;fill:#4f6178} .edge {fill:none;stroke:#718198;stroke-width:2;marker-end:url(#arrow)} .line {fill:none;stroke:#718198;stroke-width:2}</style><rect width="1120" height="965" fill="white"/>
+<text x="50" y="48" text-anchor="start" class="title"><tspan x="50" dy="0">Control and logging architecture</tspan></text>
+<text x="50" y="79" text-anchor="start" class="sub"><tspan x="50" dy="0">Conceptual design only • Not an implementation or hardware-validation claim</tspan></text>
+<rect x="50" y="125" width="630" height="100" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="70" y="154" text-anchor="start" class="label"><tspan x="70" dy="0">Locked block configuration and active clock</tspan></text>
+<text x="70" y="179" text-anchor="start" class="body"><tspan x="70" dy="0">Condition A–D • control mode • trial list / seed • initial B target</tspan><tspan x="70" dy="24">Start at first trial; pause clock without changing the preset policy.</tspan></text>
+<rect x="760" y="125" width="310" height="100" rx="10" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<text x="780" y="154" text-anchor="start" class="label"><tspan x="780" dy="0">Always-available safety stop</tspan></text>
+<text x="780" y="179" text-anchor="start" class="body"><tspan x="780" dy="0">Hide word + avatar.</tspan><tspan x="780" dy="24">Freeze task and gaze clocks.</tspan></text>
+<rect x="50" y="305" width="280" height="110" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="70" y="334" text-anchor="start" class="label"><tspan x="70" dy="0">Automatic preset scheduler</tspan></text>
+<text x="70" y="359" text-anchor="start" class="body"><tspan x="70" dy="0">Recommended participant mode.</tspan><tspan x="70" dy="24">Execute scheduled targets.</tspan></text>
+<rect x="400" y="305" width="280" height="110" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="420" y="334" text-anchor="start" class="label"><tspan x="420" dy="0">Scripted operator cues</tspan></text>
+<text x="420" y="359" text-anchor="start" class="body"><tspan x="420" dy="0">Alternative only if selected.</tspan><tspan x="420" dy="24">Follow the same cue sheet.</tspan></text>
+<rect x="220" y="490" width="460" height="105" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="240" y="519" text-anchor="start" class="label"><tspan x="240" dy="0">Shared head-and-eye animator</tspan></text>
+<text x="240" y="544" text-anchor="start" class="body"><tspan x="240" dy="0">Same onset and duration; body fixed.</tspan><tspan x="240" dy="24">Log intended targets, turns and arrivals.</tspan></text>
+<rect x="760" y="305" width="310" height="100" rx="10" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<text x="780" y="334" text-anchor="start" class="label"><tspan x="780" dy="0">Button edges → Stroop trials</tspan></text>
+<text x="780" y="359" text-anchor="start" class="body"><tspan x="780" dy="0">First valid new press: response.</tspan><tspan x="780" dy="24">Store onset, response and accuracy.</tspan></text>
+<rect x="760" y="450" width="310" height="100" rx="10" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<text x="780" y="479" text-anchor="start" class="label"><tspan x="780" dy="0">Eye tracker → validity and AOIs</tspan></text>
+<text x="780" y="504" text-anchor="start" class="body"><tspan x="780" dy="0">Task / eyes / remaining face / other.</tspan><tspan x="780" dy="24">Keep invalid tracking separate.</tspan></text>
+<rect x="760" y="595" width="310" height="85" rx="10" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<text x="780" y="624" text-anchor="start" class="label"><tspan x="780" dy="0">Post-block questionnaire</tspan></text>
+<text x="780" y="649" text-anchor="start" class="body"><tspan x="780" dy="0">Store all five indicators separately.</tspan></text>
+<rect x="50" y="775" width="1020" height="110" rx="10" fill="#f4f6f8" stroke="#718198" stroke-width="1.5"/>
+<text x="70" y="804" text-anchor="start" class="label"><tspan x="70" dy="0">Common timestamped audit log</tspan></text>
+<text x="70" y="829" text-anchor="start" class="body"><tspan x="70" dy="0">Session and software versions • block / trial / segment IDs • assigned condition and mode</tspan><tspan x="70" dy="24">Actual exposure and tracking coverage • trigger deviations • pauses • missingness • individual ratings</tspan></text>
+<path d="M 190 225 V 305" class="edge"/>
+<path d="M 540 225 V 305" class="edge"/>
+<text x="365" y="267" text-anchor="middle" class="small"><tspan x="365" dy="0">Choose one route for the block</tspan></text>
+<path d="M 190 415 V 455 H 365 V 490" class="edge"/>
+<path d="M 540 415 V 490" class="edge"/>
+<path d="M 450 595 V 775" class="edge"/>
+<text x="466" y="717" text-anchor="start" class="small"><tspan x="466" dy="0">Avatar events</tspan></text>
+<path d="M 760 355 H 720 V 747 H 850 V 775" class="edge"/>
+<path d="M 760 500 H 720 M 760 637 H 720" class="line"/>
+<text x="735" y="729" text-anchor="start" class="small"><tspan x="735" dy="0">Measurement streams</tspan></text>
+<path d="M 760 175 H 680" class="edge" stroke-dasharray="6 5"/>
+<path d="M 915 225 V 305" class="edge" stroke-dasharray="6 5"/>
+<text x="50" y="930" text-anchor="start" class="label"><tspan x="50" dy="0">Responses and eye gaze are measured outputs only: neither is an input to the avatar target policy.</tspan></text>
+</svg>

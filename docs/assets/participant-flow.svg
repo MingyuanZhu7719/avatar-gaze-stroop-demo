@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1305" viewBox="0 0 1000 1305" role="img" aria-labelledby="title desc">
+<title id="title">Participant flow for the four-condition VR Stroop pilot</title><desc id="desc">Ethics and lab authorization precede recruitment. Consent and screening, headset familiarisation and calibration precede eight-trial practice. At least six correct responses out of eight is required. A first failure permits standard instruction and one retry only; a second failure ends the standardized task. Eligible participants complete four counterbalanced 24-trial blocks, each followed by five separate ratings with the avatar hidden, then at least 30 seconds of additional extendable rest. Pause and withdrawal are available throughout.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill="#718198"/></marker><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#edf0f4"/><path d="M -2 2 L 2 -2 M 0 8 L 8 0 M 6 10 L 10 6" stroke="#c0c9d4" stroke-width="1.5"/></pattern></defs>
+<style>text {font-family: Arial, Helvetica, sans-serif; fill:#172b4d} .title {font-size:30px;font-weight:700} .sub {font-size:17px;fill:#4f6178} .label {font-size:18px;font-weight:700} .body {font-size:17px} .small {font-size:15px;fill:#4f6178} .tiny {font-size:14px;fill:#4f6178} .edge {fill:none;stroke:#718198;stroke-width:2;marker-end:url(#arrow)} .line {fill:none;stroke:#718198;stroke-width:2}</style><rect width="1000" height="1305" fill="white"/>
+<text x="50" y="48" text-anchor="start" class="title"><tspan x="50" dy="0">Participant flow</tspan></text>
+<text x="50" y="78" text-anchor="start" class="sub"><tspan x="50" dy="0">Accepted design baseline • Four conditions • 96 planned main trials</tspan></text>
+<rect x="80" y="110" width="490" height="65" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="100" y="139" text-anchor="start" class="label"><tspan x="100" dy="0">Before recruitment</tspan></text>
+<text x="100" y="164" text-anchor="start" class="body"><tspan x="100" dy="0">Obtain required ethics and lab authorization.</tspan></text>
+<rect x="80" y="210" width="490" height="95" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="100" y="239" text-anchor="start" class="label"><tspan x="100" dy="0">Consent and screening</tspan></text>
+<text x="100" y="264" text-anchor="start" class="body"><tspan x="100" dy="0">Approved consent; Ishihara red–green screening.</tspan><tspan x="100" dy="24">Confirm genuine materials, edition and lab rule.</tspan></text>
+<rect x="80" y="340" width="490" height="105" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="100" y="369" text-anchor="start" class="label"><tspan x="100" dy="0">Headset preparation</tspan></text>
+<text x="100" y="394" text-anchor="start" class="body"><tspan x="100" dy="0">Check four colours, all four buttons and word meaning.</tspan><tspan x="100" dy="24">Fit headset; calibrate and validate eye tracking.</tspan></text>
+<rect x="80" y="480" width="490" height="80" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="100" y="509" text-anchor="start" class="label"><tspan x="100" dy="0">Scored practice • Attempt 1</tspan></text>
+<text x="100" y="534" text-anchor="start" class="body"><tspan x="100" dy="0">8 trials, no avatar; score each first response.</tspan></text>
+<path d="M 325 590.0 L 465.0 645 L 325 700.0 L 185.0 645 Z" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<text x="325" y="638" text-anchor="middle" class="label"><tspan x="325" dy="0">At least 6/8</tspan><tspan x="325" dy="23">correct (75%)?</tspan></text>
+<rect x="670" y="465" width="280" height="100" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="690" y="494" text-anchor="start" class="label"><tspan x="690" dy="0">One retry only</tspan></text>
+<text x="690" y="519" text-anchor="start" class="body"><tspan x="690" dy="0">Repeat standard instruction.</tspan><tspan x="690" dy="24">Use an equivalent 8-trial set.</tspan></text>
+<path d="M 810 590.0 L 935.0 645 L 810 700.0 L 685.0 645 Z" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<text x="810" y="638" text-anchor="middle" class="label"><tspan x="810" dy="0">At least 6/8</tspan><tspan x="810" dy="23">correct (75%)?</tspan></text>
+<rect x="670" y="740" width="280" height="85" rx="10" fill="#f4f6f8" stroke="#718198" stroke-width="1.5"/>
+<text x="690" y="769" text-anchor="start" class="label"><tspan x="690" dy="0">End standardized task</tspan></text>
+<text x="690" y="794" text-anchor="start" class="body"><tspan x="690" dy="0">Record training outcome.</tspan><tspan x="690" dy="24">No main-task data.</tspan></text>
+<rect x="80" y="850" width="490" height="85" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="100" y="879" text-anchor="start" class="label"><tspan x="100" dy="0">Main block • 24 planned trials</tspan></text>
+<text x="100" y="904" text-anchor="start" class="body"><tspan x="100" dy="0">12 congruent + 12 incongruent; assigned condition.</tspan></text>
+<rect x="80" y="980" width="490" height="80" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="100" y="1009" text-anchor="start" class="label"><tspan x="100" dy="0">Hide avatar and collect ratings</tspan></text>
+<text x="100" y="1034" text-anchor="start" class="body"><tspan x="100" dy="0">Five separate 1–5 items; identical across A–D.</tspan></text>
+<rect x="80" y="1100" width="490" height="95" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="100" y="1129" text-anchor="start" class="label"><tspan x="100" dy="0">Neutral rest • At least 30 seconds</tspan></text>
+<text x="100" y="1154" text-anchor="start" class="body"><tspan x="100" dy="0">Additional to rating time; longer rest is allowed.</tspan><tspan x="100" dy="24">Check comfort and tracking before continuation.</tspan></text>
+<rect x="80" y="1230" width="490" height="55" rx="10" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<text x="100" y="1259" text-anchor="start" class="label"><tspan x="100" dy="0">After block 4 • Close the session</tspan></text>
+<path d="M 325 175 V 210" class="edge"/>
+<path d="M 325 305 V 340" class="edge"/>
+<path d="M 325 445 V 480" class="edge"/>
+<path d="M 325 560 V 590" class="edge"/>
+<path d="M 465 645 H 610 V 515 H 670" class="edge"/>
+<text x="492" y="628" text-anchor="start" class="small"><tspan x="492" dy="0">Below 6/8</tspan></text>
+<path d="M 810 565 V 590" class="edge"/>
+<path d="M 325 700 V 850" class="edge"/>
+<text x="339" y="783" text-anchor="start" class="small"><tspan x="339" dy="0">Pass</tspan></text>
+<path d="M 685 645 H 640 V 892 H 570" class="edge"/>
+<text x="650" y="700" text-anchor="start" class="small"><tspan x="650" dy="0">Pass</tspan></text>
+<path d="M 810 700 V 740" class="edge"/>
+<text x="825" y="727" text-anchor="start" class="small"><tspan x="825" dy="0">Below 6/8</tspan></text>
+<path d="M 325 935 V 980" class="edge"/>
+<path d="M 325 1060 V 1100" class="edge"/>
+<path d="M 325 1195 V 1230" class="edge"/>
+<path d="M 570 1148 H 610 V 892 H 570" class="edge"/>
+<text x="628" y="1037" text-anchor="start" class="small"><tspan x="628" dy="0">If blocks remain:</tspan><tspan x="628" dy="24">next assigned</tspan><tspan x="628" dy="24">condition</tspan></text>
+<rect x="670" y="110" width="280" height="255" rx="10" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<text x="690" y="139" text-anchor="start" class="label"><tspan x="690" dy="0">Pause or withdraw any time</tspan></text>
+<text x="690" y="164" text-anchor="start" class="body"><tspan x="690" dy="0">Participant or operator stop:</tspan><tspan x="690" dy="24">hide word and avatar;</tspan><tspan x="690" dy="24">freeze task and gaze clocks.</tspan><tspan x="690" dy="24"></tspan><tspan x="690" dy="24">Interrupted trial ≠ error.</tspan><tspan x="690" dy="24">Resume at next planned trial</tspan><tspan x="690" dy="24">only if comfortable and willing.</tspan></text>
+<text x="670" y="1170" text-anchor="start" class="small"><tspan x="670" dy="0">A: participant directed</tspan><tspan x="670" dy="24">B: preset alternation</tspan><tspan x="670" dy="24">C: task directed</tspan><tspan x="670" dy="24">D: avatar absent</tspan></text>
+</svg>

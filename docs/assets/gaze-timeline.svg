@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="590" viewBox="0 0 1100 590" role="img" aria-labelledby="title desc">
+<title id="title">Seven-second preset gaze cycle</title><desc id="desc">Condition B illustrated with the participant as the initial target. Participant-directed settled dwell lasts from zero to three seconds, a turn lasts from three to three and a half seconds, task-directed settled dwell lasts from three and a half to six and a half seconds, and the return turn lasts from six and a half to seven seconds. The cycle repeats. The initial target is counterbalanced; pauses freeze the active clock. Head and eyes share onset and duration; the body stays fixed.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill="#718198"/></marker><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#edf0f4"/><path d="M -2 2 L 2 -2 M 0 8 L 8 0 M 6 10 L 10 6" stroke="#c0c9d4" stroke-width="1.5"/></pattern></defs>
+<style>text {font-family: Arial, Helvetica, sans-serif; fill:#172b4d} .title {font-size:30px;font-weight:700} .sub {font-size:17px;fill:#4f6178} .label {font-size:18px;font-weight:700} .body {font-size:17px} .small {font-size:15px;fill:#4f6178} .tiny {font-size:14px;fill:#4f6178} .edge {fill:none;stroke:#718198;stroke-width:2;marker-end:url(#arrow)} .line {fill:none;stroke:#718198;stroke-width:2}</style><rect width="1100" height="590" fill="white"/>
+<text x="50" y="48" text-anchor="start" class="title"><tspan x="50" dy="0">Condition B gaze timeline</tspan></text>
+<text x="50" y="79" text-anchor="start" class="sub"><tspan x="50" dy="0">One 7.0-second cycle • Participant-first illustration • Widths are proportional to time</tspan></text>
+<rect x="80" y="175" width="390" height="105" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<rect x="470" y="175" width="65.0" height="105" fill="url(#hatch)" stroke="#718198" stroke-width="1.5"/>
+<rect x="535.0" y="175" width="390" height="105" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<rect x="925.0" y="175" width="65.0" height="105" fill="url(#hatch)" stroke="#718198" stroke-width="1.5"/>
+<text x="275" y="216" text-anchor="middle" class="label"><tspan x="275" dy="0">Participant directed</tspan></text>
+<text x="275" y="246" text-anchor="middle" class="body"><tspan x="275" dy="0">3.0 s settled dwell</tspan></text>
+<text x="730" y="216" text-anchor="middle" class="label"><tspan x="730" dy="0">Task directed</tspan></text>
+<text x="730" y="246" text-anchor="middle" class="body"><tspan x="730" dy="0">3.0 s settled dwell</tspan></text>
+<text x="502.5" y="143" text-anchor="middle" class="small"><tspan x="502.5" dy="0">Turn</tspan><tspan x="502.5" dy="20">0.5 s</tspan></text>
+<text x="957.5" y="143" text-anchor="middle" class="small"><tspan x="957.5" dy="0">Turn</tspan><tspan x="957.5" dy="20">0.5 s</tspan></text>
+<path d="M 80 280 V 294" class="line"/>
+<text x="80" y="320" text-anchor="middle" class="body"><tspan x="80" dy="0">0.0</tspan></text>
+<path d="M 470 280 V 294" class="line"/>
+<text x="470" y="320" text-anchor="middle" class="body"><tspan x="470" dy="0">3.0</tspan></text>
+<path d="M 535.0 280 V 294" class="line"/>
+<text x="535.0" y="320" text-anchor="middle" class="body"><tspan x="535.0" dy="0">3.5</tspan></text>
+<path d="M 925.0 280 V 294" class="line"/>
+<text x="925.0" y="320" text-anchor="middle" class="body"><tspan x="925.0" dy="0">6.5</tspan></text>
+<path d="M 990 280 V 294" class="line"/>
+<text x="990" y="320" text-anchor="middle" class="body"><tspan x="990" dy="0">7.0</tspan></text>
+<text x="535" y="350" text-anchor="middle" class="small"><tspan x="535" dy="0">Active-block time in seconds</tspan></text>
+<path d="M 990 280 H 1030 V 390 H 50 V 228 H 80" class="edge"/>
+<text x="550" y="382" text-anchor="middle" class="label"><tspan x="550" dy="0">Repeat the same preset cycle</tspan></text>
+<rect x="60" y="430" width="470" height="105" rx="10" fill="#edf4fc" stroke="#2260a9" stroke-width="1.5"/>
+<text x="80" y="459" text-anchor="start" class="label"><tspan x="80" dy="0">Clock and motion</tspan></text>
+<text x="80" y="484" text-anchor="start" class="body"><tspan x="80" dy="0">Start with the first main-trial onset.</tspan><tspan x="80" dy="24">Head + eyes: same onset and duration; body fixed.</tspan></text>
+<rect x="560" y="430" width="480" height="105" rx="10" fill="#edf8f6" stroke="#087b79" stroke-width="1.5"/>
+<text x="580" y="459" text-anchor="start" class="label"><tspan x="580" dy="0">Keep the policy independent</tspan></text>
+<text x="580" y="484" text-anchor="start" class="body"><tspan x="580" dy="0">Initial target is counterbalanced; labels may reverse.</tspan><tspan x="580" dy="24">Switches ignore responses and gaze. Pauses freeze time.</tspan></text>
+<text x="60" y="568" text-anchor="start" class="small"><tspan x="60" dy="0">Transitions are a separate logged state, not settled gaze. This is an accepted pilot setting, not a validated optimum.</tspan></text>
+</svg>
