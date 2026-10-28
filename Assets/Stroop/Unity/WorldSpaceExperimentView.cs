@@ -27,6 +27,10 @@ namespace AvatarStroop.Unity
         [SerializeField] TextMesh avatarLabel;
         [SerializeField] TextMesh faultText;
         [SerializeField] TextMesh provisionalText;
+        [SerializeField] bool headsetPreview;
+        [SerializeField] TextMesh previewInputText;
+        bool presentationAvailable = true;
+        Func<bool> presentationAvailabilityCheck;
         readonly List<Material> runtimeMaterials = new List<Material>();
         readonly HashSet<string> acknowledgedTrials = new HashSet<string>(StringComparer.Ordinal);
         readonly List<string> faults = new List<string>();
@@ -136,6 +140,35 @@ namespace AvatarStroop.Unity
             RefreshWarnings();
         }
 
+        public void SetPresentationAvailable(bool available)
+        {
+            presentationAvailable = available;
+            if(!available) ResetCapture();
+        }
+
+        public void SetPresentationAvailabilityCheck(Func<bool> check)
+        {
+            presentationAvailabilityCheck = check; ResetCapture();
+        }
+        bool PresentationIsAvailable()
+        {
+            return presentationAvailable && (presentationAvailabilityCheck == null || presentationAvailabilityCheck());
+        }
+
+        public void SetHeadsetPreview(string diagnostic, string controls)
+        {
+            RequireLayout(); headsetPreview = true;
+            var banner = warningRoot.Find("PermanentDevelopmentBanner").GetComponent<TextMesh>();
+            banner.text = "QUEST LINK PREVIEW | SIMULATED GAZE | NOT A STUDY RUN";
+            if(previewInputText == null)
+            {
+                previewInputText = Text("QuestPreviewInputStatus", warningRoot, new Vector3(0, -.61f, 0), .013f, 48, Color.white);
+                SetOverlay(previewInputText);
+            }
+            previewInputText.text = diagnostic + "\n" + controls;
+            if(currentView != null && role == Actor.Participant) messageText.text = ParticipantMessage(currentView);
+        }
+
         // The same render entry point accepts automatic and incoming live/simulator
         // outputs. Reference trajectory is intentionally never used as a fallback.
         public void ApplyAvatarOutput(AvatarOutput output)
@@ -232,7 +265,7 @@ namespace AvatarStroop.Unity
             if(camera != presentationCamera) return;
             ResetCapture();
             capturedAvatar = null; capturedAvatarFrame = -1; avatarObservedByCamera = false;
-            if(isActiveAndEnabled && contentRoot != null && GraphicsSettings.currentRenderPipeline == null)
+            if(PresentationIsAvailable() && isActiveAndEnabled && contentRoot != null && GraphicsSettings.currentRenderPipeline == null)
             {
                 capturedAvatarRevision = avatarRevision; capturedTaskRevision = presentationRevision; capturedAvatarFrame = Time.frameCount;
                 capturedAvatar = new AvatarPresentationObservation(role, currentView,
@@ -256,7 +289,7 @@ namespace AvatarStroop.Unity
         {
             if(camera != presentationCamera) return;
             var avatarCallback = AvatarPresented;
-            if(capturedAvatar != null && capturedAvatarFrame == Time.frameCount && capturedAvatarRevision == avatarRevision &&
+            if(PresentationIsAvailable() && capturedAvatar != null && capturedAvatarFrame == Time.frameCount && capturedAvatarRevision == avatarRevision &&
                 capturedTaskRevision == presentationRevision && isActiveAndEnabled && camera.isActiveAndEnabled &&
                 camera.targetTexture == null && camera.rect.width > 0 && camera.rect.height > 0)
             {
@@ -277,7 +310,7 @@ namespace AvatarStroop.Unity
         {
             // A witness on the actual TextMesh must be culled in for this camera,
             // followed by its completed render. Hidden/stale views cannot acknowledge.
-            return isActiveAndEnabled && role == Actor.Participant && GraphicsSettings.currentRenderPipeline == null &&
+            return PresentationIsAvailable() && isActiveAndEnabled && role == Actor.Participant && GraphicsSettings.currentRenderPipeline == null &&
                 presentationCamera != null && presentationCamera.isActiveAndEnabled && presentationCamera.targetTexture == null &&
                 presentationCamera.rect.width > 0 && presentationCamera.rect.height > 0 &&
                 !String.IsNullOrEmpty(displayedTrial) && currentView != null && currentView.TrialId == displayedTrial &&
@@ -387,11 +420,12 @@ namespace AvatarStroop.Unity
         string ParticipantMessage(TaskView view)
         {
             if(view.Phase == Phase.Preparation || view.Phase == Phase.Familiarization)
-                return "DESKTOP SIMULATION\nWaiting for the separate owner control window.\nOpen AvatarStroopPreview.exe to start a preview.\nNo headset or real eye tracking is connected.";
+                return headsetPreview ? "QUEST LINK PREVIEW\nWaiting for the separate owner control window.\nOpen AvatarStroopQuestPreview.exe to start.\nHead view only; all avatar gaze is simulated." :
+                    "DESKTOP SIMULATION\nWaiting for the separate owner control window.\nOpen AvatarStroopPreview.exe to start a preview.\nNo headset or real eye tracking is connected.";
             if(view.Phase == Phase.BlockPreparation || view.Phase == Phase.BlockReady)
                 return "Waiting for the owner to configure and begin\nthis block in the separate preview control window.";
             if(view.Phase == Phase.PracticeRetry) return "Practice needs one retry.\nAsk the owner to start it in the control window.";
-            if(view.Phase == Phase.PracticeCorrection) return view.PracticeCorrection + "\nPress Space to continue when ready.";
+            if(view.Phase == Phase.PracticeCorrection) return view.PracticeCorrection + (headsetPreview ? "\nRight trigger to continue when ready." : "\nPress Space to continue when ready.");
             if(view.Phase == Phase.Questionnaire)
             {
                 if(questionnaireLanguage == null) return "QUESTIONNAIRE LANGUAGE NOT CONFIGURED";
@@ -400,8 +434,9 @@ namespace AvatarStroop.Unity
                 for(int score = 1; score <= 5; score++) message.Append("\n").Append(score).Append("  ").Append(Questionnaire.Anchor(score, questionnaireLanguage));
                 return message.ToString();
             }
-            if(view.Phase == Phase.Rest) return view.ReadyEnabled ? "Rest as long as you need.\nPress Space when ready." : "Rest. Ready is not yet available.";
-            if(view.Phase == Phase.Paused) return "Paused\nPress R to actively resume when ready.";
+            if(view.Phase == Phase.Rest) return view.ReadyEnabled ? "Rest as long as you need.\n" + (headsetPreview ? "Right trigger when ready." : "Press Space when ready.") : "Rest. Ready is not yet available.";
+            if(view.Phase == Phase.Paused) return headsetPreview ? "Paused\nRight trigger to actively resume.\nB to withdraw and end preview." : "Paused\nPress R to actively resume when ready.";
+            if(view.Phase == Phase.NeedsProtocolDecision) return headsetPreview ? "Practice was interrupted.\nWaiting for an explicit owner protocol decision.\nNo automatic retry or continuation. B withdraws." : "Practice was interrupted.\nWaiting for an explicit owner protocol decision.\nNo automatic retry or continuation. Esc withdraws.";
             if(view.Phase == Phase.Ended) return "Simulation ended.\nThe owner can export the actual records.\nClose this window when finished.";
             return "";
         }

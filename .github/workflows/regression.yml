@@ -29,5 +29,8 @@ jobs:
       - name: Compile Windows desktop preview owner window
         if: runner.os == 'Windows'
         run: dotnet build AvatarStroop.DesktopPreview.csproj --configuration Release
+      - name: Compile Quest Link preview owner window
+        if: runner.os == 'Windows'
+        run: dotnet build AvatarStroop.DesktopPreview.csproj --configuration Release -p:DefineConstants=QUEST_PREVIEW_LAUNCHER
       - name: Run independent participant and operator simulators
         run: python scripts/integration.py --dotnet

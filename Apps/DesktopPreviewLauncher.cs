@@ -39,6 +39,11 @@ namespace AvatarStroop.Apps
         {
             Name="DesktopPreviewOwner";
             Text="Avatar Stroop \u2014 \u8d1f\u8d23\u4eba\u684c\u9762\u9884\u89c8\u63a7\u5236\u53f0 / SIMULATION";
+#if QUEST_PREVIEW_LAUNCHER
+            Text="Avatar Stroop - Quest Link preview owner controls / SIMULATED GAZE";
+            launch.Text="1  Open Quest Link preview";
+            state.Text="First connect Quest 3 through the existing Meta Quest Link app. Open preview only after Link is ready. The participant uses the headset; the operator stays on the desktop.";
+#endif
             Font=new Font("Segoe UI",11);
             AutoScaleMode=AutoScaleMode.Dpi;
             ClientSize=new Size(920,750); MinimumSize=new Size(850,720);
@@ -46,7 +51,12 @@ namespace AvatarStroop.Apps
             var layout=new TableLayoutPanel { Dock=DockStyle.Fill, Padding=new Padding(24), ColumnCount=1, AutoScroll=true };
             Controls.Add(layout);
             var title=MakeLabel("Avatar Stroop  |  \u684c\u9762\u6a21\u62df\u9884\u89c8",42); title.Font=new Font(Font.FontFamily,20,FontStyle.Bold); layout.Controls.Add(title);
+#if QUEST_PREVIEW_LAUNCHER
+            title.Text="Avatar Stroop | Quest Link preview";
+            layout.Controls.Add(MakeLabel("HEAD VIEW ONLY | SIMULATED AVATAR GAZE | No eye tracking | Not a study run",32));
+#else
             layout.Controls.Add(MakeLabel("\u4ec5\u4f9b\u5f00\u53d1\u6f14\u793a \u00b7 \u4e0d\u662f VR \u00b7 \u4e0d\u91c7\u96c6\u771f\u5b9e\u773c\u52a8 \u00b7 \u4e0d\u80fd\u7528\u4e8e\u6b63\u5f0f\u5b9e\u9a8c",32));
+#endif
             layout.Controls.Add(MakeLabel("\u5f53\u524d\u6f14\u793a\u56fa\u5b9a\u5939\u5177\uff1aBCAD \u987a\u5e8f\uff0cB \u4ece\u53c2\u4e0e\u8005\u65b9\u5411\u5f00\u59cb\uff1b\u82f1\u6587\u95ee\u5377\uff0c1 \u79d2\u5012\u8ba1\u65f6\u3002\n\u7ec3\u4e60 8 \u9898\uff1b\u4e3b\u4efb\u52a1 4 \u00d7 24 \u9898\uff1b\u7ec4\u540e\u53e6\u6709\u81f3\u5c11 30 \u79d2\u4f11\u606f\u3002\u5b9e\u9a8c\u65b9\u6848\u53c2\u6570\u672a\u6539\u52a8\u3002",58));
             layout.Controls.Add(Row(launch,closePlayers));
             state.BackColor=Color.FromArgb(232,241,248); state.Padding=new Padding(10); layout.Controls.Add(state);
@@ -57,7 +67,11 @@ namespace AvatarStroop.Apps
             layout.Controls.Add(MakeLabel("\u6bcf\u7ec4\u524d\u7531\u8d1f\u8d23\u4eba\u660e\u786e\u9009\u62e9\u6765\u6e90\uff1b\u6ca1\u6709\u9ed8\u8ba4\u6a21\u5f0f\u3002\u771f\u5b9e WoZ \u5c1a\u672a\u63a5\u5165\u3002",30));
             layout.Controls.Add(Row(source,lockBlock,begin));
             receipt.ForeColor=Color.FromArgb(33,75,96); layout.Controls.Add(receipt);
+#if QUEST_PREVIEW_LAUNCHER
+            layout.Controls.Add(MakeLabel("Touch: X red / Y green / A blue / B yellow. Release before the next answer.\nRating: left stick up/down, then A to confirm. Right trigger: Continue / Ready.\nLeft menu: pause. While paused: right trigger resumes; B withdraws. PC P / Esc remain safety controls.",78));
+#else
             layout.Controls.Add(MakeLabel("\u5728\u53c2\u4e0e\u8005\u7a97\u53e3\u4f5c\u7b54\uff1a1 \u7ea2 / 2 \u7eff / 3 \u84dd / 4 \u9ec4\uff08\u6309\u5b57\u4f53\u989c\u8272\uff09\u3002\n\u7a7a\u683c = \u7ea0\u9519\u540e\u7ee7\u7eed / \u4f11\u606f\u540e Ready\uff1bP = \u6682\u505c\uff0cR = \u6062\u590d\uff0cEsc = \u9000\u51fa\u3002\n\u7ec3\u4e60\u3001\u95ee\u5377\u3001\u4f11\u606f\u548c D \u6761\u4ef6\u9690\u85cf\u5934\u50cf\u662f\u9884\u671f\u884c\u4e3a\u3002\u64cd\u4f5c\u8005\u7a97\u53e3 P = \u5b89\u5168\u505c\u6b62\u3002",78));
+#endif
             layout.Controls.Add(Row(export)); layout.Controls.Add(folder);
             layout.Controls.Add(MakeLabel("\u9996\u6b21\u542f\u52a8\u53ef\u80fd\u9700\u8981\u6570\u79d2\u3002\u4ec5\u5f53\u72b6\u6001\u6301\u7eed\u66f4\u65b0\u3001\u8bf7\u6c42\u5f97\u5230\u56de\u6267\u65f6\u624d\u786e\u8ba4\u6210\u529f\u3002",28));
             launch.Click+=(s,e)=>Guard(Launch);
@@ -82,7 +96,12 @@ namespace AvatarStroop.Apps
             string root=AppDomain.CurrentDomain.BaseDirectory;
             string p=Path.Combine(root,"Participant","AvatarStroopParticipant.exe"),o=Path.Combine(root,"Operator","AvatarStroopOperator.exe");
             if(!File.Exists(p)||!File.Exists(o))throw new FileNotFoundException("\u64ad\u653e\u5668\u6587\u4ef6\u7f3a\u5931\u3002\u8bf7\u4fdd\u7559\u5b8c\u6574\u5305\u4e2d\u7684 Participant \u548c Operator \u6587\u4ef6\u5939\u3002");
-            session="preview-"+Guid.NewGuid().ToString("N"); sessionDirectory=Path.Combine(root,"sessions",session); Directory.CreateDirectory(sessionDirectory);
+#if QUEST_PREVIEW_LAUNCHER
+            session="quest-preview-"+Guid.NewGuid().ToString("N");
+#else
+            session="preview-"+Guid.NewGuid().ToString("N");
+#endif
+            sessionDirectory=Path.Combine(root,"sessions",session); Directory.CreateDirectory(sessionDirectory);
             commands=Path.Combine(sessionDirectory,"owner.commands");statusPath=Path.Combine(sessionDirectory,"participant.status");startup=Path.Combine(sessionDirectory,"start.signal");
             int pp,op;
             using(var a=new UdpClient(new IPEndPoint(IPAddress.Loopback,0)))
@@ -136,6 +155,19 @@ namespace AvatarStroop.Apps
         }
         string Instruction()
         {
+#if QUEST_PREVIEW_LAUNCHER
+            if(!Fresh)return "Waiting for both preview processes. Quest Link must already be connected; gaze remains simulated. No source or practice starts automatically.";
+            switch(latest.Phase)
+            {
+                case Phase.Preparation: case Phase.Familiarization: case Phase.PracticeRetry:
+                    return "When headset and both Touch controllers report ready, the owner may begin practice. Answer the ink colour using X / Y / A / B.";
+                case Phase.Practice: case Phase.MainTask:return "Touch: X red / Y green / A blue / B yellow. Release before another answer. Left menu pauses.";
+                case Phase.PracticeCorrection:return "Read the correction in the headset, then make a new right-trigger press to continue.";
+                case Phase.Questionnaire:return "Move the left stick up/down to choose 1-5; release to centre between steps. A confirms the visible candidate only.";
+                case Phase.Rest:return "Rest at least 30 seconds, then make a new right-trigger press when Ready is available. Rest may be extended.";
+                case Phase.Paused:return "Paused. Right trigger actively resumes; B withdraws. The owner cannot remotely resume the participant.";
+            }
+#endif
             if(!Fresh)return "\u8fd9\u662f\u684c\u9762\u6a21\u62df\u3002\u7b49\u5f85\u4e24\u4e2a\u7a97\u53e3\u52a0\u8f7d\u5b8c\u6210\uff1b\u4e0d\u662f VIVE / Quest \u5934\u663e\u7a0b\u5e8f\u3002";
             switch(latest.Phase)
             {

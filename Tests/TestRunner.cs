@@ -77,6 +77,7 @@ namespace AvatarStroop.Tests
             GeometryTests.Register(suite);
             OwnerCommandTests.Register(suite);
             DesktopPreviewTests.Register(suite);
+            QuestPreviewInputTests.Register(suite);
             JournalTests.Register(suite);
             JournalCaptureTests.Register(suite);
             JournalRuntimeTests.Register(suite);

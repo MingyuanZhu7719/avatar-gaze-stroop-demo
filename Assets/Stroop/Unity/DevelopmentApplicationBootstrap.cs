@@ -29,6 +29,9 @@ namespace AvatarStroop.Unity
         long statusSequence;
         float nextStatusAt;
         OwnerCommandDispatcher ownerCommands;
+#if STROOP_XR_PREVIEW
+        QuestLinkPreviewRig questPreview;
+#endif
         static readonly KeyCode[] colourKeys={KeyCode.Alpha1,KeyCode.Alpha2,KeyCode.Alpha3,KeyCode.Alpha4};
 
         void Start()
@@ -40,6 +43,9 @@ namespace AvatarStroop.Unity
                 startupReleased=previewOptions.StartupPath==null;
                 view=GetComponent<WorldSpaceExperimentView>();
                 if(view==null)throw new InvalidOperationException("Development bootstrap needs its role's world-space view");
+#if STROOP_XR_PREVIEW
+                questPreview=GetComponent<QuestLinkPreviewRig>();
+#endif
                 if(view.Role==Actor.Participant)
                 {
                     Transform root=view.AvatarRoot;Vector3 origin=view.AvatarHead.position;
@@ -76,7 +82,7 @@ namespace AvatarStroop.Unity
                 if(path==null)return;
                 SimulationPeer app=participant!=null?(SimulationPeer)participant:operatorApp;
                 app.EnableRecording(path,new ExportProvenance("unity-development-journal",
-                    "participant app monotonic observation of camera-post-render callback; not photon onset","desktop new-key edge; not validated controller timing"),.1);
+                    "participant app monotonic observation of camera-post-render callback; not photon onset",InputTimingProvenance),.1);
                 if(app.RecordingWarning!=null)view.SetFaults(new[]{app.RecordingWarning});
             }
             catch(Exception error){recordingSetupError="Recording setup failed: "+error.Message;view.SetFaults(new[]{recordingSetupError});}
@@ -140,6 +146,10 @@ namespace AvatarStroop.Unity
         {
             try
             {
+#if STROOP_XR_PREVIEW
+                if(questPreview!=null&&(command.Kind==OwnerCommandKind.Practice||command.Kind==OwnerCommandKind.Begin)&&!questPreview.InputReady)
+                    return "Quest preview is not ready: "+questPreview.Diagnostic;
+#endif
                 string rejection=OwnerCommandExecution.Execute(command,participant.OwnerBeginPractice,participant.OwnerLockNextBlock,participant.OwnerBeginBlock,ExportSnapshot);
                 actionError=rejection==null?null:"Owner action rejected: "+rejection;
                 return rejection;
@@ -161,12 +171,18 @@ namespace AvatarStroop.Unity
                 if(participant!=null&&participant.RecordingWarning!=null)messages.Add(participant.RecordingWarning);
                 if(actionError!=null)messages.Add(actionError);
                 if(statusWriteError!=null)messages.Add(statusWriteError);
+#if STROOP_XR_PREVIEW
+                if(questPreview!=null)messages.Add("QUEST LINK PREVIEW | SIMULATED AVATAR GAZE | "+questPreview.Diagnostic);
+#endif
                 if(messages.Count==0)messages.Add(!startupReleased?"Waiting for both preview windows":ownerCommands==null?
-                    "Open AvatarStroopPreview.exe for owner controls. Waiting for an explicit owner action.":"Development preview; waiting for explicit owner actions.");
+                    "Open "+OwnerLauncherName+" for owner controls. Waiting for an explicit owner action.":"Development preview; waiting for explicit owner actions.");
                 // A past rejected owner action remains visible, but does not replace
                 // the currently locked source's readiness after that source recovers.
                 bool ready=startupError==null&&startupReleased&&recordingSetupError==null&&!updateFailed&&experiment!=null&&
                     participant.RecordingWarning==null&&experiment.LockedControl.HasValue&&participant.SourceReady(experiment.LockedControl.Value);
+#if STROOP_XR_PREVIEW
+                if(questPreview!=null)ready=ready&&questPreview.InputReady;
+#endif
                 var status=new DesktopPreviewStatus(previewOptions.SessionId,statusSequence,experiment==null?Phase.Preparation:experiment.Phase,
                     experiment==null?-1:experiment.BlockIndex,experiment==null?null:experiment.CurrentCondition,
                     experiment==null?null:experiment.LockedControl,ready,BoundedMessage(String.Join("\n",messages)));
@@ -189,7 +205,7 @@ namespace AvatarStroop.Unity
         {
             string notice=startupError??statusWriteError;
             if(notice==null&&participant!=null&&ownerCommands==null)
-                notice="Open AvatarStroopPreview.exe to use the separate owner controls.\nThis participant window waits for an explicit owner action; no practice or source is selected automatically.";
+                notice="Open "+OwnerLauncherName+" to use the separate owner controls.\nThis participant window waits for an explicit owner action; no practice or source is selected automatically.";
             if(notice==null)return;
             var style=new GUIStyle(GUI.skin.box){fontSize=18,wordWrap=true,alignment=TextAnchor.UpperLeft};
             GUI.Box(new Rect(12,12,Mathf.Max(100,Mathf.Min(Screen.width-24,900)),150),notice,style);
@@ -203,11 +219,39 @@ namespace AvatarStroop.Unity
             if(app!=null&&app.RecordingWarning!=null)warnings.Add(app.RecordingWarning);
             if(recordingSetupError!=null)warnings.Add(recordingSetupError);
             if(statusWriteError!=null)warnings.Add(statusWriteError);
+#if STROOP_XR_PREVIEW
+            if(questPreview!=null&&!questPreview.HeadViewReady)warnings.Add(questPreview.Diagnostic);
+#endif
             return warnings;
+        }
+
+        string InputTimingProvenance
+        {
+            get
+            {
+#if STROOP_XR_PREVIEW
+                if(questPreview!=null)return "Quest Touch preview new-press edge; host observation, not validated controller timing; synthetic gaze only";
+#endif
+                return "desktop new-key edge; not validated controller timing";
+            }
+        }
+        static string OwnerLauncherName
+        {
+            get
+            {
+#if STROOP_XR_PREVIEW
+                return "AvatarStroopQuestPreview.exe";
+#else
+                return "AvatarStroopPreview.exe";
+#endif
+            }
         }
 
         void ReadParticipantInput()
         {
+#if STROOP_XR_PREVIEW
+            if(questPreview!=null){ReadQuestPreviewInput();return;}
+#endif
             var e=participant.Experiment;Phase inputPhase=e.Phase;
             for(int i=0;i<4;i++)
             {
@@ -229,6 +273,30 @@ namespace AvatarStroop.Unity
                 e.Resume(participant.SourceReady(e.LockedControl??ControlSelection.Automatic));
             if(Input.GetKeyDown(KeyCode.Escape))e.Withdraw();
         }
+
+#if STROOP_XR_PREVIEW
+        void ReadQuestPreviewInput()
+        {
+            var e=participant.Experiment;
+            var frame=questPreview.ReadInput(e.Phase,e.QuestionIndex);
+            foreach(var colour in frame.ReleasedColours)e.ButtonChanged(colour,false);
+            // Consume XR edges even if a keyboard safety action takes priority.
+            // Keyboard colour/rating/continue inputs are disabled for this preview
+            // so two input devices cannot advance two trials or ratings in one frame.
+            if(Input.GetKeyDown(KeyCode.Escape)){e.Withdraw();return;}
+            if(Input.GetKeyDown(KeyCode.P)){e.Pause(Actor.Participant);return;}
+            switch(frame.Action)
+            {
+                case QuestPreviewAction.Respond:e.ButtonChanged(frame.Response.Value,true);break;
+                case QuestPreviewAction.SubmitRating:e.Rate(frame.Rating.Value);break;
+                case QuestPreviewAction.ContinuePractice:e.ContinuePractice();break;
+                case QuestPreviewAction.Ready:e.Ready();break;
+                case QuestPreviewAction.Resume:e.Resume(questPreview.InputReady&&participant.SourceReady(e.LockedControl??ControlSelection.Automatic));break;
+                case QuestPreviewAction.Pause:e.Pause(Actor.Participant);break;
+                case QuestPreviewAction.Withdraw:e.Withdraw();break;
+            }
+        }
+#endif
 
         void AcknowledgeStimulus(string trialId,double unityRenderProxySeconds)
         {
@@ -269,7 +337,7 @@ namespace AvatarStroop.Unity
         {
             string folder=Path.GetFullPath(Path.Combine(Application.dataPath,"..","exports"));
             var result=participant.Export(folder,new ExportProvenance("unity-development-owner",
-                "participant app monotonic observation of camera-post-render callback; not photon onset","desktop new-key edge; not validated controller timing"));
+                "participant app monotonic observation of camera-post-render callback; not photon onset",InputTimingProvenance));
             if(!result.Success)throw new IOException(result.Error);
             Debug.Log("SIMULATION audit export: "+result.DirectoryPath);
         }

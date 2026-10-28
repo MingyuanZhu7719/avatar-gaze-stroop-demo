@@ -1,6 +1,8 @@
-# Headset preview prerequisites — proposal, not installed
+# Headset preview compatibility assessment
 
-The current preview is desktop-only: ordinary cameras, keyboard input, no XR loader or tracked camera. A Quest 3 preview could later use the existing Windows Meta Link runtime for stereo display and head pose. This would not replace VIVE Pro Eye, supply its eye tracking, or validate the research apparatus. The system OpenXR runtime and drivers have not been changed.
+This is the compatibility assessment that preceded the user-approved isolated Quest integration. See [Quest preview implementation and verification](quest-preview.md) for its current status. The ordinary desktop project still has no XR dependencies.
+
+The ordinary desktop preview remains separate, with ordinary cameras and keyboard input. The optional Quest 3 integration uses the existing Windows Meta Link runtime for stereo display and head pose. It does not replace VIVE Pro Eye, supply its eye tracking, or validate the research apparatus. The system OpenXR runtime and drivers have not been changed.
 
 For the project's **6000.0.48f1** baseline, the following exact package combination is present in another existing local project's lockfile/cache and satisfies its declared dependencies:
 
@@ -20,8 +22,8 @@ The minimal project work would enable the Windows Standalone OpenXR loader and a
 
 ## Installation and permission boundary
 
-No packages were added to this project. Adding cached packages is still a project dependency installation and remains pending the requested installation decision. Cache license files identify Unity Companion License and, for OpenXR distribution, Unity Package Distribution License; no new agreement was accepted. The Input System backend may require an Editor restart. [Official Input System installation](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.19/manual/Installation.html).
+The user subsequently approved adding these official cached packages to an isolated preview project. No packages are added to the ordinary desktop project. Cache license files identify Unity Companion License and, for OpenXR distribution, Unity Package Distribution License; any new explicit agreement remains a stop point. The Input System backend requires a separate Editor invocation after configuration. [Official Input System installation](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.19/manual/Installation.html).
 
 Meta Link is already installed and registered as the current OpenXR runtime, but the user's headset connection and any required developer/account setup have not been verified. Do not create accounts, accept new agreements, change runtime or grant tracking permissions silently. [Meta Link development setup](https://developers.meta.com/vr/documentation/unity/unity-link/).
 
-The next permitted development step after the installation decision is an isolated, explicitly labelled headset-preview project. Its success criterion is actual visible stereo rendering and tracked head movement; a successful build alone is insufficient. Real Pro Eye acquisition and formal apparatus acceptance remain separate work.
+The approved development step is an isolated, explicitly labelled headset-preview project. Its eventual acceptance criterion is actual visible stereo rendering and tracked head movement; a successful build alone is insufficient. Real Pro Eye acquisition and formal apparatus acceptance remain separate work.
