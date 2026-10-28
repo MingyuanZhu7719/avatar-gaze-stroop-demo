@@ -35,6 +35,8 @@ Milestones 1–4 implement the portable experiment core, control and fault contr
 
 - [Development milestones, actual test results, and remaining prerequisites](docs/development.md)
 - [Windows environment, local regression and standalone build verification](docs/windows-validation.md)
+- [Direct desktop preview launcher and owner controls](docs/desktop-preview.md) — implemented and built; actual UI acceptance awaits application-control permission.
+- [Headset-preview package and compatibility prerequisites](docs/xr-preview-prerequisites.md) — proposal only; no XR packages installed.
 - [Requirements and regression coverage](docs/requirements-tests.md)
 - [Unity presentation adapter and verification limits](docs/unity-adapter.md)
 - [Local development owner console](docs/owner-console.md)

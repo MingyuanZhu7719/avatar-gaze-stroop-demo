@@ -26,5 +26,8 @@ jobs:
         run: dotnet run --project AvatarStroop.Regression.csproj --configuration Release
       - name: Compile separate development owner console
         run: dotnet build AvatarStroop.OwnerConsole.csproj --configuration Release
+      - name: Compile Windows desktop preview owner window
+        if: runner.os == 'Windows'
+        run: dotnet build AvatarStroop.DesktopPreview.csproj --configuration Release
       - name: Run independent participant and operator simulators
         run: python scripts/integration.py --dotnet

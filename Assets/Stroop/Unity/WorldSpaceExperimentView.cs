@@ -386,7 +386,12 @@ namespace AvatarStroop.Unity
         }
         string ParticipantMessage(TaskView view)
         {
-            if(view.Phase == Phase.PracticeCorrection) return view.PracticeCorrection + "\nUse Continue when ready.";
+            if(view.Phase == Phase.Preparation || view.Phase == Phase.Familiarization)
+                return "DESKTOP SIMULATION\nWaiting for the separate owner control window.\nOpen AvatarStroopPreview.exe to start a preview.\nNo headset or real eye tracking is connected.";
+            if(view.Phase == Phase.BlockPreparation || view.Phase == Phase.BlockReady)
+                return "Waiting for the owner to configure and begin\nthis block in the separate preview control window.";
+            if(view.Phase == Phase.PracticeRetry) return "Practice needs one retry.\nAsk the owner to start it in the control window.";
+            if(view.Phase == Phase.PracticeCorrection) return view.PracticeCorrection + "\nPress Space to continue when ready.";
             if(view.Phase == Phase.Questionnaire)
             {
                 if(questionnaireLanguage == null) return "QUESTIONNAIRE LANGUAGE NOT CONFIGURED";
@@ -395,8 +400,9 @@ namespace AvatarStroop.Unity
                 for(int score = 1; score <= 5; score++) message.Append("\n").Append(score).Append("  ").Append(Questionnaire.Anchor(score, questionnaireLanguage));
                 return message.ToString();
             }
-            if(view.Phase == Phase.Rest) return view.ReadyEnabled ? "Rest as long as you need.\nReady is available." : "Rest. Ready is not yet available.";
-            if(view.Phase == Phase.Paused) return "Paused";
+            if(view.Phase == Phase.Rest) return view.ReadyEnabled ? "Rest as long as you need.\nPress Space when ready." : "Rest. Ready is not yet available.";
+            if(view.Phase == Phase.Paused) return "Paused\nPress R to actively resume when ready.";
+            if(view.Phase == Phase.Ended) return "Simulation ended.\nThe owner can export the actual records.\nClose this window when finished.";
             return "";
         }
         static string Wrap(string message, int columns, int maxLines)
