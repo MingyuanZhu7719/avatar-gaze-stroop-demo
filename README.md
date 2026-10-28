@@ -27,3 +27,12 @@ The latest user-accepted working baseline is now readable directly on GitHub. It
 - [Approved PRD v0.1](docs/prd.md): roles, two-app views, experiment flow, control sources, faults, data, and acceptance criteria.
 - Software implementation and hardware validation are tracked separately from the accepted experiment design. Unresolved interaction and technical choices remain explicit in the PRD.
 <!-- END software-requirements -->
+
+<!-- BEGIN software-implementation -->
+## Software implementation
+
+Milestone 1 implements and tests the shared experiment core. It is not yet a complete VR application or verified VIVE Pro Eye integration.
+
+- [Development architecture, milestones, and test commands](docs/development.md)
+- [Requirements and regression coverage](docs/requirements-tests.md)
+<!-- END software-implementation -->

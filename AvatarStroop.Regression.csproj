@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <StartupObject>AvatarStroop.Tests.Program</StartupObject>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>7.3</LangVersion>
+    <BaseOutputPath>build/dotnet/</BaseOutputPath>
+    <BaseIntermediateOutputPath>build/obj/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Assets/Stroop/Core/**/*.cs" />
+    <Compile Include="Tests/**/*.cs" />
+  </ItemGroup>
+</Project>
