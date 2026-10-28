@@ -284,7 +284,12 @@ def verify_scenario(output, scenario, source_digest):
     print("PASS " + scenario + ": independent processes, matching tasks, source/clock provenance and hashed partial export")
 
 def main():
-    installed = unity_tools()
+    dotnet_only = "--dotnet" in sys.argv
+    try:
+        installed = None if dotnet_only else unity_tools()
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
     build = ROOT / "build"
     build.mkdir(exist_ok=True)
     sources = sorted((ROOT / "Assets/Stroop/Core").glob("*.cs")) + sorted((ROOT / "Assets/Stroop/Runtime").glob("*.cs")) + [ROOT / "Apps/SimulatorHost.cs"]
@@ -292,7 +297,7 @@ def main():
     for source in sources:
         source_hash.update(source.relative_to(ROOT).as_posix().encode() + b"\0" + source.read_bytes())
     source_digest = "sha256:" + source_hash.hexdigest()
-    if "--dotnet" in sys.argv or installed is None:
+    if installed is None:
         dotnet = shutil.which("dotnet")
         if not dotnet:
             print("An existing .NET 8 SDK or Unity Mono compiler is required; nothing was installed.", file=sys.stderr)

@@ -12,9 +12,13 @@ from test import ROOT, unity_tools
 
 
 def main():
-    installed = unity_tools()
+    try:
+        installed = unity_tools()
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
     if installed is None:
-        print("No installed Unity compiler found. Set STROOP_UNITY_CONTENTS to an existing Unity.app/Contents.", file=sys.stderr)
+        print("No installed Unity compiler found. Set STROOP_UNITY_CONTENTS to an existing Editor/Data (Windows/Linux) or Unity.app/Contents (macOS).", file=sys.stderr)
         return 2
     base, mono, csc = installed
     managed = base / "Managed/UnityEngine"

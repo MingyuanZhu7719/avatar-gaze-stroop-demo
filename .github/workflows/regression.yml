@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
+      - name: Run installed-compiler discovery regression
+        run: python scripts/test_unity_tools.py
       - name: Compile and run portable regression
         run: dotnet run --project AvatarStroop.Regression.csproj --configuration Release
       - name: Compile separate development owner console

@@ -61,12 +61,12 @@ namespace AvatarStroop.Unity.Editor
 
         static void PersistMaterials(Scene scene, string role)
         {
-            var saved = new HashSet<int>(); int index = 0;
+            var saved = new HashSet<Material>(); int index = 0;
             foreach(var root in scene.GetRootGameObjects())
             foreach(var renderer in root.GetComponentsInChildren<Renderer>(true))
             foreach(var material in renderer.sharedMaterials)
             {
-                if(material == null || !String.IsNullOrEmpty(AssetDatabase.GetAssetPath(material)) || !saved.Add(material.GetInstanceID())) continue;
+                if(material == null || !String.IsNullOrEmpty(AssetDatabase.GetAssetPath(material)) || !saved.Add(material)) continue;
                 string path = AssetDatabase.GenerateUniqueAssetPath(DirectoryPath + "/Materials/" + role + "-" + index++ + ".mat");
                 AssetDatabase.CreateAsset(material, path);
             }

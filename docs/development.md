@@ -1,6 +1,6 @@
 # Development architecture and verification
 
-This is an implementation record, separate from the accepted [PRD](prd.md) and [experiment design](experiment-design.md). Development choices below are provisional apparatus adapters, not additions to the participant protocol. No participant data, headset verification, or Windows performance results are claimed.
+This is an implementation record, separate from the accepted [PRD](prd.md) and [experiment design](experiment-design.md). Development choices below are provisional apparatus adapters, not additions to the participant protocol. No participant data, headset verification, or Windows performance results are claimed. Later [Windows development verification](windows-validation.md) adds actual local regression, Editor import and standalone build evidence; it does not establish hardware timing or visual acceptance.
 
 ## Installed toolchain and project structure
 
@@ -145,8 +145,8 @@ This helper is internal to local simulator coordination. Atomic publication and 
 
 The publishing task independently ran `python3 scripts/test.py`: **138 groups passed, 0 failed**. `python3 scripts/integration.py` passed both normal scenarios, all four clean role-journal checks and forced termination/recovery of both roles, retaining the original assertions and validating lifecycle wait evidence. `python3 scripts/compile-unity.py` passed **17 core/runtime, five Unity runtime and one Editor source** with warnings as errors. These are local software checks; the follow-up commit's hosted results are reported separately.
 
-### Editor attempt and remaining apparatus work
+### Historical Mac Editor attempt and remaining apparatus work
 
 One ordinary installed Editor batch run was attempted with `-batchmode -nographics -noUpm -quit` and the scene-builder entry point. It exited **1 before import/scene generation** because **no valid Unity Editor license was found**. No activation, credentials, license change, package install or retry was performed. This was a missing licensing prerequisite, not an automatic approval rejection. Full logs remain local and are not published.
 
-Consequently the generated scenes, shader compilation, actual camera-render behavior, Unity standalone player builds and rendered owner-command workflow have not been executed. The existing source and managed compile are reviewable, and the separate console applications are executable; these do not amount to a completed dual-VR apparatus. Real VIVE Pro Eye acquisition/SDK integration, participant gaze capture, calibration/coordinate mapping, two physical computers, controller mapping, measured display/network timing, and headset tests remain unavailable here. The fault policy and its thresholds/recovery, countdown/language and other accepted TBD decisions must be frozen by the study owner before apparatus admission is implemented. `RunKind.Apparatus` stays blocked.
+At that point, generated scenes, shader compilation, actual camera-render behavior, Unity standalone player builds and the rendered owner-command workflow had not been executed. Subsequent [Windows verification](windows-validation.md) passed scene generation/reload and both Windows player builds with installed Unity 6000.6.7f1; visual and headset acceptance remain pending. Real VIVE Pro Eye acquisition/SDK integration, participant gaze capture, calibration/coordinate mapping, two physical computers, controller mapping, measured display/network timing, and headset tests remain unavailable here. The fault policy and its thresholds/recovery, countdown/language and other accepted TBD decisions must be frozen by the study owner before apparatus admission is implemented. `RunKind.Apparatus` stays blocked.

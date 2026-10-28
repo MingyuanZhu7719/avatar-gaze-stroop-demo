@@ -10,7 +10,11 @@ def main():
     args=sys.argv[1:]
     dotnet_only="--dotnet" in args
     if dotnet_only: args.remove("--dotnet")
-    installed=None if dotnet_only else unity_tools()
+    try:
+        installed=None if dotnet_only else unity_tools()
+    except ValueError as error:
+        print(str(error),file=sys.stderr)
+        return 2
     if installed:
         _,mono,csc=installed
         output=ROOT/"build"
@@ -22,7 +26,7 @@ def main():
     else:
         dotnet=shutil.which("dotnet")
         if not dotnet:
-            print("Use an existing .NET 8 SDK or set STROOP_UNITY_CONTENTS to an installed Unity.app/Contents.",file=sys.stderr)
+            print("Use an existing .NET 8 SDK or set STROOP_UNITY_CONTENTS to an installed Editor/Data (Windows/Linux) or Unity.app/Contents (macOS).",file=sys.stderr)
             return 2
         launch=[dotnet,"run","--project",str(ROOT/"AvatarStroop.OwnerConsole.csproj"),"--"]
     return subprocess.call(launch+args,cwd=str(ROOT))

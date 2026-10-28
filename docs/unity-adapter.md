@@ -1,6 +1,6 @@
 # Unity development presentation adapter
 
-This adapter is a **simulation development implementation**, not an accepted apparatus configuration. It uses the locally installed **Unity 6000.0.48f1** APIs. The world-space layout, primitive avatar, camera placement, colours, font sizing and held-pose fault display all require review and headset verification. The separate participant/operator simulation applications are wired into the scene bootstrap, but their Unity scenes have not run: the ordinary Editor batch attempt exited before import because no valid Unity Editor license was available. Real-device `RunKind.Apparatus` sessions remain globally blocked.
+This adapter is a **simulation development implementation**, not an accepted apparatus configuration. Its project baseline is **Unity 6000.0.48f1**. The world-space layout, primitive avatar, camera placement, colours, font sizing and held-pose fault display all require review and headset verification. The initial Mac Editor attempt was blocked by licensing. Subsequent [Windows verification](windows-validation.md) used an isolated copy with installed Unity **6000.6.7f1**: actual import, scene generation/reload and both Windows player builds passed after a material API compatibility fix. Visual acceptance remains pending. Real-device `RunKind.Apparatus` sessions remain globally blocked.
 
 ## Integration
 
@@ -42,11 +42,11 @@ The explicit Editor action `Avatar Stroop → Create development scenes (simulat
 - `Assets/Stroop/Generated/ParticipantDevelopment.unity`
 - `Assets/Stroop/Generated/OperatorDevelopment.unity`
 
-The generator is implemented to create one role, one camera and a `DevelopmentApplicationBootstrap` in each scene, matching the separate-application architecture. It preserves existing scene files and refuses to replace dirty open scenes. Generated materials are persisted as assets. The attempted Editor execution stopped before this generator ran, so scene creation, persistence and reload remain unverified. No XR provider or hardware runtime is selected.
+The generator creates one role, one camera and a `DevelopmentApplicationBootstrap` in each scene, matching the separate-application architecture. It preserves existing scene files and refuses to replace dirty open scenes. Generated materials are persisted as assets. Scene creation and saved-reference reload passed in the later isolated Windows check. No XR provider or hardware runtime is selected.
 
 ## Development run procedure
 
-The following describes the implemented wiring for a future licensed Editor environment; no rendered run or player build has been verified here.
+The following describes the implemented wiring. Windows player builds have passed in the isolated check; rendered interaction and headset behavior remain unverified.
 
 1. Open the project with Unity 6000.0.48f1 and invoke the scene-generation menu above. Use separate running applications for the two scenes, with the participant scene as the participant application's startup scene and the operator scene as the operator application's startup scene. The current transport is restricted to one host's loopback interface.
 2. Match the `simulationSessionId` in both bootstrap components and use a fresh synthetic session ID for each rehearsal. The development defaults are UDP ports **44510** for participant and **44511** for operator. The simulation runtime explicitly supplies the BCAD allocation fixture, English questionnaire and one-second countdown; these are engineering fixtures, not selected study settings.
@@ -69,4 +69,4 @@ On 28 October 2026, the adapter and integrated managed assemblies compiled succe
 
 An ordinary Editor attempt used `-batchmode -nographics -noUpm -quit` with `-executeMethod AvatarStroop.Unity.Editor.DevelopmentSceneBuilder.CreateScenes`. It **failed with exit code 1 before asset import or scene generation**. The local evidence log, `build/unity-editor-check.log`, ends with **“No valid Unity Editor license found. Please activate your license.”** No license activation, retry, package-download workaround or screenshot substitute was performed. This is a failed prerequisite check, not a successful Editor import or render test.
 
-**Still unverified:** Editor asset import and shader compilation; generated-scene save/reload and visible text; rendered acknowledgement under actual camera culling/pause/stale-frame scenarios; standalone player builds; actual headset warning visibility and typography; XR/controller input; real operator or participant tracking; two physical computers/two VIVE Pro Eye devices; calibrated geometry, timing and synchronization. Real-device apparatus operation remains blocked. Do not mark PRD AC-06 or AC-08 as passed on managed compilation or headless simulation evidence.
+**Later Windows evidence:** actual Editor import, scene save/reload, build-time shaders and both standalone Windows player builds passed with 6000.6.7f1 in an isolated copy; see the [dated verification record](windows-validation.md). **Still unverified:** visible text; rendered acknowledgement under actual camera culling/pause/stale-frame scenarios; actual headset warning visibility and typography; XR/controller input; real operator or participant tracking; two physical computers/two VIVE Pro Eye devices; calibrated geometry, timing and synchronization. Real-device apparatus operation remains blocked. Do not mark PRD AC-06 or AC-08 as passed on compilation, builds or headless simulation evidence.
