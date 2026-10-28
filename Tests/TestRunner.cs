@@ -73,6 +73,7 @@ namespace AvatarStroop.Tests
             ClockBoundaryTests.Register(suite);
             DataTests.Register(suite);
             RuntimeTests.Register(suite);
+            LifecycleFileTests.Register(suite);
             GeometryTests.Register(suite);
             OwnerCommandTests.Register(suite);
             JournalTests.Register(suite);

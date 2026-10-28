@@ -11,6 +11,7 @@ namespace AvatarStroop.Apps
 {
     public static class SimulatorHost
     {
+        static readonly SimulationLifecycleFiles lifecycleFiles=new SimulationLifecycleFiles();
         public static int Main(string[] args)
         {
             try
@@ -115,7 +116,7 @@ namespace AvatarStroop.Apps
                 else throw new ArgumentException("Role must be operator or participant");
                 return 0;
             }
-            catch(Exception error){Console.Error.WriteLine(error);return 1;}
+            catch(Exception error){WriteLifecycleReadEvidence(Console.Error);Console.Error.WriteLine(error);return 1;}
         }
         const double ScenarioFailSafeSeconds=65; // Engineering test budget, never a participant response deadline.
         static void RunJournalKillFixture(SimulationPeer app,double start,Action tick)
@@ -130,8 +131,7 @@ namespace AvatarStroop.Apps
         static bool HasSignal(string directory,string name,string expected)
         {
             string path=Path.Combine(directory,name);if(!File.Exists(path))return false;
-            if(File.ReadAllText(path)!=expected)throw new InvalidDataException("Scenario lifecycle signal has the wrong identity: "+name);
-            return true;
+            return lifecycleFiles.TryReadExact(path,expected);
         }
         static bool ParticipantGoalReached(ParticipantSimulationApplication app,string scenario)
         {
@@ -167,8 +167,10 @@ namespace AvatarStroop.Apps
         static bool OperatorGoalReached(OperatorSimulationApplication app,string scenario,string directory)
         {
             string path=Path.Combine(directory,"participant-goal.tsv");if(!File.Exists(path))return false;
-            var lines=File.ReadAllLines(path);
-            if(lines.Length==0||lines[0]!=Signal("PARTICIPANT_GOAL",app,scenario).TrimEnd('\n'))throw new InvalidDataException("Participant goal has the wrong scenario identity");
+            string content;if(!lifecycleFiles.TryReadText(path,out content))return false;
+            var lines=new System.Collections.Generic.List<string>();
+            using(var reader=new StringReader(content)){string line;while((line=reader.ReadLine())!=null)lines.Add(line);}
+            if(lines.Count==0||lines[0]!=Signal("PARTICIPANT_GOAL",app,scenario).TrimEnd('\n'))throw new InvalidDataException("Participant goal has the wrong scenario identity");
             var expected=new System.Collections.Generic.Dictionary<string,string>();
             foreach(string line in lines.Skip(1))
             {
@@ -210,6 +212,7 @@ namespace AvatarStroop.Apps
             using(var writer=new StreamWriter(Path.Combine(output,role+"-timeout.tsv")))
             {
                 Report(writer,"reason","integration_scenario_timeout");Report(writer,"active_elapsed_seconds",app.Clock.Now-start);
+                WriteLifecycleReadEvidence(writer);
                 var participant=app as ParticipantSimulationApplication;var op=app as OperatorSimulationApplication;
                 if(participant!=null)
                 {
@@ -239,15 +242,16 @@ namespace AvatarStroop.Apps
             string session=app.Identity.SessionId;
             string identity=String.Join("\t",new[]{"1",session,role,local.ToString(CultureInfo.InvariantCulture),remote.ToString(CultureInfo.InvariantCulture),Process.GetCurrentProcess().Id.ToString(CultureInfo.InvariantCulture)});
             WriteStartupRecord(Path.Combine(directory,role+"-ready.tsv"),"READY\t"+identity+"\t"+app.Clock.Now.ToString("R",CultureInfo.InvariantCulture));
-            string release=Path.Combine(directory,"start.tsv");var waiting=Stopwatch.StartNew();
-            while(!File.Exists(release))
+            string release=Path.Combine(directory,"start.tsv"),other=role=="operator"?"participant":"operator";
+            string peerContent;var waiting=Stopwatch.StartNew();
+            while(true)
             {
-                if(waiting.Elapsed.TotalSeconds>=20)throw new TimeoutException("Startup barrier timed out waiting for launcher release: "+role+" session "+session);
+                if(waiting.Elapsed.TotalSeconds>=20)throw new TimeoutException("Startup barrier timed out waiting for readable launcher release and peer readiness: "+role+" session "+session);
+                if(File.Exists(release)&&lifecycleFiles.TryReadExact(release,"START\t1\t"+session+"\n")&&
+                    lifecycleFiles.TryReadText(Path.Combine(directory,other+"-ready.tsv"),out peerContent))break;
                 Thread.Sleep(2);
             }
-            if(File.ReadAllText(release)!="START\t1\t"+session+"\n")throw new InvalidDataException("Startup barrier release has the wrong version or session");
-            string other=role=="operator"?"participant":"operator";
-            var peer=File.ReadAllText(Path.Combine(directory,other+"-ready.tsv")).TrimEnd('\n').Split('\t');
+            var peer=peerContent.TrimEnd('\n').Split('\t');
             int peerPid;double peerReady;
             if(peer.Length!=8||peer[0]!="READY"||peer[1]!="1"||peer[2]!=session||peer[3]!=other||
                 peer[4]!=remote.ToString(CultureInfo.InvariantCulture)||peer[5]!=local.ToString(CultureInfo.InvariantCulture)||
@@ -269,6 +273,14 @@ namespace AvatarStroop.Apps
             Report(writer,"startup_barrier_enabled",barrier!=null);
             Report(writer,"active_started_local_seconds",activeStart.ToString("R",CultureInfo.InvariantCulture));
             Report(writer,"active_elapsed_seconds",activeElapsed.ToString("R",CultureInfo.InvariantCulture));
+            WriteLifecycleReadEvidence(writer);
+        }
+        static void WriteLifecycleReadEvidence(TextWriter writer)
+        {
+            Report(writer,"lifecycle_read_wait_count",lifecycleFiles.WaitCount);
+            foreach(var item in lifecycleFiles.RecentWaits)
+                writer.WriteLine(String.Join("\t",new[]{"lifecycle_read_wait",item.Sequence.ToString(CultureInfo.InvariantCulture),
+                    "0x"+item.HResult.ToString("X8",CultureInfo.InvariantCulture),item.Operation,item.Path}));
         }
         static void CheckRecording(SimulationPeer app)
         {if(app.RecordingWarning!=null)throw new IOException(app.RecordingWarning);}

@@ -130,6 +130,16 @@ def read_report(path):
         else: values[parts[0]] = parts[1]
     return values, trials, faults
 
+def verify_lifecycle_read_evidence(path, report):
+    waits = [line.split("\t") for line in path.read_text(encoding="utf-8-sig").splitlines()
+             if line.startswith("lifecycle_read_wait\t")]
+    count = int(report["lifecycle_read_wait_count"])
+    assert count >= 0 and len(waits) == min(count, 64), (count, waits)
+    assert [int(row[1]) for row in waits] == list(range(max(1, count - 63), count + 1)), waits
+    for row in waits:
+        assert len(row) == 5 and row[2] in ("0x80070020", "0x80070021") and row[3] == "read_all_text", row
+        assert row[4].endswith(".tsv"), row
+
 def csv_rows(path):
     with path.open(newline="", encoding="utf-8") as stream:
         return list(csv.DictReader(stream))
@@ -255,6 +265,7 @@ def verify_scenario(output, scenario, source_digest):
         assert participant["interrupted_main_trials"] == "1" and int(participant["main_trials"]) < 24, participant
         assert operator["stop_acknowledged"] == "True" and operator["stop_pending"] == "False", operator
     for role, report in (("participant", participant), ("operator", operator)):
+        verify_lifecycle_read_evidence(output / (role + "-report.tsv"), report)
         with (output / (role + "-clock-exchanges.tsv")).open(newline="", encoding="utf-8") as stream:
             exchanges = list(csv.DictReader(stream, delimiter="\t"))
         assert 3 <= len(exchanges) <= 256, (role, len(exchanges))
