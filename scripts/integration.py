@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from test import ROOT, unity_tools
+from journal_integration import verify_recording, run_killed_recording
 
 STARTUP_TIMEOUT_SECONDS = 15
 STARTUP_HOLD_SECONDS = .5  # Deliberate delayed-peer fixture, never a readiness mechanism.
@@ -171,7 +172,7 @@ def run_scenario(launch, build, scenario, source_digest):
         def launch_role(role):
             local, remote = endpoints[role]
             processes[role] = subprocess.Popen(launch + [role, session, str(local), str(remote), str(output), scenario,
-                                                       "--startup-barrier", str(barrier), "--scenario-completion"], env=environment)
+                                                       "--startup-barrier", str(barrier), "--scenario-completion", "--journal"], env=environment)
         launch_role(first)
         wait_for_ready(output, barrier, processes, endpoints, session, deadline)
         # Exercise both startup orders across the scenarios. The first bound peer
@@ -194,6 +195,9 @@ def run_scenario(launch, build, scenario, source_digest):
         verify_startup(output, barrier, ready, session)
         verify_completion(output, barrier, session, scenario)
         verify_scenario(output, scenario, source_digest)
+        for role in ("participant", "operator"):
+            report, _, _ = read_report(output / (role + "-report.tsv"))
+            verify_recording(launch, output, role, report)
     except Exception:
         print_failure_evidence(output)
         raise
@@ -291,6 +295,7 @@ def main():
         launch = [str(mono), str(binary)]
     run_scenario(launch, build, "fault-script", source_digest)
     run_scenario(launch, build, "safety-stop", source_digest)
+    run_killed_recording(launch, build, source_digest, release_startup)
     print("SIMULATION ONLY: one host, no headset; partial software sessions, no study completion or actual camera rendering claimed.")
     return 0
 

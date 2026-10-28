@@ -64,7 +64,7 @@ namespace AvatarStroop.Core
         public string QuestionnaireLanguage { get; private set; }
         public double CountdownSeconds { get; private set; }
         public const string ProtocolVersion = "2026-10-28-prd-66dbdb5";
-        public const string SoftwareVersion = "0.3.0-dev";
+        public const string SoftwareVersion = "0.4.0-dev";
         // No countdown or questionnaire language is silently selected for a study.
         public SessionConfiguration(string sessionId, uint seed, Allocation allocation, RunKind runKind,
             string questionnaireLanguage, double countdownSeconds)

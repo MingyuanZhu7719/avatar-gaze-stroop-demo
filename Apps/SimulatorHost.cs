@@ -15,13 +15,30 @@ namespace AvatarStroop.Apps
         {
             try
             {
-                if(args.Length!=6&&((args.Length!=8&&args.Length!=9)||args[6]!="--startup-barrier"||(args.Length==9&&args[8]!="--scenario-completion")))
-                    throw new ArgumentException("Usage: operator|participant SESSION LOCAL_PORT REMOTE_PORT OUTPUT_DIRECTORY fault-script|safety-stop|normal [--startup-barrier DIRECTORY [--scenario-completion]]");
+                if(args.Length==3&&args[0]=="journal-extract")
+                {
+                    var evidence=JournalEvidenceExporter.Export(Path.GetFullPath(args[1]),Path.GetFullPath(args[2]));
+                    if(!evidence.Success)throw new IOException(evidence.Error);
+                    Report(Console.Out,"extraction_directory",evidence.DirectoryPath);Report(Console.Out,"journal_status",evidence.ReadResult.Status);
+                    Report(Console.Out,"verified_bytes",evidence.ReadResult.VerifiedBytes);Report(Console.Out,"record_count",evidence.ReadResult.RecordCount);
+                    return 0;
+                }
+                if(args.Length<6)throw new ArgumentException("Usage: operator|participant SESSION LOCAL_PORT REMOTE_PORT OUTPUT_DIRECTORY fault-script|safety-stop|normal [--journal] [--startup-barrier DIRECTORY] [--scenario-completion|--journal-kill-fixture]; or journal-extract JOURNAL_PATH OUTPUT_PARENT");
                 string role=args[0],session=args[1],output=Path.GetFullPath(args[4]);
-                string barrier=args.Length>=8?Path.GetFullPath(args[7]):null;
-                bool completion=args.Length==9;
-                if(completion&&args[5]!="fault-script"&&args[5]!="safety-stop")throw new ArgumentException("Scenario completion requires a recognized integration fixture");
+                bool recording=false,completion=false,killFixture=false;string barrier=null;long lastAcknowledged=-1;
+                for(int i=6;i<args.Length;i++)
+                {
+                    if(args[i]=="--journal"&&!recording)recording=true;
+                    else if(args[i]=="--scenario-completion"&&!completion)completion=true;
+                    else if(args[i]=="--journal-kill-fixture"&&!killFixture)killFixture=true;
+                    else if(args[i]=="--startup-barrier"&&barrier==null&&i+1<args.Length)barrier=Path.GetFullPath(args[++i]);
+                    else throw new ArgumentException("Unknown, duplicate or incomplete simulation option: "+args[i]);
+                }
                 if(barrier!=null&&!Directory.Exists(barrier))throw new ArgumentException("Startup barrier directory must already exist");
+                if(completion&&(barrier==null||(args[5]!="fault-script"&&args[5]!="safety-stop")))throw new ArgumentException("Scenario completion requires its startup barrier and a recognized integration fixture");
+                if(killFixture&&(!recording||barrier==null||completion||args[5]!="normal"))throw new ArgumentException("Journal kill fixture requires --journal, its startup barrier, normal scenario and no completion claim");
+                var provenance=new ExportProvenance("independent-process-headless-simulator","headless software acknowledgement; not a rendered display",
+                    "synthetic timed first press edge",Environment.GetEnvironmentVariable("STROOP_BUILD_SOURCE_DIGEST"));
                 int local=Int32.Parse(args[2],CultureInfo.InvariantCulture),remote=Int32.Parse(args[3],CultureInfo.InvariantCulture);
                 Directory.CreateDirectory(output);
                 Console.WriteLine("SIMULATION ONLY — independent "+role+" process; no real tracking or headset.");
@@ -29,14 +46,19 @@ namespace AvatarStroop.Apps
                 {
                     using(var app=new OperatorSimulationApplication(session,local,remote,args[5]=="fault-script",args[5]=="safety-stop"))
                     {
+                        if(recording)app.EnableRecording(Path.Combine(output,"operator-journal.asj"),provenance,.1);
                         double activeStart=WaitForStartup(app,role,local,remote,barrier);
+                        Action tick=()=>{app.Tick();CheckRecording(app);AcknowledgeRecording(app,role,app.CurrentTask==null?"None":app.CurrentTask.Phase.ToString(),app.AcquiredSamples.Count,ref lastAcknowledged);};
                         int postExitTicks=0;
-                        if(completion)RunOperatorScenario(app,args[5],barrier,output,activeStart,out postExitTicks);
-                        else while(app.Clock.Now-activeStart<8){app.Tick();Thread.Sleep(2);}
+                        if(killFixture)RunJournalKillFixture(app,activeStart,tick);
+                        else if(completion)RunOperatorScenario(app,args[5],barrier,output,activeStart,tick,out postExitTicks);
+                        else while(app.Clock.Now-activeStart<8){tick();Thread.Sleep(2);}
                         double activeElapsed=app.Clock.Now-activeStart;
+                        app.CloseRecording();CheckRecording(app);
                         using(var writer=new StreamWriter(Path.Combine(output,"operator-report.tsv")))
                         {
                             Report(writer,"pid",Process.GetCurrentProcess().Id);Report(writer,"samples_sent",app.SamplesSent);
+                            Report(writer,"acquired_samples",app.AcquiredSamples.Count);RecordingReport(writer,app);
                             StartupReport(writer,barrier,activeStart,activeElapsed);
                             CompletionReport(writer,completion,postExitTicks);
                             Report(writer,"samples_send_failed",app.SamplesSendFailed);Report(writer,"samples_suppressed",app.SamplesSuppressed);
@@ -59,17 +81,21 @@ namespace AvatarStroop.Apps
                 {
                     using(var app=new ParticipantSimulationApplication(session,local,remote))
                     {
+                        if(recording)app.EnableRecording(Path.Combine(output,"participant-journal.asj"),provenance,.1);
                         double activeStart=WaitForStartup(app,role,local,remote,barrier);
-                        if(completion)RunParticipantScenario(app,args[5],barrier,output,activeStart);
-                        else while(app.Clock.Now-activeStart<7){app.Tick();app.RecordControllerEvaluation();app.DriveHeadlessSimulation();Thread.Sleep(2);}
+                        Action tick=()=>{app.Tick();app.RecordControllerEvaluation();app.DriveHeadlessSimulation();CheckRecording(app);AcknowledgeRecording(app,role,app.Experiment.Phase.ToString(),0,ref lastAcknowledged);};
+                        if(killFixture)RunJournalKillFixture(app,activeStart,tick);
+                        else if(completion)RunParticipantScenario(app,args[5],barrier,output,activeStart,tick);
+                        else while(app.Clock.Now-activeStart<7){tick();Thread.Sleep(2);}
                         double activeElapsed=app.Clock.Now-activeStart;
                         WriteClockEvidence(app,output,"participant");
-                        var exported=app.Export(Path.Combine(output,"audit"),new ExportProvenance("independent-process-headless-simulator",
-                            "headless software acknowledgement; not a rendered display","synthetic timed first press edge",Environment.GetEnvironmentVariable("STROOP_BUILD_SOURCE_DIGEST")));
+                        var exported=app.Export(Path.Combine(output,"audit"),provenance);
                         if(!exported.Success)throw new IOException(exported.Error);
+                        app.CloseRecording();CheckRecording(app);
                         using(var writer=new StreamWriter(Path.Combine(output,"participant-report.tsv")))
                         {
                             Report(writer,"pid",Process.GetCurrentProcess().Id);Report(writer,"phase",app.Experiment.Phase);
+                            RecordingReport(writer,app);
                             StartupReport(writer,barrier,activeStart,activeElapsed);
                             CompletionReport(writer,completion,0);
                             Report(writer,"main_trials",app.Experiment.Trials.Count(x=>!x.IsPractice));Report(writer,"ratings",app.Experiment.Ratings.Count);
@@ -92,6 +118,13 @@ namespace AvatarStroop.Apps
             catch(Exception error){Console.Error.WriteLine(error);return 1;}
         }
         const double ScenarioFailSafeSeconds=65; // Engineering test budget, never a participant response deadline.
+        static void RunJournalKillFixture(SimulationPeer app,double start,Action tick)
+        {
+            // Explicit test lifetime: the launcher must kill this process after
+            // observing progress. A slow runner cannot produce a normal report.
+            while(app.Clock.Now-start<ScenarioFailSafeSeconds){tick();Thread.Sleep(2);}
+            throw new TimeoutException("Journal kill fixture was not terminated by its launcher before its engineering timeout");
+        }
         static string Signal(string kind,SimulationPeer app,string scenario)
         {return kind+"\t1\t"+app.Identity.SessionId+"\t"+scenario+"\n";}
         static bool HasSignal(string directory,string name,string expected)
@@ -102,22 +135,25 @@ namespace AvatarStroop.Apps
         }
         static bool ParticipantGoalReached(ParticipantSimulationApplication app,string scenario)
         {
+            var e=app.Experiment;
+            if(scenario=="safety-stop")
+            {if(e.Phase!=Phase.Paused||app.AppliedRemoteStops!=1||e.Trials.Count(x=>!x.IsPractice&&x.Outcome==TrialOutcome.Interrupted)!=1||e.Trials.Count(x=>!x.IsPractice)>=24)return false;}
+            else if(e.Phase!=Phase.Rest||e.Trials.Count(x=>!x.IsPractice)!=24||e.Ratings.Count!=5)return false;
             if(!app.Synchronizer.Snapshot().Available||app.ClockExchanges.Count<3||
                 app.Packets.Count(x=>x.Accepted&&x.Packet!=null&&x.Packet.Kind==WireKind.HeadEye)<=20||
                 !app.Outputs.Any(x=>x.HeadValid&&x.EyeValid&&x.ActualSource==ControlSource.Simulator))return false;
-            var e=app.Experiment;
             if(scenario=="safety-stop")return e.Phase==Phase.Paused&&app.AppliedRemoteStops==1&&
                 e.Trials.Count(x=>!x.IsPractice&&x.Outcome==TrialOutcome.Interrupted)==1&&e.Trials.Count(x=>!x.IsPractice)<24;
             return e.Phase==Phase.Rest&&e.Trials.Count(x=>!x.IsPractice)==24&&e.Ratings.Count==5&&
                 new[]{"HeadInvalid","EyeInvalid","ConnectionStale","RecoveryDecisionRequired"}.All(kind=>app.Monitor.Events.Any(x=>x.Kind=="fault_started"&&x.Detail==kind));
         }
-        static void RunParticipantScenario(ParticipantSimulationApplication app,string scenario,string directory,string output,double start)
+        static void RunParticipantScenario(ParticipantSimulationApplication app,string scenario,string directory,string output,double start,Action tick)
         {
             bool goalWritten=false;
             while(true)
             {
                 CheckScenarioDeadline(app,scenario,directory,output,start);
-                app.Tick();app.RecordControllerEvaluation();app.DriveHeadlessSimulation();
+                tick();
                 if(!goalWritten&&ParticipantGoalReached(app,scenario))
                 {
                     string goal=Signal("PARTICIPANT_GOAL",app,scenario).TrimEnd('\n');
@@ -146,13 +182,13 @@ namespace AvatarStroop.Apps
             foreach(var trial in expected){string observed;if(!app.ObservedTrials.TryGetValue(trial.Key,out observed)||observed!=trial.Value)return false;}
             return scenario=="fault-script"||(app.StopDelivery.Acknowledged&&!app.StopDelivery.Pending);
         }
-        static void RunOperatorScenario(OperatorSimulationApplication app,string scenario,string directory,string output,double start,out int postExitTicks)
+        static void RunOperatorScenario(OperatorSimulationApplication app,string scenario,string directory,string output,double start,Action tick,out int postExitTicks)
         {
             bool completeWritten=false;postExitTicks=0;
             while(true)
             {
                 CheckScenarioDeadline(app,scenario,directory,output,start);
-                app.Tick();
+                tick();
                 if(!completeWritten&&OperatorGoalReached(app,scenario,directory))
                 {WriteStartupRecord(Path.Combine(directory,"operator-complete.tsv"),Signal("OPERATOR_COMPLETE",app,scenario).TrimEnd('\n'));completeWritten=true;}
                 if(HasSignal(directory,"participant-exited.tsv",Signal("PARTICIPANT_EXITED",app,scenario)))
@@ -160,7 +196,7 @@ namespace AvatarStroop.Apps
                     if(!completeWritten)throw new InvalidDataException("Participant exit arrived before acknowledged scenario completion");
                     // The launcher has reaped the participant. Exercise the existing
                     // transport lifecycle once after peer exit; do not reopen/retry it.
-                    app.Tick();postExitTicks=1;
+                    tick();postExitTicks=1;
                     WriteStartupRecord(Path.Combine(directory,"operator-post-exit.tsv"),Signal("OPERATOR_POST_EXIT_TICK",app,scenario).TrimEnd('\n'));return;
                 }
                 Thread.Sleep(2);
@@ -233,6 +269,26 @@ namespace AvatarStroop.Apps
             Report(writer,"startup_barrier_enabled",barrier!=null);
             Report(writer,"active_started_local_seconds",activeStart.ToString("R",CultureInfo.InvariantCulture));
             Report(writer,"active_elapsed_seconds",activeElapsed.ToString("R",CultureInfo.InvariantCulture));
+        }
+        static void CheckRecording(SimulationPeer app)
+        {if(app.RecordingWarning!=null)throw new IOException(app.RecordingWarning);}
+        static void AcknowledgeRecording(SimulationPeer app,string role,string phase,int acquired,ref long previous)
+        {
+            var journal=app.Recording;if(journal==null||journal.IsFaulted||journal.LastFlushedSequence==previous)return;
+            // Tick may have flushed before input changed the phase. Capture and
+            // flush again so the phase/count in this acknowledgment is covered.
+            app.CaptureRecording();
+            if(!journal.TryAppend("runtime_ack_context",SimulationJournalCapture.Fields("phase",phase,"acquired_samples",acquired))||!app.CaptureRecording(true))
+                throw new IOException(app.RecordingWarning??"Recording acknowledgment failed");
+            previous=journal.LastFlushedSequence;
+            Console.WriteLine(String.Join("\t",new[]{"JOURNAL_ACK",role,previous.ToString(CultureInfo.InvariantCulture),journal.LastFlushedOffset.ToString(CultureInfo.InvariantCulture),phase,acquired.ToString(CultureInfo.InvariantCulture)}));Console.Out.Flush();
+        }
+        static void RecordingReport(TextWriter writer,SimulationPeer app)
+        {
+            var journal=app.Recording;Report(writer,"journal_enabled",journal!=null);if(journal==null)return;
+            Report(writer,"journal_session_id",journal.Identity.SessionId);Report(writer,"journal_build_source_digest",journal.Identity.Provenance.BuildSourceDigest);
+            Report(writer,"journal_path",journal.Path);Report(writer,"journal_flushed_sequence",journal.LastFlushedSequence);Report(writer,"journal_flushed_offset",journal.LastFlushedOffset);
+            Report(writer,"journal_error",journal.Error);
         }
         static void WriteClockEvidence(SimulationPeer app,string output,string role)
         {

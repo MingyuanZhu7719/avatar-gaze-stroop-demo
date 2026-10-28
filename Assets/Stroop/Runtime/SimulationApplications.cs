@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Globalization;
+using System.IO;
 using System.Net;
 using AvatarStroop.Core;
 
@@ -66,6 +67,15 @@ namespace AvatarStroop.Runtime
         double nextHello,nextSync;
         int exchange;
         bool connectionFaultRecorded;
+        bool networkStarted;
+        double nextRecordingFlush,recordingFlushInterval;
+        int recordingFaultCursor;
+        long recordingClockRevision=-1;
+        protected SimulationJournalCapture RecordingCapture {get;private set;}
+        public ContinuousJournal Recording {get;private set;}
+        public string RecordingWarning {get{return Recording!=null&&Recording.IsFaulted?
+            "RECORDING FAILED: "+Recording.Error+"; last acknowledged sequence="+Recording.LastFlushedSequence.ToString(CultureInfo.InvariantCulture)+
+            ", bytes="+Recording.LastFlushedOffset.ToString(CultureInfo.InvariantCulture):null;}}
         readonly List<PacketObservation> packets=new List<PacketObservation>();
         readonly List<ClockExchangeObservation> clockExchanges=new List<ClockExchangeObservation>();
         public MonotonicClock Clock {get;private set;}
@@ -85,6 +95,56 @@ namespace AvatarStroop.Runtime
             socket=transport??new UdpPeer(new IPEndPoint(IPAddress.Loopback,localPort),new IPEndPoint(IPAddress.Loopback,remotePort),false);
         }
         protected virtual bool SuppressOutgoing {get{return false;}}
+        protected virtual SimulationJournalCapture CreateRecordingCapture(ContinuousJournal journal){return new SimulationJournalCapture(journal);}
+        public void EnableRecording(string path,ExportProvenance provenance,double flushIntervalSeconds)
+        {
+            if(Recording!=null||networkStarted)throw new InvalidOperationException("Enable recording once before the first network tick");
+            if(String.IsNullOrWhiteSpace(path)||!Path.IsPathRooted(path))throw new ArgumentException("An explicit absolute journal path is required");
+            if(Double.IsNaN(flushIntervalSeconds)||Double.IsInfinity(flushIntervalSeconds)||flushIntervalSeconds<=0)throw new ArgumentOutOfRangeException("flushIntervalSeconds");
+            string role=Identity.Role==PeerRole.Participant?"participant":"operator";
+            EnableRecording(ContinuousJournal.CreateNew(path,new JournalIdentity(Identity.SessionId,role,Clock.ClockId,provenance)),flushIntervalSeconds);
+        }
+        internal void EnableRecording(ContinuousJournal journal,double flushIntervalSeconds)
+        {
+            if(Recording!=null||networkStarted)throw new InvalidOperationException("Enable recording once before the first network tick");
+            if(Double.IsNaN(flushIntervalSeconds)||Double.IsInfinity(flushIntervalSeconds)||flushIntervalSeconds<=0)throw new ArgumentOutOfRangeException("flushIntervalSeconds");
+            string role=Identity.Role==PeerRole.Participant?"participant":"operator";
+            if(journal==null||journal.Identity.SessionId!=Identity.SessionId||journal.Identity.Role!=role||journal.Identity.ClockId!=Clock.ClockId)throw new ArgumentException("Recorder identity must match this application");
+            Recording=journal;
+            RecordingCapture=CreateRecordingCapture(Recording);recordingFlushInterval=flushIntervalSeconds;
+            if(!Recording.IsFaulted)Recording.TryAppend("recording_configuration",SimulationJournalCapture.Fields("started_local_seconds",Clock.Now,
+                "flush_interval_seconds",flushIntervalSeconds,"flush_policy","development_owner_thread_periodic;loop_stalls_can_delay_flush",
+                "durability_scope","successful_FileStream_Flush_true_return;physical_power_loss_not_verified","recovery_policy","offline_evidence_only_no_task_resume"));
+            CaptureRecording(true);
+        }
+        public bool CaptureRecording(bool flush=false)
+        {
+            if(Recording==null)return true;
+            if(!RecordingCapture.Capture())return false;
+            for(;recordingFaultCursor<Monitor.Events.Count;recordingFaultCursor++)
+            {
+                var e=Monitor.Events[recordingFaultCursor];
+                if(!Recording.TryAppend("peer_fault",SimulationJournalCapture.Fields("fault_index",recordingFaultCursor,"kind",e.Kind,"source_id",e.SourceId,
+                    "local_seconds",e.LocalSeconds,"clock_id",Clock.ClockId,"detail",e.Detail)))return false;
+            }
+            if(Identity.Role==PeerRole.Operator)
+            {
+                var map=Synchronizer.Snapshot();
+                if(map.Revision!=recordingClockRevision)
+                {
+                    if(!Recording.TryAppend("peer_clock_snapshot",SimulationJournalCapture.Fields("revision",map.Revision,"available",map.Available,"unavailable_reason",map.UnavailableReason,
+                        "local_clock_id",map.LocalClockId,"remote_clock_id",map.RemoteClockId,"local_reference_seconds",map.LocalReferenceSeconds,"remote_reference_seconds",map.RemoteReferenceSeconds,
+                        "offset_seconds",map.RemoteMinusLocalSeconds,"drift_parts_per_million",map.RemoteDriftPartsPerMillion,"uncertainty_seconds",map.UncertaintySeconds,
+                        "minimum_rate",map.MinimumLocalSecondsPerRemoteSecond,"maximum_rate",map.MaximumLocalSecondsPerRemoteSecond,"point_estimate_method",map.PointEstimateMethod)))return false;
+                    recordingClockRevision=map.Revision;
+                }
+            }
+            if(flush||Clock.Now>=nextRecordingFlush)
+            {if(!Recording.Flush())return false;nextRecordingFlush=Clock.Now+recordingFlushInterval;}
+            return !Recording.IsFaulted;
+        }
+        public bool CloseRecording()
+        {return Recording==null||CaptureRecording()&&Recording.Close();}
         protected virtual void AcceptedPacket(WirePacket packet,double received){}
         protected virtual void ConnectionFaulted(){}
         protected long NextPacketSequence() {return outgoing++;}
@@ -104,6 +164,7 @@ namespace AvatarStroop.Runtime
         }
         protected void TickNetwork()
         {
+            networkStarted=true;
             if(connectionFaultRecorded)return;
             UdpReceiveResult received;
             while((received=socket.Poll())!=null)
@@ -120,6 +181,13 @@ namespace AvatarStroop.Runtime
                 {
                     bool accepted=Synchronizer.ObserveReply(received.Packet,now);
                     clockExchanges.Add(new ClockExchangeObservation{Reply=received.Packet,ReceivedSeconds=now,Accepted=accepted,Rejection=Synchronizer.LastRejection,Mapping=Synchronizer.Snapshot()});
+                    if(Recording!=null&&!Recording.IsFaulted)
+                    {
+                        var reply=received.Packet;var map=Synchronizer.Snapshot();
+                        Recording.TryAppend("clock_exchange",SimulationJournalCapture.Fields("exchange_id",reply.ExchangeId,"local_clock_id",reply.RequestClockId,"remote_clock_id",reply.Peer.ClockId,
+                            "t0_local_sent",reply.RequestSentSeconds,"t1_remote_received",reply.RemoteReceivedSeconds,"t2_remote_sent",reply.RemoteSentSeconds,"t3_local_received",now,
+                            "accepted",accepted,"rejection",Synchronizer.LastRejection,"mapping_revision",map.Revision,"mapping_available",map.Available,"mapping_unavailable_reason",map.UnavailableReason));
+                    }
                     if(clockExchanges.Count>256)clockExchanges.RemoveAt(0);
                 }
                 if(connectionFaultRecorded)return;
@@ -136,7 +204,7 @@ namespace AvatarStroop.Runtime
                 nextSync=Clock.Now+.1;
             }
         }
-        public void Dispose(){socket.Dispose();}
+        public void Dispose(){try{if(Recording!=null){CloseRecording();Recording.Dispose();}}finally{socket.Dispose();}}
     }
 
     public sealed class OperatorSimulationApplication : SimulationPeer
@@ -149,6 +217,7 @@ namespace AvatarStroop.Runtime
         readonly bool scriptedStop;
         double nextStopRetry;
         bool scriptedStopSent;
+        string recordedTaskKey;
         public SafetyStopRequestState StopDelivery {get;private set;}=new SafetyStopRequestState();
         readonly Dictionary<string,string> observedTrials=new Dictionary<string,string>();
         readonly List<HeadEyeSample> acquired=new List<HeadEyeSample>();
@@ -162,15 +231,18 @@ namespace AvatarStroop.Runtime
             :this(session,localPort,remotePort,injectFaults,scriptedStop,null){}
         internal OperatorSimulationApplication(string session,int localPort,int remotePort,bool injectFaults,bool scriptedStop,UdpPeer transport)
             :base(session,PeerRole.Operator,localPort,remotePort,transport){this.injectFaults=injectFaults;this.scriptedStop=scriptedStop;}
-        protected override void ConnectionFaulted(){CurrentTask=null;}
+        protected override void ConnectionFaulted(){CurrentTask=null;RecordCurrentTask();}
         public void RequestSafetyStop(){StopDelivery.Request();nextStopRetry=0;}
         protected override void AcceptedPacket(WirePacket packet,double received)
         {if(packet.Kind==WireKind.SafetyStopAck)StopDelivery.Acknowledge(packet.StopRequestId);}
         protected override bool SuppressOutgoing
         {get{return injectFaults && mainStarted.HasValue && Clock.Now-mainStarted.Value>=.9 && Clock.Now-mainStarted.Value<1.35;}}
         public void Tick()
+        {try{TickCore();}finally{CaptureRecording();}}
+        void TickCore()
         {
             TickNetwork();CurrentTask=Monitor.CurrentTask(Clock.Now,Synchronizer);
+            RecordCurrentTask();
             if(scriptedStop&&!scriptedStopSent&&mainStarted.HasValue&&Clock.Now-mainStarted.Value>=.3)
             {scriptedStopSent=true;RequestSafetyStop();}
             if(StopDelivery.Pending&&Clock.Now>=nextStopRetry)
@@ -189,11 +261,30 @@ namespace AvatarStroop.Runtime
             bool eye=!(injectFaults && elapsed>=.3 && elapsed<.45),head=!(injectFaults && elapsed>=.6 && elapsed<.75);
             var sample=new HeadEyeSample(raw.SessionId,raw.StreamId,raw.DeviceId,raw.ClockId,raw.BlockIndex,raw.Segment,raw.Sequence,
                 raw.CaptureLocalSeconds,Clock.Now,raw.Source,raw.Role,raw.RawHeadRotation,raw.RawEyeDirection,head,eye);
-            acquired.Add(sample);var transmission=Send(WirePacket.Tracking(Identity,NextPacketSequence(),sample));
+            acquired.Add(sample);
+            if(RecordingCapture!=null)RecordingCapture.RecordAcquisition(sample);
+            double sendMethodEntered=Clock.Now;
+            var transmission=Send(WirePacket.Tracking(Identity,NextPacketSequence(),sample));
+            double sendMethodReturned=Clock.Now;
             if(transmission.Sent)SamplesSent++;
             else if(transmission.ConnectionFault!=null)SamplesSendFailed++;
             else SamplesSuppressed++;
+            if(Recording!=null&&!Recording.IsFaulted)Recording.TryAppend("operator_sample_send_result",SimulationJournalCapture.Fields("stream_id",sample.StreamId,"block_index",sample.BlockIndex,
+                "segment",sample.Segment,"sample_sequence",sample.Sequence,"socket_accepted",transmission.Sent,"connection_fault",transmission.ConnectionFault!=null,
+                "suppressed",!transmission.Sent&&transmission.ConnectionFault==null,"delivery_acknowledged",false,
+                "clock_id",Clock.ClockId,"send_method_entered_seconds",sendMethodEntered,"send_method_returned_seconds",sendMethodReturned,
+                "timestamp_semantics","application_Send_method_boundaries;not_network_emission_or_delivery"));
             nextSample=Clock.Now+.01;
+        }
+        void RecordCurrentTask()
+        {
+            if(Recording==null||Recording.IsFaulted)return;
+            var task=CurrentTask;
+            string key=task==null?"unavailable":task.BlockIndex+"/"+task.Segment+"/"+task.Phase+"/"+task.TrialId+"/"+task.Word+"/"+task.Ink;
+            if(key==recordedTaskKey)return;
+            if(Recording.TryAppend("operator_task_observation",SimulationJournalCapture.Fields("available",task!=null,"observed_local_seconds",Clock.Now,
+                "phase",task==null?null:task.Phase.ToString(),"block_index",task==null?(int?)null:task.BlockIndex,"segment",task==null?(int?)null:task.Segment,
+                "trial_id",task==null?null:task.TrialId,"word",task==null?null:task.Word,"ink",task==null?null:task.Ink,"condition",task==null?null:task.Condition)))recordedTaskKey=key;
         }
         public TaskView View()
         {
@@ -239,6 +330,8 @@ namespace AvatarStroop.Runtime
             Experiment.RecordPreparation(Actor.Owner,"consent_screening_calibration","not_applicable_synthetic_software_rehearsal");
         }
         protected override void ConnectionFaulted(){RefreshPresentation();}
+        protected override SimulationJournalCapture CreateRecordingCapture(ContinuousJournal journal)
+        {return new SimulationJournalCapture(journal,Experiment,Audit);}
         protected override void AcceptedPacket(WirePacket packet,double received)
         {
             if(packet.Kind!=WireKind.SafetyStopRequest)return;
@@ -249,7 +342,7 @@ namespace AvatarStroop.Runtime
         {
             TickNetwork();
             if(Experiment.Phase!=Phase.Countdown||!Experiment.LockedControl.HasValue||SourceReady(Experiment.LockedControl.Value))Experiment.Tick();
-            RefreshPresentation();BroadcastTask();RecordNetworkAudit();
+            RefreshPresentation();BroadcastTask();RecordNetworkAudit();CaptureRecording();
         }
         // Call again after local input so frame state cannot refer to the prior phase/block.
         public void RefreshPresentation()
@@ -318,9 +411,10 @@ namespace AvatarStroop.Runtime
         {
             if(CurrentAvatar!=null)Audit.RecordPresentation(new AvatarPresentationRecord(CurrentAuditContext(),Clock.ClockId,Clock.Now,
                 "headless_controller_evaluation_not_rendered",Experiment.Phase,CurrentAvatar));
+            CaptureRecording();
         }
         public ExportResult Export(string parentDirectory,ExportProvenance provenance)
-        {RecordNetworkAudit();return AuditExporter.Export(Experiment,Audit,parentDirectory,provenance);}
+        {RecordNetworkAudit();CaptureRecording(true);return AuditExporter.Export(Experiment,Audit,parentDirectory,provenance);}
         public bool SourceReady(ControlSelection source)
         {
             if(source==ControlSelection.Automatic)return true;
@@ -334,14 +428,16 @@ namespace AvatarStroop.Runtime
             if(trialFaults.Add(key))Experiment.FlagTechnicalIssue(code);
         }
         public void OwnerBeginPractice()
-        {if(Experiment.Phase==Phase.Preparation)Experiment.BeginFamiliarization(Actor.Owner);Experiment.BeginPractice(Actor.Owner);}
+        {if(Experiment.Phase==Phase.Preparation)Experiment.BeginFamiliarization(Actor.Owner);Experiment.BeginPractice(Actor.Owner);CaptureRecording();}
         public void OwnerLockNextBlock(ControlSelection source)
-        {Experiment.LockBlock(Actor.Owner,source,"development-owner");}
+        {Experiment.LockBlock(Actor.Owner,source,"development-owner");CaptureRecording();}
         public void OwnerBeginBlock()
-        {Experiment.BeginCountdown(Actor.Owner,Experiment.LockedControl.HasValue&&SourceReady(Experiment.LockedControl.Value));}
+        {Experiment.BeginCountdown(Actor.Owner,Experiment.LockedControl.HasValue&&SourceReady(Experiment.LockedControl.Value));CaptureRecording();}
 
         // Opt-in automated test driver. No GUI input path calls this method.
         public void DriveHeadlessSimulation()
+        {try{DriveHeadlessCore();}finally{CaptureRecording();}}
+        void DriveHeadlessCore()
         {
             if((Experiment.Phase==Phase.Practice||Experiment.Phase==Phase.MainTask)&&!Experiment.CurrentTrial.Onset.HasValue)
             {

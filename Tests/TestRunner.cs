@@ -75,6 +75,9 @@ namespace AvatarStroop.Tests
             RuntimeTests.Register(suite);
             GeometryTests.Register(suite);
             OwnerCommandTests.Register(suite);
+            JournalTests.Register(suite);
+            JournalCaptureTests.Register(suite);
+            JournalRuntimeTests.Register(suite);
             Console.WriteLine("RESULT "+suite.Passed+" passed; "+suite.Failed+" failed");
             return suite.Failed==0?0:1;
         }

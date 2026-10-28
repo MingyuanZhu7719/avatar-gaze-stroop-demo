@@ -20,6 +20,7 @@ namespace AvatarStroop.Unity
         ParticipantSimulationApplication participant;
         OperatorSimulationApplication operatorApp;
         string actionError;
+        string recordingSetupError;
         OwnerCommandDispatcher ownerCommands;
         static readonly KeyCode[] colourKeys={KeyCode.Alpha1,KeyCode.Alpha2,KeyCode.Alpha3,KeyCode.Alpha4};
 
@@ -47,6 +48,23 @@ namespace AvatarStroop.Unity
                 }
             }
             else operatorApp=new OperatorSimulationApplication(simulationSessionId,operatorPort,participantPort,false);
+            ConfigureRecording();
+        }
+
+        void ConfigureRecording()
+        {
+            try
+            {
+                string path=null;string[] args=Environment.GetCommandLineArgs();
+                for(int i=0;i<args.Length;i++)if(args[i]=="--stroop-journal")
+                {if(path!=null||i+1>=args.Length)throw new ArgumentException("One absolute journal path is required");path=args[++i];}
+                if(path==null)return;
+                SimulationPeer app=participant!=null?(SimulationPeer)participant:operatorApp;
+                app.EnableRecording(path,new ExportProvenance("unity-development-journal",
+                    "participant app monotonic observation of camera-post-render callback; not photon onset","desktop new-key edge; not validated controller timing"),.1);
+                if(app.RecordingWarning!=null)view.SetFaults(new[]{app.RecordingWarning});
+            }
+            catch(Exception error){recordingSetupError="Recording setup failed: "+error.Message;view.SetFaults(new[]{recordingSetupError});}
         }
 
         void Update()
@@ -58,11 +76,11 @@ namespace AvatarStroop.Unity
                 {
                     participant.Tick();
                     if(ownerCommands!=null)ownerCommands.DispatchPending();
-                    ReadParticipantInput();participant.RefreshPresentation();
+                    ReadParticipantInput();participant.RefreshPresentation();participant.CaptureRecording();
                     view.ApplyTaskView(participant.Experiment.View(Actor.Participant));
                     if(participant.CurrentAvatar!=null)view.ApplyAvatarOutput(participant.CurrentAvatar);
                     else view.ClearAvatarOutput();
-                    var warnings=new List<string>();
+                    var warnings=RecordingWarnings(participant);
                     if(participant.CurrentFaults!=null)
                     {
                         bool selectedTracking=participant.Experiment.LockedControl==ControlSelection.SimulatorRehearsal;
@@ -77,16 +95,28 @@ namespace AvatarStroop.Unity
                 {
                     if(Input.GetKeyDown(KeyCode.P))operatorApp.RequestSafetyStop();
                     operatorApp.Tick();view.ApplyTaskView(operatorApp.View());
-                    var warnings=new List<string>();
+                    var warnings=RecordingWarnings(operatorApp);
                     warnings.AddRange(operatorApp.Monitor.Snapshot(operatorApp.Clock.Now,operatorApp.Synchronizer).Warnings
                         .Where(x=>x.Kind==FaultKind.ConnectionFault||x.Kind==FaultKind.RecoveryDecisionRequired).Select(x=>x.Kind+": "+x.Message));
                     if(operatorApp.CurrentTask==null)warnings.Add("Task stream unavailable or stale. No participant eye/body synchronization.");
                     if(operatorApp.StopDelivery.Pending)warnings.Add("SAFETY STOP PENDING — delivery is not acknowledged.");
                     else if(operatorApp.StopDelivery.Acknowledged)warnings.Add("Safety stop acknowledged by participant application.");
+                    if(actionError!=null)warnings.Add(actionError);
                     view.SetFaults(warnings);
                 }
             }
-            catch(Exception error){actionError=error.Message;view.SetFaults(new[]{actionError});}
+            catch(Exception error)
+            {actionError=error.Message;var warnings=RecordingWarnings(participant!=null?(SimulationPeer)participant:operatorApp);warnings.Add(actionError);view.SetFaults(warnings);}
+        }
+
+        List<string> RecordingWarnings(SimulationPeer app)
+        {
+            // The view has three warning slots. A recording failure must remain
+            // visible when network/task faults already fill all of those slots.
+            var warnings=new List<string>();
+            if(app!=null&&app.RecordingWarning!=null)warnings.Add(app.RecordingWarning);
+            if(recordingSetupError!=null)warnings.Add(recordingSetupError);
+            return warnings;
         }
 
         void ReadParticipantInput()
@@ -124,6 +154,7 @@ namespace AvatarStroop.Unity
                     participant.Clock.ClockId,"same-process-render-callback-pair-v1",observed,unityRenderProxySeconds-observed,null,null,
                     "camera_post_render_proxy_paired_at_callback;display_and_callback_delay_unmeasured"));
                 e.MarkPresented(trialId);
+                participant.CaptureRecording();
             }
             // Engine timestamp is the receiving app's monotonic callback observation.
             // unityRenderProxySeconds is a separate render clock; no photon-onset claim.
@@ -135,6 +166,7 @@ namespace AvatarStroop.Unity
             participant.Audit.RecordPresentation(new AvatarPresentationRecord(new AuditContext(observed.BlockIndex,observed.Segment,observed.TrialId),observed.ClockId,observed.RenderProxySeconds,
                 observed.TimestampMeaning,observed.Phase,observed.CapturedOutput,"development_renderer_policy",observed.AppliedPose,
                 observed.AnyAvatarRendererObserved,observed.HeadHeld,observed.EyesHeld,observed.VisibilityRequested));
+            participant.CaptureRecording();
         }
         static Vec3 ToVec(Vector3 value){return new Vec3(value.x,value.y,value.z);}
 
@@ -163,13 +195,15 @@ namespace AvatarStroop.Unity
         void OwnerAction(Action action)
         {
             if(!Application.isPlaying||participant==null)throw new InvalidOperationException("Owner controls require the participant simulation application in Play mode");
-            try{action();actionError=null;}catch(Exception error){actionError=error.Message;Debug.LogWarning(actionError);}
+            try{action();participant.CaptureRecording();actionError=null;}catch(Exception error){actionError=error.Message;Debug.LogWarning(actionError);}
         }
         void OnDestroy()
         {
             if(view!=null){view.StimulusRendered-=AcknowledgeStimulus;view.AvatarPresented-=RecordAvatarPresentation;}
             if(ownerCommands!=null)ownerCommands.Dispose();
             if(participant!=null)participant.Dispose();if(operatorApp!=null)operatorApp.Dispose();
+            if(participant!=null&&participant.RecordingWarning!=null)Debug.LogWarning(participant.RecordingWarning);
+            if(operatorApp!=null&&operatorApp.RecordingWarning!=null)Debug.LogWarning(operatorApp.RecordingWarning);
         }
     }
 }
