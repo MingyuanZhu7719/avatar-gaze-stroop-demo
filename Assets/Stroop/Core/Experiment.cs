@@ -42,6 +42,8 @@ namespace AvatarStroop.Core
         public Experiment(SessionConfiguration configuration, IClock clock)
         {
             if(configuration == null || clock == null || String.IsNullOrWhiteSpace(clock.ClockId)) throw new ArgumentException("Configuration and named clock required");
+            if(configuration.RunKind != RunKind.Simulation)
+                throw new InvalidOperationException("Apparatus sessions are unavailable: real head/eye adapters, approved fault/recovery policy, calibration and timing validation are not complete.");
             Configuration=configuration; this.clock=clock; lastTime=clock.Now;
             if(Double.IsNaN(lastTime) || Double.IsInfinity(lastTime) || lastTime < 0) throw new ArgumentException("Invalid clock");
             for(int i=0;i<4;i++) lists[i]=TrialPlans.MainList(configuration.Seed,i);

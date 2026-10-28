@@ -38,9 +38,8 @@ namespace AvatarStroop.Tests
                 Check.Throws<InvalidOperationException>(()=>e.BeginCountdown(Actor.Owner,false));
                 Check.Equal(Phase.BlockReady,e.Phase);Check.True(e.Events.Any(x=>x.Kind=="block_configuration_locked"));
             });
-            t.Run("AC-05 simulator cannot enter apparatus session",()=>{
-                var c=new ManualClock();var e=Fixtures.New(c,Condition.A,RunKind.Apparatus);Fixtures.Practice(e,c,8);
-                Check.Throws<InvalidOperationException>(()=>e.LockBlock(Actor.Owner,ControlSelection.SimulatorRehearsal,"owner"));
+            t.Run("AC-05 apparatus cannot start with unresolved adapters and fault policy",()=>{
+                var c=new ManualClock();Check.Throws<InvalidOperationException>(()=>Fixtures.New(c,Condition.A,RunKind.Apparatus));
             });
             t.Run("AC-04 actual onset required, one press edge advances immediately",()=>{
                 var c=new ManualClock();var e=Fixtures.New(c);Fixtures.Practice(e,c,8);Fixtures.Start(e,c);

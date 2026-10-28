@@ -18,3 +18,16 @@ Acceptance identifiers refer to [PRD §7](prd.md). Passing a software regression
 Independent read-only review found and prompted regression fixes for pause during either initial or resumed countdown bypassing source reacquisition, and allocation-ID reuse across roster sizes. Local execution also exposed a floating-point subtraction boundary in countdown completion; the engine compares absolute deadlines instead.
 
 No test asserts a psychological effect, statistical significance, real hardware compatibility, or a synthetic stream being real eye tracking.
+
+## Milestone 2 additions
+
+`GazeControlTests` adds sixteen groups for exact/reversed B boundaries, smooth turns, quaternion/vector edge cases, pause/response-independent active time, shared presentation, source locking, raw/effective validity separation, per-axis transport masks, simulation/apparatus separation, unavailable real acquisition and the independently moving simulator. `FaultTransportTests` adds sixteen groups for strict wire round trips/corruption, packet/sample identity separation, handshake/provenance gates, order/loss/staleness, clock mapping, independent faults, latched recovery, task correspondence, synthetic 120-ppm drift, uncertainty/horizon, changing transit asymmetry and stale-capture rejection, malformed clock exchanges, and actual loopback/endpoint rejection. The complete M2 regression has **60 groups passing**.
+
+| Acceptance | M2 evidence | Still required |
+|---|---|---|
+| AC-05 | Automatic reference and simulator/real-source contracts use the same avatar output; no fallback/retiming; all source identity and validity tests pass | Real VIVE acquisition, validated mapping and rendered integration |
+| AC-06 | Separate head/eye/connection/freshness warning facts; strict capture-age gating and recovery-decision latch; apparatus mode blocked | World-space UI integration, approved message/side/timing and pause/recovery policy |
+| AC-07 | Independent raw sample/wire sequence, named source clocks, tested offset/drift/uncertainty estimator, raw tracking preserved | Persistent cross-stream export and physical timing validation |
+| AC-08 | One-Mac temporary UDP socket exchange only | Two computers/apps and two actual VIVE Pro Eye headsets |
+
+Reconnection is deliberately not implicit. Once an established connection becomes stale, a later handshake cannot clear the development recovery latch or make cached data current. A participant performance result cannot enter the operator task packet grammar. No participant-eye transport is implemented by this operator-control channel.

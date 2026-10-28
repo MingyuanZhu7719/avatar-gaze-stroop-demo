@@ -31,7 +31,7 @@ The latest user-accepted working baseline is now readable directly on GitHub. It
 <!-- BEGIN software-implementation -->
 ## Software implementation
 
-Milestone 1 implements and tests the shared experiment core. It is not yet a complete VR application or verified VIVE Pro Eye integration.
+Milestones 1–2 implement and test the shared experiment core, control-source contracts, provisional transport, clock estimates, and fault facts. These are not yet a complete VR application or verified VIVE Pro Eye integration.
 
 - [Development architecture, milestones, and test commands](docs/development.md)
 - [Requirements and regression coverage](docs/requirements-tests.md)

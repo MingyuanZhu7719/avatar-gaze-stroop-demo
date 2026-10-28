@@ -29,7 +29,21 @@ The engine hides task/avatar during explicit pause, freezes active time, flags a
 - This milestone contains view models and in-memory audit data, not a Unity scene, persistent export, real tracking, or two-computer transport. Subsequent milestones implement and test those adapters separately.
 - No research endpoint, sample size, RT exclusion rule, significance criterion, fault timing threshold, or calibration pass criterion is introduced.
 
-## Verification evidence
+## Milestone 2: control, transport, clocks and fault facts
+
+Software version `0.2.0-dev` adds a shared `AvatarController`, the exact automatic 3.0/.5/3.0/.5-second reference with smooth head/eye interpolation, separate raw and effective head/eye validity, an explicitly unavailable real-operator adapter, and a deterministic continuous simulator whose head and eyes do not follow the automatic trajectory. A locked controller rejects different origins, streams, sessions, blocks, segments and participant measurements. Missing live input produces no current pose and never uses the automatic reference as actual output. `RenderValidated` also applies per-axis transport usability without rewriting the raw sample or promoting invalid tracking to valid.
+
+`Transport.cs` implements a provisional versioned UDP grammar, not the frozen lab protocol. Packet identities and source sample identities are separate. Incoming data is bounded, parsed with invariant numeric/identity rules, pinned to the expected endpoint and peer/session/role/source/device/clock, and rejected on malformed, duplicate, out-of-order, stale or impossible time values. Task snapshots contain phase, trial identity and stimulus, with no response, correctness, RT or ratings. This transport currently allows operator-control tracking only; no reverse participant-gaze synchronization is implied. Remote networking requires explicit opt-in and an agreed development network; the packet grammar is not an authentication mechanism.
+
+Clock exchanges correlate four monotonic timestamps. The provisional estimator exposes offset, drift availability, feasible rate bounds, uncertainty, named clock mapping and a bounded extrapolation horizon. Uncertainty includes the feasible affine rate interval and expands with extrapolation; unbounded rate prevents extrapolation. Tests include synthetic clock offsets/drift and changing asymmetric transit that can otherwise masquerade as drift and make stale data appear current. These are computed development estimates, not validated physical timing accuracy. No packet is current-render-usable without a matching clock map and bounded capture age. Local receipt freshness and raw tracking validity remain separate diagnostic facts.
+
+The receive monitor distinguishes head invalidity, eye invalidity, stale input, missing mapping and stale connection. A connection gap latches `RecoveryDecisionRequired`; later hello packets or new samples remain diagnostic and cannot revive old or new rendering automatically. A new agreed recovery procedure is still required. This is development transport gating, not an approved participant automatic-pause or recovery policy. **The current engine refuses all `RunKind.Apparatus` sessions** until real acquisition/mapping, fault/recovery rules, calibration and timing validation are completed.
+
+M2 does not claim rendered VR faults, two independent app processes, persistent export or headset acquisition; these are separate integration checks. M2 actual verification: **60 test groups passed, 0 failed**, including a real temporary UDP loopback exchange and rejection of an unexpected source endpoint. Local socket tests require sandbox permission; the authorized regression was run with that permission. The core and tests compile with warnings as errors.
+
+The added [regression workflow](../.github/workflows/regression.yml) requests Linux and Windows .NET 8 runs with read-only repository permissions and no deployment. Action major versions were checked against the official [checkout](https://github.com/actions/checkout) and [setup-dotnet](https://github.com/actions/setup-dotnet) repositories. A workflow file is not evidence of a successful remote run; record the actual check result separately after publication.
+
+## Milestone 1 verification evidence
 
 Run from repository root:
 
