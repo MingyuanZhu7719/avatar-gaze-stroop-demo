@@ -3,6 +3,7 @@
 from pathlib import Path
 import csv
 import hashlib
+import math
 import os
 import socket
 import shutil
@@ -10,6 +11,60 @@ import subprocess
 import sys
 import time
 from test import ROOT, unity_tools
+
+STARTUP_TIMEOUT_SECONDS = 15
+STARTUP_HOLD_SECONDS = .5  # Deliberate delayed-peer fixture, never a readiness mechanism.
+
+def assert_waiting_at_startup(output, barrier, processes):
+    for role, process in processes.items():
+        if process.poll() is not None:
+            raise RuntimeError(f"Startup barrier: {role} exited before release (exit {process.returncode})")
+        assert not (barrier / (role + "-first-tick.tsv")).exists(), (role, "ticked before launcher release")
+        assert not (output / (role + "-report.tsv")).exists(), (role, "finished before launcher release")
+    assert not (barrier / "start.tsv").exists(), "Startup barrier was released prematurely"
+
+def wait_for_ready(output, barrier, processes, endpoints, session, deadline):
+    while True:
+        assert_waiting_at_startup(output, barrier, processes)
+        ready = {}
+        for role, process in processes.items():
+            path = barrier / (role + "-ready.tsv")
+            if not path.exists():
+                continue
+            fields = path.read_text(encoding="utf-8-sig").rstrip("\n").split("\t")
+            local, remote = endpoints[role]
+            expected = ["READY", "1", session, role, str(local), str(remote), str(process.pid)]
+            assert len(fields) == 8 and fields[:7] == expected, (path, fields, expected)
+            ready_time = float(fields[7])
+            assert math.isfinite(ready_time) and ready_time >= 0, fields
+            ready[role] = fields
+        if len(ready) == len(processes):
+            return ready
+        if time.monotonic() >= deadline:
+            missing = sorted(set(processes) - set(ready))
+            raise TimeoutError("Startup barrier timed out waiting for bound peers: " + ", ".join(missing))
+        time.sleep(.01)
+
+def release_startup(output, barrier, processes, endpoints, session, deadline):
+    assert set(processes) == {"participant", "operator"}, "Both independent peers must be launched"
+    ready = wait_for_ready(output, barrier, processes, endpoints, session, deadline)
+    assert_waiting_at_startup(output, barrier, processes)
+    pending = barrier / "start.tsv.pending"
+    with pending.open("xb") as stream:
+        stream.write(("START\t1\t" + session + "\n").encode("utf-8"))
+    pending.rename(barrier / "start.tsv")
+    return ready
+
+def stop_processes(processes):
+    for process in processes.values():
+        if process.poll() is None:
+            process.terminate()
+    for process in processes.values():
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
 
 def free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as stream:
@@ -51,21 +106,47 @@ def verify_export(report, source_digest):
 def run_scenario(launch, build, scenario, source_digest):
     output = build / ("integration-" + scenario + "-" + str(time.time_ns()))
     output.mkdir()
+    print("Evidence: " + str(output), flush=True)
+    barrier = output / "startup"
+    barrier.mkdir()
     participant_port, operator_port = free_port(), free_port()
     while operator_port == participant_port: operator_port = free_port()
     session = "synthetic-loopback-" + str(time.time_ns())
     environment = dict(os.environ, STROOP_BUILD_SOURCE_DIGEST=source_digest)
-    processes = []
+    endpoints = {"participant": (participant_port, operator_port), "operator": (operator_port, participant_port)}
+    processes = {}
+    first = "operator" if scenario == "fault-script" else "participant"
+    second = "participant" if first == "operator" else "operator"
+    deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     try:
-        for role, local, remote in [("participant", participant_port, operator_port), ("operator", operator_port, participant_port)]:
-            processes.append(subprocess.Popen(launch + [role, session, str(local), str(remote), str(output), scenario], env=environment))
-        for process in processes:
-            if process.wait(timeout=20) != 0: raise RuntimeError("Independent app failed")
+        def launch_role(role):
+            local, remote = endpoints[role]
+            processes[role] = subprocess.Popen(launch + [role, session, str(local), str(remote), str(output), scenario,
+                                                       "--startup-barrier", str(barrier)], env=environment)
+        launch_role(first)
+        wait_for_ready(output, barrier, processes, endpoints, session, deadline)
+        # Exercise both startup orders across the scenarios. The first bound peer
+        # must stay before its first tick while the second peer is deliberately absent.
+        held_since = time.monotonic()
+        while time.monotonic() - held_since < STARTUP_HOLD_SECONDS:
+            assert_waiting_at_startup(output, barrier, processes)
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Startup barrier deadline expired during delayed-peer fixture")
+            time.sleep(.01)
+        held_seconds = time.monotonic() - held_since
+        assert held_seconds >= STARTUP_HOLD_SECONDS
+        launch_role(second)
+        ready = release_startup(output, barrier, processes, endpoints, session, deadline)
+        (barrier / "launcher-evidence.tsv").write_text(
+            "first_role\t" + first + "\nheld_ready_seconds\t" + str(held_seconds) + "\nboth_bound_before_release\tTrue\n",
+            encoding="utf-8")
+        for role, process in processes.items():
+            if process.wait(timeout=20) != 0:
+                raise RuntimeError("Independent app failed after startup release: " + role)
     finally:
-        for process in processes:
-            if process.poll() is None: process.terminate()
-    print("Evidence: " + str(output), flush=True)
+        stop_processes(processes)
     try:
+        verify_startup(output, barrier, ready, session)
         verify_scenario(output, scenario, source_digest)
     except (AssertionError, OSError, ValueError):
         # Preserve exact bounded evidence in hosted CI logs as well as local files.
@@ -75,6 +156,19 @@ def run_scenario(launch, build, scenario, source_digest):
                 print("FAILED RUN CLOCK EVIDENCE: " + str(diagnostic), file=sys.stderr)
                 print(diagnostic.read_text(encoding="utf-8"), file=sys.stderr)
         raise
+
+def verify_startup(output, barrier, ready, session):
+    assert (barrier / "start.tsv").read_bytes() == ("START\t1\t" + session + "\n").encode("utf-8")
+    for role, duration in (("participant", 7), ("operator", 8)):
+        first_tick = (barrier / (role + "-first-tick.tsv")).read_text(encoding="utf-8-sig").rstrip("\n").split("\t")
+        assert len(first_tick) == 8 and first_tick[:7] == ["FIRST_TICK"] + ready[role][1:7], first_tick
+        start = float(first_tick[7])
+        assert math.isfinite(start) and start >= float(ready[role][7]), (ready[role], first_tick)
+        report, _, _ = read_report(output / (role + "-report.tsv"))
+        assert report["startup_barrier_enabled"] == "True", report
+        assert float(report["active_started_local_seconds"]) == start, (report, first_tick)
+        assert float(report["active_elapsed_seconds"]) >= duration, report
+    print("PASS startup rendezvous: both peers bound before release; delayed peer did not consume 7/8-second active runs")
 
 def verify_scenario(output, scenario, source_digest):
     participant, expected, faults = read_report(output / "participant-report.tsv")

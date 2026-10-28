@@ -101,6 +101,14 @@ The operator report now persists monitor fault events and distinguishes socket-a
 
 The publishing task independently ran `python3 scripts/test.py`: **114 groups passed, 0 failed**, including all prior regressions and 13 new socket/monitor/runtime groups. `python3 scripts/integration.py` passed both fault-script and safety-stop independent-process scenarios with the original clock, correspondence and export checks. `python3 scripts/compile-unity.py` passed for 13 core/runtime, five Unity runtime and one Editor source files, with warnings as errors. These local results use the installed Mono/Roslyn compiler and do not establish Windows CI or headset execution; the follow-up commit's CI result is reported separately.
 
+### Explicit simulator startup rendezvous
+
+The following [Windows CI run](https://github.com/MingyuanZhu7719/avatar-gaze-stroop-demo/actions/runs/40733229753) passed all 114 regression groups and the owner-console build, but its independent processes started in the opposite order: neither collected a clock exchange or tracking sample. Sending before the peer has bound its UDP port can produce the same terminal connection reset. The socket fault behavior remains unchanged.
+
+The integration launcher now explicitly passes `--startup-barrier DIRECTORY` to each simulator host. Each host binds its socket, atomically records its session, role, endpoints and PID, and waits for the launcher to validate both ready records before releasing a matching start record. A first-tick marker makes premature execution detectable. Readiness and release waits have bounded timeouts and early-exit diagnostics. This is an opt-in, shared-filesystem test rendezvous on one host, not a lab networking or recovery protocol. The ordinary six-argument simulator launch remains available; it does not silently discover or reconnect peers.
+
+`python3 scripts/test.py` again passed **114 groups, 0 failed**. `python3 scripts/integration.py` passed both scenarios while deliberately delaying the second peer by 0.5 seconds and testing both startup orders. It verifies no first tick or report before release, and at least seven participant/eight operator active seconds after release. All prior task, source, clock, fault and export assertions remain active. Hosted Windows validation is reported against the follow-up commit separately.
+
 ### Editor attempt and remaining apparatus work
 
 One ordinary installed Editor batch run was attempted with `-batchmode -nographics -noUpm -quit` and the scene-builder entry point. It exited **1 before import/scene generation** because **no valid Unity Editor license was found**. No activation, credentials, license change, package install or retry was performed. This was a missing licensing prerequisite, not an automatic approval rejection. Full logs remain local and are not published.
