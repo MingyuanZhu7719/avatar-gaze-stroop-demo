@@ -34,11 +34,14 @@ namespace AvatarStroop.Core
     public sealed class ClockMappingSnapshot
     {
         public bool Available {get;internal set;}
+        public string UnavailableReason {get;internal set;}
+        public string PointEstimateMethod {get;internal set;}
         public bool DriftAvailable {get;internal set;}
         public bool DevelopmentOnly {get{return true;}}
         public string LocalClockId {get;internal set;}
         public string RemoteClockId {get;internal set;}
         public int SampleCount {get;internal set;}
+        public long Revision {get;internal set;}
         public double LocalReferenceSeconds {get;internal set;}
         public double RemoteReferenceSeconds {get;internal set;}
         // Offset is remote minus local at the reference instant, not a Unix-clock offset.
@@ -62,6 +65,7 @@ namespace AvatarStroop.Core
         readonly string localClockId,remoteClockId;
         double lastRequest=-1,lastLocalReceive=-1,lastRemoteReceive=-1,lastAcceptedRequest=-1;
         bool invalidated;
+        public long Revision {get;private set;}
         public string LastRejection {get;private set;}
         public ClockSynchronizer(string localClockId,string remoteClockId,DevelopmentClockConfiguration config)
         {
@@ -73,7 +77,7 @@ namespace AvatarStroop.Core
         public bool RegisterRequest(string exchangeId,double localSent)
         {
             WireCodec.RequireIdentity(exchangeId);
-            if(!WireCodec.Finite(localSent)||localSent<0||localSent<lastRequest) {invalidated=true;return Reject("local_request_clock_invalid");}
+            if(!WireCodec.Finite(localSent)||localSent<0||localSent<lastRequest) {Invalidate();return Reject("local_request_clock_invalid");}
             if(issued.Contains(exchangeId)) return Reject("duplicate_exchange_id");
             if(pending.Count>=64) return Reject("pending_limit_expire_requests_explicitly");
             pending.Add(exchangeId,localSent);issued.Add(exchangeId);lastRequest=localSent;LastRejection=null;return true;
@@ -88,63 +92,106 @@ namespace AvatarStroop.Core
             double t1=reply.RemoteReceivedSeconds,t2=reply.RemoteSentSeconds;
             if(!WireCodec.Finite(localReceived)||localReceived<sent || t1<0 || t2<t1) return Reject("invalid_exchange_order");
             // A delayed reply is rejected without invalidating a newer map. A clock reset requires an explicit new synchronizer.
-            if(localReceived<lastLocalReceive) {invalidated=true;return Reject("local_clock_rollback");}
-            if(t1<lastRemoteReceive) {if(sent>=lastAcceptedRequest)invalidated=true;return Reject("reordered_reply_or_remote_clock_rollback");}
-            double slope=Snapshot().LocalSecondsPerRemoteSecond;
-            if(slope<=0) slope=1;
-            double transit=(localReceived-sent)-slope*(t2-t1);
-            if(!WireCodec.Finite(transit)||transit<0 || transit>config.MaximumRoundTripSeconds) return Reject("unusable_round_trip");
-            observations.Add(new Observation{T0=sent,T1=t1,T2=t2,T3=localReceived,Local=sent+(localReceived-sent)/2,Remote=t1+(t2-t1)/2});
-            if(observations.Count>64) observations.RemoveAt(0);
-            lastLocalReceive=localReceived;lastRemoteReceive=t1;lastAcceptedRequest=sent;LastRejection=null;return true;
+            if(localReceived<lastLocalReceive) {Invalidate();return Reject("local_clock_rollback");}
+            if(t1<lastRemoteReceive) {if(sent>=lastAcceptedRequest)Invalidate();return Reject("reordered_reply_or_remote_clock_rollback");}
+            // Assess the candidate jointly with the retained timestamps. The previous
+            // point estimate can reject valid narrow-RTT replies and prevent its own
+            // refinement. A rejected candidate must not evict or alter the old window.
+            var candidate=new List<Observation>(observations);
+            candidate.Add(new Observation{T0=sent,T1=t1,T2=t2,T3=localReceived,Local=sent+(localReceived-sent)/2,Remote=t1+(t2-t1)/2});
+            if(candidate.Count>64)candidate.RemoveAt(0);
+            var estimate=Estimate(candidate);
+            if(!estimate.Available)return Reject("candidate_"+estimate.UnavailableReason);
+            observations.Clear();observations.AddRange(candidate);
+            lastLocalReceive=localReceived;lastRemoteReceive=t1;lastAcceptedRequest=sent;Revision++;LastRejection=null;return true;
         }
+        void Invalidate(){if(!invalidated){invalidated=true;Revision++;}}
         bool Reject(string reason) {LastRejection=reason;return false;}
-        public ClockMappingSnapshot Snapshot()
+        public ClockMappingSnapshot Snapshot(){return Estimate(observations);}
+        ClockMappingSnapshot Estimate(IList<Observation> window)
         {
-            var result=new ClockMappingSnapshot{LocalClockId=localClockId,RemoteClockId=remoteClockId,SampleCount=observations.Count,LocalSecondsPerRemoteSecond=1};
-            if(observations.Count==0 || invalidated) return result;
-            Observation best=observations[0];
-            foreach(var o in observations) if((o.T3-o.T0)-(o.T2-o.T1)<(best.T3-best.T0)-(best.T2-best.T1)) best=o;
+            var result=new ClockMappingSnapshot{LocalClockId=localClockId,RemoteClockId=remoteClockId,SampleCount=window.Count,Revision=Revision,LocalSecondsPerRemoteSecond=1};
+            if(window.Count==0){result.UnavailableReason="no_observations";return result;}
+            if(invalidated){result.UnavailableReason="clock_invalidated";return result;}
+            Observation best=window[0];
+            foreach(var o in window) if((o.T3-o.T0)-(o.T2-o.T1)<(best.T3-best.T0)-(best.T2-best.T1)) best=o;
             double local=best.Local,remote=best.Remote,slope=1;
+            result.PointEstimateMethod="single_rate_offset_estimate";
             // Every feasible affine map must place remote receive after local send and remote send before local receive.
             // For all i,j: slope*(T2[j]-T1[i]) <= T3[j]-T0[i]. This captures transit-asymmetry uncertainty in the fitted rate.
             double minimumRate=0,maximumRate=Double.PositiveInfinity;
-            foreach(var a in observations)foreach(var b in observations)
+            foreach(var a in window)foreach(var b in window)
             {
                 double denominator=b.T2-a.T1,numerator=b.T3-a.T0;
                 if(denominator>0)maximumRate=Math.Min(maximumRate,numerator/denominator);
                 else if(denominator<0)minimumRate=Math.Max(minimumRate,numerator/denominator);
-                else if(numerator<0)return result;
+                else if(numerator<0){result.UnavailableReason="equal_remote_times_incompatible_local_bounds";return result;}
             }
-            if(!WireCodec.Finite(minimumRate)||maximumRate<=0||minimumRate>maximumRate)return result;
-            var first=observations[0];var last=observations[observations.Count-1];
-            if(observations.Count>=config.MinimumDriftSamples && last.Local-first.Local>=config.MinimumDriftSpanSeconds)
+            result.MinimumLocalSecondsPerRemoteSecond=minimumRate;
+            result.MaximumLocalSecondsPerRemoteSecond=WireCodec.Finite(maximumRate)?(double?)maximumRate:null;
+            if(!WireCodec.Finite(minimumRate)||maximumRate<=0||minimumRate>maximumRate){result.UnavailableReason="incompatible_rate_bounds";return result;}
+            // Maximum RTT is a quality-admission limit, not a physical clock prior.
+            // Keep the full causal rate interval above. The largest possible transit
+            // occurs at its minimum rate; every causally feasible rate must pass.
+            foreach(var o in window)
+            {
+                double worstTransit=(o.T3-o.T0)-minimumRate*(o.T2-o.T1);
+                if(!WireCodec.Finite(worstTransit)||worstTransit>config.MaximumRoundTripSeconds)
+                {result.UnavailableReason="round_trip_quality_not_established";return result;}
+            }
+            var first=window[0];var last=window[window.Count-1];
+            if(window.Count>=config.MinimumDriftSamples && last.Local-first.Local>=config.MinimumDriftSpanSeconds)
             {
                 // Center relative to the first observation to retain precision for long monotonic runs.
                 double meanX=0,meanY=0;
-                foreach(var o in observations){meanX+=o.Remote-first.Remote;meanY+=o.Local-first.Local;}
-                meanX/=observations.Count;meanY/=observations.Count;
+                foreach(var o in window){meanX+=o.Remote-first.Remote;meanY+=o.Local-first.Local;}
+                meanX/=window.Count;meanY/=window.Count;
                 double xx=0,xy=0;
-                foreach(var o in observations){double x=(o.Remote-first.Remote)-meanX;xx+=x*x;xy+=x*((o.Local-first.Local)-meanY);}
+                foreach(var o in window){double x=(o.Remote-first.Remote)-meanX;xx+=x*x;xy+=x*((o.Local-first.Local)-meanY);}
                 if(xx>0 && WireCodec.Finite(xx) && WireCodec.Finite(xy))
                 {
                     slope=xy/xx;
-                    if(!WireCodec.Finite(slope)||slope<=0) return result;
-                    slope=Math.Max(minimumRate,Math.Min(maximumRate,slope));
+                    if(!WireCodec.Finite(slope)||slope<=0){result.UnavailableReason="invalid_fitted_rate";return result;}
+                    // A boundary-clipped fit can produce an empty intercept intersection by one
+                    // floating-point step. Choose a genuine interior feasible rate instead;
+                    // no tolerance widens the constraints or changes freshness thresholds.
+                    result.PointEstimateMethod="least_squares_feasible_rate";
+                    if(slope<minimumRate||slope>maximumRate)
+                    {
+                        slope=WireCodec.Finite(maximumRate)?Midpoint(minimumRate,maximumRate):minimumRate;
+                        result.PointEstimateMethod="feasible_rate_interval_midpoint";
+                    }
                     remote=last.Remote;local=first.Local+meanY+slope*((remote-first.Remote)-meanX);result.DriftAvailable=true;
                 }
             }
-            // The central estimate must also have a feasible intercept at its chosen rate.
-            double lowerLocal=Double.NegativeInfinity,upperLocal=Double.PositiveInfinity;
-            foreach(var o in observations){lowerLocal=Math.Max(lowerLocal,o.T0+slope*(remote-o.T1));upperLocal=Math.Min(upperLocal,o.T3+slope*(remote-o.T2));}
-            if(lowerLocal>upperLocal)return result;
+            // Before sufficient drift observations exist, even the initial unit-rate
+            // estimate must belong to the full causal interval.
+            if(slope<minimumRate||slope>maximumRate)
+            {
+                slope=WireCodec.Finite(maximumRate)?Midpoint(minimumRate,maximumRate):minimumRate;
+                result.PointEstimateMethod="feasible_rate_interval_midpoint";
+            }
+            // The central estimate must also have a feasible intercept and transit.
+            double lowerLocal,upperLocal;
+            if(!TryFeasibleEstimate(window,remote,slope,out lowerLocal,out upperLocal))
+            {
+                // The fitted rate may itself round to an endpoint. Retry the finite
+                // interval's midpoint, then fail closed if no feasible intercept exists.
+                if(!WireCodec.Finite(maximumRate)){result.UnavailableReason="incompatible_intercept_bounds";return result;}
+                slope=Midpoint(minimumRate,maximumRate);
+                result.PointEstimateMethod="feasible_rate_interval_midpoint";
+                if(!TryFeasibleEstimate(window,remote,slope,out lowerLocal,out upperLocal))
+                {result.UnavailableReason="incompatible_intercept_bounds";return result;}
+                local=Midpoint(lowerLocal,upperLocal);
+            }
             local=Math.Max(lowerLocal,Math.Min(upperLocal,local));
             // RTT is expressed in local seconds after the affine rate estimate. Residual covers model disagreement.
             double uncertainty=0;
-            foreach(var o in observations)
+            foreach(var o in window)
             {
                 double transit=(o.T3-o.T0)-slope*(o.T2-o.T1);
-                if(transit<0 || !WireCodec.Finite(transit)) return new ClockMappingSnapshot{LocalClockId=localClockId,RemoteClockId=remoteClockId,SampleCount=observations.Count,LocalSecondsPerRemoteSecond=1};
+                if(transit<0 || transit>config.MaximumRoundTripSeconds || !WireCodec.Finite(transit))
+                {result.UnavailableReason="unusable_fitted_transit";return result;}
                 double residual=Math.Abs(o.Local-(local+slope*(o.Remote-remote)));
                 uncertainty=Math.Max(uncertainty,transit/2+residual);
             }
@@ -153,7 +200,7 @@ namespace AvatarStroop.Core
             var anchor=result.DriftAvailable?last:best;
             double processing=anchor.T2-anchor.T1;
             uncertainty=Math.Max(uncertainty,Math.Max(Math.Abs(local-(anchor.T0+minimumRate*processing/2)),Math.Abs((anchor.T3-minimumRate*processing/2)-local)));
-            if(!WireCodec.Finite(local)||!WireCodec.Finite(remote)||!WireCodec.Finite(uncertainty)) return result;
+            if(!WireCodec.Finite(local)||!WireCodec.Finite(remote)||!WireCodec.Finite(uncertainty)){result.UnavailableReason="nonfinite_mapping_estimate";return result;}
             result.Available=true;result.LocalReferenceSeconds=local;result.RemoteReferenceSeconds=remote;result.RemoteMinusLocalSeconds=remote-local;
             result.LocalSecondsPerRemoteSecond=slope;result.UncertaintySeconds=uncertainty;
             result.MinimumLocalSecondsPerRemoteSecond=minimumRate;
@@ -161,6 +208,20 @@ namespace AvatarStroop.Core
             result.RateUncertaintyLocalSecondsPerRemoteSecond=WireCodec.Finite(maximumRate)?(double?)Math.Max(Math.Abs(slope-minimumRate),Math.Abs(maximumRate-slope)):null;
             result.RemoteDriftPartsPerMillion=result.DriftAvailable?(double?)((1/slope-1)*1000000):null;
             return result;
+        }
+        static double Midpoint(double lower,double upper){return lower+(upper-lower)/2;}
+        bool TryFeasibleEstimate(IList<Observation> window,double remote,double slope,out double lower,out double upper)
+        {
+            lower=Double.NegativeInfinity;upper=Double.PositiveInfinity;
+            if(!WireCodec.Finite(slope)||slope<=0)return false;
+            foreach(var o in window)
+            {
+                double transit=(o.T3-o.T0)-slope*(o.T2-o.T1);
+                if(!WireCodec.Finite(transit)||transit<0||transit>config.MaximumRoundTripSeconds)return false;
+                lower=Math.Max(lower,o.T0+slope*(remote-o.T1));
+                upper=Math.Min(upper,o.T3+slope*(remote-o.T2));
+            }
+            return lower<=upper;
         }
         public bool TryMapRemote(double remoteSeconds,out double localSeconds,out double uncertaintySeconds)
         {

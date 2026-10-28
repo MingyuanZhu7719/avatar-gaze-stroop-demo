@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <BaseOutputPath>build/dotnet/$(MSBuildProjectName)/</BaseOutputPath>
+    <BaseIntermediateOutputPath>build/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

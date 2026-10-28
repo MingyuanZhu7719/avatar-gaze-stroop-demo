@@ -31,8 +31,11 @@ The latest user-accepted working baseline is now readable directly on GitHub. It
 <!-- BEGIN software-implementation -->
 ## Software implementation
 
-Milestones 1–2 implement and test the shared experiment core, control-source contracts, provisional transport, clock estimates, and fault facts. These are not yet a complete VR application or verified VIVE Pro Eye integration.
+Milestones 1–3 implement the portable experiment core, control and fault contracts, two independent simulation applications, owner controls, and auditable CSV exports. Unity presentation and scene-generation source is included and compiles against the installed Unity assemblies. **Actual VR rendering, real VIVE Pro Eye acquisition, and two-PC/headset validation remain pending; apparatus sessions are blocked.**
 
-- [Development architecture, milestones, and test commands](docs/development.md)
+- [Development milestones, actual test results, and remaining prerequisites](docs/development.md)
 - [Requirements and regression coverage](docs/requirements-tests.md)
+- [Unity presentation adapter and verification limits](docs/unity-adapter.md)
+- [Local development owner console](docs/owner-console.md)
+- [Data export fields, provenance, and manifest verification](docs/data-schema.md)
 <!-- END software-implementation -->

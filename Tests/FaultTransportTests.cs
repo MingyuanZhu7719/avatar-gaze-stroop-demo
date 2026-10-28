@@ -58,7 +58,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("M2 strict wire rejects corruption version extra fields and nonfinite numbers",()=>{
                 byte[] bytes=WireCodec.Encode(Track(3,1,1));
-                Corrupt(bytes,1,"2");Corrupt(bytes,2,"999");Corrupt(bytes,3,"!!!");Corrupt(bytes,5,"Owner");Corrupt(bytes,7,"Unspecified");Corrupt(bytes,9,"-1");Corrupt(bytes,9,"01");Corrupt(bytes,11,"-1");Corrupt(bytes,16,"2");Corrupt(bytes,17,"true");
+                Corrupt(bytes,1,"999");Corrupt(bytes,2,"999");Corrupt(bytes,3,"!!!");Corrupt(bytes,5,"Owner");Corrupt(bytes,7,"Unspecified");Corrupt(bytes,9,"-1");Corrupt(bytes,9,"01");Corrupt(bytes,11,"-1");Corrupt(bytes,16,"2");Corrupt(bytes,17,"true");
                 foreach(var bad in new[]{"NaN","Infinity","-Infinity","1e999"," 1","1,5"})Corrupt(bytes,19,bad);
                 WirePacket p;string e;Check.True(!WireCodec.TryDecode(new byte[2049],out p,out e));Check.True(!WireCodec.TryDecode(Encoding.ASCII.GetBytes(Encoding.ASCII.GetString(bytes)+"|extra"),out p,out e));
                 bytes[0]=255;Check.True(!WireCodec.TryDecode(bytes,out p,out e));
@@ -157,6 +157,33 @@ namespace AvatarStroop.Tests
                 var m=Monitor();Check.True(m.Observe(WirePacket.Hello(Peer(),0,136.9,SessionConfiguration.ProtocolVersion),99.9).Accepted);
                 var late=WirePacket.Tracking(Peer(),1,Sample(0,136.5,136.99));m.Observe(late,100,map);
                 Check.True(m.CurrentSample(100,map)==null);Check.True(!m.Snapshot(100,map).CaptureAgeVerified);
+            });
+            suite.Run("M3 feasible rate midpoint avoids one-ULP false clock unavailability",()=>{
+                // A physically valid rate=1 clock and positive transit in both directions.
+                // Clipping the unconstrained fit to the minimum rate formerly made the
+                // intercept lower exceed upper by 8.881784197001252e-16 seconds.
+                const double offset=.0989667077982333;
+                double[,] times={
+                    {3.4878784238131733,3.5869235882372026,3.5893332827885285,3.4904179974608978},
+                    {4.4276171627569862,4.5266224444939924,4.5299785227733116,4.4310548763095179},
+                    {6.307094640644614,6.4096992346883264,6.4101753500038061,6.3112998213801514}};
+                var map=new ClockSynchronizer("local-clock","remote-clock",ClockConfig(.2));
+                for(int i=0;i<3;i++) {
+                    Check.True(times[i,1]-offset>=times[i,0]);Check.True(times[i,3]>=times[i,2]-offset);
+                    string id="boundary-"+i;Check.True(map.RegisterRequest(id,times[i,0]));
+                    Check.True(map.ObserveReply(WirePacket.TimeReply(Peer(),i,times[i,2],id,"local-clock",times[i,0],times[i,1]),times[i,3]));
+                    Check.True(map.Snapshot().Available,map.Snapshot().UnavailableReason);
+                }
+                var snapshot=map.Snapshot();Check.Equal("feasible_rate_interval_midpoint",snapshot.PointEstimateMethod);
+                Check.True(snapshot.MinimumLocalSecondsPerRemoteSecond<=1&&snapshot.MaximumLocalSecondsPerRemoteSecond>=1);
+                Check.True(snapshot.LocalSecondsPerRemoteSecond>snapshot.MinimumLocalSecondsPerRemoteSecond&&snapshot.LocalSecondsPerRemoteSecond<snapshot.MaximumLocalSecondsPerRemoteSecond);
+                foreach(double local in new[]{6.31,7,20,80}) {
+                    double mapped,uncertainty;Check.True(map.TryMapRemote(local+offset,out mapped,out uncertainty));
+                    Check.True(mapped-uncertainty<=local&&mapped+uncertainty>=local,"True affine clock must remain inside uncertainty");
+                }
+                var receiver=Monitor();Check.True(receiver.Observe(WirePacket.Hello(Peer(),0,20+offset,SessionConfiguration.ProtocolVersion),20).Accepted);
+                receiver.Observe(WirePacket.Tracking(Peer(),1,Sample(0,19.5+offset,20+offset)),20.01,map);
+                Check.True(receiver.CurrentSample(20.01,map)==null);Check.True(!receiver.Snapshot(20.01,map).CaptureAgeVerified);
             });
             suite.Run("M2 clock correlated replies reject duplicates malformed timing and rollback",()=>{
                 var map=new ClockSynchronizer("local-clock","remote-clock",ClockConfig());Exchange(map,"first",0,0,1,.01,.01,.002);var initial=map.Snapshot();

@@ -163,7 +163,7 @@ namespace AvatarStroop.Core
             if(!ReadyEnabled) return false;
             Log("rest_ready", "rest_seconds", Number(RestSeconds));
             if(BlockIndex == 3) Finish(Core.EndReason.Completed, "four_blocks_ratings_and_rest_complete");
-            else { BlockIndex++; LockedControl=null; current=null; Move(Phase.BlockPreparation); }
+            else { BlockIndex++; Segment=0; LockedControl=null; current=null; Move(Phase.BlockPreparation); }
             return true;
         }
 
@@ -231,7 +231,7 @@ namespace AvatarStroop.Core
             if(!Enum.IsDefined(typeof(Actor),actor)) throw new ArgumentException("Unknown actor");
             bool task=Phase == Phase.MainTask || (actor == Actor.Participant && Phase == Phase.Practice);
             return new TaskView {
-                Phase=Phase, TrialId=task && current != null ? current.TrialId : null,
+                Phase=Phase,BlockIndex=BlockIndex,Segment=Segment, TrialId=task && current != null ? current.TrialId : null,
                 Stimulus=task && current != null ? current.Stimulus : null,
                 OperatorAvatarVisible=actor == Actor.Participant && Phase == Phase.MainTask && CurrentCondition != Condition.D,
                 ParticipantAvatarVisible=actor == Actor.Operator && Phase == Phase.MainTask,

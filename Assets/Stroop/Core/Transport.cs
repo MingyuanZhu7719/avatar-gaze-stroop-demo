@@ -7,7 +7,7 @@ using System.Text;
 namespace AvatarStroop.Core
 {
     public enum PeerRole { Participant, Operator }
-    public enum WireKind { Hello, HeadEye, Task, TimeRequest, TimeReply }
+    public enum WireKind { Hello, HeadEye, Task, TimeRequest, TimeReply, SafetyStopRequest, SafetyStopAck }
 
     // Engineering protocol identity, not authentication. Use only on an explicitly trusted development network.
     public sealed class PeerIdentity
@@ -59,6 +59,7 @@ namespace AvatarStroop.Core
         public HeadEyeSample Sample { get; private set; }
         public TaskSnapshot Snapshot { get; private set; }
         public string ExchangeId { get; private set; }
+        public string StopRequestId {get;private set;}
         public string RequestClockId { get; private set; }
         public double RequestSentSeconds { get; private set; }
         public double RemoteReceivedSeconds { get; private set; }
@@ -94,11 +95,23 @@ namespace AvatarStroop.Core
                 throw new ArgumentException("Invalid time exchange");
             return new WirePacket(peer,WireKind.TimeReply,sequence,sent){ExchangeId=exchangeId,RequestClockId=requestClockId,RequestSentSeconds=requestSent,RemoteReceivedSeconds=remoteReceived,RemoteSentSeconds=sent};
         }
+        public static WirePacket SafetyStopRequest(PeerIdentity peer,long sequence,double sent,string requestId)
+        {
+            WireCodec.RequireIdentity(requestId);
+            if(peer==null||peer.Role!=PeerRole.Operator)throw new ArgumentException("Only operator can request remote safety stop");
+            return new WirePacket(peer,WireKind.SafetyStopRequest,sequence,sent){StopRequestId=requestId};
+        }
+        public static WirePacket SafetyStopAck(PeerIdentity peer,long sequence,double sent,string requestId)
+        {
+            WireCodec.RequireIdentity(requestId);
+            if(peer==null||peer.Role!=PeerRole.Participant)throw new ArgumentException("Only participant host acknowledges applying stop");
+            return new WirePacket(peer,WireKind.SafetyStopAck,sequence,sent){StopRequestId=requestId};
+        }
     }
 
     public static class WireCodec
     {
-        public const string Version = "1";
+        public const string Version = "2";
         public const int MaxPacketBytes = 2048;
         static readonly CultureInfo Invariant=CultureInfo.InvariantCulture;
         static readonly UTF8Encoding StrictUtf8=new UTF8Encoding(false,true);
@@ -160,6 +173,8 @@ namespace AvatarStroop.Core
                     payload=String.Join("|",new[]{v.BlockIndex.ToString(Invariant),v.Segment.ToString(Invariant),v.TrialId==null?"~":Id(v.TrialId),Optional(v.Word),Optional(v.Ink),v.Phase.ToString(),Optional(v.Condition)}); break;
                 case WireKind.TimeRequest: payload=Id(packet.ExchangeId); break;
                 case WireKind.TimeReply: payload=String.Join("|",new[]{Id(packet.ExchangeId),Id(packet.RequestClockId),Number(packet.RequestSentSeconds),Number(packet.RemoteReceivedSeconds)}); break;
+                case WireKind.SafetyStopRequest:
+                case WireKind.SafetyStopAck: payload=Id(packet.StopRequestId);break;
                 default: throw new ArgumentException("Unknown packet kind");
             }
             byte[] bytes=Encoding.ASCII.GetBytes(header+"|"+payload);
@@ -195,6 +210,8 @@ namespace AvatarStroop.Core
                         packet=WirePacket.Task(peer,seq,sent,new TaskSnapshot(peer.SessionId,ReadInt(f[11]),ReadInt(f[12]),f[13]=="~"?null:ReadId(f[13]),ReadOptional<Colour>(f[14]),ReadOptional<Colour>(f[15]),ReadEnum<Phase>(f[16]),ReadOptional<Condition>(f[17])));break;
                     case WireKind.TimeRequest: packet=WirePacket.TimeRequest(peer,seq,sent,ReadId(f[11]));break;
                     case WireKind.TimeReply: packet=WirePacket.TimeReply(peer,seq,sent,ReadId(f[11]),ReadId(f[12]),ReadNumber(f[13]),ReadNumber(f[14]));break;
+                    case WireKind.SafetyStopRequest: packet=WirePacket.SafetyStopRequest(peer,seq,sent,ReadId(f[11]));break;
+                    case WireKind.SafetyStopAck: packet=WirePacket.SafetyStopAck(peer,seq,sent,ReadId(f[11]));break;
                 }
                 return true;
             }

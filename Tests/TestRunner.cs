@@ -70,6 +70,11 @@ namespace AvatarStroop.Tests
             var suite=new TestSuite(); TrialPlanTests.Register(suite); ExperimentTests.Register(suite);
             GazeControlTests.Register(suite);
             FaultTransportTests.Register(suite);
+            ClockBoundaryTests.Register(suite);
+            DataTests.Register(suite);
+            RuntimeTests.Register(suite);
+            GeometryTests.Register(suite);
+            OwnerCommandTests.Register(suite);
             Console.WriteLine("RESULT "+suite.Passed+" passed; "+suite.Failed+" failed");
             return suite.Failed==0?0:1;
         }

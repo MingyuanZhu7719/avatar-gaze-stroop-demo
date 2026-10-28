@@ -22,3 +22,7 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Compile and run portable regression
         run: dotnet run --project AvatarStroop.Regression.csproj --configuration Release
+      - name: Compile separate development owner console
+        run: dotnet build AvatarStroop.OwnerConsole.csproj --configuration Release
+      - name: Run independent participant and operator simulators
+        run: python scripts/integration.py --dotnet

@@ -33,7 +33,7 @@ def main():
     base, mono, csc = tools
     output = ROOT / "build"
     output.mkdir(exist_ok=True)
-    sources = sorted((ROOT / "Assets/Stroop/Core").rglob("*.cs")) + sorted((ROOT / "Tests").rglob("*.cs"))
+    sources = sorted((ROOT / "Assets/Stroop/Core").rglob("*.cs")) + sorted((ROOT / "Assets/Stroop/Runtime").rglob("*.cs")) + sorted((ROOT / "Tests").rglob("*.cs"))
     binary = output / "AvatarStroop.Regression.exe"
     command = [str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-target:exe", "-main:AvatarStroop.Tests.Program", "-out:" + str(binary)]
     print("Compiler: " + str(csc), flush=True)

@@ -8,3 +8,8 @@ UserSettings/
 *.sln
 .DS_Store
 exports/
+
+__pycache__/
+*.pyc
+bin/
+obj/

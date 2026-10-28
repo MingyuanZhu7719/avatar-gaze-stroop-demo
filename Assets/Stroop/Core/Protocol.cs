@@ -64,7 +64,7 @@ namespace AvatarStroop.Core
         public string QuestionnaireLanguage { get; private set; }
         public double CountdownSeconds { get; private set; }
         public const string ProtocolVersion = "2026-10-28-prd-66dbdb5";
-        public const string SoftwareVersion = "0.2.0-dev";
+        public const string SoftwareVersion = "0.3.0-dev";
         // No countdown or questionnaire language is silently selected for a study.
         public SessionConfiguration(string sessionId, uint seed, Allocation allocation, RunKind runKind,
             string questionnaireLanguage, double countdownSeconds)
@@ -133,6 +133,8 @@ namespace AvatarStroop.Core
     public sealed class TaskView
     {
         public Phase Phase { get; internal set; }
+        public int BlockIndex {get;internal set;}
+        public int Segment {get;internal set;}
         public string TrialId { get; internal set; }
         public Stimulus Stimulus { get; internal set; }
         public bool OperatorAvatarVisible { get; internal set; }
