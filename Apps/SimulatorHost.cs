@@ -15,10 +15,12 @@ namespace AvatarStroop.Apps
         {
             try
             {
-                if(args.Length!=6&&(args.Length!=8||args[6]!="--startup-barrier"))
-                    throw new ArgumentException("Usage: operator|participant SESSION LOCAL_PORT REMOTE_PORT OUTPUT_DIRECTORY fault-script|safety-stop|normal [--startup-barrier DIRECTORY]");
+                if(args.Length!=6&&((args.Length!=8&&args.Length!=9)||args[6]!="--startup-barrier"||(args.Length==9&&args[8]!="--scenario-completion")))
+                    throw new ArgumentException("Usage: operator|participant SESSION LOCAL_PORT REMOTE_PORT OUTPUT_DIRECTORY fault-script|safety-stop|normal [--startup-barrier DIRECTORY [--scenario-completion]]");
                 string role=args[0],session=args[1],output=Path.GetFullPath(args[4]);
-                string barrier=args.Length==8?Path.GetFullPath(args[7]):null;
+                string barrier=args.Length>=8?Path.GetFullPath(args[7]):null;
+                bool completion=args.Length==9;
+                if(completion&&args[5]!="fault-script"&&args[5]!="safety-stop")throw new ArgumentException("Scenario completion requires a recognized integration fixture");
                 if(barrier!=null&&!Directory.Exists(barrier))throw new ArgumentException("Startup barrier directory must already exist");
                 int local=Int32.Parse(args[2],CultureInfo.InvariantCulture),remote=Int32.Parse(args[3],CultureInfo.InvariantCulture);
                 Directory.CreateDirectory(output);
@@ -28,12 +30,15 @@ namespace AvatarStroop.Apps
                     using(var app=new OperatorSimulationApplication(session,local,remote,args[5]=="fault-script",args[5]=="safety-stop"))
                     {
                         double activeStart=WaitForStartup(app,role,local,remote,barrier);
-                        while(app.Clock.Now-activeStart<8){app.Tick();Thread.Sleep(2);}
+                        int postExitTicks=0;
+                        if(completion)RunOperatorScenario(app,args[5],barrier,output,activeStart,out postExitTicks);
+                        else while(app.Clock.Now-activeStart<8){app.Tick();Thread.Sleep(2);}
                         double activeElapsed=app.Clock.Now-activeStart;
                         using(var writer=new StreamWriter(Path.Combine(output,"operator-report.tsv")))
                         {
                             Report(writer,"pid",Process.GetCurrentProcess().Id);Report(writer,"samples_sent",app.SamplesSent);
                             StartupReport(writer,barrier,activeStart,activeElapsed);
+                            CompletionReport(writer,completion,postExitTicks);
                             Report(writer,"samples_send_failed",app.SamplesSendFailed);Report(writer,"samples_suppressed",app.SamplesSuppressed);
                             Report(writer,"clock_mapping_available",app.Synchronizer.Snapshot().Available);
                             Report(writer,"clock_unavailable_reason",app.Synchronizer.Snapshot().UnavailableReason);
@@ -55,7 +60,8 @@ namespace AvatarStroop.Apps
                     using(var app=new ParticipantSimulationApplication(session,local,remote))
                     {
                         double activeStart=WaitForStartup(app,role,local,remote,barrier);
-                        while(app.Clock.Now-activeStart<7){app.Tick();app.RecordControllerEvaluation();app.DriveHeadlessSimulation();Thread.Sleep(2);}
+                        if(completion)RunParticipantScenario(app,args[5],barrier,output,activeStart);
+                        else while(app.Clock.Now-activeStart<7){app.Tick();app.RecordControllerEvaluation();app.DriveHeadlessSimulation();Thread.Sleep(2);}
                         double activeElapsed=app.Clock.Now-activeStart;
                         WriteClockEvidence(app,output,"participant");
                         var exported=app.Export(Path.Combine(output,"audit"),new ExportProvenance("independent-process-headless-simulator",
@@ -65,6 +71,7 @@ namespace AvatarStroop.Apps
                         {
                             Report(writer,"pid",Process.GetCurrentProcess().Id);Report(writer,"phase",app.Experiment.Phase);
                             StartupReport(writer,barrier,activeStart,activeElapsed);
+                            CompletionReport(writer,completion,0);
                             Report(writer,"main_trials",app.Experiment.Trials.Count(x=>!x.IsPractice));Report(writer,"ratings",app.Experiment.Ratings.Count);
                             Report(writer,"interrupted_main_trials",app.Experiment.Trials.Count(x=>!x.IsPractice&&x.Outcome==TrialOutcome.Interrupted));
                             Report(writer,"applied_remote_stops",app.AppliedRemoteStops);Report(writer,"export_directory",exported.DirectoryPath);
@@ -83,6 +90,110 @@ namespace AvatarStroop.Apps
                 return 0;
             }
             catch(Exception error){Console.Error.WriteLine(error);return 1;}
+        }
+        const double ScenarioFailSafeSeconds=65; // Engineering test budget, never a participant response deadline.
+        static string Signal(string kind,SimulationPeer app,string scenario)
+        {return kind+"\t1\t"+app.Identity.SessionId+"\t"+scenario+"\n";}
+        static bool HasSignal(string directory,string name,string expected)
+        {
+            string path=Path.Combine(directory,name);if(!File.Exists(path))return false;
+            if(File.ReadAllText(path)!=expected)throw new InvalidDataException("Scenario lifecycle signal has the wrong identity: "+name);
+            return true;
+        }
+        static bool ParticipantGoalReached(ParticipantSimulationApplication app,string scenario)
+        {
+            if(!app.Synchronizer.Snapshot().Available||app.ClockExchanges.Count<3||
+                app.Packets.Count(x=>x.Accepted&&x.Packet!=null&&x.Packet.Kind==WireKind.HeadEye)<=20||
+                !app.Outputs.Any(x=>x.HeadValid&&x.EyeValid&&x.ActualSource==ControlSource.Simulator))return false;
+            var e=app.Experiment;
+            if(scenario=="safety-stop")return e.Phase==Phase.Paused&&app.AppliedRemoteStops==1&&
+                e.Trials.Count(x=>!x.IsPractice&&x.Outcome==TrialOutcome.Interrupted)==1&&e.Trials.Count(x=>!x.IsPractice)<24;
+            return e.Phase==Phase.Rest&&e.Trials.Count(x=>!x.IsPractice)==24&&e.Ratings.Count==5&&
+                new[]{"HeadInvalid","EyeInvalid","ConnectionStale","RecoveryDecisionRequired"}.All(kind=>app.Monitor.Events.Any(x=>x.Kind=="fault_started"&&x.Detail==kind));
+        }
+        static void RunParticipantScenario(ParticipantSimulationApplication app,string scenario,string directory,string output,double start)
+        {
+            bool goalWritten=false;
+            while(true)
+            {
+                CheckScenarioDeadline(app,scenario,directory,output,start);
+                app.Tick();app.RecordControllerEvaluation();app.DriveHeadlessSimulation();
+                if(!goalWritten&&ParticipantGoalReached(app,scenario))
+                {
+                    string goal=Signal("PARTICIPANT_GOAL",app,scenario).TrimEnd('\n');
+                    foreach(var trial in app.Experiment.Trials.Where(x=>!x.IsPractice))goal+="\ntrial\t"+trial.TrialId+"\t"+trial.Stimulus.Key;
+                    WriteStartupRecord(Path.Combine(directory,"participant-goal.tsv"),goal);goalWritten=true;
+                }
+                if(goalWritten&&HasSignal(directory,"operator-complete.tsv",Signal("OPERATOR_COMPLETE",app,scenario)))return;
+                Thread.Sleep(2);
+            }
+        }
+        static bool OperatorGoalReached(OperatorSimulationApplication app,string scenario,string directory)
+        {
+            string path=Path.Combine(directory,"participant-goal.tsv");if(!File.Exists(path))return false;
+            var lines=File.ReadAllLines(path);
+            if(lines.Length==0||lines[0]!=Signal("PARTICIPANT_GOAL",app,scenario).TrimEnd('\n'))throw new InvalidDataException("Participant goal has the wrong scenario identity");
+            var expected=new System.Collections.Generic.Dictionary<string,string>();
+            foreach(string line in lines.Skip(1))
+            {
+                var fields=line.Split('\t');
+                if(fields.Length!=3||fields[0]!="trial"||expected.ContainsKey(fields[1]))throw new InvalidDataException("Invalid participant goal trial correspondence");
+                expected.Add(fields[1],fields[2]);
+            }
+            if(scenario=="fault-script"?expected.Count!=24:expected.Count==0||expected.Count>=24)throw new InvalidDataException("Participant goal has the wrong main-trial count");
+            if(!app.Synchronizer.Snapshot().Available||app.ClockExchanges.Count<3||app.CurrentTask==null||
+                app.CurrentTask.Phase!=(scenario=="fault-script"?Phase.Rest:Phase.Paused)||app.ObservedTrials.Count!=expected.Count)return false;
+            foreach(var trial in expected){string observed;if(!app.ObservedTrials.TryGetValue(trial.Key,out observed)||observed!=trial.Value)return false;}
+            return scenario=="fault-script"||(app.StopDelivery.Acknowledged&&!app.StopDelivery.Pending);
+        }
+        static void RunOperatorScenario(OperatorSimulationApplication app,string scenario,string directory,string output,double start,out int postExitTicks)
+        {
+            bool completeWritten=false;postExitTicks=0;
+            while(true)
+            {
+                CheckScenarioDeadline(app,scenario,directory,output,start);
+                app.Tick();
+                if(!completeWritten&&OperatorGoalReached(app,scenario,directory))
+                {WriteStartupRecord(Path.Combine(directory,"operator-complete.tsv"),Signal("OPERATOR_COMPLETE",app,scenario).TrimEnd('\n'));completeWritten=true;}
+                if(HasSignal(directory,"participant-exited.tsv",Signal("PARTICIPANT_EXITED",app,scenario)))
+                {
+                    if(!completeWritten)throw new InvalidDataException("Participant exit arrived before acknowledged scenario completion");
+                    // The launcher has reaped the participant. Exercise the existing
+                    // transport lifecycle once after peer exit; do not reopen/retry it.
+                    app.Tick();postExitTicks=1;
+                    WriteStartupRecord(Path.Combine(directory,"operator-post-exit.tsv"),Signal("OPERATOR_POST_EXIT_TICK",app,scenario).TrimEnd('\n'));return;
+                }
+                Thread.Sleep(2);
+            }
+        }
+        static void CheckScenarioDeadline(SimulationPeer app,string scenario,string directory,string output,double start)
+        {
+            if(!HasSignal(directory,"timeout.tsv",Signal("SCENARIO_TIMEOUT",app,scenario))&&app.Clock.Now-start<ScenarioFailSafeSeconds)return;
+            string role=app.Identity.Role==PeerRole.Participant?"participant":"operator";
+            WriteClockEvidence(app,output,role);
+            using(var writer=new StreamWriter(Path.Combine(output,role+"-timeout.tsv")))
+            {
+                Report(writer,"reason","integration_scenario_timeout");Report(writer,"active_elapsed_seconds",app.Clock.Now-start);
+                var participant=app as ParticipantSimulationApplication;var op=app as OperatorSimulationApplication;
+                if(participant!=null)
+                {
+                    Report(writer,"phase",participant.Experiment.Phase);Report(writer,"main_trials",participant.Experiment.Trials.Count(x=>!x.IsPractice));
+                    Report(writer,"ratings",participant.Experiment.Ratings.Count);Report(writer,"selected_source",participant.Experiment.LockedControl);
+                    Report(writer,"selected_source_ready",participant.Experiment.LockedControl.HasValue&&participant.SourceReady(participant.Experiment.LockedControl.Value));
+                }
+                if(op!=null){Report(writer,"phase",op.CurrentTask==null?"Unavailable":op.CurrentTask.Phase.ToString());Report(writer,"observed_trials",op.ObservedTrials.Count);Report(writer,"stop_acknowledged",op.StopDelivery.Acknowledged);}
+                var faults=app.Monitor.Snapshot(app.Clock.Now,app.Synchronizer);var map=app.Synchronizer.Snapshot();
+                Report(writer,"recovery_required",faults.RecoveryDecisionRequired);Report(writer,"head_usable",faults.HeadUsable);Report(writer,"eye_usable",faults.EyeUsable);
+                Report(writer,"clock_available",map.Available);Report(writer,"clock_unavailable_reason",map.UnavailableReason);Report(writer,"accepted_packets",app.Packets.Count(x=>x.Accepted));
+                foreach(var warning in faults.Warnings)writer.WriteLine("warning\t"+warning.Kind+"\t"+warning.Message);
+                foreach(var fault in app.Monitor.Events.Skip(Math.Max(0,app.Monitor.Events.Count-64)))writer.WriteLine("fault\t"+fault.Kind+"\t"+fault.Detail);
+            }
+            throw new TimeoutException("Integration scenario did not reach its required evidence before the test deadline: "+role+" "+scenario);
+        }
+        static void CompletionReport(TextWriter writer,bool completion,int postExitTicks)
+        {
+            Report(writer,"scenario_completion_enabled",completion);Report(writer,"completion_reason",completion?"scenario_goal":"fixed_duration");
+            Report(writer,"post_participant_exit_ticks",postExitTicks);
         }
         // Opt-in local process-test rendezvous. This is not a transport handshake,
         // connection retry or apparatus recovery procedure. The app is already bound.

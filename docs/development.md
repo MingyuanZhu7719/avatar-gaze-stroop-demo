@@ -109,6 +109,14 @@ The integration launcher now explicitly passes `--startup-barrier DIRECTORY` to 
 
 `python3 scripts/test.py` again passed **114 groups, 0 failed**. `python3 scripts/integration.py` passed both scenarios while deliberately delaying the second peer by 0.5 seconds and testing both startup orders. It verifies no first tick or report before release, and at least seven participant/eight operator active seconds after release. All prior task, source, clock, fault and export assertions remain active. Hosted Windows validation is reported against the follow-up commit separately.
 
+### Bounded scenario completion in shared CI
+
+[Run 40735211326](https://github.com/MingyuanZhu7719/avatar-gaze-stroop-demo/actions/runs/40735211326) verified the startup barrier and all 114 regression groups on Windows. Its independent-process scenario had valid clock mappings and received samples but reached the old fixed seven-second stop while still in countdown. The runtime also gates countdown on source readiness, so a genuine freshness/recovery failure must remain a failure rather than being cleared to finish a test.
+
+The integration launcher now opts into `--scenario-completion` alongside the startup barrier. The participant publishes a goal only after the required scenario state, trial/ratings or interruption counts, sample/clock evidence and required faults are present. The operator independently matches its observed trial/word/ink pairs and required task/stop acknowledgment before confirming. The launcher waits for successful participant exit, then explicitly permits one operator tick after that exit. A 60-second launcher budget and 65-second host fallback provide bounded failures with phase, source readiness, current faults and recent fault/clock evidence. These are development test budgets, not participant response deadlines. Default launches and barrier-only launches retain their original seven/eight-second durations.
+
+`python3 scripts/test.py` passed **114 groups, 0 failed**; `python3 scripts/integration.py` passed both scenarios, including delayed startup, independent completion evidence and the explicit post-exit tick. All original scientific, trial, source, clock, fault and export checks remain; connection/freshness thresholds and recovery latches were not changed. Hosted results are tied to the follow-up commit separately.
+
 ### Editor attempt and remaining apparatus work
 
 One ordinary installed Editor batch run was attempted with `-batchmode -nographics -noUpm -quit` and the scene-builder entry point. It exited **1 before import/scene generation** because **no valid Unity Editor license was found**. No activation, credentials, license change, package install or retry was performed. This was a missing licensing prerequisite, not an automatic approval rejection. Full logs remain local and are not published.

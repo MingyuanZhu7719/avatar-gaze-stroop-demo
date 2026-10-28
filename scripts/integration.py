@@ -14,6 +14,55 @@ from test import ROOT, unity_tools
 
 STARTUP_TIMEOUT_SECONDS = 15
 STARTUP_HOLD_SECONDS = .5  # Deliberate delayed-peer fixture, never a readiness mechanism.
+SCENARIO_TIMEOUT_SECONDS = 60  # Engineering test budget, not an experiment response deadline.
+
+def write_lifecycle_signal(barrier, name, kind, session, scenario):
+    pending = barrier / (name + ".pending")
+    with pending.open("xb") as stream:
+        stream.write((kind + "\t1\t" + session + "\t" + scenario + "\n").encode("utf-8"))
+    pending.rename(barrier / name)
+
+def wait_for_scenario(processes, barrier, session, scenario, deadline):
+    participant, operator = processes["participant"], processes["operator"]
+    exit_signalled = False
+    while True:
+        participant_code, operator_code = participant.poll(), operator.poll()
+        if operator_code is not None and not exit_signalled:
+            raise RuntimeError(f"Operator exited before confirmed participant completion (exit {operator_code})")
+        if participant_code is not None and not exit_signalled:
+            if participant.wait() != 0:
+                raise RuntimeError(f"Participant failed before scenario completion (exit {participant_code})")
+            if not (barrier / "participant-goal.tsv").exists() or not (barrier / "operator-complete.tsv").exists():
+                raise RuntimeError("Participant exited without the scenario completion handshake")
+            write_lifecycle_signal(barrier, "participant-exited.tsv", "PARTICIPANT_EXITED", session, scenario)
+            exit_signalled = True
+        if exit_signalled and operator_code is not None:
+            if operator.wait() != 0:
+                raise RuntimeError(f"Operator failed after participant exit (exit {operator_code})")
+            return
+        if time.monotonic() >= deadline:
+            write_lifecycle_signal(barrier, "timeout.tsv", "SCENARIO_TIMEOUT", session, scenario)
+            # Give each responsive host a shared, bounded opportunity to save
+            # timeout state; this is diagnostic cleanup, not more scenario time.
+            diagnostic_deadline = time.monotonic() + 5
+            for process in processes.values():
+                try:
+                    process.wait(timeout=max(0, diagnostic_deadline - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    pass
+            raise TimeoutError(f"{scenario} did not complete within the {SCENARIO_TIMEOUT_SECONDS}-second integration test budget")
+        time.sleep(.01)
+
+def print_failure_evidence(output):
+    for role in ("participant", "operator"):
+        for suffix in ("report.tsv", "timeout.tsv", "clock-exchanges.tsv"):
+            path = output / (role + "-" + suffix)
+            if path.is_file():
+                print("FAILED RUN EVIDENCE: " + str(path), file=sys.stderr)
+                text = path.read_text(encoding="utf-8-sig")
+                print(text[:65536], file=sys.stderr)
+                if len(text) > 65536:
+                    print("[bounded diagnostic output truncated at 65536 characters]", file=sys.stderr)
 
 def assert_waiting_at_startup(output, barrier, processes):
     for role, process in processes.items():
@@ -122,7 +171,7 @@ def run_scenario(launch, build, scenario, source_digest):
         def launch_role(role):
             local, remote = endpoints[role]
             processes[role] = subprocess.Popen(launch + [role, session, str(local), str(remote), str(output), scenario,
-                                                       "--startup-barrier", str(barrier)], env=environment)
+                                                       "--startup-barrier", str(barrier), "--scenario-completion"], env=environment)
         launch_role(first)
         wait_for_ready(output, barrier, processes, endpoints, session, deadline)
         # Exercise both startup orders across the scenarios. The first bound peer
@@ -137,25 +186,19 @@ def run_scenario(launch, build, scenario, source_digest):
         assert held_seconds >= STARTUP_HOLD_SECONDS
         launch_role(second)
         ready = release_startup(output, barrier, processes, endpoints, session, deadline)
+        scenario_deadline = time.monotonic() + SCENARIO_TIMEOUT_SECONDS
         (barrier / "launcher-evidence.tsv").write_text(
             "first_role\t" + first + "\nheld_ready_seconds\t" + str(held_seconds) + "\nboth_bound_before_release\tTrue\n",
             encoding="utf-8")
-        for role, process in processes.items():
-            if process.wait(timeout=20) != 0:
-                raise RuntimeError("Independent app failed after startup release: " + role)
+        wait_for_scenario(processes, barrier, session, scenario, scenario_deadline)
+        verify_startup(output, barrier, ready, session)
+        verify_completion(output, barrier, session, scenario)
+        verify_scenario(output, scenario, source_digest)
+    except Exception:
+        print_failure_evidence(output)
+        raise
     finally:
         stop_processes(processes)
-    try:
-        verify_startup(output, barrier, ready, session)
-        verify_scenario(output, scenario, source_digest)
-    except (AssertionError, OSError, ValueError):
-        # Preserve exact bounded evidence in hosted CI logs as well as local files.
-        for role in ("participant", "operator"):
-            diagnostic = output / (role + "-clock-exchanges.tsv")
-            if diagnostic.is_file():
-                print("FAILED RUN CLOCK EVIDENCE: " + str(diagnostic), file=sys.stderr)
-                print(diagnostic.read_text(encoding="utf-8"), file=sys.stderr)
-        raise
 
 def verify_startup(output, barrier, ready, session):
     assert (barrier / "start.tsv").read_bytes() == ("START\t1\t" + session + "\n").encode("utf-8")
@@ -167,8 +210,28 @@ def verify_startup(output, barrier, ready, session):
         report, _, _ = read_report(output / (role + "-report.tsv"))
         assert report["startup_barrier_enabled"] == "True", report
         assert float(report["active_started_local_seconds"]) == start, (report, first_tick)
-        assert float(report["active_elapsed_seconds"]) >= duration, report
-    print("PASS startup rendezvous: both peers bound before release; delayed peer did not consume 7/8-second active runs")
+        elapsed = float(report["active_elapsed_seconds"])
+        assert math.isfinite(elapsed) and elapsed > 0, report
+        if report["scenario_completion_enabled"] != "True":
+            assert elapsed >= duration, report
+    print("PASS startup rendezvous: both peers bound before release; active run starts after the delayed-peer fixture")
+
+def verify_completion(output, barrier, session, scenario):
+    for name, kind in (("operator-complete.tsv", "OPERATOR_COMPLETE"),
+                       ("participant-exited.tsv", "PARTICIPANT_EXITED"),
+                       ("operator-post-exit.tsv", "OPERATOR_POST_EXIT_TICK")):
+        assert (barrier / name).read_text(encoding="utf-8-sig") == kind + "\t1\t" + session + "\t" + scenario + "\n", name
+    goal = (barrier / "participant-goal.tsv").read_text(encoding="utf-8-sig").splitlines()
+    assert goal[0] == "PARTICIPANT_GOAL\t1\t" + session + "\t" + scenario, goal
+    participant, trials, _ = read_report(output / "participant-report.tsv")
+    operator, _, _ = read_report(output / "operator-report.tsv")
+    assert len(goal) == len(trials) + 1, goal
+    assert set(goal[1:]) == {"trial\t" + identity + "\t" + stimulus for identity, stimulus in trials.items()}, goal
+    for report in (participant, operator):
+        assert report["scenario_completion_enabled"] == "True" and report["completion_reason"] == "scenario_goal", report
+    assert participant["post_participant_exit_ticks"] == "0" and operator["post_participant_exit_ticks"] == "1", (participant, operator)
+    assert not (barrier / "timeout.tsv").exists(), "A timed-out run cannot pass"
+    print("PASS bounded scenario completion and explicit operator tick after confirmed participant exit")
 
 def verify_scenario(output, scenario, source_digest):
     participant, expected, faults = read_report(output / "participant-report.tsv")
