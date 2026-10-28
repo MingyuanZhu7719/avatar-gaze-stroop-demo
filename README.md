@@ -20,3 +20,10 @@ The latest user-accepted working baseline is now readable directly on GitHub. It
 
 **Historical version:** [Avatar_Gaze_Experiment_Plan.docx](docs/Avatar_Gaze_Experiment_Plan.docx) is retained unchanged for reference. Use the Markdown design above for the current protocol; this update does not add or refresh a DOCX.
 <!-- END current-experiment-design -->
+
+<!-- BEGIN software-requirements -->
+## Software requirements
+
+- [Approved PRD v0.1](docs/prd.md): roles, two-app views, experiment flow, control sources, faults, data, and acceptance criteria.
+- Software implementation and hardware validation are tracked separately from the accepted experiment design. Unresolved interaction and technical choices remain explicit in the PRD.
+<!-- END software-requirements -->
