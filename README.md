@@ -8,9 +8,12 @@ VR avatar gaze and Stroop demo planning.
 
 The latest user-accepted working baseline is now readable directly on GitHub. It includes four within-participant conditions, **24 trials per block / 96 planned main trials**, the **6/8 practice rule with at most one retry**, bilingual post-block items, stimulus and counterbalancing tables, and visual explanations of the procedure, gaze timing, and conceptual logging/control design.
 
+**WoZ clarification, 28 October 2026:** the confirmed design uses VIVE Pro Eye with separate participant and operator setups. The operator has an **independent computer and application** that must capture real head rotation and eye gaze and transmit them live to the participant-side application and avatar. Automatic mode drives the same avatar by program through the shared presentation interface. This is not button-based target switching or a single-computer, two-headset design. Real-time transport, synchronization, latency, tracking validity, and source/deviation logging remain requirements to implement and validate. The operator computer's exact configuration, SDK versions, network protocol/details, and clock-synchronization method remain open. Body, hand, and voice synchronization are outside scope. This is an architecture specification, not a claim of implemented or tested integration.
+
 - [Complete experiment design](docs/experiment-design.md)
 - [Evidence, adaptations, and decision record](docs/evidence-and-decisions.md)
 - [Mermaid diagrams and static SVG versions](docs/diagrams.md)
+- [Automatic and live WoZ architecture](docs/experiment-design.md#7-automatic-and-operator-control)
 - [Open lab and ethics items](docs/experiment-design.md#11-resolved-decisions-and-open-lab-items)
 
 **Status:** accepted design baseline dated 26 October 2026, not a claim of software implementation, apparatus validation, or ethics approval. Participant testing remains subject to the applicable approvals and protocol freeze.
