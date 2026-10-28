@@ -78,7 +78,7 @@ def run_scenario(launch, build, scenario, source_digest):
 
 def verify_scenario(output, scenario, source_digest):
     participant, expected, faults = read_report(output / "participant-report.tsv")
-    operator, observed, _ = read_report(output / "operator-report.tsv")
+    operator, observed, operator_faults = read_report(output / "operator-report.tsv")
     assert participant["pid"] != operator["pid"], "Apps must be independent processes"
     assert expected == observed, "Operator must see every same current trial and word/ink pair"
     assert int(participant["received_samples"]) > 20 and int(participant["valid_presentations"]) > 0, participant
@@ -103,8 +103,12 @@ def verify_scenario(output, scenario, source_digest):
             assert float(row["t1_remote_received"]) <= float(row["t2_remote_sent"]), row
             assert row["local_clock"] != row["remote_clock"], row
     verify_export(participant, source_digest)
+    failed_sends, suppressed = int(operator["samples_send_failed"]), int(operator["samples_suppressed"])
+    assert 0 <= failed_sends <= 1 and suppressed >= 0, operator
+    if failed_sends:
+        assert ("connection_fault", "udp_connection_reset:send") in operator_faults, operator_faults
     with (output / "operator-acquisition.tsv").open(newline="", encoding="utf-8") as stream:
-        assert len(list(csv.DictReader(stream, delimiter="\t"))) == int(operator["samples_sent"])
+        assert len(list(csv.DictReader(stream, delimiter="\t"))) == int(operator["samples_sent"]) + failed_sends + suppressed
     print("PASS " + scenario + ": independent processes, matching tasks, source/clock provenance and hashed partial export")
 
 def main():

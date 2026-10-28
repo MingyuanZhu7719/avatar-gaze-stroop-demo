@@ -28,10 +28,12 @@ namespace AvatarStroop.Apps
                         using(var writer=new StreamWriter(Path.Combine(output,"operator-report.tsv")))
                         {
                             Report(writer,"pid",Process.GetCurrentProcess().Id);Report(writer,"samples_sent",app.SamplesSent);
+                            Report(writer,"samples_send_failed",app.SamplesSendFailed);Report(writer,"samples_suppressed",app.SamplesSuppressed);
                             Report(writer,"clock_mapping_available",app.Synchronizer.Snapshot().Available);
                             Report(writer,"clock_unavailable_reason",app.Synchronizer.Snapshot().UnavailableReason);
                             Report(writer,"clock_last_rejection",app.Synchronizer.LastRejection);
                             Report(writer,"stop_acknowledged",app.StopDelivery.Acknowledged);Report(writer,"stop_pending",app.StopDelivery.Pending);
+                            foreach(var item in app.Monitor.Events)writer.WriteLine("fault\t"+item.Kind+"\t"+item.Detail);
                             foreach(var pair in app.ObservedTrials.OrderBy(x=>x.Key))writer.WriteLine("trial\t"+pair.Key+"\t"+pair.Value);
                         }
                         WriteClockEvidence(app,output,"operator");

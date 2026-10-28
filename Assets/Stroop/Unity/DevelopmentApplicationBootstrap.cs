@@ -63,10 +63,12 @@ namespace AvatarStroop.Unity
                     if(participant.CurrentAvatar!=null)view.ApplyAvatarOutput(participant.CurrentAvatar);
                     else view.ClearAvatarOutput();
                     var warnings=new List<string>();
-                    if(participant.Experiment.LockedControl==ControlSelection.SimulatorRehearsal && participant.CurrentFaults!=null)
+                    if(participant.CurrentFaults!=null)
                     {
-                        warnings.AddRange(participant.CurrentFaults.Warnings.Select(x=>x.Kind+": "+x.Message));
-                        warnings.AddRange(participant.ApplicationWarnings);
+                        bool selectedTracking=participant.Experiment.LockedControl==ControlSelection.SimulatorRehearsal;
+                        warnings.AddRange(participant.CurrentFaults.Warnings
+                            .Where(x=>selectedTracking||x.Kind==FaultKind.ConnectionFault||x.Kind==FaultKind.RecoveryDecisionRequired).Select(x=>x.Kind+": "+x.Message));
+                        if(selectedTracking)warnings.AddRange(participant.ApplicationWarnings);
                     }
                     if(actionError!=null)warnings.Add(actionError);
                     view.SetFaults(warnings);
@@ -76,6 +78,8 @@ namespace AvatarStroop.Unity
                     if(Input.GetKeyDown(KeyCode.P))operatorApp.RequestSafetyStop();
                     operatorApp.Tick();view.ApplyTaskView(operatorApp.View());
                     var warnings=new List<string>();
+                    warnings.AddRange(operatorApp.Monitor.Snapshot(operatorApp.Clock.Now,operatorApp.Synchronizer).Warnings
+                        .Where(x=>x.Kind==FaultKind.ConnectionFault||x.Kind==FaultKind.RecoveryDecisionRequired).Select(x=>x.Kind+": "+x.Message));
                     if(operatorApp.CurrentTask==null)warnings.Add("Task stream unavailable or stale. No participant eye/body synchronization.");
                     if(operatorApp.StopDelivery.Pending)warnings.Add("SAFETY STOP PENDING — delivery is not acknowledged.");
                     else if(operatorApp.StopDelivery.Acknowledged)warnings.Add("Safety stop acknowledged by participant application.");

@@ -226,35 +226,100 @@ namespace AvatarStroop.Core
         public string Error { get; internal set; }
         public WirePacket Packet { get; internal set; }
         public IPEndPoint RemoteEndpoint { get; internal set; }
+        public UdpConnectionFault ConnectionFault { get; internal set; }
+    }
+
+    public sealed class UdpConnectionFault
+    {
+        public SocketError SocketErrorCode {get;internal set;}
+        public string Operation {get;internal set;}
+        public string Reason {get{return "udp_connection_reset:"+Operation;}}
+    }
+
+    public sealed class UdpSendResult
+    {
+        // Socket acceptance is not a delivery acknowledgement.
+        public bool Sent {get;internal set;}
+        public UdpConnectionFault ConnectionFault {get;internal set;}
+    }
+
+    // Injectable socket boundary for deterministic platform-error regressions.
+    internal interface IUdpSocket : IDisposable
+    {
+        IPEndPoint LocalEndpoint {get;}
+        bool Poll();
+        byte[] Receive(ref IPEndPoint sender);
+        void Send(byte[] bytes,IPEndPoint remote);
+    }
+
+    internal sealed class UdpSocket : IUdpSocket
+    {
+        readonly UdpClient client;
+        public IPEndPoint LocalEndpoint {get{return (IPEndPoint)client.Client.LocalEndPoint;}}
+        public UdpSocket(IPEndPoint localEndpoint){client=new UdpClient(localEndpoint);}
+        public bool Poll(){return client.Client.Poll(0,SelectMode.SelectRead);}
+        public byte[] Receive(ref IPEndPoint sender){return client.Receive(ref sender);}
+        public void Send(byte[] bytes,IPEndPoint remote){client.Send(bytes,bytes.Length,remote);}
+        public void Dispose(){client.Close();}
     }
 
     // One configured peer, no discovery or automatic peer/source replacement. Poll from an application's own loop.
     public sealed class UdpPeer : IDisposable
     {
-        readonly UdpClient client;
+        readonly IUdpSocket socket;
         readonly IPEndPoint remote;
-        public IPEndPoint LocalEndpoint {get{return (IPEndPoint)client.Client.LocalEndPoint;}}
+        readonly IPEndPoint local;
+        bool disposed;
+        public IPEndPoint LocalEndpoint {get{return new IPEndPoint(local.Address,local.Port);}}
         public bool RemoteNetworkExplicitlyEnabled {get;private set;}
+        public UdpConnectionFault ConnectionFault {get;private set;}
         public UdpPeer(IPEndPoint localEndpoint,IPEndPoint remoteEndpoint,bool allowRemoteNetwork)
+            :this(localEndpoint,remoteEndpoint,allowRemoteNetwork,null){}
+        internal UdpPeer(IPEndPoint localEndpoint,IPEndPoint remoteEndpoint,bool allowRemoteNetwork,IUdpSocket socket)
         {
             if(localEndpoint==null || remoteEndpoint==null || remoteEndpoint.Port==0 || localEndpoint.AddressFamily!=remoteEndpoint.AddressFamily)
                 throw new ArgumentException("Explicit compatible endpoints required");
             if(!allowRemoteNetwork && (!IPAddress.IsLoopback(localEndpoint.Address) || !IPAddress.IsLoopback(remoteEndpoint.Address)))
                 throw new ArgumentException("Remote network exposure requires explicit opt-in");
             remote=new IPEndPoint(remoteEndpoint.Address,remoteEndpoint.Port); RemoteNetworkExplicitlyEnabled=allowRemoteNetwork;
-            client=new UdpClient(localEndpoint);
+            this.socket=socket??new UdpSocket(localEndpoint);
+            var bound=this.socket.LocalEndpoint;local=new IPEndPoint(bound.Address,bound.Port);
         }
-        public void Send(WirePacket packet) {var bytes=WireCodec.Encode(packet);client.Send(bytes,bytes.Length,remote);}
-        // A null result means no datagram available; rejected traffic is a visible result and must be audited by the caller.
+        UdpConnectionFault Reset(string operation,SocketException error)
+        {
+            ConnectionFault=new UdpConnectionFault{SocketErrorCode=error.SocketErrorCode,Operation=operation};
+            // WSAECONNRESET on UDP reports a prior ICMP Port Unreachable. End this
+            // socket epoch; never retry, reopen it or suppress unrelated errors.
+            Dispose();return ConnectionFault;
+        }
+        public UdpSendResult Send(WirePacket packet)
+        {
+            var bytes=WireCodec.Encode(packet);
+            if(ConnectionFault!=null)return new UdpSendResult{ConnectionFault=ConnectionFault};
+            if(disposed)throw new ObjectDisposedException("UdpPeer");
+            try {socket.Send(bytes,remote);return new UdpSendResult{Sent=true};}
+            catch(SocketException error) when(error.SocketErrorCode==SocketError.ConnectionReset)
+            {return new UdpSendResult{ConnectionFault=Reset("send",error)};}
+        }
+        // A terminal fault is returned once, then Poll returns null without I/O.
+        // Callers must audit the explicit fault and gate current input immediately.
         public UdpReceiveResult Poll()
         {
-            if(!client.Client.Poll(0,SelectMode.SelectRead)) return null;
-            IPEndPoint sender=null; byte[] bytes=client.Receive(ref sender);
+            if(ConnectionFault!=null)return null;
+            if(disposed)throw new ObjectDisposedException("UdpPeer");
+            IPEndPoint sender=null;byte[] bytes;string operation="poll";
+            try
+            {
+                if(!socket.Poll())return null;
+                operation="receive";bytes=socket.Receive(ref sender);
+            }
+            catch(SocketException socketError) when(socketError.SocketErrorCode==SocketError.ConnectionReset)
+            {var fault=Reset(operation,socketError);return new UdpReceiveResult{ConnectionFault=fault,Error=fault.Reason};}
             var result=new UdpReceiveResult{RemoteEndpoint=sender};
             if(!sender.Address.Equals(remote.Address) || sender.Port!=remote.Port) {result.Error="unexpected_endpoint";return result;}
             WirePacket packet; string error;
             result.Accepted=WireCodec.TryDecode(bytes,out packet,out error);result.Packet=packet;result.Error=error;return result;
         }
-        public void Dispose() {client.Close();}
+        public void Dispose() {if(disposed)return;disposed=true;socket.Dispose();}
     }
 }

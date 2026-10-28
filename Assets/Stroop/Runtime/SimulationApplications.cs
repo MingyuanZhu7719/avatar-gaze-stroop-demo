@@ -65,6 +65,7 @@ namespace AvatarStroop.Runtime
         long outgoing;
         double nextHello,nextSync;
         int exchange;
+        bool connectionFaultRecorded;
         readonly List<PacketObservation> packets=new List<PacketObservation>();
         readonly List<ClockExchangeObservation> clockExchanges=new List<ClockExchangeObservation>();
         public MonotonicClock Clock {get;private set;}
@@ -73,7 +74,7 @@ namespace AvatarStroop.Runtime
         public ClockSynchronizer Synchronizer {get;private set;}
         public IReadOnlyList<PacketObservation> Packets {get{return packets.AsReadOnly();}}
         public IReadOnlyList<ClockExchangeObservation> ClockExchanges {get{return clockExchanges.AsReadOnly();}}
-        protected SimulationPeer(string session,PeerRole role,int localPort,int remotePort)
+        protected SimulationPeer(string session,PeerRole role,int localPort,int remotePort,UdpPeer transport=null)
         {
             string own=role==PeerRole.Participant?"participant":"operator",other=role==PeerRole.Participant?"operator":"participant";
             Clock=new MonotonicClock(own+"-monotonic");
@@ -81,18 +82,34 @@ namespace AvatarStroop.Runtime
             var expected=new PeerIdentity(session,other,role==PeerRole.Participant?PeerRole.Operator:PeerRole.Participant,"simulator/"+other,ControlSource.Simulator,other+"-monotonic");
             Monitor=new ReceiveMonitor(expected,DevelopmentFixtures.Faults(),"simulator-no-hardware",Clock.ClockId);
             Synchronizer=new ClockSynchronizer(Clock.ClockId,expected.ClockId,DevelopmentFixtures.Clocks());
-            socket=new UdpPeer(new IPEndPoint(IPAddress.Loopback,localPort),new IPEndPoint(IPAddress.Loopback,remotePort),false);
+            socket=transport??new UdpPeer(new IPEndPoint(IPAddress.Loopback,localPort),new IPEndPoint(IPAddress.Loopback,remotePort),false);
         }
         protected virtual bool SuppressOutgoing {get{return false;}}
         protected virtual void AcceptedPacket(WirePacket packet,double received){}
+        protected virtual void ConnectionFaulted(){}
         protected long NextPacketSequence() {return outgoing++;}
-        protected void Send(WirePacket packet) {if(!SuppressOutgoing)socket.Send(packet);}
+        void RecordConnectionFault(UdpConnectionFault fault)
+        {
+            if(connectionFaultRecorded)return;
+            connectionFaultRecorded=true;Monitor.RecordConnectionFault(fault.Reason,Clock.Now);ConnectionFaulted();
+        }
+        protected UdpSendResult Send(WirePacket packet)
+        {
+            if(connectionFaultRecorded)return new UdpSendResult{ConnectionFault=socket.ConnectionFault};
+            // No socket attempt: the simulation fault script may deliberately suppress traffic.
+            if(SuppressOutgoing)return new UdpSendResult();
+            var result=socket.Send(packet);
+            if(result.ConnectionFault!=null)RecordConnectionFault(result.ConnectionFault);
+            return result;
+        }
         protected void TickNetwork()
         {
+            if(connectionFaultRecorded)return;
             UdpReceiveResult received;
             while((received=socket.Poll())!=null)
             {
                 double now=Clock.Now;
+                if(received.ConnectionFault!=null){RecordConnectionFault(received.ConnectionFault);return;}
                 if(!received.Accepted){Monitor.RecordTransportRejection(received.Error,now);packets.Add(new PacketObservation{ReceivedSeconds=now,Reason=received.Error});continue;}
                 var decision=Monitor.Observe(received.Packet,now,Synchronizer);
                 packets.Add(new PacketObservation{Packet=received.Packet,ReceivedSeconds=now,Accepted=decision.Accepted,Reason=decision.Reason,MissingBeforePacket=decision.MissingBeforePacket});
@@ -105,10 +122,13 @@ namespace AvatarStroop.Runtime
                     clockExchanges.Add(new ClockExchangeObservation{Reply=received.Packet,ReceivedSeconds=now,Accepted=accepted,Rejection=Synchronizer.LastRejection,Mapping=Synchronizer.Snapshot()});
                     if(clockExchanges.Count>256)clockExchanges.RemoveAt(0);
                 }
+                if(connectionFaultRecorded)return;
                 AcceptedPacket(received.Packet,now);
+                if(connectionFaultRecorded)return;
             }
             if(!SuppressOutgoing && Clock.Now>=nextHello)
             {Send(WirePacket.Hello(Identity,NextPacketSequence(),Clock.Now,SessionConfiguration.ProtocolVersion));nextHello=Clock.Now+.1;}
+            if(connectionFaultRecorded)return;
             if(!SuppressOutgoing && Clock.Now>=nextSync)
             {
                 var id=Identity.PeerId+"-exchange-"+(exchange++);double sent=Clock.Now;
@@ -134,10 +154,15 @@ namespace AvatarStroop.Runtime
         readonly List<HeadEyeSample> acquired=new List<HeadEyeSample>();
         public TaskSnapshot CurrentTask {get;private set;}
         public int SamplesSent {get;private set;}
+        public int SamplesSendFailed {get;private set;}
+        public int SamplesSuppressed {get;private set;}
         public IReadOnlyDictionary<string,string> ObservedTrials {get{return observedTrials;}}
         public IReadOnlyList<HeadEyeSample> AcquiredSamples {get{return acquired.AsReadOnly();}}
         public OperatorSimulationApplication(string session,int localPort,int remotePort,bool injectFaults,bool scriptedStop=false)
-            :base(session,PeerRole.Operator,localPort,remotePort){this.injectFaults=injectFaults;this.scriptedStop=scriptedStop;}
+            :this(session,localPort,remotePort,injectFaults,scriptedStop,null){}
+        internal OperatorSimulationApplication(string session,int localPort,int remotePort,bool injectFaults,bool scriptedStop,UdpPeer transport)
+            :base(session,PeerRole.Operator,localPort,remotePort,transport){this.injectFaults=injectFaults;this.scriptedStop=scriptedStop;}
+        protected override void ConnectionFaulted(){CurrentTask=null;}
         public void RequestSafetyStop(){StopDelivery.Request();nextStopRetry=0;}
         protected override void AcceptedPacket(WirePacket packet,double received)
         {if(packet.Kind==WireKind.SafetyStopAck)StopDelivery.Acknowledge(packet.StopRequestId);}
@@ -164,7 +189,11 @@ namespace AvatarStroop.Runtime
             bool eye=!(injectFaults && elapsed>=.3 && elapsed<.45),head=!(injectFaults && elapsed>=.6 && elapsed<.75);
             var sample=new HeadEyeSample(raw.SessionId,raw.StreamId,raw.DeviceId,raw.ClockId,raw.BlockIndex,raw.Segment,raw.Sequence,
                 raw.CaptureLocalSeconds,Clock.Now,raw.Source,raw.Role,raw.RawHeadRotation,raw.RawEyeDirection,head,eye);
-            acquired.Add(sample);Send(WirePacket.Tracking(Identity,NextPacketSequence(),sample));SamplesSent++;nextSample=Clock.Now+.01;
+            acquired.Add(sample);var transmission=Send(WirePacket.Tracking(Identity,NextPacketSequence(),sample));
+            if(transmission.Sent)SamplesSent++;
+            else if(transmission.ConnectionFault!=null)SamplesSendFailed++;
+            else SamplesSuppressed++;
+            nextSample=Clock.Now+.01;
         }
         public TaskView View()
         {
@@ -198,7 +227,9 @@ namespace AvatarStroop.Runtime
         public IReadOnlyList<AvatarOutput> Outputs {get{return outputs.AsReadOnly();}}
         public IReadOnlyList<string> ApplicationWarnings {get{return applicationWarnings.AsReadOnly();}}
         public ParticipantSimulationApplication(string session,int localPort,int remotePort,AutomaticGazeGeometry geometry=null)
-            :base(session,PeerRole.Participant,localPort,remotePort)
+            :this(session,localPort,remotePort,geometry,null){}
+        internal ParticipantSimulationApplication(string session,int localPort,int remotePort,AutomaticGazeGeometry geometry,UdpPeer transport)
+            :base(session,PeerRole.Participant,localPort,remotePort,transport)
         {
             this.geometry=geometry??DevelopmentFixtures.Geometry();
             // Deliberately named integration fixture, not a participant allocation schedule.
@@ -207,6 +238,7 @@ namespace AvatarStroop.Runtime
             Audit=new AuditLog(session,RunKind.Simulation);
             Experiment.RecordPreparation(Actor.Owner,"consent_screening_calibration","not_applicable_synthetic_software_rehearsal");
         }
+        protected override void ConnectionFaulted(){RefreshPresentation();}
         protected override void AcceptedPacket(WirePacket packet,double received)
         {
             if(packet.Kind!=WireKind.SafetyStopRequest)return;

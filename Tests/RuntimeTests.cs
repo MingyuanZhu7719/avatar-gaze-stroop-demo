@@ -11,6 +11,7 @@ namespace AvatarStroop.Tests
     {
         public static void Register(TestSuite tests)
         {
+            UdpRuntimeTests.Register(tests);
             tests.Run("M3 readiness rejects otherwise fresh samples from another block or segment",()=>{
                 var sample=new HeadEyeSample("session","simulator/operator","simulator-no-hardware","clock",0,0,0,0,0,
                     ControlSource.Simulator,StreamRole.OperatorControl,Rotation.Identity,new Vec3(0,0,1),true,true);

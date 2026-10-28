@@ -252,7 +252,7 @@ namespace AvatarStroop.Core
             ConnectionStaleSeconds=connectionStaleSeconds;TrackingStaleSeconds=trackingStaleSeconds;MaximumMappedSampleAgeSeconds=maximumMappedSampleAgeSeconds;
         }
     }
-    public enum FaultKind { AwaitingHandshake, ConnectionStale, AwaitingTracking, HeadInvalid, EyeInvalid, HeadStale, EyeStale, ClockMappingUnavailable, CaptureAgeUncertain, RecoveryDecisionRequired }
+    public enum FaultKind { AwaitingHandshake, ConnectionStale, AwaitingTracking, HeadInvalid, EyeInvalid, HeadStale, EyeStale, ClockMappingUnavailable, CaptureAgeUncertain, RecoveryDecisionRequired, ConnectionFault }
     public sealed class FaultWarning
     {
         public FaultKind Kind {get;internal set;}
@@ -310,6 +310,7 @@ namespace AvatarStroop.Core
         double lastNow=-1,lastSent=-1,lastCapture=-1;
         double? lastReceipt,lastTracking,lastHeadGood,lastEyeGood,lastTaskReceived,lastTaskSent;
         bool handshake,recoveryRequired;
+        string connectionFault;
         public HeadEyeSample LastSample {get;private set;}
         public TaskSnapshot LastTask {get;private set;}
         public IReadOnlyList<FaultEvent> Events {get{return new ReadOnlyCollection<FaultEvent>(events);}}
@@ -331,6 +332,13 @@ namespace AvatarStroop.Core
         {rejected++;Event(now,"packet_rejected",reason);return new ReceiveDecision{Reason=reason};}
         public void RecordTransportRejection(string reason,double localReceived)
         {Time(localReceived);Reject(localReceived,reason??"unspecified_transport_rejection");}
+        public void RecordConnectionFault(string reason,double localDetected)
+        {
+            Time(localDetected);recoveryRequired=true;
+            if(connectionFault!=null)return;
+            connectionFault=reason??"unspecified_connection_fault";
+            Event(localDetected,"connection_fault",connectionFault);
+        }
         public ReceiveDecision Observe(WirePacket packet,double localReceived,ClockSynchronizer mapping=null)
         {
             Time(localReceived);
@@ -389,7 +397,8 @@ namespace AvatarStroop.Core
             var warnings=new List<FaultWarning>();
             Action<FaultKind,string> add=(kind,message)=>warnings.Add(new FaultWarning{Kind=kind,Message=message});
             bool connectionFresh=lastReceipt.HasValue && now-lastReceipt.Value<=config.ConnectionStaleSeconds;
-            if(recoveryRequired)add(FaultKind.RecoveryDecisionRequired,"Connection freshness was lost. A new explicit receiver epoch and synchronization are required; recovery policy is unresolved.");
+            if(connectionFault!=null)add(FaultKind.ConnectionFault,"Transport epoch ended: "+connectionFault+". Current peer input is unavailable.");
+            if(recoveryRequired)add(FaultKind.RecoveryDecisionRequired,"Connection freshness was lost or a transport fault occurred. A new explicit receiver epoch and synchronization are required; recovery policy is unresolved.");
             if(!handshake)add(FaultKind.AwaitingHandshake,"Expected peer has not completed the versioned handshake.");
             else if(!connectionFresh)add(FaultKind.ConnectionStale,"Expected peer traffic exceeded the configured development freshness interval.");
             bool head=false,eye=false,localHead=false,localEye=false,ageVerified=false; double? mappedAge=null,uncertainty=null;

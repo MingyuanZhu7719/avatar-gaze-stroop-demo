@@ -10,6 +10,20 @@ namespace AvatarStroop.Tests
 {
     public static class FaultTransportTests
     {
+        sealed class FaultSocket : IUdpSocket
+        {
+            public string FailOperation;
+            public Exception Failure;
+            public int Polls,Receives,Sends,Closes;
+            public IPEndPoint LocalEndpoint {get{return new IPEndPoint(IPAddress.Loopback,12001);}}
+            void Fail(string operation){if(operation==FailOperation)throw Failure;}
+            public bool Poll(){Polls++;Fail("poll");return true;}
+            public byte[] Receive(ref IPEndPoint sender){Receives++;Fail("receive");sender=new IPEndPoint(IPAddress.Loopback,12002);return WireCodec.Encode(WirePacket.Hello(Peer(),0,0,SessionConfiguration.ProtocolVersion));}
+            public void Send(byte[] bytes,IPEndPoint remote){Sends++;Fail("send");}
+            public void Dispose(){Closes++;}
+        }
+        static UdpPeer Injected(FaultSocket socket)
+        {return new UdpPeer(socket.LocalEndpoint,new IPEndPoint(IPAddress.Loopback,12002),false,socket);}
         static PeerIdentity Peer(string session="wire-session",string peer="operator-process",PeerRole role=PeerRole.Operator,string source="simulator/operator",ControlSource origin=ControlSource.Simulator,string clock="remote-clock")
         {return new PeerIdentity(session,peer,role,source,origin,clock);}
         static HeadEyeSample Sample(long sequence,double capture,double sent,bool head=true,bool eye=true,string device="operator-device",int block=0,int segment=0)
@@ -38,6 +52,71 @@ namespace AvatarStroop.Tests
         {var f=Encoding.ASCII.GetString(bytes).Split('|');f[field]=value;WirePacket packet;string error;Check.True(!WireCodec.TryDecode(Encoding.ASCII.GetBytes(String.Join("|",f)),out packet,out error));Check.True(packet==null && error!=null);}
         public static void Register(TestSuite suite)
         {
+            foreach(var operation in new[]{"poll","receive","send"})
+            {
+                suite.Run("M3 UDP "+operation+" connection reset closes epoch and prevents all later socket I/O",()=>{
+                    var boundary=new FaultSocket{FailOperation=operation,Failure=new SocketException((int)SocketError.ConnectionReset)};
+                    using(var peer=Injected(boundary))
+                    {
+                        var packet=WirePacket.Hello(Peer(),0,0,SessionConfiguration.ProtocolVersion);
+                        UdpConnectionFault fault;
+                        if(operation=="send")
+                        {var result=peer.Send(packet);Check.True(!result.Sent);fault=result.ConnectionFault;}
+                        else
+                        {var result=peer.Poll();Check.True(!result.Accepted&&result.Packet==null&&result.RemoteEndpoint==null);fault=result.ConnectionFault;Check.Equal("udp_connection_reset:"+operation,result.Error);}
+                        Check.True(fault!=null&&Object.ReferenceEquals(fault,peer.ConnectionFault));
+                        Check.Equal(SocketError.ConnectionReset,fault.SocketErrorCode);Check.Equal(operation,fault.Operation);Check.Equal(1,boundary.Closes);
+                        int polls=boundary.Polls,receives=boundary.Receives,sends=boundary.Sends;
+                        Check.Equal(operation=="send"?0:1,polls);Check.Equal(operation=="receive"?1:0,receives);Check.Equal(operation=="send"?1:0,sends);
+                        boundary.Failure=new InvalidOperationException("A closed socket must never be touched");
+                        for(int i=0;i<3;i++)
+                        {
+                            Check.True(peer.Poll()==null);var after=peer.Send(packet);
+                            Check.True(!after.Sent&&Object.ReferenceEquals(fault,after.ConnectionFault));
+                            Check.Equal(12001,peer.LocalEndpoint.Port);
+                        }
+                        peer.Dispose();peer.Dispose();Check.Equal(1,boundary.Closes);
+                        Check.Equal(polls,boundary.Polls);Check.Equal(receives,boundary.Receives);Check.Equal(sends,boundary.Sends);
+                    }
+                    Check.Equal(1,boundary.Closes);
+                });
+                suite.Run("M3 UDP "+operation+" unrelated exceptions propagate unchanged",()=>{
+                    foreach(var failure in new Exception[]{new SocketException((int)SocketError.NetworkReset),new SocketException((int)SocketError.WouldBlock),new SocketException((int)SocketError.AccessDenied),new InvalidOperationException("programming failure")})
+                    {
+                        var boundary=new FaultSocket{FailOperation=operation,Failure=failure};
+                        using(var peer=Injected(boundary))
+                        {
+                            Exception observed=null;
+                            try {if(operation=="send")peer.Send(WirePacket.Hello(Peer(),0,0,SessionConfiguration.ProtocolVersion));else peer.Poll();}
+                            catch(Exception error){observed=error;}
+                            Check.True(Object.ReferenceEquals(failure,observed));Check.True(peer.ConnectionFault==null);Check.Equal(0,boundary.Closes);
+                        }
+                        Check.Equal(1,boundary.Closes);
+                    }
+                });
+            }
+            suite.Run("M3 explicit UDP fault immediately invalidates fresh axes without forging rejected traffic",()=>{
+                var m=Monitor();var map=Map();Hello(m);m.Observe(Track(1,0,.01),.02,map);
+                Check.True(m.CurrentSample(.03,map)!=null);var raw=m.LastSample;
+                m.RecordConnectionFault("udp_connection_reset:receive",.04);
+                var fault=m.Snapshot(.04,map);Check.True(fault.RecoveryDecisionRequired&&fault.LocalHeadFresh&&fault.LocalEyeFresh);
+                Check.True(!fault.HeadUsable&&!fault.EyeUsable&&m.CurrentSample(.04,map)==null);
+                Check.True(Object.ReferenceEquals(raw,m.LastSample));Check.Equal(0L,fault.RejectedPackets);Check.True(!fault.AutomaticPauseOrFallbackSelected);
+                Check.True(Warning(fault,FaultKind.ConnectionFault)&&Warning(fault,FaultKind.RecoveryDecisionRequired));
+                m.RecordConnectionFault("udp_connection_reset:send",.05);
+                int events=0;foreach(var item in m.Events)if(item.Kind=="connection_fault"){events++;Check.Equal("udp_connection_reset:receive",item.Detail);Check.Near(.04,item.LocalSeconds);}
+                Check.Equal(1,events);
+                Check.True(m.Observe(WirePacket.Hello(Peer(),2,.06,SessionConfiguration.ProtocolVersion),.07,map).Accepted);
+                Check.True(m.Observe(Track(3,1,.08),.09,map).Accepted);Check.True(m.CurrentSample(.1,map)==null);
+                Check.True(map.Snapshot().Available);
+            });
+            suite.Run("M3 explicit UDP fault gates task correspondence even before handshake",()=>{
+                var p=Peer(role:PeerRole.Participant,source:"task-host",origin:ControlSource.Automatic);var m=Monitor(p);var map=Map();
+                m.RecordConnectionFault("udp_connection_reset:poll",0);Check.True(m.Snapshot(0,map).RecoveryDecisionRequired);
+                Check.True(m.Observe(WirePacket.Hello(p,0,.01,SessionConfiguration.ProtocolVersion),.02,map).Accepted);
+                var task=new TaskSnapshot("wire-session",0,0,"wire-session/b0/t0",Colour.Green,Colour.Red,Phase.MainTask,Condition.B);
+                Check.True(m.Observe(WirePacket.Task(p,1,.03,task),.04,map).Accepted);Check.True(m.CurrentTask(.04,map)==null);Check.True(Object.ReferenceEquals(task,m.LastTask));
+            });
             suite.Run("M2 wire invariant round trips preserve packet/sample identities and separate validity",()=>{
                 var culture=Thread.CurrentThread.CurrentCulture;
                 try
