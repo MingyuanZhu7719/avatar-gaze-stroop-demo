@@ -102,6 +102,8 @@ namespace AvatarStroop.Unity.Editor
             PlayerSettings.runInBackground=true;
 
             DevelopmentSceneBuilder.CreateScenes();
+            DevelopmentSceneBuilder.UpgradeClassroomScene(Actor.Participant);
+            DevelopmentSceneBuilder.UpgradeClassroomScene(Actor.Operator);
             var scene=EditorSceneManager.OpenScene("Assets/Stroop/Generated/ParticipantDevelopment.unity",OpenSceneMode.Single);
             var views=scene.GetRootGameObjects().SelectMany(root=>root.GetComponentsInChildren<WorldSpaceExperimentView>(true)).ToArray();
             if(views.Length!=1||views[0].Role!=Actor.Participant)throw new InvalidOperationException("Expected exactly one participant presentation.");
@@ -168,6 +170,7 @@ namespace AvatarStroop.Unity.Editor
             if(!evidence.role_matches||!evidence.camera_linked||!evidence.rig_references_valid||
                 evidence.rig_count!=(participant?1:0)||(participant&&!evidence.stereo_both))
                 throw new InvalidOperationException("Quest preview scene structure failed validation: "+role);
+            ClassroomPresentationValidation.ValidateView(views[0]);
             return evidence;
         }
 

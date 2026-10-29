@@ -101,3 +101,14 @@
 | 研究与采集准备 | 主要研究对比、样本量 / 精度、统计模型及阈值、RT 处理等未决参数；问卷语言和可选归因题；审批、筛查、校准 / AOI、数据保存与退出安排。保持待定，不在本 PRD 里补定或转写成软件成功指标 |
 
 **批准状态：**用户已确认本稿的软件范围、双端视图与角色、流程、日志和可验收要求，并授权发布与分阶段开发。未决项继续保持待定；实现、测试及实机验证状态由开发记录单独报告。
+
+
+## 9. Classroom presentation requirement (user clarification, 2026-10-29)
+
+The participant presentation must place the existing coloured Stroop word on a world-space whiteboard in a simple classroom, with a standing observer avatar beside the board. The intended composition is a board to the left/centre and the observer to the right, visible together from the participant's normal viewing position. The reference is a spatial-composition example; its letter matrix is not a replacement task. The operator application continues to show the participant avatar and task according to the role and phase rules above.
+
+Use restrained walls, a floor, and a board frame; avoid unnecessary classroom decorations, animated elements, or visual distractors. The avatar must not obscure the board. Maintain controllable head and eye orientation and derive gaze targets from the actual board/avatar geometry. The current repository contains only procedural primitives, so the first implementation may use a clearly described stylized standing figure; a photorealistic or humanoid-rigged asset is not part of this clarification.
+
+Preserve the trial plan, words, ink colours, response mapping, correctness scoring, timing, prescribed gaze conditions, role separation, and real-experiment admission gates. Practice and condition D retain their no-observer rule; avatar body parts must follow the same visibility gate as the head and eyes. A neutral dark task inset within the light whiteboard surface may preserve the existing ink contrast. It must not become a new condition or change the task word size in response to the current trial.
+
+Keep the accepted Quest instruction/status HUD at 2 m with its existing bounded angular layout. This is a HUD constraint, not a scale factor for the room. The task word belongs to the board, not the head-following HUD. Quest input remains preview-only, and the final VIVE trackpad colour mapping remains unselected. Scene/build checks and illustrative non-trial render fixtures are not headset or experiment acceptance; the revised classroom requires a separate wearer layout review.

@@ -13,6 +13,10 @@ namespace AvatarStroop.Unity
     {
         public const string RenderClockId = "unity-realtime-since-startup";
         public const string RenderTimestampMeaning = "camera-post-render-proxy-not-photon-onset";
+        public const string GeometryVersion = "development-classroom-root-local-v2";
+        // One preview size for every word/ink; never fit or resize per trial.
+        // fontSize remains 100 for glyph atlas quality, independently of world size.
+        public const float StimulusCharacterSize = .0225f;
         [SerializeField] Camera presentationCamera;
         [SerializeField] Actor role = Actor.Participant;
         [SerializeField] Transform contentRoot;
@@ -94,6 +98,11 @@ namespace AvatarStroop.Unity
                 throw new InvalidOperationException("Create a separate presentation for each application role.");
             presentationCamera = camera; role = displayRole;
             if(contentRoot == null) BuildLayout();
+            EnsureClassroomLayout();
+            // The full standing body reaches below a level 60-degree mono view.
+            // A desktop-only pitch keeps the feet and board stand in frame without moving
+            // the camera or gaze targets. Quest's tracked camera is not changed.
+            if(!headsetPreview) camera.transform.rotation = Quaternion.Euler(15, 0, 0);
             warningRoot.SetParent(camera.transform, false);
             warningRoot.localPosition = new Vector3(0, 0, HudDistance);
             warningRoot.localRotation = Quaternion.identity;
@@ -570,21 +579,21 @@ namespace AvatarStroop.Unity
         void BuildLayout()
         {
             contentRoot = Child("WorldSpaceContent", transform, Vector3.zero);
-            stimulusText = Text("Stimulus", contentRoot, new Vector3(.5f, 1.65f, 2), .13f, 100, Color.white);
+            stimulusText = Text("Stimulus", contentRoot, new Vector3(-.5f, 1.65f, 2), StimulusCharacterSize, 100, Color.white);
             stimulusText.gameObject.AddComponent<StimulusRenderWitness>().Bind(this);
             stimulusText.gameObject.SetActive(false);
             phaseText = Text("RoleAndPhase", contentRoot, new Vector3(.5f, 2.05f, 2), .035f, 50, Color.white);
             messageText = Text("ParticipantInstructions", contentRoot, new Vector3(.5f, 1.25f, 2), .032f, 48, Color.white);
             provisionalText = Text("ProvisionalOperatorPolicy", contentRoot, new Vector3(.5f, .85f, 2), .029f, 48, new Color(1, .7f, .25f));
-            avatarRoot = Child("FixedBodyAvatar", contentRoot, new Vector3(-.65f, .9f, 2.5f));
-            avatarRoot.localRotation = Quaternion.Euler(0, 180, 0);
+            avatarRoot = Child("FixedBodyAvatar", contentRoot, new Vector3(.65f, .9f, 1.9f));
+            avatarRoot.localRotation = Quaternion.Euler(0, 225, 0);
             Primitive("FixedTorso", PrimitiveType.Capsule, avatarRoot, Vector3.zero, new Vector3(.42f, .48f, .3f), new Color(.27f, .45f, .55f));
             avatarHead = Child("DrivenHead", avatarRoot, new Vector3(0, .7f, 0));
             Primitive("HeadShape", PrimitiveType.Sphere, avatarHead, Vector3.zero, new Vector3(.4f, .45f, .36f), new Color(.77f, .68f, .56f));
             leftEye = BuildEye("LeftEye", new Vector3(-.09f, .05f, .16f));
             rightEye = BuildEye("RightEye", new Vector3(.09f, .05f, .16f));
             foreach(var renderer in avatarRoot.GetComponentsInChildren<MeshRenderer>(true)) renderer.gameObject.AddComponent<AvatarRenderWitness>().Bind(this);
-            avatarLabel = Text("AvatarScope", contentRoot, new Vector3(-.65f, .25f, 2.5f), .028f, 48, Color.white);
+            avatarLabel = Text("AvatarScope", contentRoot, new Vector3(.65f, .25f, 1.9f), .028f, 48, Color.white);
             avatarLabel.text = role == Actor.Operator ? "PARTICIPANT AVATAR PLACEHOLDER\nStatic; no reverse head / eye tracking" : "PROVISIONAL AVATAR GEOMETRY\nFixed body; shared head / eye renderer";
             avatarRoot.gameObject.SetActive(false); avatarLabel.gameObject.SetActive(false);
             warningRoot = Child("HeadsetVisibleDevelopmentWarning", presentationCamera.transform, new Vector3(0, .29f, 1.1f));
@@ -596,6 +605,62 @@ namespace AvatarStroop.Unity
             var backing = Primitive("WarningBacking", PrimitiveType.Quad, warningRoot, new Vector3(0, -.075f, .01f), new Vector3(1.05f, .24f, 1), new Color(.025f, .025f, .035f, .94f));
             Material backdrop = NewMaterial(Shader.Find("AvatarStroop/WorldSpaceOverlay"), new Color(.025f, .025f, .035f, .94f));
             backdrop.renderQueue = 4990; backing.GetComponent<MeshRenderer>().sharedMaterial = backdrop;
+        }
+        void EnsureClassroomLayout()
+        {
+            // Migrate the generated presentation as well as newly created scenes.
+            // Text depth and head/eye offsets are preserved. Place the body
+            // in front of the board so its task gaze does not pass through the
+            // opaque board back. Bootstrap derives both gaze targets from these
+            // final world-space anchors and the fixed body orientation.
+            stimulusText.transform.localPosition = new Vector3(-.5f, 1.65f, 2);
+            stimulusText.characterSize = StimulusCharacterSize;
+            stimulusText.transform.localScale = Vector3.one;
+            avatarRoot.localPosition = new Vector3(.65f, .9f, 1.9f);
+            avatarRoot.localRotation = Quaternion.Euler(0,225,0);
+            if(contentRoot.Find("ClassroomEnvironment") == null)
+            {
+                var room = Child("ClassroomEnvironment", contentRoot, Vector3.zero);
+                Primitive("Floor", PrimitiveType.Cube, room, new Vector3(0,-.045f,2), new Vector3(6,.08f,6), new Color(.34f,.35f,.34f));
+                Primitive("BackWall", PrimitiveType.Cube, room, new Vector3(0,1.5f,4.6f), new Vector3(6,3,.10f), new Color(.70f,.72f,.70f));
+                Primitive("LeftWall", PrimitiveType.Cube, room, new Vector3(-3,1.5f,1.8f), new Vector3(.10f,3,5.6f), new Color(.62f,.65f,.64f));
+                Primitive("RightWall", PrimitiveType.Cube, room, new Vector3(3,1.5f,1.8f), new Vector3(.10f,3,5.6f), new Color(.66f,.68f,.66f));
+                Primitive("Skirting", PrimitiveType.Cube, room, new Vector3(0,.08f,4.53f), new Vector3(6,.16f,.03f), new Color(.43f,.46f,.44f));
+                var board = Child("Whiteboard", room, new Vector3(-.5f,1.65f,2.04f));
+                Primitive("Frame", PrimitiveType.Cube, board, new Vector3(0,0,.035f), new Vector3(1.4f,.94f,.07f), new Color(.39f,.42f,.42f));
+                Primitive("OffWhiteFace", PrimitiveType.Cube, board, new Vector3(0,0,-.005f), new Vector3(1.34f,.88f,.02f), new Color(.90f,.91f,.87f));
+                // Keep the existing saturated ink RGB against a neutral dark
+                // writing area; yellow/green must not disappear on a white face.
+                Primitive("WritingArea", PrimitiveType.Cube, board, new Vector3(0,0,-.02f), new Vector3(1.18f,.64f,.01f), new Color(.055f,.065f,.070f));
+                Primitive("Tray", PrimitiveType.Cube, board, new Vector3(0,-.48f,-.035f), new Vector3(1.4f,.035f,.16f), new Color(.43f,.46f,.46f));
+                for(int side=-1;side<=1;side+=2)
+                {
+                    Primitive(side<0?"LeftSupport":"RightSupport",PrimitiveType.Cube,board,new Vector3(side*.53f,-.97f,.055f),new Vector3(.035f,1.33f,.04f),new Color(.43f,.46f,.46f));
+                    Primitive(side<0?"LeftFoot":"RightFoot",PrimitiveType.Cube,board,new Vector3(side*.53f,-1.62f,.04f),new Vector3(.20f,.05f,.46f),new Color(.37f,.40f,.40f));
+                }
+            }
+            if(avatarRoot.Find("StandingBody") == null)
+            {
+                var body = Child("StandingBody",avatarRoot,Vector3.zero);
+                var skin = new Color(.77f,.68f,.56f);
+                var shirt = new Color(.27f,.45f,.55f);
+                var trousers = new Color(.20f,.25f,.29f);
+                Primitive("Neck",PrimitiveType.Cylinder,body,new Vector3(0,.49f,0),new Vector3(.11f,.075f,.11f),skin);
+                for(int side=-1;side<=1;side+=2)
+                {
+                    string name=side<0?"Left":"Right";
+                    Primitive(name+"Arm",PrimitiveType.Capsule,body,new Vector3(side*.28f,.035f,0),new Vector3(.11f,.32f,.11f),shirt);
+                    Primitive(name+"Hand",PrimitiveType.Sphere,body,new Vector3(side*.28f,-.30f,0),new Vector3(.10f,.14f,.10f),skin);
+                    Primitive(name+"Leg",PrimitiveType.Capsule,body,new Vector3(side*.115f,-.60f,0),new Vector3(.15f,.27f,.16f),trousers);
+                    Primitive(name+"Shoe",PrimitiveType.Cube,body,new Vector3(side*.115f,-.865f,.045f),new Vector3(.17f,.07f,.28f),new Color(.12f,.14f,.16f));
+                }
+            }
+            foreach(var renderer in avatarRoot.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var witness=renderer.GetComponent<AvatarRenderWitness>();
+                if(witness==null)witness=renderer.gameObject.AddComponent<AvatarRenderWitness>();
+                witness.Bind(this);
+            }
         }
         Transform BuildEye(string name, Vector3 position)
         {

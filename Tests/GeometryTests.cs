@@ -13,7 +13,11 @@ namespace AvatarStroop.Tests
         }
         static Vec3 Forward(Rotation q)
         { return new Vec3(2*(q.X*q.Z+q.W*q.Y),2*(q.Y*q.Z-q.W*q.X),1-2*(q.X*q.X+q.Y*q.Y)); }
-        static Vec3 RootYaw180(Vec3 direction) { return new Vec3(-direction.X,direction.Y,-direction.Z); }
+        static Vec3 Yaw(Vec3 direction,double degrees)
+        {
+            double radians=degrees*Math.PI/180,cos=Math.Cos(radians),sin=Math.Sin(radians);
+            return new Vec3(cos*direction.X+sin*direction.Z,direction.Y,-sin*direction.X+cos*direction.Z);
+        }
         static void DirectionNear(Vec3 expected,Vec3 actual,double tolerance=0.000000000001)
         {
             Check.True(actual.IsUnit);Check.Near(expected.X,actual.X,tolerance);Check.Near(expected.Y,actual.Y,tolerance);Check.Near(expected.Z,actual.Z,tolerance);
@@ -24,19 +28,20 @@ namespace AvatarStroop.Tests
 
         public static void Register(TestSuite t)
         {
-            t.Run("AC-05 development scene A and C head eye rays point to actual world targets",()=>{
-                var head=new Vec3(-.65,1.6,2.5);var participant=new Vec3(0,1.6,0);var task=new Vec3(.5,1.65,2);
+            t.Run("AC-05 classroom scene A and C head eye rays point to actual world targets",()=>{
+                var head=new Vec3(.65,1.6,1.9);var participant=new Vec3(0,1.6,0);var task=new Vec3(-.5,1.65,2);
                 var participantWorld=Subtract(participant,head);var taskWorld=Subtract(task,head);
-                // Root inverse yaw 180 maps world directions to avatar-root local space.
-                var geometry=DevelopmentGeometry.FromLocalDirections(RootYaw180(participantWorld),RootYaw180(taskWorld),"scene-derived-test-v1");
+                // The fixed body faces yaw 225. Its inverse and forward rotations differ.
+                var geometry=DevelopmentGeometry.FromLocalDirections(Yaw(participantWorld,-225),Yaw(taskWorld,-225),"classroom-test-v2");
                 var a=AutomaticGaze.Evaluate(Condition.A,GazeTarget.Participant,0,geometry).Pose.Value;
                 var c=AutomaticGaze.Evaluate(Condition.C,GazeTarget.Participant,0,geometry).Pose.Value;
-                DirectionNear(Unit(participantWorld),RootYaw180(Forward(a.HeadRotation)));
-                DirectionNear(Unit(participantWorld),RootYaw180(a.EyeDirection));
-                DirectionNear(Unit(taskWorld),RootYaw180(Forward(c.HeadRotation)));
-                DirectionNear(Unit(taskWorld),RootYaw180(c.EyeDirection));
-                CoOriented(a);CoOriented(c);Check.Equal("scene-derived-test-v1",geometry.Version);
-                Check.True(c.EyeDirection.X < 0,"Task target lies on negative avatar-root-local X");
+                DirectionNear(Unit(participantWorld),Yaw(Forward(a.HeadRotation),225));
+                DirectionNear(Unit(participantWorld),Yaw(a.EyeDirection,225));
+                DirectionNear(Unit(taskWorld),Yaw(Forward(c.HeadRotation),225));
+                DirectionNear(Unit(taskWorld),Yaw(c.EyeDirection,225));
+                CoOriented(a);CoOriented(c);Check.Equal("classroom-test-v2",geometry.Version);
+                Check.True(a.EyeDirection.X < 0,"Participant target lies on negative avatar-root-local X");
+                Check.True(c.EyeDirection.X > 0,"Task target lies on positive avatar-root-local X");
             });
             t.Run("AC-05 development geometry normalizes all octants and coorients head eyes",()=>{
                 for(int x=-2;x<=2;x++)for(int y=-2;y<=2;y++)for(int z=-2;z<=2;z++)

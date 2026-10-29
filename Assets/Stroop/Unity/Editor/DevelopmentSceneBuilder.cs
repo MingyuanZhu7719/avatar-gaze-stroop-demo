@@ -71,6 +71,26 @@ namespace AvatarStroop.Unity.Editor
                 AssetDatabase.CreateAsset(material, path);
             }
         }
+        // Explicit upgrade of this tool's two generated scenes. CreateScenes still
+        // preserves existing files; the isolated preview build opts into migration.
+        public static void UpgradeClassroomScene(Actor role)
+        {
+            if(role!=Actor.Participant&&role!=Actor.Operator)throw new ArgumentException("Only presentation roles have generated scenes.");
+            for(int i=0;i<SceneManager.sceneCount;i++)
+                if(SceneManager.GetSceneAt(i).isDirty)throw new InvalidOperationException("Save open scene edits before upgrading generated scenes.");
+            string path=DirectoryPath+"/"+role+"Development.unity";
+            var scene=EditorSceneManager.OpenScene(path,OpenSceneMode.Single);
+            WorldSpaceExperimentView view=null;
+            foreach(var root in scene.GetRootGameObjects())
+            foreach(var candidate in root.GetComponentsInChildren<WorldSpaceExperimentView>(true))
+            {if(view!=null)throw new InvalidOperationException("Generated scene has more than one presentation.");view=candidate;}
+            if(view==null||view.Role!=role||view.PresentationCamera==null)throw new InvalidOperationException("Generated scene role/camera is invalid.");
+            view.Initialize(view.PresentationCamera,role);
+            ClassroomPresentationValidation.ValidateView(view);
+            PersistMaterials(scene,role.ToString());
+            EditorUtility.SetDirty(view);
+            if(!EditorSceneManager.SaveScene(scene,path))throw new InvalidOperationException("Could not save upgraded "+path);
+        }
         static void EnsureFolder(string parent, string name)
         {
             if(!AssetDatabase.IsValidFolder(parent + "/" + name)) AssetDatabase.CreateFolder(parent, name);

@@ -51,7 +51,7 @@ namespace AvatarStroop.Unity
                     Transform root=view.AvatarRoot;Vector3 origin=view.AvatarHead.position;
                     Vector3 participantDirection=root.InverseTransformDirection(view.PresentationCamera.transform.position-origin);
                     Vector3 taskDirection=root.InverseTransformDirection(view.TaskWorldPosition-origin);
-                    var geometry=DevelopmentGeometry.FromLocalDirections(ToVec(participantDirection),ToVec(taskDirection),"development-scene-root-local-v1");
+                    var geometry=DevelopmentGeometry.FromLocalDirections(ToVec(participantDirection),ToVec(taskDirection),WorldSpaceExperimentView.GeometryVersion);
                     participant=new ParticipantSimulationApplication(previewOptions.SessionId,previewOptions.ParticipantPort,previewOptions.OperatorPort,geometry);
                     view.SetQuestionnaireLanguage(participant.Experiment.Configuration.QuestionnaireLanguage);
                     view.StimulusRendered+=AcknowledgeStimulus;
