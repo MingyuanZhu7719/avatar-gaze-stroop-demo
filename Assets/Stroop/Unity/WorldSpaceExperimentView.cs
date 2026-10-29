@@ -38,7 +38,12 @@ namespace AvatarStroop.Unity
         int hudDiagnosticsRemaining=3;
         float nextHudDiagnosticAt;
         bool lastHudStereo;
-        const float HudDistance = 1.1f;
+        // A centred, bounded angular panel is easier to read through the headset
+        // lenses than labels spread over the full render frustum. Distance alone
+        // would not help because the text fitter otherwise scales with the frustum.
+        const float HeadsetHudDistance = 2f;
+        const float HeadsetHudWidthDegrees = 50f, HeadsetHudHeightDegrees = 40f;
+        float HudDistance { get { return headsetPreview ? HeadsetHudDistance : 1.1f; } }
         bool presentationAvailable = true;
         Func<bool> presentationAvailabilityCheck;
         readonly List<Material> runtimeMaterials = new List<Material>();
@@ -243,8 +248,16 @@ namespace AvatarStroop.Unity
                 frustum=Intersect(frustum,HudFrustum(Camera.MonoOrStereoscopicEye.Right));
             }
             if(frustum.width<=.05f||frustum.height<=.05f) return;
-            // Additional inset covers eye offsets as well as the mirror crop.
+            // Inset the render bounds, then keep headset labels in a central
+            // angular panel. Render bounds alone do not establish lens visibility.
             frustum=new Rect(frustum.x+frustum.width*.06f,frustum.y+frustum.height*.04f,frustum.width*.88f,frustum.height*.92f);
+            if(headsetPreview)
+            {
+                float halfWidth=HudDistance*Mathf.Tan(HeadsetHudWidthDegrees*.5f*Mathf.Deg2Rad);
+                float halfHeight=HudDistance*Mathf.Tan(HeadsetHudHeightDegrees*.5f*Mathf.Deg2Rad);
+                frustum=Intersect(frustum,Rect.MinMaxRect(-halfWidth,-halfHeight,halfWidth,halfHeight));
+                if(frustum.width<=.05f||frustum.height<=.05f) return;
+            }
             warningRoot.localPosition=new Vector3(0,0,HudDistance);
             bool trial=currentView!=null&&(currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask);
             string heading=headsetPreview?"QUEST LINK PREVIEW | SIMULATED GAZE\nHEAD VIEW ONLY | NO EYE TRACKING | NOT A STUDY RUN":"DESKTOP SIMULATION | HARDWARE UNVERIFIED";
@@ -281,7 +294,9 @@ namespace AvatarStroop.Unity
             hudDiagnosticsRemaining--;nextHudDiagnosticAt=Time.realtimeSinceStartup+2;
             Debug.Log("HUD_LAYOUT stereo="+stereo+" screen="+Screen.width+"x"+Screen.height+
                 " camera_pixels="+presentationCamera.pixelWidth+"x"+presentationCamera.pixelHeight+
-                " frustum="+frustum.ToString("F3")+" root_local="+warningRoot.localPosition.ToString("F3")+
+                " frustum="+frustum.ToString("F3")+" hud_distance="+HudDistance.ToString("F3")+
+                " angular_limit="+HeadsetHudWidthDegrees+"x"+HeadsetHudHeightDegrees+
+                " root_local="+warningRoot.localPosition.ToString("F3")+
                 " root_scale="+warningRoot.localScale.ToString("F3"));
             for(int i=0;i<(stereo?3:1);i++)
             {
@@ -298,8 +313,9 @@ namespace AvatarStroop.Unity
             {
                 if(!display.running) continue;
                 UnityEngine.XR.XRDisplaySubsystem.XRMirrorViewBlitDesc descriptor;
-                if(!display.GetMirrorViewBlitDesc(null,out descriptor)) {Debug.Log("HUD_MIRROR descriptor unavailable");continue;}
-                Debug.Log("HUD_MIRROR native="+descriptor.nativeBlitAvailable+" blits="+descriptor.blitParamsCount);
+                int mirrorMode=display.GetPreferredMirrorBlitMode();
+                if(!display.GetMirrorViewBlitDesc(null,out descriptor,mirrorMode)) {Debug.Log("HUD_MIRROR descriptor unavailable; mode="+mirrorMode);continue;}
+                Debug.Log("HUD_MIRROR mode="+mirrorMode+" native="+descriptor.nativeBlitAvailable+" blits="+descriptor.blitParamsCount);
                 for(int i=0;i<Math.Min(descriptor.blitParamsCount,4);i++)
                 {
                     UnityEngine.XR.XRDisplaySubsystem.XRBlitParams blit;descriptor.GetBlitParameter(i,out blit);
