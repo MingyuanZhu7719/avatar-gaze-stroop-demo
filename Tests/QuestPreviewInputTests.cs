@@ -62,7 +62,7 @@ namespace AvatarStroop.Tests
                 frame=router.Update(Phase.Questionnaire,0,Controls(63,1));Check.Equal(QuestPreviewAction.None,frame.Action);Check.Equal((int?)3,frame.CandidateRating);
                 Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(63,-1)).Action);
                 router.Update(Phase.Questionnaire,0,Controls());frame=router.Update(Phase.Questionnaire,0,Controls(0,1));
-                Check.Equal(QuestPreviewAction.AdjustRating,frame.Action);Check.Equal((int?)4,frame.CandidateRating);Check.Equal<int?>(null,frame.Rating);
+                Check.Equal(QuestPreviewAction.AdjustRating,frame.Action);Check.Equal((int?)2,frame.CandidateRating);Check.Equal<int?>(null,frame.Rating);
             });
             suite.Run("Quest preview practice response cannot also dismiss correction in the same frame",()=>{
                 var clock=new ManualClock();var experiment=Fixtures.New(clock);experiment.BeginFamiliarization(Actor.Owner);experiment.BeginPractice(Actor.Owner);experiment.MarkPresented(experiment.CurrentTrial.TrialId);
@@ -86,15 +86,51 @@ namespace AvatarStroop.Tests
             });
             suite.Run("Quest preview questionnaire candidates need neutral stick edges and explicit separate confirmation",()=>{
                 var router=new QuestPreviewInputRouter();router.Update(Phase.Questionnaire,0,Controls());
-                var frame=router.Update(Phase.Questionnaire,0,Controls(4,.65));Check.Equal(QuestPreviewAction.AdjustRating,frame.Action);Check.Equal((int?)4,frame.CandidateRating);Check.Equal<int?>(null,frame.Rating);
+                var frame=router.Update(Phase.Questionnaire,0,Controls(4,.65));Check.Equal(QuestPreviewAction.AdjustRating,frame.Action);Check.Equal((int?)2,frame.CandidateRating);Check.Equal<int?>(null,frame.Rating);
                 Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4,1)).Action);
                 Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4,-1)).Action);
                 Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4,.25)).Action);
                 frame=router.Update(Phase.Questionnaire,0,Controls(4,-.65));Check.Equal((int?)3,frame.CandidateRating);Check.Equal(QuestPreviewAction.AdjustRating,frame.Action);
                 router.Update(Phase.Questionnaire,0,Controls());frame=router.Update(Phase.Questionnaire,0,Controls(4));Check.Equal(QuestPreviewAction.SubmitRating,frame.Action);Check.Equal((int?)3,frame.Rating);
                 frame=router.Update(Phase.Questionnaire,1,Controls(4));Check.Equal(QuestPreviewAction.None,frame.Action);Check.Equal((int?)3,frame.CandidateRating);
-                for(int i=0;i<8;i++){router.Update(Phase.Questionnaire,1,Controls());frame=router.Update(Phase.Questionnaire,1,Controls(0,1));}Check.Equal((int?)5,frame.CandidateRating);
-                for(int i=0;i<8;i++){router.Update(Phase.Questionnaire,1,Controls());frame=router.Update(Phase.Questionnaire,1,Controls(0,-1));}Check.Equal((int?)1,frame.CandidateRating);
+                for(int i=0;i<8;i++){router.Update(Phase.Questionnaire,1,Controls());frame=router.Update(Phase.Questionnaire,1,Controls(0,1));}Check.Equal((int?)1,frame.CandidateRating);
+                for(int i=0;i<8;i++){router.Update(Phase.Questionnaire,1,Controls());frame=router.Update(Phase.Questionnaire,1,Controls(0,-1));}Check.Equal((int?)5,frame.CandidateRating);
+            });
+            suite.Run("Quest preview questionnaire UP decrements 5 to 1 and DOWN increments 1 to 5 without wrapping",()=>{
+                var router=new QuestPreviewInputRouter();router.Update(Phase.Questionnaire,0,Controls());
+                QuestPreviewInputFrame frame=null;
+                foreach(int expected in new[]{4,5})
+                {
+                    router.Update(Phase.Questionnaire,0,Controls());frame=router.Update(Phase.Questionnaire,0,Controls(0,-1));
+                    Check.Equal((int?)expected,frame.CandidateRating);Check.Equal(QuestPreviewAction.AdjustRating,frame.Action);
+                }
+                router.Update(Phase.Questionnaire,0,Controls());frame=router.Update(Phase.Questionnaire,0,Controls(0,-1));Check.Equal((int?)5,frame.CandidateRating);
+                foreach(int expected in new[]{4,3,2,1,1})
+                {
+                    router.Update(Phase.Questionnaire,0,Controls());frame=router.Update(Phase.Questionnaire,0,Controls(0,1));
+                    Check.Equal((int?)expected,frame.CandidateRating);Check.Equal(QuestPreviewAction.AdjustRating,frame.Action);Check.Equal<int?>(null,frame.Rating);
+                    var held=router.Update(Phase.Questionnaire,0,Controls(0,1));Check.Equal(QuestPreviewAction.None,held.Action);Check.Equal((int?)expected,held.CandidateRating);
+                }
+                foreach(int expected in new[]{2,3,4,5,5})
+                {
+                    router.Update(Phase.Questionnaire,0,Controls());frame=router.Update(Phase.Questionnaire,0,Controls(0,-1));
+                    Check.Equal((int?)expected,frame.CandidateRating);Check.Equal(QuestPreviewAction.AdjustRating,frame.Action);Check.Equal<int?>(null,frame.Rating);
+                    var held=router.Update(Phase.Questionnaire,0,Controls(0,-1));Check.Equal(QuestPreviewAction.None,held.Action);Check.Equal((int?)expected,held.CandidateRating);
+                }
+            });
+            suite.Run("Quest preview question transition suppresses held UP DOWN and A until neutral and a new press",()=>{
+                var clock=new ManualClock();var experiment=Main(clock);ToQuestionnaire(experiment,clock);var router=new QuestPreviewInputRouter();
+                Apply(experiment,Update(router,experiment));var frame=Update(router,experiment,0,1);Apply(experiment,frame);
+                Check.Equal((int?)2,frame.CandidateRating);Check.Equal(0,experiment.Ratings.Count);
+                frame=Update(router,experiment,4,1);Check.Equal(QuestPreviewAction.SubmitRating,frame.Action);Check.Equal((int?)2,frame.Rating);Apply(experiment,frame);
+                Check.Equal(1,experiment.QuestionIndex);Check.Equal(2,experiment.Ratings[0].Value);
+                frame=Update(router,experiment,4,1);Check.Equal(QuestPreviewAction.None,frame.Action);Check.Equal((int?)3,frame.CandidateRating);Apply(experiment,frame);
+                frame=Update(router,experiment,4,-1);Check.Equal(QuestPreviewAction.None,frame.Action);Check.Equal((int?)3,frame.CandidateRating);Apply(experiment,frame);
+                Check.Equal(1,experiment.Ratings.Count);
+                Apply(experiment,Update(router,experiment,4));frame=Update(router,experiment,4,-1);
+                Check.Equal(QuestPreviewAction.AdjustRating,frame.Action);Check.Equal((int?)4,frame.CandidateRating);Check.Equal<int?>(null,frame.Rating);Apply(experiment,frame);
+                Apply(experiment,Update(router,experiment));frame=Update(router,experiment,4);Check.Equal(QuestPreviewAction.SubmitRating,frame.Action);Check.Equal((int?)4,frame.Rating);Apply(experiment,frame);
+                Check.Equal(2,experiment.Ratings.Count);Check.Equal(4,experiment.Ratings[1].Value);
             });
             suite.Run("Quest preview unsubmitted candidate resets on each of five questions without recording a default",()=>{
                 var clock=new ManualClock();var experiment=Main(clock);ToQuestionnaire(experiment,clock);var router=new QuestPreviewInputRouter();
@@ -102,10 +138,10 @@ namespace AvatarStroop.Tests
                 {
                     var initial=Update(router,experiment);Apply(experiment,initial);Check.Equal((int?)3,initial.CandidateRating);Check.Equal(item,experiment.Ratings.Count);
                     Apply(experiment,Update(router,experiment,0,1));Check.Equal(item,experiment.Ratings.Count);
-                    Apply(experiment,Update(router,experiment));var confirm=Update(router,experiment,4);Check.Equal((int?)4,confirm.Rating);Apply(experiment,confirm);
+                    Apply(experiment,Update(router,experiment));var confirm=Update(router,experiment,4);Check.Equal((int?)2,confirm.Rating);Apply(experiment,confirm);
                     Check.Equal(item+1,experiment.Ratings.Count);
                 }
-                Check.Equal(Phase.Rest,experiment.Phase);Check.True(experiment.Ratings.All(x=>x.Value==4));
+                Check.Equal(Phase.Rest,experiment.Phase);Check.True(experiment.Ratings.All(x=>x.Value==2));
             });
             suite.Run("Quest preview held early Ready trigger cannot skip the existing thirty-second rest",()=>{
                 var clock=new ManualClock();var experiment=Main(clock);ToQuestionnaire(experiment,clock);Fixtures.Ratings(experiment,clock);var router=new QuestPreviewInputRouter();

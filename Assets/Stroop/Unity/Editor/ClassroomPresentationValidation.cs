@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using AvatarStroop.Core;
+using AvatarStroop.Runtime;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -28,6 +29,10 @@ namespace AvatarStroop.Unity.Editor
             public float avatar_yaw_degrees=225,desktop_pitch_degrees=15.5f;
             public float desktop_yaw_degrees=-4;
             public bool active_participant_view_has_only_world_content_and_real_faults=true;
+            public bool quest_menu_world_fixed=true;
+            public Vector3 menu_world=WorldSpaceExperimentView.FixedMenuPosition;
+            public Vector2 menu_size=new Vector2(WorldSpaceExperimentView.FixedMenuWidth,WorldSpaceExperimentView.FixedMenuHeight);
+            public int[] questionnaire_rendered_candidates;
             public string[] ink_rgba;
             public WordBounds[] words;
         }
@@ -38,6 +43,24 @@ namespace AvatarStroop.Unity.Editor
         static bool Near(Vector3 a,Vector3 b) {return Vector3.Distance(a,b)<.0001f;}
         static Transform Content(WorldSpaceExperimentView view) {return view.transform.Find("WorldSpaceContent");}
         static TextMesh Stimulus(WorldSpaceExperimentView view) {return Content(view).Find("Stimulus").GetComponent<TextMesh>();}
+        static Transform Menu(WorldSpaceExperimentView view)
+        {return Content(view).Find("HeadsetVisibleDevelopmentWarning");}
+        static void Layout(WorldSpaceExperimentView view)
+        {typeof(WorldSpaceExperimentView).GetMethod("LayoutHud",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(view,null);}
+        static QuestPreviewControls Stick(double y)
+        {return new QuestPreviewControls(true,false,false,false,false,false,false,y);}
+        static void FixtureControls(WorldSpaceExperimentView view,Phase phase,int? candidate=null)
+        {
+            // Match QuestLinkPreviewRig.ReadInput's phase-specific presentation.
+            // Candidates below come from the real pure router, not a live device
+            // or an Experiment. The Editor never creates/enables an XR rig.
+            string hint=phase==Phase.Questionnaire?
+                "Left stick UP: lower number | DOWN: higher number (1-5)\nCentre between steps | A: confirm\nSelected: "+(candidate.HasValue?candidate.Value.ToString():"--")+" (not submitted)":
+                phase==Phase.Paused?"PAUSED | Right trigger: actively resume\nB: withdraw and end preview":
+                phase==Phase.PracticeCorrection||phase==Phase.Rest?"Right trigger: Continue / Ready when available\nLeft menu: pause":
+                "X red | Y green | A blue | B yellow\nRelease before the next answer | Left menu: pause";
+            view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED",hint);
+        }
 
         public static void ValidateView(WorldSpaceExperimentView view)
         {
@@ -68,6 +91,12 @@ namespace AvatarStroop.Unity.Editor
             Require(view.AvatarRoot.GetComponentsInChildren<Animator>(true).Length==0,"unexpected independent animation driver");
             if(new SerializedObject(view).FindProperty("headsetPreview").boolValue&&view.Role==Actor.Participant)
             {
+                var menu=Menu(view);
+                Require(menu!=null&&menu.parent==content&&Near(menu.position,WorldSpaceExperimentView.FixedMenuPosition),"Quest menu is not world fixed");
+                Require(Quaternion.Angle(menu.rotation,Quaternion.identity)<.001f&&Near(menu.localScale,Vector3.one),"world menu rotation/scale changed");
+                Require(!menu.IsChildOf(view.PresentationCamera.transform),"Quest menu follows camera");
+                var backing=menu.Find("FixedWorldMenuBacking");
+                Require(backing!=null&&backing.GetComponent<Renderer>().sharedMaterial.color.a==1,"opaque fixed menu backing missing");
                 var legend=content.Find("QuestControllerLegend");
                 Require(legend!=null&&legend.parent==content&&Near(legend.position,new Vector3(-1.60f,1.55f,2.04f)),"controller legend is not fixed world space left of board");
                 Require(legend.GetComponentsInChildren<AvatarRenderWitness>(true).Length==0,"legend incorrectly belongs to avatar visibility");
@@ -95,6 +124,8 @@ namespace AvatarStroop.Unity.Editor
             var result=new TaskView();
             Set(result,"Phase",phase);Set(result,"OperatorAvatarVisible",visible);
             Set(result,"ParticipantAvatarVisible",visible);Set(result,"OperatorViewProvisional",operatorRole);
+            if(phase==Phase.PracticeCorrection)Set(result,"PracticeCorrection","Respond to the ink colour, not the word. Use the button guide on the left.");
+            if(phase==Phase.Questionnaire)Set(result,"QuestionnaireItem",Questionnaire.Item(4,"en"));
             if(phase==Phase.MainTask||phase==Phase.Practice)
             {Set(result,"TrialId","editor-visual-fixture");Set(result,"Stimulus",new Stimulus(word,ink));}
             return result;
@@ -188,8 +219,8 @@ namespace AvatarStroop.Unity.Editor
                 ValidateView(views[0]);
                 if(views[0].Role==Actor.Participant)
                 {
-                    var warning=views[0].PresentationCamera.transform.Find("HeadsetVisibleDevelopmentWarning");
-                    Require(warning!=null&&Near(warning.localPosition,new Vector3(0,0,2)),"saved accepted HUD distance changed");
+                    var warning=Menu(views[0]);
+                    Require(warning!=null&&Near(warning.position,WorldSpaceExperimentView.FixedMenuPosition),"saved fixed world menu changed");
                     Require(Quaternion.Angle(views[0].PresentationCamera.transform.localRotation,Quaternion.identity)<.001f,"Quest camera retained desktop pitch");
                 }
                 foreach(var renderer in scene.GetRootGameObjects().SelectMany(root=>root.GetComponentsInChildren<Renderer>(true)))
@@ -207,6 +238,8 @@ namespace AvatarStroop.Unity.Editor
             var oldLegend=content.Find("QuestControllerLegend");if(oldLegend!=null)UnityEngine.Object.DestroyImmediate(oldLegend.gameObject);
             word.transform.localPosition=new Vector3(.5f,1.65f,2);
             word.characterSize=.13f;word.transform.localScale=Vector3.one;
+            // Recreate the previous camera-attached menu before the migration.
+            var menu=Menu(view);menu.SetParent(view.PresentationCamera.transform,false);menu.localPosition=new Vector3(0,0,2);
             view.AvatarRoot.localPosition=new Vector3(-.65f,.9f,2.5f);
             view.AvatarRoot.localRotation=Quaternion.Euler(0,180,0);
             view.Initialize(view.PresentationCamera,view.Role);ValidateView(view);
@@ -245,7 +278,7 @@ namespace AvatarStroop.Unity.Editor
             {
                 Apply(view,Phase.MainTask,condition,Colour.Green);view.Initialize(view.PresentationCamera,view.Role);
                 Require(legend.gameObject.activeInHierarchy&&legend.localToWorldMatrix==matrix,"legend changed with A-D condition");
-                foreach(var label in view.PresentationCamera.transform.Find("HeadsetVisibleDevelopmentWarning").GetComponentsInChildren<TextMesh>(true))
+                foreach(var label in Menu(view).GetComponentsInChildren<TextMesh>(true))
                     Require(!label.GetComponent<Renderer>().enabled||String.IsNullOrEmpty(label.text),"healthy active participant contains HUD text: "+label.name);
             }
             foreach(var phase in new[]{Phase.Practice,Phase.PracticeCorrection,Phase.Questionnaire,Phase.Paused,Phase.Rest})
@@ -254,15 +287,67 @@ namespace AvatarStroop.Unity.Editor
                 Require(legend.gameObject.activeInHierarchy==(phase==Phase.Practice||phase==Phase.PracticeCorrection),"legend misleading in "+phase);
                 if(phase==Phase.PracticeCorrection||phase==Phase.Questionnaire||phase==Phase.Paused)
                 {
-                    var message=view.PresentationCamera.transform.Find("HeadsetVisibleDevelopmentWarning/ParticipantInstructions").GetComponent<TextMesh>();
+                    var message=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
                     Require(!String.IsNullOrWhiteSpace(message.text)&&message.GetComponent<Renderer>().enabled,"necessary instructions missing in "+phase);
+                }
+            }
+        }
+        static void CheckFixedMenuAndTransitions(WorldSpaceExperimentView view)
+        {
+            Require(view.CanShowWorldDiagnostics,"fixed menu cannot show diagnostics");
+            view.PresentationCamera.enabled=false;Require(!view.CanShowWorldDiagnostics,"disabled camera suppresses error fallback");view.PresentationCamera.enabled=true;
+            view.enabled=false;Require(!view.CanShowWorldDiagnostics,"disabled presentation suppresses error fallback");view.enabled=true;
+            var menu=Menu(view);var legend=Content(view).Find("QuestControllerLegend");
+            var menuMatrix=menu.localToWorldMatrix;var legendMatrix=legend.localToWorldMatrix;
+            // Consecutive updates, without Initialize, model the real phase path
+            // rather than relying on scene regeneration to restore visibility.
+            foreach(var phase in new[]{Phase.Preparation,Phase.Practice,Phase.PracticeCorrection,Phase.Practice,
+                Phase.MainTask,Phase.Paused,Phase.MainTask,Phase.Questionnaire,Phase.Rest,Phase.MainTask})
+            {
+                Apply(view,phase,Condition.A,Colour.Green);Layout(view);
+                bool mapped=phase==Phase.Practice||phase==Phase.PracticeCorrection||phase==Phase.MainTask;
+                Require(legend.gameObject.activeInHierarchy==mapped,"legend lost/misleading across transition to "+phase);
+                Require(menu.localToWorldMatrix==menuMatrix&&legend.localToWorldMatrix==legendMatrix,"world panels moved across transition");
+                bool clean=phase==Phase.Practice||phase==Phase.MainTask;
+                Require(menu.Find("FixedWorldMenuBacking").gameObject.activeSelf==!clean,"normal menu backing leaks into task or disappears outside task");
+            }
+            Apply(view,Phase.Preparation,Condition.A,Colour.Green);Layout(view);
+            var labels=menu.GetComponentsInChildren<TextMesh>(true).ToDictionary(label=>label,label=>label.transform.localToWorldMatrix);
+            var camera=view.PresentationCamera;var position=camera.transform.position;var rotation=camera.transform.rotation;
+            float fov=camera.fieldOfView,aspect=camera.aspect;
+            camera.transform.position+=new Vector3(.25f,.12f,-.15f);camera.transform.rotation=Quaternion.Euler(-8,23,2);
+            camera.fieldOfView=75;camera.aspect=1;
+            view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED", "X red | Y green | A blue | B yellow\nLeft menu: pause; while paused, B: withdraw");
+            Layout(view);
+            Require(menu.localToWorldMatrix==menuMatrix&&legend.localToWorldMatrix==legendMatrix,"menu/legend follows camera movement");
+            foreach(var label in labels)Require(label.Key.transform.localToWorldMatrix==label.Value,"menu label refits to camera: "+label.Key.name);
+            camera.transform.SetPositionAndRotation(position,rotation);camera.fieldOfView=fov;camera.aspect=aspect;Layout(view);
+        }
+        static void CheckMenuReadable(WorldSpaceExperimentView view)
+        {
+            var menu=Menu(view);var backing=menu.Find("FixedWorldMenuBacking");
+            Require(backing.gameObject.activeInHierarchy,"required menu has no contrast backing");
+            var background=backing.GetComponent<Renderer>().sharedMaterial.color;
+            Require(background.a==1&&background.maxColorComponent<.05f,"required menu background is not opaque dark");
+            foreach(var label in menu.GetComponentsInChildren<TextMesh>(true))
+            {
+                var renderer=label.GetComponent<Renderer>();
+                if(!renderer.enabled||!label.gameObject.activeInHierarchy||String.IsNullOrEmpty(label.text))continue;
+                var bounds=renderer.localBounds;
+                for(int x=-1;x<=1;x+=2)for(int y=-1;y<=1;y+=2)
+                {
+                    var world=label.transform.TransformPoint(bounds.center+Vector3.Scale(bounds.extents,new Vector3(x,y,0)));
+                    var local=menu.InverseTransformPoint(world);
+                    Require(Mathf.Abs(local.x)<WorldSpaceExperimentView.FixedMenuWidth*.5f&&Mathf.Abs(local.y)<WorldSpaceExperimentView.FixedMenuHeight*.5f,"menu text exceeds its own dark background: "+label.name);
+                    var screen=view.PresentationCamera.WorldToViewportPoint(world);
+                    Require(screen.z>0&&screen.x>=0&&screen.x<=1&&screen.y>=0&&screen.y<=1,"menu label outside mono fixture: "+label.name);
                 }
             }
         }
         static void CheckFaultOcclusionGate(WorldSpaceExperimentView view)
         {
             Apply(view,Phase.MainTask,Condition.A,Colour.Green);
-            var word=Stimulus(view);var fault=view.PresentationCamera.transform.Find("HeadsetVisibleDevelopmentWarning/WorldSpaceFaultMessages").GetComponent<TextMesh>();
+            var word=Stimulus(view);var fault=Menu(view).Find("WorldSpaceFaultMessages").GetComponent<TextMesh>();
             var gate=typeof(WorldSpaceExperimentView).GetMethod("CanAcknowledge",BindingFlags.NonPublic|BindingFlags.Instance);
             var covered=typeof(WorldSpaceExperimentView).GetField("faultCoversStimulus",BindingFlags.NonPublic|BindingFlags.Instance);
             var layout=typeof(WorldSpaceExperimentView).GetMethod("LayoutHud",BindingFlags.NonPublic|BindingFlags.Instance);
@@ -312,7 +397,7 @@ namespace AvatarStroop.Unity.Editor
                 throw new InvalidOperationException("Actual fixture rendering requires graphics and the built-in pipeline; do not use -nographics.");
             Directory.CreateDirectory(output);checks=0;var files=new List<string>();
             CheckSavedScenes();
-            var view=NewFixture(Actor.Participant);CheckMigration(view);CheckGeometry(view);CheckActivePresentation(view);CheckFaultOcclusionGate(view);
+            var view=NewFixture(Actor.Participant);CheckMigration(view);CheckGeometry(view);CheckActivePresentation(view);CheckFixedMenuAndTransitions(view);CheckFaultOcclusionGate(view);
             Apply(view,Phase.MainTask,Condition.A,Colour.Green);
             CheckUnobstructed(view.PresentationCamera.transform.position,view.TaskWorldPosition,
                 Content(view).Find("ClassroomEnvironment").GetComponentsInChildren<Renderer>(true)
@@ -351,12 +436,37 @@ namespace AvatarStroop.Unity.Editor
             view.SetHeadsetPreview(trackingFault,"X red | Y green | A blue | B yellow");
             view.SetFaults(new[]{trackingFault,trackingFault,"ConnectionFault: participant link unavailable"});
             Render(view,output,"synthetic-active-fault.png");files.Add("synthetic-active-fault.png");
-            var faultText=view.PresentationCamera.transform.Find("HeadsetVisibleDevelopmentWarning/WorldSpaceFaultMessages").GetComponent<TextMesh>();
+            var faultText=Menu(view).Find("WorldSpaceFaultMessages").GetComponent<TextMesh>();
             string visibleFault=String.Join(" ",faultText.text.Split(new[]{' ','\r','\n','\t'},StringSplitOptions.RemoveEmptyEntries));
             Require(faultText.GetComponent<Renderer>().enabled&&visibleFault.Contains("Touch controllers")&&visibleFault.Contains("ConnectionFault"),"active tracking/network faults hidden");
             Require(visibleFault.IndexOf("Touch controllers",StringComparison.Ordinal)==visibleFault.LastIndexOf("Touch controllers",StringComparison.Ordinal),"tracking fault duplicated");
             view.SetFaults(new string[0]);view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED","X red | Y green | A blue | B yellow");
             Apply(view,Phase.Preparation,Condition.A,Colour.Green);Render(view,output,"synthetic-preparation.png");files.Add("synthetic-preparation.png");
+            CheckMenuReadable(view);
+            var router=new QuestPreviewInputRouter();var frame=router.Update(Phase.Questionnaire,4,Stick(0));
+            var candidates=new List<int>{frame.CandidateRating.Value};
+            foreach(var phase in new[]{Phase.PracticeCorrection,Phase.Questionnaire,Phase.Paused})
+            {
+                Apply(view,phase,Condition.A,Colour.Green);
+                FixtureControls(view,phase,phase==Phase.Questionnaire?frame.CandidateRating:null);
+                var name="synthetic-"+phase.ToString().ToLowerInvariant()+".png";
+                Render(view,output,name);files.Add(name);CheckMenuReadable(view);
+            }
+            Apply(view,Phase.Questionnaire,Condition.A,Colour.Green);
+            frame=router.Update(Phase.Questionnaire,4,Stick(1));
+            Require(frame.CandidateRating==2,"UP must move toward visually higher option 2 from 3");
+            FixtureControls(view,Phase.Questionnaire,frame.CandidateRating);Render(view,output,"synthetic-questionnaire-up-2.png");files.Add("synthetic-questionnaire-up-2.png");candidates.Add(frame.CandidateRating.Value);
+            router.Update(Phase.Questionnaire,4,Stick(0));router.Update(Phase.Questionnaire,4,Stick(-1));
+            router.Update(Phase.Questionnaire,4,Stick(0));frame=router.Update(Phase.Questionnaire,4,Stick(-1));
+            Require(frame.CandidateRating==4,"DOWN must move toward visually lower option 4 from 3");
+            FixtureControls(view,Phase.Questionnaire,frame.CandidateRating);Render(view,output,"synthetic-questionnaire-down-4.png");files.Add("synthetic-questionnaire-down-4.png");candidates.Add(frame.CandidateRating.Value);
+            var instruction=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>().text;
+            int previous=-1;for(int score=1;score<=5;score++)
+            {int at=instruction.IndexOf("\n"+score+" ",StringComparison.Ordinal);Require(at>previous,"rating anchors are not ordered top-to-bottom 1 through 5");previous=at;}
+            var control=Menu(view).Find("QuestPreviewInputStatus").GetComponent<TextMesh>();
+            string shown=String.Join(" ",control.text.Split(new[]{' ','\r','\n','\t'},StringSplitOptions.RemoveEmptyEntries));
+            Require(shown.Contains("Selected: 4")&&shown.Contains("A: confirm")&&shown.Contains("UP: lower number")&&shown.Contains("DOWN: higher number"),"questionnaire candidate/control hint missing");
+            evidence.questionnaire_rendered_candidates=candidates.ToArray();
             view=NewFixture(Actor.Operator);ValidateView(view);Apply(view,Phase.MainTask,Condition.A,Colour.Green);CheckFraming(view);
             Render(view,output,"synthetic-operator.png");files.Add("synthetic-operator.png");
             evidence.checks=checks;evidence.images=files.ToArray();evidence.ink_rgba=colours.ToArray();evidence.words=words.ToArray();

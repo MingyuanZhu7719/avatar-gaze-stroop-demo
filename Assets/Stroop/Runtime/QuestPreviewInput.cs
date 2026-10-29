@@ -101,8 +101,10 @@ namespace AvatarStroop.Runtime
             {
                 // Changing the displayed candidate and confirming cannot happen
                 // in one frame. A held stick never repeats without a neutral sample.
+                // Scores are displayed top-to-bottom as 1..5: +Y/up moves to
+                // the smaller score, while -Y/down moves to the larger score.
                 if(stick!=0)
-                {candidate=Math.Max(1,Math.Min(5,candidate+stick));return Frame(startPhase,item,true,QuestPreviewAction.AdjustRating,null,null,released);}
+                {candidate=Math.Max(1,Math.Min(5,candidate-stick));return Frame(startPhase,item,true,QuestPreviewAction.AdjustRating,null,null,released);}
                 if((pressed&4)!=0)return Frame(startPhase,item,true,QuestPreviewAction.SubmitRating,null,candidate,released);
             }
             else if(startPhase==Phase.Paused)

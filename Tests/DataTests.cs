@@ -54,6 +54,37 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite t)
         {
+            t.Run("Quest questionnaire navigation exports each explicitly confirmed 1 to 5 value unchanged",()=>{
+                string root=Temp();try {
+                    var clock=new ManualClock();var e=Fixtures.New(clock);Fixtures.Practice(e,clock,8);Fixtures.Start(e,clock);
+                    for(int i=0;i<24;i++)Fixtures.Answer(e,clock);Check.Equal(Phase.Questionnaire,e.Phase);
+                    var router=new QuestPreviewInputRouter();
+                    for(int score=1;score<=5;score++)
+                    {
+                        var neutral=new QuestPreviewControls(true,false,false,false,false,false,false,0);
+                        var initial=router.Update(e.Phase,e.QuestionIndex,neutral);Check.Equal((int?)3,initial.CandidateRating);Check.Equal(score-1,e.Ratings.Count);
+                        double axis=score<3?1:-1;
+                        for(int step=0;step<Math.Abs(score-3);step++)
+                        {
+                            router.Update(e.Phase,e.QuestionIndex,neutral);
+                            var moved=router.Update(e.Phase,e.QuestionIndex,new QuestPreviewControls(true,false,false,false,false,false,false,axis));
+                            Check.Equal(QuestPreviewAction.AdjustRating,moved.Action);Check.Equal<int?>(null,moved.Rating);
+                        }
+                        Check.Equal(score-1,e.Ratings.Count);router.Update(e.Phase,e.QuestionIndex,neutral);
+                        var confirm=router.Update(e.Phase,e.QuestionIndex,new QuestPreviewControls(true,false,false,true,false,false,false,0));
+                        Check.Equal(QuestPreviewAction.SubmitRating,confirm.Action);Check.Equal((int?)score,confirm.CandidateRating);Check.Equal((int?)score,confirm.Rating);
+                        e.Rate(confirm.Rating.Value);Check.Equal(score,e.Ratings.Last().Value);
+                    }
+                    Check.Equal(Phase.Rest,e.Phase);
+                    var result=AuditExporter.Export(e,new AuditLog("test-session",RunKind.Simulation),root,Provenance());Check.True(result.Success,result.Error);
+                    var rows=Read(result.DirectoryPath,"ratings.csv");Check.Equal(5,rows.Count);
+                    for(int i=0;i<5;i++)
+                    {
+                        Check.Equal((i+1).ToString(CultureInfo.InvariantCulture),rows[i]["value"]);
+                        Check.Equal(Questionnaire.Id(i),rows[i]["item_id"]);Check.Equal("en",rows[i]["language"]);Check.Equal(Questionnaire.Version,rows[i]["item_version"]);
+                    }
+                }finally{Directory.Delete(root,true);}
+            });
             t.Run("M3 clock audit exports revisions beyond retained window and same-count invalidation",()=>{
                 string root=Temp();try {
                     var map=new ClockSynchronizer("local-clock","remote-clock",new DevelopmentClockConfiguration(3,.2,.2,2,200));

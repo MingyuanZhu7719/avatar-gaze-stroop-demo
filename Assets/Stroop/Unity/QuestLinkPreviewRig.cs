@@ -224,7 +224,7 @@ namespace AvatarStroop.Unity
             var frame = router.Update(phase, questionIndex, controls);
             string hint;
             if(phase == Phase.Questionnaire)
-                hint = "Left stick up/down: choose 1-5 | A: confirm\nSelected: " + (frame.CandidateRating.HasValue ? frame.CandidateRating.Value.ToString() : "--") + " (not submitted)";
+                hint = "Left stick UP: lower number | DOWN: higher number (1-5)\nCentre between steps | A: confirm\nSelected: " + (frame.CandidateRating.HasValue ? frame.CandidateRating.Value.ToString() : "--") + " (not submitted)";
             else if(phase == Phase.Paused) hint = "PAUSED | Right trigger: actively resume\nB: withdraw and end preview";
             else if(phase == Phase.NeedsProtocolDecision) hint = "Interrupted practice requires an owner protocol decision\nNo automatic retry or resume | B: withdraw";
             else if(phase == Phase.PracticeCorrection || phase == Phase.Rest) hint = "Right trigger: Continue / Ready when available\nLeft menu: pause";

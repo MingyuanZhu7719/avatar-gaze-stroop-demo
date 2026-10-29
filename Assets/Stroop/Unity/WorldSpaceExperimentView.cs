@@ -35,7 +35,7 @@ namespace AvatarStroop.Unity
         [SerializeField] TextMesh previewInputText;
         [SerializeField] TextMesh previewStatusText;
         TextMesh developmentBanner;
-        Transform headerBacking, footerBacking;
+        Transform headerBacking, footerBacking, worldMenuBacking;
         Transform controllerLegend;
         readonly Vector3[] hudCorners = new Vector3[4];
         readonly Vector3[] hudProjectionPoints = new Vector3[4], stimulusProjectionPoints = new Vector3[8];
@@ -50,6 +50,16 @@ namespace AvatarStroop.Unity
         const float HeadsetHudDistance = 2f;
         const float HeadsetHudWidthDegrees = 50f, HeadsetHudHeightDegrees = 40f;
         float HudDistance { get { return headsetPreview ? HeadsetHudDistance : 1.1f; } }
+        public static readonly Vector3 FixedMenuPosition = new Vector3(-.5f,1.55f,1.90f);
+        public const float FixedMenuWidth=1.35f, FixedMenuHeight=1.05f;
+        public bool HasWorldFixedMenu { get { return headsetPreview&&role==Actor.Participant; } }
+        public bool CanShowWorldDiagnostics
+        {
+            get { return HasWorldFixedMenu&&isActiveAndEnabled&&contentRoot!=null&&warningRoot!=null&&
+                warningRoot.parent==contentRoot&&warningRoot.gameObject.activeInHierarchy&&faultText!=null&&
+                faultText.GetComponent<MeshRenderer>()!=null&&worldMenuBacking!=null&&
+                presentationCamera!=null&&presentationCamera.isActiveAndEnabled; }
+        }
         bool presentationAvailable = true;
         Func<bool> presentationAvailabilityCheck;
         readonly List<Material> runtimeMaterials = new List<Material>();
@@ -110,9 +120,6 @@ namespace AvatarStroop.Unity
             // A desktop-only pitch keeps the feet and board stand in frame without moving
             // the camera or gaze targets. Quest's tracked camera is not changed.
             if(!headsetPreview) camera.transform.rotation = Quaternion.Euler(15.5f, -4, 0);
-            warningRoot.SetParent(camera.transform, false);
-            warningRoot.localPosition = new Vector3(0, 0, HudDistance);
-            warningRoot.localRotation = Quaternion.identity;
             EnsureHudLayout();
             var witness = stimulusText.GetComponent<StimulusRenderWitness>();
             witness.Bind(this);
@@ -213,12 +220,16 @@ namespace AvatarStroop.Unity
             LayoutHud();
         }
 
-        // These labels describe the application, not gaze targets. Move only
-        // labels into camera space; stimulus/avatar transforms and witnesses stay
-        // in the original fixed world-space geometry. Also migrates saved scenes.
+        // Quest menus are fixed to the room, including faults and interrupted
+        // phases. Desktop labels retain their existing camera layout. Neither
+        // path changes stimulus/avatar transforms or presentation witnesses.
         void EnsureHudLayout()
         {
             if(warningRoot == null) return;
+            warningRoot.SetParent(HasWorldFixedMenu?contentRoot:presentationCamera.transform,false);
+            warningRoot.localPosition=HasWorldFixedMenu?FixedMenuPosition:new Vector3(0,0,HudDistance);
+            warningRoot.localRotation=Quaternion.identity;
+            warningRoot.localScale=Vector3.one;
             developmentBanner = warningRoot.Find("PermanentDevelopmentBanner").GetComponent<TextMesh>();
             foreach(var label in new[]{phaseText,messageText,provisionalText,avatarLabel})
             {
@@ -236,6 +247,17 @@ namespace AvatarStroop.Unity
                 var material = NewMaterial(Shader.Find("AvatarStroop/WorldSpaceOverlay"),new Color(.025f,.025f,.035f,.94f));
                 material.renderQueue = 4990; backing.GetComponent<MeshRenderer>().sharedMaterial = material;
                 footerBacking = backing.transform;
+            }
+            if(HasWorldFixedMenu)
+            {
+                worldMenuBacking=warningRoot.Find("FixedWorldMenuBacking");
+                if(worldMenuBacking==null)
+                {
+                    var backing=Primitive("FixedWorldMenuBacking",PrimitiveType.Quad,warningRoot,Vector3.zero,Vector3.one,Color.black);
+                    var material=NewMaterial(Shader.Find("AvatarStroop/WorldSpaceOverlay"),new Color(.025f,.025f,.035f,1));
+                    material.renderQueue=4990;backing.GetComponent<MeshRenderer>().sharedMaterial=material;
+                    worldMenuBacking=backing.transform;
+                }
             }
         }
 
@@ -258,8 +280,8 @@ namespace AvatarStroop.Unity
         void LayoutHud()
         {
             if(warningRoot == null || developmentBanner == null || presentationCamera == null) return;
-            var frustum=HudFrustum(Camera.MonoOrStereoscopicEye.Mono);
-            if(presentationCamera.stereoEnabled)
+            var frustum=HasWorldFixedMenu?new Rect(-FixedMenuWidth*.5f,-FixedMenuHeight*.5f,FixedMenuWidth,FixedMenuHeight):HudFrustum(Camera.MonoOrStereoscopicEye.Mono);
+            if(!HasWorldFixedMenu&&presentationCamera.stereoEnabled)
             {
                 // One shared layout for MultiPass, never a per-active-eye change.
                 frustum=Intersect(frustum,HudFrustum(Camera.MonoOrStereoscopicEye.Left));
@@ -268,15 +290,15 @@ namespace AvatarStroop.Unity
             if(frustum.width<=.05f||frustum.height<=.05f) return;
             // Inset the render bounds, then keep headset labels in a central
             // angular panel. Render bounds alone do not establish lens visibility.
-            frustum=new Rect(frustum.x+frustum.width*.06f,frustum.y+frustum.height*.04f,frustum.width*.88f,frustum.height*.92f);
-            if(headsetPreview)
+            if(!HasWorldFixedMenu)frustum=new Rect(frustum.x+frustum.width*.06f,frustum.y+frustum.height*.04f,frustum.width*.88f,frustum.height*.92f);
+            if(headsetPreview&&!HasWorldFixedMenu)
             {
                 float halfWidth=HudDistance*Mathf.Tan(HeadsetHudWidthDegrees*.5f*Mathf.Deg2Rad);
                 float halfHeight=HudDistance*Mathf.Tan(HeadsetHudHeightDegrees*.5f*Mathf.Deg2Rad);
                 frustum=Intersect(frustum,Rect.MinMaxRect(-halfWidth,-halfHeight,halfWidth,halfHeight));
                 if(frustum.width<=.05f||frustum.height<=.05f) return;
             }
-            warningRoot.localPosition=new Vector3(0,0,HudDistance);
+            if(!HasWorldFixedMenu)warningRoot.localPosition=new Vector3(0,0,HudDistance);
             // Invalid/degenerate layouts above keep the previous conservative
             // gate; only a completed layout may clear an obscuring fault.
             faultCoversStimulus=false;
@@ -290,7 +312,8 @@ namespace AvatarStroop.Unity
                 // Real faults still have a dedicated readable area. Healthy status,
                 // introductory text and the duplicate controller list stay hidden.
                 var faultArea=new Rect(.02f,.73f,.96f,.24f);
-                if(HudOverlapsStimulus(faultArea,frustum))faultArea=new Rect(.02f,.02f,.96f,.24f);
+                if(!HasWorldFixedMenu&&HudOverlapsStimulus(faultArea,frustum))faultArea=new Rect(.02f,.02f,.96f,.24f);
+                PositionBacking(worldMenuBacking,frustum,faultArea,!String.IsNullOrWhiteSpace(faultCaption));
                 FitHud(faultText,faultCaption,frustum,faultArea,.032f,7);
                 if(!String.IsNullOrWhiteSpace(faultCaption)&&!faultText.GetComponent<MeshRenderer>().enabled)
                 {
@@ -326,6 +349,13 @@ namespace AvatarStroop.Unity
             // Opaque panels and centre instructions must not cover a live trial.
             PositionBacking(headerBacking,frustum,new Rect(0,0,1,.185f),!trial);
             PositionBacking(footerBacking,frustum,new Rect(0,.695f,1,.30f),!trial);
+            if(HasWorldFixedMenu)
+            {
+                // The instructions must have their own opaque surface: the
+                // whiteboard's pale frame is not a reliable text background.
+                headerBacking.gameObject.SetActive(false);footerBacking.gameObject.SetActive(false);
+                PositionBacking(worldMenuBacking,frustum,new Rect(0,0,1,1),true);
+            }
             LogHudProjection(frustum);
         }
         void LogHudProjection(Rect frustum)
@@ -337,8 +367,7 @@ namespace AvatarStroop.Unity
             hudDiagnosticsRemaining--;nextHudDiagnosticAt=Time.realtimeSinceStartup+2;
             Debug.Log("HUD_LAYOUT stereo="+stereo+" screen="+Screen.width+"x"+Screen.height+
                 " camera_pixels="+presentationCamera.pixelWidth+"x"+presentationCamera.pixelHeight+
-                " frustum="+frustum.ToString("F3")+" hud_distance="+HudDistance.ToString("F3")+
-                " angular_limit="+HeadsetHudWidthDegrees+"x"+HeadsetHudHeightDegrees+
+                " layout="+(HasWorldFixedMenu?"world-fixed":"camera-attached")+" panel_bounds="+frustum.ToString("F3")+
                 " root_local="+warningRoot.localPosition.ToString("F3")+
                 " root_scale="+warningRoot.localScale.ToString("F3"));
             for(int i=0;i<(stereo?3:1);i++)

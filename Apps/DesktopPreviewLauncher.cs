@@ -68,7 +68,7 @@ namespace AvatarStroop.Apps
             layout.Controls.Add(Row(source,lockBlock,begin));
             receipt.ForeColor=Color.FromArgb(33,75,96); layout.Controls.Add(receipt);
 #if QUEST_PREVIEW_LAUNCHER
-            layout.Controls.Add(MakeLabel("Touch: X red / Y green / A blue / B yellow. Release before the next answer.\nRating: left stick up/down, then A to confirm. Right trigger: Continue / Ready.\nLeft menu: pause. While paused: right trigger resumes; B withdraws. PC P / Esc remain safety controls.",78));
+            layout.Controls.Add(MakeLabel("Touch: X red / Y green / A blue / B yellow. Release before the next answer.\nRating: left stick UP lowers / DOWN raises 1-5; centre between steps, then A to confirm.\nRight trigger: Continue / Ready. Left menu: pause. Paused: trigger resumes; B withdraws. PC P / Esc: safety controls.",78));
 #else
             layout.Controls.Add(MakeLabel("\u5728\u53c2\u4e0e\u8005\u7a97\u53e3\u4f5c\u7b54\uff1a1 \u7ea2 / 2 \u7eff / 3 \u84dd / 4 \u9ec4\uff08\u6309\u5b57\u4f53\u989c\u8272\uff09\u3002\n\u7a7a\u683c = \u7ea0\u9519\u540e\u7ee7\u7eed / \u4f11\u606f\u540e Ready\uff1bP = \u6682\u505c\uff0cR = \u6062\u590d\uff0cEsc = \u9000\u51fa\u3002\n\u7ec3\u4e60\u3001\u95ee\u5377\u3001\u4f11\u606f\u548c D \u6761\u4ef6\u9690\u85cf\u5934\u50cf\u662f\u9884\u671f\u884c\u4e3a\u3002\u64cd\u4f5c\u8005\u7a97\u53e3 P = \u5b89\u5168\u505c\u6b62\u3002",78));
 #endif
@@ -163,7 +163,7 @@ namespace AvatarStroop.Apps
                     return "When headset and both Touch controllers report ready, the owner may begin practice. Answer the ink colour using X / Y / A / B.";
                 case Phase.Practice: case Phase.MainTask:return "Touch: X red / Y green / A blue / B yellow. Release before another answer. Left menu pauses.";
                 case Phase.PracticeCorrection:return "Read the correction in the headset, then make a new right-trigger press to continue.";
-                case Phase.Questionnaire:return "Move the left stick up/down to choose 1-5; release to centre between steps. A confirms the visible candidate only.";
+                case Phase.Questionnaire:return "Left stick UP: lower number; DOWN: higher number (1-5). Release to centre between steps. A confirms the visible candidate only.";
                 case Phase.Rest:return "Rest at least 30 seconds, then make a new right-trigger press when Ready is available. Rest may be extended.";
                 case Phase.Paused:return "Paused. Right trigger actively resumes; B withdraws. The owner cannot remotely resume the participant.";
             }

@@ -26,6 +26,7 @@ namespace AvatarStroop.Unity
         DesktopPreviewOptions previewOptions;
         bool startupReleased;
         bool updateFailed;
+        bool worldDiagnosticFailed;
         long statusSequence;
         float nextStatusAt;
         OwnerCommandDispatcher ownerCommands;
@@ -68,8 +69,7 @@ namespace AvatarStroop.Unity
             {
                 startupError="Preview startup failed: "+error.Message;
                 Debug.LogError(startupError);
-                try{if(view!=null)view.SetFaults(new[]{startupError});}
-                catch(Exception displayError){Debug.LogWarning("Preview diagnostic view unavailable: "+displayError.Message);}
+                ShowFaults(new[]{startupError});
             }
             PublishStatus(true);
         }
@@ -83,21 +83,25 @@ namespace AvatarStroop.Unity
                 SimulationPeer app=participant!=null?(SimulationPeer)participant:operatorApp;
                 app.EnableRecording(path,new ExportProvenance("unity-development-journal",
                     "participant app monotonic observation of camera-post-render callback; not photon onset",InputTimingProvenance),.1);
-                if(app.RecordingWarning!=null)view.SetFaults(new[]{app.RecordingWarning});
+                if(app.RecordingWarning!=null)ShowFaults(new[]{app.RecordingWarning});
             }
-            catch(Exception error){recordingSetupError="Recording setup failed: "+error.Message;view.SetFaults(new[]{recordingSetupError});}
+            catch(Exception error){recordingSetupError="Recording setup failed: "+error.Message;ShowFaults(new[]{recordingSetupError});}
         }
 
         void Update()
         {
-            if(startupError!=null||view==null){PublishStatus(false);return;}
+            if(startupError!=null||view==null)
+            {
+                ShowFaults(new[]{startupError,statusWriteError});
+                PublishStatus(false);return;
+            }
             if(!startupReleased)
             {
                 try{startupReleased=DesktopPreviewStartup.IsReleased(previewOptions.StartupPath,previewOptions.SessionId);}
                 catch(Exception error){startupError="Preview startup failed: "+error.Message;Debug.LogError(startupError);}
                 if(!startupReleased)
                 {
-                    view.SetFaults(new[]{startupError??"Waiting for both preview windows"});
+                    ShowFaults(new[]{startupError??"Waiting for both preview windows",statusWriteError});
                     PublishStatus(false);return;
                 }
             }
@@ -121,7 +125,7 @@ namespace AvatarStroop.Unity
                         if(selectedTracking)warnings.AddRange(participant.ApplicationWarnings);
                     }
                     if(actionError!=null)warnings.Add(actionError);
-                    view.SetFaults(warnings);
+                    ShowFaults(warnings);
                 }
                 else if(operatorApp!=null)
                 {
@@ -134,11 +138,11 @@ namespace AvatarStroop.Unity
                     if(operatorApp.StopDelivery.Pending)warnings.Add("SAFETY STOP PENDING — delivery is not acknowledged.");
                     else if(operatorApp.StopDelivery.Acknowledged)warnings.Add("Safety stop acknowledged by participant application.");
                     if(actionError!=null)warnings.Add(actionError);
-                    view.SetFaults(warnings);
+                    ShowFaults(warnings);
                 }
             }
             catch(Exception error)
-            {updateFailed=true;actionError=error.Message;var warnings=RecordingWarnings(participant!=null?(SimulationPeer)participant:operatorApp);warnings.Add(actionError);view.SetFaults(warnings);}
+            {updateFailed=true;actionError=error.Message;var warnings=RecordingWarnings(participant!=null?(SimulationPeer)participant:operatorApp);warnings.Add(actionError);ShowFaults(warnings);}
             PublishStatus(false);
         }
 
@@ -201,10 +205,27 @@ namespace AvatarStroop.Unity
             return message;
         }
 
+        void ShowFaults(IEnumerable<string> messages)
+        {
+            if(view==null){worldDiagnosticFailed=true;return;}
+            try{view.SetFaults(messages);worldDiagnosticFailed=false;}
+            catch(Exception error)
+            {
+                if(!worldDiagnosticFailed)Debug.LogWarning("Preview diagnostic view unavailable: "+error.Message);
+                worldDiagnosticFailed=true;
+            }
+        }
+
         void OnGUI()
         {
-            string notice=startupError??statusWriteError;
-            if(notice==null&&participant!=null&&ownerCommands==null&&(view==null||!view.CleanTaskPresentation))
+            // Quest instructions and actual errors already use the fixed room
+            // presentation. Keep this emergency desktop fallback only when that
+            // view is unavailable; do not duplicate a screen-attached menu.
+            if(view!=null&&view.CanShowWorldDiagnostics&&!worldDiagnosticFailed)return;
+            string notice=startupError??statusWriteError??actionError??recordingSetupError;
+            if(notice==null&&participant!=null)notice=participant.RecordingWarning;
+            if(notice==null&&operatorApp!=null)notice=operatorApp.RecordingWarning;
+            if(notice==null&&participant!=null&&ownerCommands==null&&(view==null||(!view.HasWorldFixedMenu&&!view.CleanTaskPresentation)))
                 notice="Open "+OwnerLauncherName+" to use the separate owner controls.\nThis participant window waits for an explicit owner action; no practice or source is selected automatically.";
             if(notice==null)return;
             var style=new GUIStyle(GUI.skin.box){fontSize=18,wordWrap=true,alignment=TextAnchor.UpperLeft};
