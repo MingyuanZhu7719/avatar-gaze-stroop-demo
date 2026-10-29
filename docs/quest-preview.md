@@ -107,3 +107,19 @@ The earlier live practice request did not start a trial: at 06:06:47 UTC the cur
 
 
 The delivered classroom package uses fixed characterSize **0.0225**, fontSize 100 and scale 1; the longest word measures about **0.9405 by 0.25137 m**. Its synthetic renders and migration checks passed, both Windows players built with zero errors/warnings, and the owner Framework probe passed 19 checks. See the [classroom verification record](development.md#classroom-verification-result) for the source/test boundary. New-package GUI and headset review are still pending: when switching versions, the existing old package was found in a later PracticeCorrection session and was left intact. Finish or close that old preview before opening the complete new package; no competing XR player was launched.
+
+
+### User feedback and requested task-view cleanup
+
+The user reported at 07:07 UTC on 2026-10-29 that hands-on operation of the classroom build was OK. The intervening authorized switch had closed the old windows normally, preserved their logs and opened the classroom package; its Preparation room/board were observed on the desktop mirror. Later detected user input advanced its owner commands through practice and Automatic block B, without the development agent issuing those commands. This supersedes the earlier deferred-start checkpoint. It is usability feedback, not completion or scientific validation of the experiment. The user then requested a fixed graphical Quest button/colour legend on the left of the whiteboard and removal of the head-following introduction/status text during active testing. The mapping remains X red, Y green, A blue and B yellow; VIVE trackpad mapping remains undecided.
+
+The revised healthy active participant view hides explanatory/debug HUD text and the duplicate textual mapping. Essential faults remain visible, including unavailable controller input when the headset alone is still tracked. Necessary practice correction, questionnaire and pause/withdraw instructions remain available in their appropriate states. The previous 2 m HUD acceptance applies to those retained instruction states; it does not substitute for review of the new fixed legend.
+
+
+### Fixed-legend package verification
+
+`quest-legend-players-6000.3.25f1/AvatarStroopQuestPreview.exe` is the new package entry point. The full package must remain together. Its graphical Quest legend is fixed to the board's left: X red / Y green on the left controller, A blue / B yellow on the right. Healthy Practice/MainTask has no head-following explanatory HUD; genuine faults remain visible. The stimulus, scoring, timing, source selection and real-experiment gate are unchanged in this revision.
+
+Both players built with zero errors/warnings; the Windows Framework owner checks passed 19/19. The isolated GPU-rendered Editor fixture passed 1,936 checks and produced 14 synthetic images, including clean task, D, practice and actual fault-message fixtures. These do not establish hardware acceptance or live controller responses. The saved generated Quest scene and all package source digests match the frozen implementation. The clean-task image in Library (`libfile_b49a3bb91ab88191a7251808ffce7157`, version 1) is an illustrative render, not a screenshot of a participant trial.
+
+The old classroom package remained in Questionnaire, block 1/B, at 07:40:06 UTC. It has not been replaced or interrupted. Finish that workflow or explicitly close its two player windows through the existing owner UI before starting the new package; leave the new one in Preparation for review rather than silently choosing a source or starting trials. New-package UI/headset readability remains pending. Retained non-trial text is not comprehensively visually accepted: the synthetic Preparation view still has weak white-text contrast where it crosses the light board edge. VIVE trackpad mapping and actual eye tracking remain unavailable.

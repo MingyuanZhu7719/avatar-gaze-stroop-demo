@@ -36,12 +36,14 @@ namespace AvatarStroop.Unity
         [SerializeField] TextMesh previewStatusText;
         TextMesh developmentBanner;
         Transform headerBacking, footerBacking;
+        Transform controllerLegend;
         readonly Vector3[] hudCorners = new Vector3[4];
         readonly Vector3[] hudProjectionPoints = new Vector3[4], stimulusProjectionPoints = new Vector3[8];
         string previewDiagnostic = "", previewControls = "", faultCaption = "";
         int hudDiagnosticsRemaining=3;
         float nextHudDiagnosticAt;
         bool lastHudStereo;
+        bool faultCoversStimulus;
         // A centred, bounded angular panel is easier to read through the headset
         // lenses than labels spread over the full render frustum. Distance alone
         // would not help because the text fitter otherwise scales with the frustum.
@@ -78,6 +80,11 @@ namespace AvatarStroop.Unity
         public bool OperatorViewProvisional { get; private set; }
         public bool HeadHeld { get; private set; } = true;
         public bool EyesHeld { get; private set; } = true;
+        public bool CleanTaskPresentation
+        {
+            get { return headsetPreview&&role==Actor.Participant&&currentView!=null&&
+                (currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask); }
+        }
         public AvatarPose AppliedPose
         {
             get
@@ -102,7 +109,7 @@ namespace AvatarStroop.Unity
             // The full standing body reaches below a level 60-degree mono view.
             // A desktop-only pitch keeps the feet and board stand in frame without moving
             // the camera or gaze targets. Quest's tracked camera is not changed.
-            if(!headsetPreview) camera.transform.rotation = Quaternion.Euler(15, 0, 0);
+            if(!headsetPreview) camera.transform.rotation = Quaternion.Euler(15.5f, -4, 0);
             warningRoot.SetParent(camera.transform, false);
             warningRoot.localPosition = new Vector3(0, 0, HudDistance);
             warningRoot.localRotation = Quaternion.identity;
@@ -164,6 +171,7 @@ namespace AvatarStroop.Unity
             // No correctness, RT, response result, or score enters the operator view.
             messageText.text = role == Actor.Operator ? "" : ParticipantMessage(view);
             RefreshAvatarVisibility();
+            RefreshLegendVisibility();
             RefreshWarnings();
         }
 
@@ -185,6 +193,7 @@ namespace AvatarStroop.Unity
         public void SetHeadsetPreview(string diagnostic, string controls)
         {
             RequireLayout(); headsetPreview = true;
+            EnsureControllerLegend();RefreshLegendVisibility();
             EnsureHudLayout();
             previewDiagnostic = diagnostic ?? ""; previewControls = controls ?? "";
             if(previewStatusText == null)
@@ -268,7 +277,32 @@ namespace AvatarStroop.Unity
                 if(frustum.width<=.05f||frustum.height<=.05f) return;
             }
             warningRoot.localPosition=new Vector3(0,0,HudDistance);
+            // Invalid/degenerate layouts above keep the previous conservative
+            // gate; only a completed layout may clear an obscuring fault.
+            faultCoversStimulus=false;
             bool trial=currentView!=null&&(currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask);
+            if(CleanTaskPresentation)
+            {
+                foreach(var label in new[]{developmentBanner,phaseText,messageText,provisionalText,avatarLabel,previewStatusText,previewInputText})
+                    if(label!=null){label.text="";label.GetComponent<MeshRenderer>().enabled=false;}
+                PositionBacking(headerBacking,frustum,new Rect(0,0,1,.185f),false);
+                PositionBacking(footerBacking,frustum,new Rect(0,.695f,1,.30f),false);
+                // Real faults still have a dedicated readable area. Healthy status,
+                // introductory text and the duplicate controller list stay hidden.
+                var faultArea=new Rect(.02f,.73f,.96f,.24f);
+                if(HudOverlapsStimulus(faultArea,frustum))faultArea=new Rect(.02f,.02f,.96f,.24f);
+                FitHud(faultText,faultCaption,frustum,faultArea,.032f,7);
+                if(!String.IsNullOrWhiteSpace(faultCaption)&&!faultText.GetComponent<MeshRenderer>().enabled)
+                {
+                    // A real fault must not silently disappear if the head moves
+                    // the stimulus across both slots. Keep the fault visible and
+                    // withhold presentation acknowledgement for the covered word.
+                    faultText.GetComponent<MeshRenderer>().enabled=true;
+                    faultCoversStimulus=true;
+                }
+                LogHudProjection(frustum);
+                return;
+            }
             string heading=headsetPreview?"QUEST LINK PREVIEW | SIMULATED GAZE\nHEAD VIEW ONLY | NO EYE TRACKING | NOT A STUDY RUN":"DESKTOP SIMULATION | HARDWARE UNVERIFIED";
             FitHud(developmentBanner,heading,frustum,new Rect(.02f,.02f,.96f,.09f),.034f,2);
             // Always format from original state, never re-wrap an already fitted
@@ -494,6 +528,13 @@ namespace AvatarStroop.Unity
             avatarRoot.gameObject.SetActive(visible);
             avatarLabel.gameObject.SetActive(visible);
         }
+        void RefreshLegendVisibility()
+        {
+            if(controllerLegend==null)return;
+            bool useful=headsetPreview&&role==Actor.Participant&&currentView!=null&&
+                (currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask||currentView.Phase==Phase.PracticeCorrection);
+            controllerLegend.gameObject.SetActive(useful);
+        }
         void RefreshWarnings()
         {
             if(faultText == null) return;
@@ -502,10 +543,11 @@ namespace AvatarStroop.Unity
                 text.AppendLine("RENDER ACK UNAVAILABLE: built-in pipeline required.");
             if(role == Actor.Participant && currentView != null && currentView.OperatorAvatarVisible && !String.IsNullOrWhiteSpace(poseWarning))
                 text.AppendLine(poseWarning);
-            int shown=0,additional=0;
+            int shown=0,additional=0;var unique=new HashSet<string>(StringComparer.Ordinal);
             foreach(string fault in faults)
             {
-                if(headsetPreview&&String.Equals(fault.Trim(),previewDiagnostic.Trim(),StringComparison.Ordinal)) continue;
+                if(!unique.Add(fault))continue;
+                if(headsetPreview&&!CleanTaskPresentation&&String.Equals(fault.Trim(),previewDiagnostic.Trim(),StringComparison.Ordinal)) continue;
                 if(shown<3){text.AppendLine(Wrap(fault,52,2));shown++;}else additional++;
             }
             if(additional>0) text.AppendLine("Additional fault flags: "+additional);
@@ -565,7 +607,7 @@ namespace AvatarStroop.Unity
         {
             // A witness on the actual TextMesh must be culled in for this camera,
             // followed by its completed render. Hidden/stale views cannot acknowledge.
-            return PresentationIsAvailable() && isActiveAndEnabled && role == Actor.Participant && GraphicsSettings.currentRenderPipeline == null &&
+            return PresentationIsAvailable() && !faultCoversStimulus && isActiveAndEnabled && role == Actor.Participant && GraphicsSettings.currentRenderPipeline == null &&
                 presentationCamera != null && presentationCamera.isActiveAndEnabled && presentationCamera.targetTexture == null &&
                 presentationCamera.rect.width > 0 && presentationCamera.rect.height > 0 &&
                 !String.IsNullOrEmpty(displayedTrial) && currentView != null && currentView.TrialId == displayedTrial &&
@@ -661,6 +703,37 @@ namespace AvatarStroop.Unity
                 if(witness==null)witness=renderer.gameObject.AddComponent<AvatarRenderWitness>();
                 witness.Bind(this);
             }
+            if(headsetPreview)EnsureControllerLegend();
+            RefreshLegendVisibility();
+        }
+        void EnsureControllerLegend()
+        {
+            controllerLegend=contentRoot.Find("QuestControllerLegend");
+            if(controllerLegend!=null)return;
+            controllerLegend=Child("QuestControllerLegend",contentRoot,new Vector3(-1.60f,1.55f,2.04f));
+            Primitive("LegendFrame",PrimitiveType.Cube,controllerLegend,Vector3.zero,new Vector3(.55f,.82f,.035f),new Color(.78f,.81f,.79f));
+            Primitive("LegendFace",PrimitiveType.Cube,controllerLegend,new Vector3(0,0,-.022f),new Vector3(.525f,.795f,.014f),new Color(.12f,.15f,.16f));
+            BuildControllerLegend("LeftController",-.135f,true);
+            BuildControllerLegend("RightController",.135f,false);
+        }
+        void BuildControllerLegend(string name,float x,bool left)
+        {
+            var root=Child(name,controllerLegend,new Vector3(x,0,-.035f));
+            Primitive("Grip",PrimitiveType.Capsule,root,new Vector3(0,-.18f,0),new Vector3(.095f,.15f,.03f),new Color(.63f,.67f,.67f));
+            Primitive("ControllerFace",PrimitiveType.Sphere,root,new Vector3(0,.075f,-.005f),new Vector3(.22f,.365f,.035f),new Color(.72f,.75f,.74f));
+            Primitive("Thumbstick",PrimitiveType.Sphere,root,new Vector3(left?-.060f:.060f,.20f,-.03f),new Vector3(.047f,.047f,.015f),new Color(.17f,.20f,.21f));
+            var hand=Text("HandLabel",root,new Vector3(0,.33f,-.045f),.0065f,64,Color.white);hand.text=left?"LEFT":"RIGHT";
+            // Holder's top view: left Y is above/right of X; right B above/left
+            // of A. These are original schematic icons, not controller CAD.
+            LegendButton(root,left?"Y":"B",left?Colour.Green:Colour.Yellow,new Vector3(left?.040f:-.040f,.115f,-.035f));
+            LegendButton(root,left?"X":"A",left?Colour.Red:Colour.Blue,new Vector3(left?-.015f:.015f,-.085f,-.035f));
+        }
+        void LegendButton(Transform root,string button,Colour colour,Vector3 position)
+        {
+            Primitive("Button"+button,PrimitiveType.Sphere,root,position,new Vector3(.10f,.10f,.018f),Ink(colour));
+            var label=Text("Button"+button+"Label",root,position+new Vector3(0,0,-.018f),.0085f,64,
+                colour==Colour.Green||colour==Colour.Yellow?Color.black:Color.white);
+            label.text=button;
         }
         Transform BuildEye(string name, Vector3 position)
         {

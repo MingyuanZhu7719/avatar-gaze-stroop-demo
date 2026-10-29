@@ -204,7 +204,7 @@ namespace AvatarStroop.Unity
         void OnGUI()
         {
             string notice=startupError??statusWriteError;
-            if(notice==null&&participant!=null&&ownerCommands==null)
+            if(notice==null&&participant!=null&&ownerCommands==null&&(view==null||!view.CleanTaskPresentation))
                 notice="Open "+OwnerLauncherName+" to use the separate owner controls.\nThis participant window waits for an explicit owner action; no practice or source is selected automatically.";
             if(notice==null)return;
             var style=new GUIStyle(GUI.skin.box){fontSize=18,wordWrap=true,alignment=TextAnchor.UpperLeft};
@@ -220,7 +220,7 @@ namespace AvatarStroop.Unity
             if(recordingSetupError!=null)warnings.Add(recordingSetupError);
             if(statusWriteError!=null)warnings.Add(statusWriteError);
 #if STROOP_XR_PREVIEW
-            if(questPreview!=null&&!questPreview.HeadViewReady)warnings.Add(questPreview.Diagnostic);
+            if(questPreview!=null&&!questPreview.InputReady)warnings.Add(questPreview.Diagnostic);
 #endif
             return warnings;
         }
