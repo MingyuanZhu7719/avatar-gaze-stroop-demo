@@ -29,6 +29,16 @@ namespace AvatarStroop.Unity
         [SerializeField] TextMesh provisionalText;
         [SerializeField] bool headsetPreview;
         [SerializeField] TextMesh previewInputText;
+        [SerializeField] TextMesh previewStatusText;
+        TextMesh developmentBanner;
+        Transform headerBacking, footerBacking;
+        readonly Vector3[] hudCorners = new Vector3[4];
+        readonly Vector3[] hudProjectionPoints = new Vector3[4], stimulusProjectionPoints = new Vector3[8];
+        string previewDiagnostic = "", previewControls = "", faultCaption = "";
+        int hudDiagnosticsRemaining=3;
+        float nextHudDiagnosticAt;
+        bool lastHudStereo;
+        const float HudDistance = 1.1f;
         bool presentationAvailable = true;
         Func<bool> presentationAvailabilityCheck;
         readonly List<Material> runtimeMaterials = new List<Material>();
@@ -80,14 +90,16 @@ namespace AvatarStroop.Unity
             presentationCamera = camera; role = displayRole;
             if(contentRoot == null) BuildLayout();
             warningRoot.SetParent(camera.transform, false);
-            warningRoot.localPosition = new Vector3(0, .29f, 1.1f);
+            warningRoot.localPosition = new Vector3(0, 0, HudDistance);
             warningRoot.localRotation = Quaternion.identity;
+            EnsureHudLayout();
             var witness = stimulusText.GetComponent<StimulusRenderWitness>();
             witness.Bind(this);
             foreach(var avatarWitness in avatarRoot.GetComponentsInChildren<AvatarRenderWitness>(true)) avatarWitness.Bind(this);
             RefreshOverlayFontTextures(null);
             ResetCapture();
             RefreshWarnings();
+            LayoutHud();
         }
 
         void Awake()
@@ -114,6 +126,7 @@ namespace AvatarStroop.Unity
                 if(material != null) Destroy(material);
             if(Application.isPlaying && warningRoot != null) Destroy(warningRoot.gameObject);
         }
+        void LateUpdate() { LayoutHud(); }
 
         public void ApplyTaskView(TaskView view)
         {
@@ -158,15 +171,226 @@ namespace AvatarStroop.Unity
         public void SetHeadsetPreview(string diagnostic, string controls)
         {
             RequireLayout(); headsetPreview = true;
-            var banner = warningRoot.Find("PermanentDevelopmentBanner").GetComponent<TextMesh>();
-            banner.text = "QUEST LINK PREVIEW | SIMULATED GAZE | NOT A STUDY RUN";
+            EnsureHudLayout();
+            previewDiagnostic = diagnostic ?? ""; previewControls = controls ?? "";
+            if(previewStatusText == null)
+            {
+                previewStatusText = Text("QuestPreviewRuntimeStatus", warningRoot, Vector3.zero, .02f, 48, Color.white);
+                SetOverlay(previewStatusText);
+            }
             if(previewInputText == null)
             {
-                previewInputText = Text("QuestPreviewInputStatus", warningRoot, new Vector3(0, -.61f, 0), .013f, 48, Color.white);
+                previewInputText = Text("QuestPreviewInputStatus", warningRoot, Vector3.zero, .02f, 48, Color.white);
                 SetOverlay(previewInputText);
             }
-            previewInputText.text = diagnostic + "\n" + controls;
+            previewStatusText.text = previewDiagnostic;
+            previewInputText.text = previewControls;
             if(currentView != null && role == Actor.Participant) messageText.text = ParticipantMessage(currentView);
+            RefreshWarnings();
+            LayoutHud();
+        }
+
+        // These labels describe the application, not gaze targets. Move only
+        // labels into camera space; stimulus/avatar transforms and witnesses stay
+        // in the original fixed world-space geometry. Also migrates saved scenes.
+        void EnsureHudLayout()
+        {
+            if(warningRoot == null) return;
+            developmentBanner = warningRoot.Find("PermanentDevelopmentBanner").GetComponent<TextMesh>();
+            foreach(var label in new[]{phaseText,messageText,provisionalText,avatarLabel})
+            {
+                if(label == null) continue;
+                label.transform.SetParent(warningRoot, false);
+                label.transform.localRotation = Quaternion.identity;
+                var material = label.GetComponent<MeshRenderer>().sharedMaterial;
+                if(material == null || material.shader == null || material.shader.name != "AvatarStroop/WorldSpaceOverlay") SetOverlay(label);
+            }
+            headerBacking = warningRoot.Find("WarningBacking");
+            footerBacking = warningRoot.Find("HudFooterBacking");
+            if(footerBacking == null)
+            {
+                var backing = Primitive("HudFooterBacking",PrimitiveType.Quad,warningRoot,Vector3.zero,Vector3.one,Color.black);
+                var material = NewMaterial(Shader.Find("AvatarStroop/WorldSpaceOverlay"),new Color(.025f,.025f,.035f,.94f));
+                material.renderQueue = 4990; backing.GetComponent<MeshRenderer>().sharedMaterial = material;
+                footerBacking = backing.transform;
+            }
+        }
+
+        Rect HudFrustum(Camera.MonoOrStereoscopicEye eye)
+        {
+            presentationCamera.CalculateFrustumCorners(new Rect(0,0,1,1),HudDistance,eye,hudCorners);
+            float minX=Single.PositiveInfinity,minY=minX,maxX=Single.NegativeInfinity,maxY=maxX;
+            foreach(var corner in hudCorners)
+            {minX=Mathf.Min(minX,corner.x);maxX=Mathf.Max(maxX,corner.x);minY=Mathf.Min(minY,corner.y);maxY=Mathf.Max(maxY,corner.y);}
+            return Rect.MinMaxRect(minX,minY,maxX,maxY);
+        }
+        static Rect Intersect(Rect a,Rect b)
+        {return Rect.MinMaxRect(Mathf.Max(a.xMin,b.xMin),Mathf.Max(a.yMin,b.yMin),Mathf.Min(a.xMax,b.xMax),Mathf.Min(a.yMax,b.yMax));}
+        static Rect HudBox(Rect frustum,Rect viewport)
+        {
+            // Layout rectangles use a conventional top-left origin.
+            return new Rect(frustum.xMin+viewport.x*frustum.width,frustum.yMax-(viewport.y+viewport.height)*frustum.height,
+                viewport.width*frustum.width,viewport.height*frustum.height);
+        }
+        void LayoutHud()
+        {
+            if(warningRoot == null || developmentBanner == null || presentationCamera == null) return;
+            var frustum=HudFrustum(Camera.MonoOrStereoscopicEye.Mono);
+            if(presentationCamera.stereoEnabled)
+            {
+                // One shared layout for MultiPass, never a per-active-eye change.
+                frustum=Intersect(frustum,HudFrustum(Camera.MonoOrStereoscopicEye.Left));
+                frustum=Intersect(frustum,HudFrustum(Camera.MonoOrStereoscopicEye.Right));
+            }
+            if(frustum.width<=.05f||frustum.height<=.05f) return;
+            // Additional inset covers eye offsets as well as the mirror crop.
+            frustum=new Rect(frustum.x+frustum.width*.06f,frustum.y+frustum.height*.04f,frustum.width*.88f,frustum.height*.92f);
+            warningRoot.localPosition=new Vector3(0,0,HudDistance);
+            bool trial=currentView!=null&&(currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask);
+            string heading=headsetPreview?"QUEST LINK PREVIEW | SIMULATED GAZE\nHEAD VIEW ONLY | NO EYE TRACKING | NOT A STUDY RUN":"DESKTOP SIMULATION | HARDWARE UNVERIFIED";
+            FitHud(developmentBanner,heading,frustum,new Rect(.02f,.02f,.96f,.09f),.034f,2);
+            // Always format from original state, never re-wrap an already fitted
+            // TextMesh string. Resizing must recover the complete source text.
+            string phase=(role==Actor.Participant?"PARTICIPANT":"OPERATOR")+" | "+(currentView==null?"Initializing":currentView.Phase.ToString());
+            string provisional=OperatorViewProvisional?"PROVISIONAL OPERATOR VIEW\nD / non-main display policy awaits review":"";
+            string instructions=currentView==null||role==Actor.Operator||trial?"":ParticipantMessage(currentView);
+            string scope=role==Actor.Operator?"PARTICIPANT AVATAR PLACEHOLDER\nStatic; no reverse head / eye tracking":"PROVISIONAL AVATAR GEOMETRY\nFixed body; shared head / eye renderer";
+            FitHud(phaseText,phase,frustum,new Rect(.02f,.13f,.96f,.045f),.034f,1);
+            FitHud(provisionalText,provisional,frustum,new Rect(.04f,.20f,.92f,.075f),.031f,2);
+            FitHud(messageText,instructions,frustum,
+                role==Actor.Participant?new Rect(.04f,.21f,.92f,.40f):new Rect(.04f,.29f,.92f,.32f),.035f,100);
+            FitHud(avatarLabel,scope,frustum,new Rect(.02f,.62f,.96f,.065f),.026f,2);
+            if(headsetPreview)
+            {
+                FitHud(faultText,faultCaption,frustum,new Rect(.02f,.70f,.96f,.085f),.028f,3);
+                FitHud(previewStatusText,previewDiagnostic,frustum,new Rect(.02f,.79f,.96f,.08f),.031f,3);
+                FitHud(previewInputText,previewControls,frustum,new Rect(.02f,.885f,.96f,.095f),.031f,3);
+            }
+            else FitHud(faultText,faultCaption,frustum,new Rect(.02f,.73f,.96f,.23f),.031f,7);
+            // Opaque panels and centre instructions must not cover a live trial.
+            PositionBacking(headerBacking,frustum,new Rect(0,0,1,.185f),!trial);
+            PositionBacking(footerBacking,frustum,new Rect(0,.695f,1,.30f),!trial);
+            LogHudProjection(frustum);
+        }
+        void LogHudProjection(Rect frustum)
+        {
+            if(!Application.isPlaying||!headsetPreview) return;
+            bool stereo=presentationCamera.stereoEnabled;
+            if(stereo!=lastHudStereo){lastHudStereo=stereo;hudDiagnosticsRemaining=3;nextHudDiagnosticAt=0;}
+            if(hudDiagnosticsRemaining<=0||Time.realtimeSinceStartup<nextHudDiagnosticAt) return;
+            hudDiagnosticsRemaining--;nextHudDiagnosticAt=Time.realtimeSinceStartup+2;
+            Debug.Log("HUD_LAYOUT stereo="+stereo+" screen="+Screen.width+"x"+Screen.height+
+                " camera_pixels="+presentationCamera.pixelWidth+"x"+presentationCamera.pixelHeight+
+                " frustum="+frustum.ToString("F3")+" root_local="+warningRoot.localPosition.ToString("F3")+
+                " root_scale="+warningRoot.localScale.ToString("F3"));
+            for(int i=0;i<(stereo?3:1);i++)
+            {
+                var eye=i==0?Camera.MonoOrStereoscopicEye.Mono:i==1?Camera.MonoOrStereoscopicEye.Left:Camera.MonoOrStereoscopicEye.Right;
+                var matrix=i==0?presentationCamera.worldToCameraMatrix:presentationCamera.GetStereoViewMatrix(i==1?Camera.StereoscopicEye.Left:Camera.StereoscopicEye.Right);
+                // Relative matrix agreement only; never emit physical world pose.
+                Debug.Log("HUD_VIEW "+eye+" camera_relative_origin="+matrix.MultiplyPoint(presentationCamera.transform.position).ToString("F3")+
+                    " header="+LabelViewport(developmentBanner,eye)+" body="+LabelViewport(messageText,eye)+
+                    " status="+LabelViewport(previewStatusText,eye)+" controls="+LabelViewport(previewInputText,eye));
+            }
+#if STROOP_XR_PREVIEW
+            var displays=new List<UnityEngine.XR.XRDisplaySubsystem>();SubsystemManager.GetSubsystems(displays);
+            foreach(var display in displays)
+            {
+                if(!display.running) continue;
+                UnityEngine.XR.XRDisplaySubsystem.XRMirrorViewBlitDesc descriptor;
+                if(!display.GetMirrorViewBlitDesc(null,out descriptor)) {Debug.Log("HUD_MIRROR descriptor unavailable");continue;}
+                Debug.Log("HUD_MIRROR native="+descriptor.nativeBlitAvailable+" blits="+descriptor.blitParamsCount);
+                for(int i=0;i<Math.Min(descriptor.blitParamsCount,4);i++)
+                {
+                    UnityEngine.XR.XRDisplaySubsystem.XRBlitParams blit;descriptor.GetBlitParameter(i,out blit);
+                    Debug.Log("HUD_MIRROR "+i+" source="+blit.srcRect.ToString("F3")+" destination="+blit.destRect.ToString("F3")+
+                        " texture="+(blit.srcTex==null?"none":blit.srcTex.width+"x"+blit.srcTex.height)+" slice="+blit.srcTexArraySlice);
+                }
+            }
+#endif
+        }
+        string LabelViewport(TextMesh label,Camera.MonoOrStereoscopicEye eye)
+        {
+            if(label==null||String.IsNullOrEmpty(label.text)) return "empty";
+            var bounds=label.GetComponent<MeshRenderer>().localBounds;int at=0;
+            for(int x=-1;x<=1;x+=2)for(int y=-1;y<=1;y+=2)for(int z=-1;z<=1;z+=2)
+                stimulusProjectionPoints[at++]=label.transform.TransformPoint(bounds.center+Vector3.Scale(bounds.extents,new Vector3(x,y,z)));
+            Rect rectangle;int visible=ProjectHudPoints(stimulusProjectionPoints,eye,out rectangle);
+            return visible+":"+rectangle.ToString("F3");
+        }
+        void PositionBacking(Transform backing,Rect frustum,Rect viewport,bool visible)
+        {
+            if(backing==null) return;
+            backing.gameObject.SetActive(visible);
+            var box=HudBox(frustum,viewport);
+            backing.localPosition=new Vector3(box.center.x,box.center.y,.01f);
+            backing.localScale=new Vector3(box.width,box.height,1);
+        }
+        void FitHud(TextMesh label,string value,Rect frustum,Rect viewport,float lineHeight,int maxLines)
+        {
+            if(label==null) return;
+            var box=HudBox(frustum,viewport);
+            float preferredHeight=frustum.height*lineHeight;
+            int columns=Mathf.Clamp(Mathf.FloorToInt(box.width/(preferredHeight*.52f)),24,110);
+            label.text=WrapHud(value??"",columns,maxLines);
+            label.anchor=TextAnchor.UpperLeft;label.alignment=TextAlignment.Left;
+            label.transform.localScale=Vector3.one;
+            var renderer=label.GetComponent<MeshRenderer>();
+            var bounds=renderer.localBounds;
+            if(bounds.size.x<=.00001f||bounds.size.y<=.00001f||label.text.Length==0){renderer.enabled=false;return;}
+            int lines=1;foreach(char character in label.text)if(character=='\n')lines++;
+            float scale=Mathf.Min(box.width/bounds.size.x,box.height/bounds.size.y,preferredHeight*lines/bounds.size.y);
+            label.transform.localScale=Vector3.one*scale;
+            label.transform.localPosition=new Vector3(box.xMin-bounds.min.x*scale,box.yMax-bounds.max.y*scale,0);
+            // Overlay text has ZTest Always. Hide any label that would obscure the
+            // current stimulus instead of claiming its renderer proves visibility.
+            renderer.enabled=!HudOverlapsStimulus(viewport,frustum);
+        }
+        bool HudOverlapsStimulus(Rect viewport,Rect frustum)
+        {
+            if(displayedTrial==null||stimulusText==null||!stimulusText.gameObject.activeInHierarchy) return false;
+            var labelBox=HudBox(frustum,viewport);
+            var bounds=stimulusText.GetComponent<MeshRenderer>().bounds;
+            int at=0;
+            for(int x=-1;x<=1;x+=2)for(int y=-1;y<=1;y+=2)for(int z=-1;z<=1;z+=2)
+                stimulusProjectionPoints[at++]=bounds.center+Vector3.Scale(bounds.extents,new Vector3(x,y,z));
+            hudProjectionPoints[0]=warningRoot.TransformPoint(new Vector3(labelBox.xMin,labelBox.yMin,0));
+            hudProjectionPoints[1]=warningRoot.TransformPoint(new Vector3(labelBox.xMin,labelBox.yMax,0));
+            hudProjectionPoints[2]=warningRoot.TransformPoint(new Vector3(labelBox.xMax,labelBox.yMin,0));
+            hudProjectionPoints[3]=warningRoot.TransformPoint(new Vector3(labelBox.xMax,labelBox.yMax,0));
+            for(int eyeIndex=0;eyeIndex<(presentationCamera.stereoEnabled?3:1);eyeIndex++)
+            {
+                var eye=eyeIndex==0?Camera.MonoOrStereoscopicEye.Mono:eyeIndex==1?Camera.MonoOrStereoscopicEye.Left:Camera.MonoOrStereoscopicEye.Right;
+                Rect stimulusBox,hudBox;
+                int stimulusVisible=ProjectHudPoints(stimulusProjectionPoints,eye,out stimulusBox);
+                if(stimulusVisible==0) continue;
+                if(stimulusVisible<0||ProjectHudPoints(hudProjectionPoints,eye,out hudBox)!=1||hudBox.Overlaps(stimulusBox)) return true;
+            }
+            return false;
+        }
+        int ProjectHudPoints(Vector3[] points,Camera.MonoOrStereoscopicEye eye,out Rect rectangle)
+        {
+            float minX=Single.PositiveInfinity,minY=minX,maxX=Single.NegativeInfinity,maxY=maxX;int visible=0;
+            foreach(var worldPoint in points)
+            {
+                var point=presentationCamera.WorldToViewportPoint(worldPoint,eye);
+                if(point.z<=presentationCamera.nearClipPlane) continue;
+                visible++;minX=Mathf.Min(minX,point.x);maxX=Mathf.Max(maxX,point.x);minY=Mathf.Min(minY,point.y);maxY=Mathf.Max(maxY,point.y);
+            }
+            rectangle=visible==0?new Rect():Rect.MinMaxRect(minX-.005f,minY-.005f,maxX+.005f,maxY+.005f);
+            return visible==0?0:visible==points.Length?1:-1;
+        }
+        static string WrapHud(string value,int columns,int maxLines)
+        {
+            var lines=new List<string>();
+            foreach(string paragraph in value.Replace("\r","").Split('\n'))
+            {
+                if(paragraph.Length==0){lines.Add("");continue;}
+                lines.AddRange(Wrap(paragraph,columns,Int32.MaxValue).Split('\n'));
+            }
+            if(lines.Count>maxLines)
+            {lines.RemoveRange(maxLines,lines.Count-maxLines);lines[maxLines-1]+=" ... (see owner/log)";}
+            return String.Join("\n",lines);
         }
 
         // The same render entry point accepts automatic and incoming live/simulator
@@ -253,16 +477,22 @@ namespace AvatarStroop.Unity
                 text.AppendLine("RENDER ACK UNAVAILABLE: built-in pipeline required.");
             if(role == Actor.Participant && currentView != null && currentView.OperatorAvatarVisible && !String.IsNullOrWhiteSpace(poseWarning))
                 text.AppendLine(poseWarning);
-            int shown = Math.Min(faults.Count, 3);
-            for(int i = 0; i < shown; i++) text.AppendLine(Wrap(faults[i], 52, 2));
-            if(faults.Count > shown) text.AppendLine("Additional fault flags: " + (faults.Count - shown));
-            faultText.text = text.Length == 0 ? "Development display; hardware validation pending." : text.ToString().TrimEnd();
+            int shown=0,additional=0;
+            foreach(string fault in faults)
+            {
+                if(headsetPreview&&String.Equals(fault.Trim(),previewDiagnostic.Trim(),StringComparison.Ordinal)) continue;
+                if(shown<3){text.AppendLine(Wrap(fault,52,2));shown++;}else additional++;
+            }
+            if(additional>0) text.AppendLine("Additional fault flags: "+additional);
+            faultCaption = text.Length == 0 ? (headsetPreview ? "" : "Development display; hardware validation pending.") : text.ToString().TrimEnd();
+            faultText.text = faultCaption;
             faultText.color = text.Length == 0 ? new Color(1, .82f, .35f) : new Color(1, .42f, .35f);
         }
 
         void BeforeCameraCull(Camera camera)
         {
             if(camera != presentationCamera) return;
+            LayoutHud();
             ResetCapture();
             capturedAvatar = null; capturedAvatarFrame = -1; avatarObservedByCamera = false;
             if(PresentationIsAvailable() && isActiveAndEnabled && contentRoot != null && GraphicsSettings.currentRenderPipeline == null)
@@ -420,8 +650,8 @@ namespace AvatarStroop.Unity
         string ParticipantMessage(TaskView view)
         {
             if(view.Phase == Phase.Preparation || view.Phase == Phase.Familiarization)
-                return headsetPreview ? "QUEST LINK PREVIEW\nWaiting for the separate owner control window.\nOpen AvatarStroopQuestPreview.exe to start.\nHead view only; all avatar gaze is simulated." :
-                    "DESKTOP SIMULATION\nWaiting for the separate owner control window.\nOpen AvatarStroopPreview.exe to start a preview.\nNo headset or real eye tracking is connected.";
+                return headsetPreview ? "Use the owner controls to begin practice\nonce the headset and both Touch controllers are ready.\nNo practice or source starts automatically." :
+                    "Use the separate owner controls to begin practice.\nNo practice or source starts automatically.";
             if(view.Phase == Phase.BlockPreparation || view.Phase == Phase.BlockReady)
                 return "Waiting for the owner to configure and begin\nthis block in the separate preview control window.";
             if(view.Phase == Phase.PracticeRetry) return "Practice needs one retry.\nAsk the owner to start it in the control window.";

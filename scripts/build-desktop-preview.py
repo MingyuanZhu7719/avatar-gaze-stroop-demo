@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 from test import ROOT, unity_tools
+from windows_framework import framework_references, verify_preview_runtime, compile_preview_launcher
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -34,6 +35,10 @@ def main():
         parser.error('Disposable project package manifest differs from the source baseline.')
     if output==project or output.is_relative_to(project/'Assets'):
         parser.error('Output must be separate from the project Assets directory.')
+    try:
+        framework_references()
+    except ValueError as error:
+        parser.error(str(error))
     if args.check_only:
         print('Source and package consistency verified for both players and owner launcher.')
         return 0
@@ -41,6 +46,7 @@ def main():
     installed=unity_tools()
     _,mono,csc=installed
     output.mkdir(parents=True,exist_ok=True)
+    verify_preview_runtime(mono,csc,ROOT,output)
     env=dict(os.environ,STROOP_PREVIEW_OUTPUT=str(output))
     log=output/'unity-build.log'
     command=[str(editor),'-batchmode','-nographics','-noUpm','-quit','-projectPath',str(project),
@@ -50,10 +56,7 @@ def main():
     if result.returncode:
         print(log.read_text(encoding='utf-8',errors='replace')[-6000:],file=sys.stderr)
         return result.returncode
-    sources=sorted((ROOT/'Assets/Stroop/Core').glob('*.cs'))+sorted((ROOT/'Assets/Stroop/Runtime').glob('*.cs'))+[ROOT/'Apps/DesktopPreviewLauncher.cs']
-    subprocess.run([str(mono),str(csc),'-nologo','-langversion:7.3','-warnaserror','-target:winexe',
-                    '-main:AvatarStroop.Apps.DesktopPreviewLauncher','-r:System.Windows.Forms.dll','-r:System.Drawing.dll',
-                    '-out:'+str(output/'AvatarStroopPreview.exe')]+[str(p) for p in sources],check=True)
+    compile_preview_launcher(mono,csc,ROOT,output/'AvatarStroopPreview.exe')
     (output/'START-HERE.txt').write_text(
         'Avatar Stroop - DESKTOP SIMULATION ONLY\n\n'
         'Open AvatarStroopPreview.exe. Keep the Participant and Operator folders beside it.\n'

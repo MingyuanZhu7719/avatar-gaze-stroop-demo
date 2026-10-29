@@ -50,7 +50,7 @@ namespace AvatarStroop.Runtime
             command=null;reason="malformed_command";
             if(line==null||line.Length>MaximumCommandBytes)return false;
             foreach(char c in line)if(c<33||c>126)return false;
-            var f=line.Split('|');if(f.Length!=5||f[0]!="ASOWNER"||f[1]!="1"||!ValidId(f[2]))return false;
+            var f=line.Split(new[]{'|'});if(f.Length!=5||f[0]!="ASOWNER"||f[1]!="1"||!ValidId(f[2]))return false;
             OwnerCommandKind kind;ControlSelection source;
             if(!Enum.TryParse(f[3],false,out kind)||!Enum.IsDefined(typeof(OwnerCommandKind),kind)||kind.ToString()!=f[3])return false;
             ControlSelection? selected=null;
@@ -70,7 +70,7 @@ namespace AvatarStroop.Runtime
         public static bool TryParseAcknowledgement(string line,out OwnerAcknowledgement ack)
         {
             ack=null;if(line==null||line.Length>4096)return false;
-            var f=line.Split('|');if(f.Length!=6||f[0]!="ASOWNERACK"||f[1]!="1"||(f[3]!="Accepted"&&f[3]!="Rejected"))return false;
+            var f=line.Split(new[]{'|'});if(f.Length!=6||f[0]!="ASOWNERACK"||f[1]!="1"||(f[3]!="Accepted"&&f[3]!="Rejected"))return false;
             try
             {
                 byte[] bytes=Convert.FromBase64String(f[5]);if(bytes.Length>2048||Convert.ToBase64String(bytes)!=f[5])return false;
@@ -117,13 +117,13 @@ namespace AvatarStroop.Runtime
         {
             byte[] bytes=ReadBytes(path);if(bytes.Length==0)return new string[0];
             if(bytes[bytes.Length-1]!=10)throw new IOException("Incomplete journal requires owner review: "+Path.GetFileName(path));
-            string text=new UTF8Encoding(false,true).GetString(bytes);return text.Substring(0,text.Length-1).Split('\n');
+            string text=new UTF8Encoding(false,true).GetString(bytes);return text.Substring(0,text.Length-1).Split(new[]{'\n'});
         }
         public static OwnerAcknowledgement FindAcknowledgement(string absolutePath,OwnerCommand command)
         {
             var path=AbsolutePath(absolutePath)+".ack";byte[] bytes=ReadBytes(path);int last=Array.LastIndexOf(bytes,(byte)10);if(last<0)return null;
             string text=Encoding.ASCII.GetString(bytes,0,last);OwnerAcknowledgement found=null;string hash=OwnerCommandCodec.Hash(command);
-            foreach(var line in text.Split('\n'))
+            foreach(var line in text.Split(new[]{'\n'}))
             {OwnerAcknowledgement ack;if(OwnerCommandCodec.TryParseAcknowledgement(line,out ack)&&ack.RequestId==command.RequestId&&ack.CommandHash==hash)found=ack;}
             return found;
         }
@@ -179,7 +179,7 @@ namespace AvatarStroop.Runtime
                 }
                 foreach(var line in OwnerCommandFile.CompleteJournal(CommandPath+".pending"))
                 {
-                    var f=line.Split('|');if(f.Length!=4||f[0]!="ASOWNERPENDING"||f[1]!="1"||!OwnerCommandCodec.ValidId(f[2])||!OwnerCommandCodec.ValidHash(f[3]))throw new IOException("Malformed pending journal requires owner review");
+                    var f=line.Split(new[]{'|'});if(f.Length!=4||f[0]!="ASOWNERPENDING"||f[1]!="1"||!OwnerCommandCodec.ValidId(f[2])||!OwnerCommandCodec.ValidHash(f[3]))throw new IOException("Malformed pending journal requires owner review");
                     if(pending.ContainsKey(f[2])&&pending[f[2]]!=f[3])throw new IOException("Conflicting pending journal requires owner review");pending[f[2]]=f[3];
                 }
                 foreach(var intent in pending)if(!completed.ContainsKey(intent.Key))

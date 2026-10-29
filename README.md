@@ -35,8 +35,8 @@ Milestones 1–4 implement the portable experiment core, control and fault contr
 
 - [Development milestones, actual test results, and remaining prerequisites](docs/development.md)
 - [Windows environment, local regression and standalone build verification](docs/windows-validation.md)
-- [Direct desktop preview launcher and owner controls](docs/desktop-preview.md) — implemented and built; actual UI acceptance awaits application-control permission.
-- [Quest 3 PC Link preview and Touch interaction](docs/quest-preview.md) - isolated optional XR integration; actual headset acceptance remains separate.
+- [Direct desktop preview launcher and owner controls](docs/desktop-preview.md) - implemented and built; shares the Windows Framework compatibility fix exercised through the Quest owner UI.
+- [Quest 3 PC Link preview and Touch interaction](docs/quest-preview.md) - actual owner UI and desktop player inspection performed; physical headset/controller acceptance remains separate.
 - [Headset-preview package and compatibility assessment](docs/xr-preview-prerequisites.md)
 - [Requirements and regression coverage](docs/requirements-tests.md)
 - [Unity presentation adapter and verification limits](docs/unity-adapter.md)

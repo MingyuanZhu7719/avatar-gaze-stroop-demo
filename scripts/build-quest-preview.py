@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from windows_framework import framework_references, verify_preview_runtime, compile_preview_launcher
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("quest_prepare", Path(__file__).with_name("prepare-quest-preview.py"))
@@ -65,6 +66,7 @@ def main():
         csc = editor.parent / "Data/MonoBleedingEdge/lib/mono/4.5/csc.exe"
         if not mono.is_file() or not csc.is_file():
             raise ValueError("The existing Editor's Mono/C# compiler is unavailable.")
+        framework_references()
         if args.check_only:
             print("Quest preview source, pinned package metadata, Editor and output checks passed. No program launched.")
             return 0
@@ -82,15 +84,12 @@ def main():
         if args.configure_only:
             print("Isolated XR scenes configured. No player, launcher or headset was launched.")
             return 0
+        verify_preview_runtime(mono, csc, source, output)
         run_editor(editor, project, output, "BuildWindowsPreview")
         prepare.verify_prepared(source, project)
         # Compile from the same verified snapshot as the two players.
-        sources = sorted((project / "Assets/Stroop/Core").glob("*.cs")) + sorted((project / "Assets/Stroop/Runtime").glob("*.cs")) + [project / "Apps/DesktopPreviewLauncher.cs"]
         launcher = output / "AvatarStroopQuestPreview.exe"
-        subprocess.run([str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-target:winexe",
-                        "-define:QUEST_PREVIEW_LAUNCHER", "-main:AvatarStroop.Apps.DesktopPreviewLauncher",
-                        "-r:System.Windows.Forms.dll", "-r:System.Drawing.dll", "-out:" + str(launcher)] +
-                       [str(path) for path in sources], check=True)
+        compile_preview_launcher(mono, csc, project, launcher, quest=True)
         prepare.verify_prepared(source, project)
         binaries = [launcher, output / "Participant/AvatarStroopParticipant.exe", output / "Operator/AvatarStroopOperator.exe"]
         if not all(path.is_file() for path in binaries):

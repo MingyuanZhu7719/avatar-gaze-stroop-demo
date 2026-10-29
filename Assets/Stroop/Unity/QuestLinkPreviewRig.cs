@@ -73,8 +73,9 @@ namespace AvatarStroop.Unity
                 // Register and enable every action BEFORE OpenXR initializes its
                 // session. Bindings are never added during an active XR session.
                 actions = new InputActionMap("QuestPreview");
-                // OpenXR reports device and centre-eye poses identically. Use
-                // device controls so GetActionIsActive maps them to devicePose.
+                // OpenXR reports device and centre-eye poses identically.
+                // HMD reference-space tracking is not an interaction-profile
+                // pose action; its tracked flags validate these camera inputs.
                 position = Add("HeadPosition", "<XRHMD>/devicePosition", "Vector3");
                 rotation = Add("HeadRotation", "<XRHMD>/deviceRotation", "Quaternion");
                 trackingState = Add("HeadTrackingState", "<XRHMD>/trackingState", "Integer");
@@ -171,17 +172,31 @@ namespace AvatarStroop.Unity
         void RefreshState()
         {
             bool running = failure == null && display != null && display.running;
-            bool head = running && Bound(trackingState) && Pressed(tracked) &&
-                (trackingState.ReadValue<int>() & 3) == 3 && ValidPose() && Active(position) && Active(rotation);
+            bool bound = Bound(position) && Bound(rotation) && Bound(trackingState) && Bound(tracked);
+            bool isTracked = bound && Pressed(tracked);
+            int tracking = bound ? trackingState.ReadValue<int>() : 0;
+            bool poseValid = bound && ValidPose();
+            bool positionActive = Active(position), rotationActive = Active(rotation);
+            // GetActionIsActive describes interaction-profile actions. The HMD
+            // is located through OpenXR view/reference spaces, so that API can
+            // report false for a valid tracked head. Retain it for Touch only.
+            bool head = running && isTracked && (tracking & 3) == 3 && poseValid;
             HeadViewReady = head && (!focusKnown || displayFocused);
             InputReady = HeadViewReady && Active(x) && Active(y) && Active(a) && Active(b) && Active(trigger) && Active(menu) && Active(stick);
             Diagnostic = failure ?? (!running ? "Waiting for OpenXR display; connect Quest Link before launch" :
-                !HeadViewReady ? "Head pose / XR focus unavailable; view is not current" :
+                !bound ? "Waiting for headset input bindings" :
+                !isTracked || (tracking & 3) != 3 ? "Headset position / rotation tracking unavailable" :
+                !poseValid ? "Headset pose is invalid; view is not current" :
+                !HeadViewReady ? "Headset has no XR focus; return to the preview in Link" :
                 !InputReady ? "Head pose available; waiting for both Touch controllers" :
                 "Head pose and Touch input available | avatar gaze: SIMULATED");
             if(Diagnostic != lastDiagnostic)
             {
-                Debug.Log("QUEST PREVIEW STATUS: " + Diagnostic + "; no automatic task pause/resume or source change");
+                Debug.Log("QUEST PREVIEW STATUS: " + Diagnostic + "; display=" + running + "; bound=" + bound +
+                    "; tracked=" + isTracked + "; trackingFlags=" + tracking + "; validPose=" + poseValid +
+                    "; positionAction=" + positionActive + "; rotationAction=" + rotationActive +
+                    "; focusKnown=" + focusKnown + "; focused=" + displayFocused +
+                    "; no automatic task pause/resume or source change");
                 lastDiagnostic = Diagnostic;
             }
             // A desktop mirror alone must never acknowledge a headset presentation.

@@ -26,11 +26,19 @@ jobs:
         run: dotnet run --project AvatarStroop.Regression.csproj --configuration Release
       - name: Compile separate development owner console
         run: dotnet build AvatarStroop.OwnerConsole.csproj --configuration Release
-      - name: Compile Windows desktop preview owner window
+      - name: Compile Windows Framework desktop preview owner window
         if: runner.os == 'Windows'
         run: dotnet build AvatarStroop.DesktopPreview.csproj --configuration Release
       - name: Compile Quest Link preview owner window
         if: runner.os == 'Windows'
         run: dotnet build AvatarStroop.DesktopPreview.csproj --configuration Release -p:DefineConstants=QUEST_PREVIEW_LAUNCHER
+      - name: Run preview IPC regression on Windows Framework CLR
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet build AvatarStroop.FrameworkPreviewSmoke.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./build/dotnet/AvatarStroop.FrameworkPreviewSmoke/Release/net48/AvatarStroop.FrameworkPreviewSmoke.exe
+          exit $LASTEXITCODE
       - name: Run independent participant and operator simulators
         run: python scripts/integration.py --dotnet

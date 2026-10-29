@@ -148,7 +148,7 @@ namespace AvatarStroop.Runtime
         public static DesktopPreviewStatus Parse(string text)
         {
             if(text==null||DesktopPreviewFiles.Utf8.GetByteCount(text)>MaximumFileBytes)throw new FormatException("Invalid preview status size");
-            string[] fields=text.Split('|');
+            string[] fields=text.Split(new[]{'|'});
             if(fields.Length!=10||fields[0]!="ASDESKTOP"||fields[1]!="1"||(fields[8]!="0"&&fields[8]!="1"))throw new FormatException("Invalid preview status record");
             try
             {
