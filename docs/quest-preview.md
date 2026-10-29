@@ -19,9 +19,9 @@ If OpenXR initialization fails, its diagnostic is shown in the desktop mirror/ow
 | Questionnaire | Left stick up/down selects 1-5; return to centre between steps; A confirms the displayed candidate |
 | Pause | Left menu button |
 | While paused | Right trigger actively resumes; B withdraws and ends the preview |
-| Interrupted practice awaiting a protocol decision | B withdraws; no retry or continuation is added |
+| Practice paused before an answer | An explicit trigger resume continues with the next planned trial; the interrupted trial is never scored as an error |
 
-Release a button before another response. A questionnaire starts with a visible, **unsubmitted** candidate of 3; it is never recorded without a new A press. A simultaneous stick change and A press changes the candidate only. Phase changes, item changes and device reconnection establish a new input baseline, so held buttons cannot skip a stage or submit the next item. Simultaneous face buttons have a documented X/Y/A/B priority and produce at most one action; other simultaneous edges are consumed.
+Release a button before another response. A questionnaire starts with a visible, **unsubmitted** candidate of 3; it is never recorded without a new A press. An explicit practice pause follows PRD section 3 exactly like a main-task pause: resume advances to the next planned trial, never replays the interrupted item, never records it as an error, and keeps the eight-trial attempt denominator, so the 6/8 rule is unchanged after a pause. A simultaneous stick change and A press changes the candidate only. Phase changes, item changes and device reconnection establish a new input baseline, so held buttons cannot skip a stage or submit the next item. Simultaneous face buttons have a documented X/Y/A/B priority and produce at most one action; other simultaneous edges are consumed.
 
 The user confirmed that the final **VIVE controllers are the trackpad type, not ABXY controllers**. The table above is a Quest-preview-only mapping. No VIVE trackpad-to-colour mapping has been selected or implemented; the device clarification does not authorize a new response scheme. The current Quest mapping and training remain unchanged.
 

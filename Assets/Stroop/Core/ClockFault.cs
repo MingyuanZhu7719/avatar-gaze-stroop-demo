@@ -299,6 +299,9 @@ namespace AvatarStroop.Core
     // Reports diagnostic facts only; the accepted study's pause/recovery/notification policy is still unresolved.
     public sealed class ReceiveMonitor
     {
+        // Diagnostic fault history is bounded. A long session must not accumulate one
+        // entry per received packet; consumers track Sequence, never a list index.
+        public const int MaximumRetainedEvents=2048;
         readonly PeerIdentity expected;
         readonly string expectedDeviceId,localClockId;
         readonly DevelopmentFaultConfiguration config;
@@ -306,7 +309,7 @@ namespace AvatarStroop.Core
         readonly HashSet<long> seen=new HashSet<long>();
         readonly Queue<long> seenOrder=new Queue<long>();
         HashSet<FaultKind> active=new HashSet<FaultKind>();
-        long highest=-1,missing,duplicates,outOfOrder,rejected;
+        long highest=-1,missing,duplicates,outOfOrder,rejected,eventSequence;
         double lastNow=-1,lastSent=-1,lastCapture=-1;
         double? lastReceipt,lastTracking,lastHeadGood,lastEyeGood,lastTaskReceived,lastTaskSent;
         bool handshake,recoveryRequired;
@@ -314,6 +317,7 @@ namespace AvatarStroop.Core
         public HeadEyeSample LastSample {get;private set;}
         public TaskSnapshot LastTask {get;private set;}
         public IReadOnlyList<FaultEvent> Events {get{return new ReadOnlyCollection<FaultEvent>(events);}}
+        public long DiscardedEvents {get;private set;}
         public ReceiveMonitor(PeerIdentity expected,DevelopmentFaultConfiguration config,string expectedDeviceId,string localClockId)
         {
             if(expected==null||config==null) throw new ArgumentException("Explicit expected peer and thresholds required");
@@ -327,7 +331,12 @@ namespace AvatarStroop.Core
             if(handshake && lastReceipt.HasValue && now-lastReceipt.Value>config.ConnectionStaleSeconds)recoveryRequired=true;
         }
         void Event(double now,string kind,string detail)
-        {events.Add(new FaultEvent{Sequence=events.Count,LocalSeconds=now,Kind=kind,Detail=detail,SessionId=expected.SessionId,SourceId=expected.SourceId});}
+        {
+            events.Add(new FaultEvent{Sequence=eventSequence++,LocalSeconds=now,Kind=kind,Detail=detail,SessionId=expected.SessionId,SourceId=expected.SourceId});
+            if(events.Count<=MaximumRetainedEvents)return;
+            int removed=events.Count-MaximumRetainedEvents;
+            events.RemoveRange(0,removed);DiscardedEvents+=removed;
+        }
         ReceiveDecision Reject(double now,string reason)
         {rejected++;Event(now,"packet_rejected",reason);return new ReceiveDecision{Reason=reason};}
         public void RecordTransportRejection(string reason,double localReceived)

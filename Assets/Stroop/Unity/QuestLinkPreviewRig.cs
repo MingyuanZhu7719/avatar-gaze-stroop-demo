@@ -226,7 +226,7 @@ namespace AvatarStroop.Unity
             if(phase == Phase.Questionnaire)
                 hint = "Left stick UP: lower number | DOWN: higher number (1-5)\nCentre between steps | A: confirm\nSelected: " + (frame.CandidateRating.HasValue ? frame.CandidateRating.Value.ToString() : "--") + " (not submitted)";
             else if(phase == Phase.Paused) hint = "PAUSED | Right trigger: actively resume\nB: withdraw and end preview";
-            else if(phase == Phase.NeedsProtocolDecision) hint = "Interrupted practice requires an owner protocol decision\nNo automatic retry or resume | B: withdraw";
+            else if(phase == Phase.NeedsProtocolDecision) hint = "A protocol decision is pending\nNo automatic retry or resume | B: withdraw";
             else if(phase == Phase.PracticeCorrection || phase == Phase.Rest) hint = "Right trigger: Continue / Ready when available\nLeft menu: pause";
             else hint = "X red | Y green | A blue | B yellow\nRelease before the next answer | Left menu: pause";
             if(view != null) view.SetHeadsetPreview(Diagnostic, hint);

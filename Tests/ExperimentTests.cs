@@ -121,12 +121,56 @@ namespace AvatarStroop.Tests
                 Check.Near(15,e.RestSeconds);Check.True(!e.Ready());e.Withdraw();Check.Equal(EndReason.Withdrawn,e.EndReason);
                 Check.Equal(24,e.Trials.Count(x=>!x.IsPractice));Check.Equal(5,e.Ratings.Count);
             });
-            t.Run("AC-03 practice interruption exposes unresolved scoring policy",()=>{
-                var c=new ManualClock();var e=Fixtures.New(c);e.BeginFamiliarization(Actor.Owner);e.BeginPractice(Actor.Owner);e.MarkPresented(e.CurrentTrial.TrialId);
-                e.Pause(Actor.Participant);e.Resume(true);Check.Equal(Phase.NeedsProtocolDecision,e.Phase);
-                Check.Equal(null,e.CurrentTrial.Correct);Check.Equal(null,e.CurrentTrial.ReactionSeconds);
-                Check.Throws<InvalidOperationException>(()=>e.BeginPractice(Actor.Owner));e.EndTechnical(Actor.Owner,"practice_interruption_policy_unresolved");
-                Check.Equal(EndReason.TechnicalEnd,e.EndReason);
+            t.Run("AC-03 interrupted practice resumes the next planned trial without scoring or replay",()=>{
+                var c=new ManualClock();var e=Fixtures.New(c);e.BeginFamiliarization(Actor.Owner);e.BeginPractice(Actor.Owner);
+                var first=e.CurrentTrial;e.MarkPresented(first.TrialId);c.Advance(.4);
+                e.Pause(Actor.Participant);c.Advance(5);e.Resume(true);
+                // PRD section 3: explicit resume follows the next planned trial and the
+                // interrupted item is never scored as an error.
+                Check.Equal(Phase.Practice,e.Phase);
+                Check.Equal(TrialOutcome.Interrupted,first.Outcome);
+                Check.Equal<double?>(null,first.ResponseAt);Check.Equal<bool?>(null,first.Correct);
+                Check.Equal<double?>(null,first.ReactionSeconds);
+                Check.Equal(1,e.CurrentTrial.PlannedIndex);Check.True(first.TrialId!=e.CurrentTrial.TrialId);
+                Check.True(!e.CurrentTrial.Onset.HasValue);Check.Equal(0,e.PracticeCorrect);
+                Check.True(e.Events.Any(x=>x.Kind=="practice_resume_next_planned_trial"&&x.Fields["interrupted_trial"]==first.TrialId));
+                Check.True(!e.Events.Any(x=>x.Kind=="protocol_decision_required"));
+                // The attempt still has eight planned trials, so one pause does not
+                // change the 6/8 pass rule or fabricate a missing trial.
+                for(int i=1;i<8;i++)Fixtures.Answer(e,c);
+                Check.Equal(Phase.BlockPreparation,e.Phase);
+                Check.Equal(8,e.Trials.Count(x=>x.IsPractice));
+                Check.Equal(7,e.PracticeCorrect);
+                Check.Equal(1,e.Trials.Count(x=>x.IsPractice&&x.Outcome==TrialOutcome.Interrupted));
+            });
+            t.Run("AC-03 a pause before the practice answer never blocks the retry path",()=>{
+                var c=new ManualClock();var e=Fixtures.New(c);e.BeginFamiliarization(Actor.Owner);e.BeginPractice(Actor.Owner);
+                e.MarkPresented(e.CurrentTrial.TrialId);e.Pause(Actor.Participant);e.Resume(true);
+                // Four correct answers plus three corrected errors stay below the 6/8
+                // threshold, so the ordinary retry path must still be reachable after
+                // an interruption.
+                for(int i=1;i<8;i++)
+                {
+                    Fixtures.Answer(e,c,i<=4);
+                    if(e.Phase==Phase.PracticeCorrection)e.ContinuePractice();
+                }
+                Check.Equal(Phase.PracticeRetry,e.Phase);
+                Check.Equal(4,e.PracticeCorrect);
+                Check.Equal(8,e.Trials.Count(x=>x.IsPractice));
+                e.BeginPractice(Actor.Owner);Check.Equal(2,e.PracticeAttempt);
+            });
+            t.Run("AC-03 questionnaire duration excludes an explicit pause",()=>{
+                var c=new ManualClock();var e=Fixtures.New(c);Fixtures.Practice(e,c,8);Fixtures.Start(e,c);
+                for(int i=0;i<24;i++)Fixtures.Answer(e,c);
+                c.Advance(2);e.Rate(3);c.Advance(2);e.Rate(3);
+                e.Pause(Actor.Participant);c.Advance(100);e.Resume(true);
+                c.Advance(2);e.Rate(3);c.Advance(2);e.Rate(3);c.Advance(2);e.Rate(3);
+                var completed=e.Events.Single(x=>x.Kind=="questionnaire_completed");
+                Check.Near(10,Double.Parse(completed.Fields["duration_seconds"],System.Globalization.CultureInfo.InvariantCulture));
+                Check.Equal(5,e.Ratings.Count);
+                Check.Equal(Phase.Rest,e.Phase);
+                // The rest clock must stay aligned with the paused questionnaire.
+                Check.Near(0,e.RestSeconds);
             });
             t.Run("AC-04 held state persists across pause; release during pause permits fresh press",()=>{
                 var c=new ManualClock();var e=Fixtures.New(c);Fixtures.Practice(e,c,8);Fixtures.Start(e,c);

@@ -81,6 +81,7 @@ namespace AvatarStroop.Tests
             JournalTests.Register(suite);
             JournalCaptureTests.Register(suite);
             JournalRuntimeTests.Register(suite);
+            RetentionTests.Register(suite);
             Console.WriteLine("RESULT "+suite.Passed+" passed; "+suite.Failed+" failed");
             return suite.Failed==0?0:1;
         }

@@ -195,14 +195,25 @@ namespace AvatarStroop.Core
             }
             else if(beforePause == Phase.Practice && current != null && current.Outcome == TrialOutcome.Interrupted)
             {
-                // The baseline does not specify a practice denominator after an interrupted item.
-                Log("protocol_decision_required", "reason", "interrupted_practice_scoring_is_unresolved");
-                Move(Phase.NeedsProtocolDecision);
+                // PRD section 3 applies one explicit-pause rule to both task types: an
+                // explicit resume follows the next planned trial, never silently
+                // repeats the interrupted item, and never records it as an incorrect
+                // answer. Practice therefore continues with the next planned trial of
+                // the same eight-trial attempt, exactly as an interrupted main trial
+                // advances. The interrupted trial stays registered as Interrupted and
+                // still occupies one of the eight planned trials, so the 6/8 rule is
+                // unchanged after a pause and no trial is invented.
+                Log("practice_resume_next_planned_trial", "interrupted_trial", current.TrialId);
+                AdvancePractice();
             }
             else
             {
                 if(beforePause == Phase.Rest) restAt+=duration;
                 if(beforePause == Phase.Countdown) countdownAt+=duration;
+                // Rating duration must exclude an explicit pause, as the rest and
+                // countdown clocks already do. Without this the exported
+                // questionnaire_completed duration reports pause time as rating time.
+                if(beforePause == Phase.Questionnaire) ratingAt+=duration;
                 Move(beforePause);
             }
         }

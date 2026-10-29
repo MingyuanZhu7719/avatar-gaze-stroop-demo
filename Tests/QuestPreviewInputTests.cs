@@ -190,9 +190,14 @@ namespace AvatarStroop.Tests
                 var clock=new ManualClock();var experiment=Main(clock);experiment.MarkPresented(experiment.CurrentTrial.TrialId);experiment.Pause(Actor.Participant);var router=new QuestPreviewInputRouter();Apply(experiment,Update(router,experiment));
                 var frame=Update(router,experiment,16);Check.Equal(QuestPreviewAction.Resume,frame.Action);Check.Throws<InvalidOperationException>(()=>Apply(experiment,frame,false));Check.Equal(Phase.Paused,experiment.Phase);
                 Check.Equal(QuestPreviewAction.None,Update(router,experiment,16).Action);Apply(experiment,Update(router,experiment));Apply(experiment,Update(router,experiment,16));Check.Equal(Phase.Countdown,experiment.Phase);
-                var practice=Fixtures.New(new ManualClock());practice.BeginFamiliarization(Actor.Owner);practice.BeginPractice(Actor.Owner);practice.MarkPresented(practice.CurrentTrial.TrialId);router=new QuestPreviewInputRouter();Apply(practice,Update(router,practice));Apply(practice,Update(router,practice,32));
-                Apply(practice,Update(router,practice));Apply(practice,Update(router,practice,16));Check.Equal(Phase.NeedsProtocolDecision,practice.Phase);
-                Check.Equal(QuestPreviewAction.None,Update(router,practice,16).Action);Check.Throws<InvalidOperationException>(()=>Fixtures.New(new ManualClock(),Condition.A,RunKind.Apparatus));
+                var practice=Fixtures.New(new ManualClock());practice.BeginFamiliarization(Actor.Owner);practice.BeginPractice(Actor.Owner);
+                var interrupted=practice.CurrentTrial;practice.MarkPresented(interrupted.TrialId);router=new QuestPreviewInputRouter();
+                Apply(practice,Update(router,practice));Apply(practice,Update(router,practice,32));
+                Apply(practice,Update(router,practice));Apply(practice,Update(router,practice,16));
+                Check.Equal(Phase.Practice,practice.Phase);Check.Equal(1,practice.CurrentTrial.PlannedIndex);
+                Check.Equal(TrialOutcome.Interrupted,interrupted.Outcome);
+                Check.Equal(QuestPreviewAction.None,Update(router,practice,16).Action);
+                Check.Throws<InvalidOperationException>(()=>Fixtures.New(new ManualClock(),Condition.A,RunKind.Apparatus));
             });
             suite.Run("Quest preview forwards release across phases and rejects invalid routing contexts",()=>{
                 var router=new QuestPreviewInputRouter();router.Update(Phase.MainTask,0,Controls());router.Update(Phase.MainTask,0,Controls(2));
@@ -201,15 +206,22 @@ namespace AvatarStroop.Tests
                 Check.Throws<ArgumentOutOfRangeException>(()=>router.Update(Phase.Questionnaire,-1,Controls()));Check.Throws<ArgumentOutOfRangeException>(()=>router.Update(Phase.Questionnaire,Questionnaire.Count,Controls()));
                 Check.Throws<ArgumentNullException>(()=>router.Update(Phase.Preparation,0,null));
             });
-            suite.Run("Quest preview pending protocol decision permits deliberate withdrawal but no resume or continuation",()=>{
-                var clock=new ManualClock();var experiment=Fixtures.New(clock);experiment.BeginFamiliarization(Actor.Owner);experiment.BeginPractice(Actor.Owner);experiment.MarkPresented(experiment.CurrentTrial.TrialId);
-                experiment.Pause(Actor.Participant);experiment.Resume(true);Check.Equal(Phase.NeedsProtocolDecision,experiment.Phase);
-                var router=new QuestPreviewInputRouter();var held=Update(router,experiment,8|16);Check.Equal(QuestPreviewAction.None,held.Action);Apply(experiment,held);
-                Check.Equal(QuestPreviewAction.None,Update(router,experiment,8|16).Action);Apply(experiment,Update(router,experiment));
-                var blocked=Update(router,experiment,1|2|4|16|32);Check.Equal(QuestPreviewAction.None,blocked.Action);Apply(experiment,blocked);Check.Equal(Phase.NeedsProtocolDecision,experiment.Phase);
-                Apply(experiment,Update(router,experiment));var exit=Update(router,experiment,8|16);Check.Equal(QuestPreviewAction.Withdraw,exit.Action);Apply(experiment,exit);
-                Check.Equal(Phase.Ended,experiment.Phase);Check.Equal((EndReason?)EndReason.Withdrawn,experiment.EndReason);
-                Check.Equal(TrialOutcome.Interrupted,experiment.Trials[0].Outcome);Check.Equal<bool?>(null,experiment.Trials[0].Correct);
+            suite.Run("Quest preview interrupted practice resumes the next planned trial and never scores the pause",()=>{
+                var clock=new ManualClock();var experiment=Fixtures.New(clock);experiment.BeginFamiliarization(Actor.Owner);experiment.BeginPractice(Actor.Owner);
+                var interrupted=experiment.CurrentTrial;experiment.MarkPresented(interrupted.TrialId);
+                var router=new QuestPreviewInputRouter();
+                Apply(experiment,Update(router,experiment));Apply(experiment,Update(router,experiment,32));
+                Check.Equal(Phase.Paused,experiment.Phase);
+                Apply(experiment,Update(router,experiment));var resume=Update(router,experiment,16);
+                Check.Equal(QuestPreviewAction.Resume,resume.Action);Apply(experiment,resume);
+                Check.Equal(Phase.Practice,experiment.Phase);
+                Check.Equal(1,experiment.CurrentTrial.PlannedIndex);Check.Equal(2,experiment.Trials.Count(x=>x.IsPractice));
+                Check.Equal(TrialOutcome.Interrupted,interrupted.Outcome);Check.Equal<bool?>(null,interrupted.Correct);
+                Check.Equal(0,experiment.PracticeCorrect);
+                Check.Equal(1,experiment.Trials.Count(x=>x.IsPractice&&x.Outcome==TrialOutcome.Interrupted));
+                // A held trigger after the resume cannot skip the freshly created trial.
+                Check.Equal(QuestPreviewAction.None,Update(router,experiment,16).Action);
+                Check.Equal(1,experiment.CurrentTrial.PlannedIndex);
             });
         }
     }

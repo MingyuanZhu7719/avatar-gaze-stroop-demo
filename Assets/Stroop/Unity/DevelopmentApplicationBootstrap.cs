@@ -29,6 +29,12 @@ namespace AvatarStroop.Unity
         bool worldDiagnosticFailed;
         long statusSequence;
         float nextStatusAt;
+        // Presentation observations are sampled instead of recorded once per rendered
+        // frame: one row per frame grows avatar_presentations.csv with frame count
+        // rather than with trials and retains every observation in memory.
+        const double PresentationAuditIntervalSeconds=.1;
+        double nextPresentationAuditAt;
+        string lastPresentationAuditKey;
         OwnerCommandDispatcher ownerCommands;
 #if STROOP_XR_PREVIEW
         QuestLinkPreviewRig questPreview;
@@ -330,7 +336,7 @@ namespace AvatarStroop.Unity
                     participant.Clock.ClockId,"same-process-render-callback-pair-v1",observed,unityRenderProxySeconds-observed,null,null,
                     "camera_post_render_proxy_paired_at_callback;display_and_callback_delay_unmeasured"));
                 e.MarkPresented(trialId);
-                participant.CaptureRecording();
+                participant.CaptureRecording(false,false);
             }
             // Engine timestamp is the receiving app's monotonic callback observation.
             // unityRenderProxySeconds is a separate render clock; no photon-onset claim.
@@ -339,10 +345,14 @@ namespace AvatarStroop.Unity
         {
             if(participant==null||participant.CurrentAvatar==null)return;
             if(observed.CapturedOutput==null)return;
+            string key=observed.TrialId+"/"+observed.Phase;
+            double now=participant.Clock.Now;
+            if(key==lastPresentationAuditKey&&now<nextPresentationAuditAt)return;
+            lastPresentationAuditKey=key;nextPresentationAuditAt=now+PresentationAuditIntervalSeconds;
             participant.Audit.RecordPresentation(new AvatarPresentationRecord(new AuditContext(observed.BlockIndex,observed.Segment,observed.TrialId),observed.ClockId,observed.RenderProxySeconds,
                 observed.TimestampMeaning,observed.Phase,observed.CapturedOutput,"development_renderer_policy",observed.AppliedPose,
                 observed.AnyAvatarRendererObserved,observed.HeadHeld,observed.EyesHeld,observed.VisibilityRequested));
-            participant.CaptureRecording();
+            participant.CaptureRecording(false,false);
         }
         static Vec3 ToVec(Vector3 value){return new Vec3(value.x,value.y,value.z);}
 
