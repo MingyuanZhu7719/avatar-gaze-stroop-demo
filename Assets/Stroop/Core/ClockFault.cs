@@ -318,6 +318,9 @@ namespace AvatarStroop.Core
         public TaskSnapshot LastTask {get;private set;}
         public IReadOnlyList<FaultEvent> Events {get{return new ReadOnlyCollection<FaultEvent>(events);}}
         public long DiscardedEvents {get;private set;}
+        // Synchronous owner-thread evidence delivery precedes diagnostic eviction.
+        // Consumers must not reconstruct a complete audit from the bounded Events view.
+        public event Action<FaultEvent> FaultRecorded;
         public ReceiveMonitor(PeerIdentity expected,DevelopmentFaultConfiguration config,string expectedDeviceId,string localClockId)
         {
             if(expected==null||config==null) throw new ArgumentException("Explicit expected peer and thresholds required");
@@ -332,7 +335,10 @@ namespace AvatarStroop.Core
         }
         void Event(double now,string kind,string detail)
         {
-            events.Add(new FaultEvent{Sequence=eventSequence++,LocalSeconds=now,Kind=kind,Detail=detail,SessionId=expected.SessionId,SourceId=expected.SourceId});
+            var record=new FaultEvent{Sequence=eventSequence++,LocalSeconds=now,Kind=kind,Detail=detail,SessionId=expected.SessionId,SourceId=expected.SourceId};
+            events.Add(record);
+            var callback=FaultRecorded;
+            if(callback!=null)callback(record);
             if(events.Count<=MaximumRetainedEvents)return;
             int removed=events.Count-MaximumRetainedEvents;
             events.RemoveRange(0,removed);DiscardedEvents+=removed;
@@ -440,3 +446,4 @@ namespace AvatarStroop.Core
         }
     }
 }
+

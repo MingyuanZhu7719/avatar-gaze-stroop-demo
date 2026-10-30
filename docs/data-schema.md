@@ -118,3 +118,26 @@ In D, eyes/remaining-face intervals are rejected because the avatar is absent. `
 The current independent-process integration scenarios have produced and validated real filesystem exports. `scripts/integration.py` runs separate local operator and participant processes over loopback UDP, verifies matching task snapshots, clock/source provenance, faults or acknowledged safety stop, every participant-bundle file hash and row count, source-acquisition row counts, explicit absence of participant eye samples, and absence of headless renderer claims. The fault scenario ends in `Rest` after one block and ratings; the safety-stop scenario ends `Paused` with an interrupted trial. Both correctly export `complete_bundle=true` and `session_completed=false`. This verifies software processes and snapshot data on one host, not two physical computers, headsets or measured rendered exposure.
 
 The portable C# 7.3 code and Unity adapter code have passed managed compilation using the locally installed Unity compiler/runtime and assemblies. The attempted Unity Editor check could not run because no valid Editor license was available; the log reports `No valid Unity Editor license found`. Therefore Editor execution, a rendered scene, camera-observed export records, VR input, and hardware display timing remain unverified. The separate [M4 journal](journal.md) defines tested write/flush failure behavior and interrupted-process prefix checks; see [development.md](development.md) for which complete integration runs have actually passed. Disk-full apparatus behavior, abrupt physical power loss, real participant acquisition and apparatus calibration remain unvalidated.
+
+
+## Diagnostic retention and presentation sampling
+
+Bounded packet/fault/output histories are diagnostic windows, not the authoritative
+receiver audit. Before packet eviction, the participant archives the entire new
+batch (including rejected packets and accepted raw head/eye samples). Faults are
+delivered synchronously to the participant audit and, when enabled, the journal
+before the bounded fault window can evict them. Journal sequence cursors prevent
+later periodic capture from duplicating those events. A recording write failure
+still faults the recorder and exposes its last acknowledged prefix; retention does
+not override that failure or claim durability without a successful flush.
+
+Unity camera-proxy presentation observations use **10 Hz steady-state pose
+sampling plus immediate discrete-state transitions**. Changes in block, segment,
+trial, phase, input validity/status/source, mapping/geometry, reference gaze state,
+renderer held flags, observed/visibility flags or pose availability bypass the
+100 ms interval. Recovery transitions bypass it too. The sampler snapshots these
+values, so mutating/reusing an output cannot hide a transition. Pose values and
+input sequence changes alone remain sampled. Thus this is not complete per-frame
+history: brief discrete holds/culling are retained, but unsampled pose excursions
+and exact exposure durations cannot be inferred. The timestamp remains a camera
+render proxy, never a photon-onset measurement. Headless evaluation is unchanged.

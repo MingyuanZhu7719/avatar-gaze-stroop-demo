@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using AvatarStroop.Core;
@@ -88,6 +89,98 @@ namespace AvatarStroop.Tests
                 }
             });
 
+            tests.Run("Retention archives a participant burst before packet and fault eviction",()=>{
+                var socket=new FloodSocket();
+                string directory=Path.Combine(Path.GetTempPath(),"stroop-retention-"+Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(directory);
+                try
+                {
+                    using(var bytes=new MemoryStream())
+                    using(var app=new ParticipantSimulationApplication("burst-evidence",40001,40002,null,socket.Peer()))
+                    {
+                        var provenance=new ExportProvenance("retention-fixture","synthetic","synthetic");
+                        var journal=new ContinuousJournal(bytes,()=>{},new JournalIdentity(app.Identity.SessionId,"participant",app.Clock.ClockId,provenance),true);
+                        app.EnableRecording(journal,10);
+                        var peer=new PeerIdentity(app.Identity.SessionId,"operator",PeerRole.Operator,"simulator/operator",ControlSource.Simulator,"operator-monotonic");
+                        socket.Queued.Enqueue(WireCodec.Encode(WirePacket.Hello(peer,0,0,SessionConfiguration.ProtocolVersion)));
+                        int total=SimulationPeer.MaximumRetainedPackets+100,rejected=ReceiveMonitor.MaximumRetainedEvents+100;
+                        for(int i=0;i<total;i++)
+                        {
+                            var sample=new HeadEyeSample(app.Identity.SessionId,peer.SourceId,"simulator-no-hardware",peer.ClockId,0,0,i,
+                                i*.000001,i*.000001,ControlSource.Simulator,StreamRole.OperatorControl,Rotation.Identity,new Vec3(0,0,1),true,true);
+                            socket.Queued.Enqueue(WireCodec.Encode(WirePacket.Tracking(peer,i+1,sample)));
+                        }
+                        for(int i=0;i<rejected;i++)socket.Queued.Enqueue(new byte[]{0});
+                        app.Tick();
+                        Check.Equal((long)total,app.AcceptedHeadEyePackets);
+                        Check.Equal(total,app.Audit.OperatorSamples.Count);
+                        for(int i=0;i<total;i++)Check.Equal((long)i,app.Audit.OperatorSamples[i].Sample.Sequence);
+                        Check.Equal(total+1,app.Audit.Transport.Count(x=>x.Kind=="packet_accepted"));
+                        // Both the decode observation and its diagnostic fault are archived.
+                        Check.Equal(rejected*2,app.Audit.Transport.Count(x=>x.Kind=="packet_rejected"));
+                        Check.Equal(SimulationPeer.MaximumRetainedPackets,app.Packets.Count);
+                        Check.True(app.Monitor.DiscardedEvents>0);
+                        app.Tick();Check.Equal(total,app.Audit.OperatorSamples.Count);
+                        Check.Equal(rejected*2,app.Audit.Transport.Count(x=>x.Kind=="packet_rejected"));
+                        var exported=app.Export(directory,provenance);Check.True(exported.Success,exported.Error);
+                        Check.Equal(total+1,File.ReadAllLines(Path.Combine(exported.DirectoryPath,"operator_samples.csv")).Length);
+                        Check.True(app.CaptureRecording());Check.True(app.CaptureRecording());
+                        Check.True(app.CloseRecording());
+                        var rows=new List<JournalRecord>();
+                        using(var input=new MemoryStream(bytes.ToArray()))
+                        {
+                            var result=JournalPrefixReader.Read(input,rows.Add);
+                            Check.Equal(JournalReadStatus.CleanClose,result.Status);
+                        }
+                        Check.Equal(total,rows.Count(x=>x.Kind=="operator_received_sample"));
+                        Check.Equal(rejected*2,rows.Count(x=>x.Kind=="transport_observation"&&x.Fields["transport_kind"]=="packet_rejected"));
+                        var faults=rows.Where(x=>x.Kind=="peer_fault"&&x.Fields["kind"]=="packet_rejected").ToArray();
+                        Check.Equal(rejected,faults.Length);
+                        Check.Equal(rejected,faults.Select(x=>x.Fields["fault_sequence"]).Distinct().Count());
+                    }
+                }
+                finally{Directory.Delete(directory,true);}
+            });
+
+            tests.Run("Presentation audit records transient holds and culling without recording every pose",()=>{
+                var sampler=new PresentationAuditSampler();var context=new AuditContext(0,0,"trial");
+                var output=new AvatarOutput{HeadValid=true,EyeValid=true,AvatarVisible=true,SelectedSource=ControlSource.Simulator,
+                    ActualSource=ControlSource.Simulator,Status=GazeOutputStatus.SampleAvailable,MappingVersion="fixture",
+                    ActualPose=new AvatarPose(Rotation.Identity,new Vec3(0,0,1))};
+                Check.True(sampler.ShouldRecord(0,context,Phase.MainTask,output,true,false,false,true));
+                output.ActualPose=new AvatarPose(Rotation.Identity,new Vec3(1,0,0));
+                Check.True(!sampler.ShouldRecord(.01,context,Phase.MainTask,output,true,false,false,true));
+                output.EyeValid=false;
+                Check.True(sampler.ShouldRecord(.02,context,Phase.MainTask,output,true,false,true,true));
+                output.EyeValid=true;
+                Check.True(sampler.ShouldRecord(.04,context,Phase.MainTask,output,true,false,false,true));
+                Check.True(sampler.ShouldRecord(.05,context,Phase.MainTask,output,false,false,false,true));
+                Check.True(sampler.ShouldRecord(.06,context,Phase.MainTask,output,true,false,false,true));
+                Check.True(!sampler.ShouldRecord(.07,context,Phase.MainTask,output,true,false,false,true));
+                Check.True(sampler.ShouldRecord(.17,context,Phase.MainTask,output,true,false,false,true));
+            });
+
+            tests.Run("Presentation audit records context and source changes even without a trial",()=>{
+                var sampler=new PresentationAuditSampler();var context=new AuditContext(0,0);
+                var output=new AvatarOutput{HeadValid=true,EyeValid=true,SelectedSource=ControlSource.Simulator,ActualSource=ControlSource.Simulator};
+                Check.True(sampler.ShouldRecord(0,context,Phase.Countdown,output,false,false,false,false));
+                Check.True(sampler.ShouldRecord(.01,new AuditContext(0,1),Phase.Countdown,output,false,false,false,false));
+                context=new AuditContext(1,1);
+                Check.True(sampler.ShouldRecord(.02,context,Phase.Countdown,output,false,false,false,false));
+                output.ActualSource=null;
+                Check.True(sampler.ShouldRecord(.03,context,Phase.Countdown,output,false,false,false,false));
+                output.MappingVersion="new-mapping";
+                Check.True(sampler.ShouldRecord(.04,context,Phase.Countdown,output,false,false,false,false));
+                Check.True(sampler.ShouldRecord(.05,context,Phase.Countdown,output,false,false,false,true));
+                output.HeadValid=false;
+                Check.True(sampler.ShouldRecord(.06,context,Phase.Countdown,output,false,true,false,true));
+                Check.True(!sampler.ShouldRecord(.07,context,Phase.Countdown,output,false,true,false,true));
+                output.Status=GazeOutputStatus.SampleMissing;
+                Check.True(sampler.ShouldRecord(.08,context,Phase.Countdown,output,false,true,false,true));
+                Check.True(sampler.ShouldRecord(.09,context,Phase.Paused,output,false,true,false,true));
+                Check.True(sampler.ShouldRecord(.095,new AuditContext(1,1,"next-trial"),Phase.Paused,output,false,true,false,true));
+            });
+
             tests.Run("Retention counters stay zero while recorded histories fit their limits",()=>{
                 var socket=new FloodSocket();
                 using(var app=new OperatorSimulationApplication("fit-within-limit",40001,40002,false,false,socket.Peer()))
@@ -106,3 +199,4 @@ namespace AvatarStroop.Tests
         }
     }
 }
+

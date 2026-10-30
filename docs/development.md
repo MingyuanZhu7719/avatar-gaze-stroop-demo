@@ -273,3 +273,28 @@ An independent read of the PRD and the implementation found four software defect
 **Desktop launcher startup can no longer fail silently.** The launcher probes two loopback UDP ports, releases them and then starts both players. If another process takes a port first, the startup barrier never releases and the window simply waited. A 15-second watchdog now reports the probed ports, the likely bind conflict and the session folder. The residual probe window remains a known limitation; the socket is owned by each player at bind time.
 
 The portable suite now passes **173 groups, 0 failures**, including new checks for interrupted-practice resume and its retry path, pause-free rating duration, and the three bounded histories with exact counters. `scripts/integration.py`, Unity compilation, player builds and headset checks were not re-run here; the Unity C# changes are covered by code review and managed compilation only in an environment with the Unity assemblies.
+
+
+### Code-review follow-up: archive before retention and preserve presentation transitions
+
+The participant now archives a complete network batch before diagnostic packet
+retention, including a batch larger than the 8192-entry window. Monitor faults
+are synchronously offered to the participant transport audit and enabled peer
+journal before the 2048-entry diagnostic window can evict them; monotonic cursors
+avoid duplicate later capture. This corrects loss of receiver-accepted raw samples
+and faults under bursts without changing source readiness or experimental flow.
+
+Unity presentation sampling now retains discrete context/input/renderer changes
+immediately and throttles only steady-state pose observations to 10 Hz. A short
+hold or culling change followed by recovery within 100 ms no longer disappears.
+The cadence and interpretation limits are documented in `data-schema.md`.
+
+Added portable regressions cover a receiver burst beyond both retention limits,
+raw sample identities, exported CSV count, clean-close journal evidence without
+duplicates, transient renderer hold/culling and recovery, steady-state throttling,
+and context/source changes without a trial ID. These new checks require execution
+on the updated commit. The preparation container has no installed C# compiler;
+no local portable pass, Unity build, headset acceptance or centering reconciliation
+is claimed here. Run `python3 scripts/test.py` (or
+`dotnet run --project AvatarStroop.Regression.csproj`) and the existing integration
+workflow; Unity compile/build and wearer checks remain separate Windows steps.

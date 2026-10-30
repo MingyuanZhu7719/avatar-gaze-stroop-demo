@@ -77,8 +77,8 @@ namespace AvatarStroop.Runtime
             "RECORDING FAILED: "+Recording.Error+"; last acknowledged sequence="+Recording.LastFlushedSequence.ToString(CultureInfo.InvariantCulture)+
             ", bytes="+Recording.LastFlushedOffset.ToString(CultureInfo.InvariantCulture):null;}}
         // Diagnostic packet history is a bounded safety valve, not a sampling policy:
-        // the participant audits every observation each tick, so trimming only occurs
-        // if auditing stops consuming. Received/accepted totals stay exact in the
+        // the participant archives every observation before eviction, including bursts
+        // larger than this window. Received/accepted totals stay exact in the
         // counters below, so a bounded list can never change a reported count.
         public const int MaximumRetainedPackets=8192;
         readonly List<PacketObservation> packets=new List<PacketObservation>();
@@ -94,6 +94,8 @@ namespace AvatarStroop.Runtime
         public long AcceptedHeadEyePackets {get;private set;}
         // Lets the participant keep its audit cursor aligned when the list is trimmed.
         protected virtual void PacketsDiscarded(int removed){}
+        protected virtual void BeforePacketRetention(){}
+        protected virtual void FaultObserved(FaultEvent fault){}
         protected SimulationPeer(string session,PeerRole role,int localPort,int remotePort,UdpPeer transport=null)
         {
             string own=role==PeerRole.Participant?"participant":"operator",other=role==PeerRole.Participant?"operator":"participant";
@@ -101,6 +103,7 @@ namespace AvatarStroop.Runtime
             Identity=new PeerIdentity(session,own,role,"simulator/"+own,ControlSource.Simulator,Clock.ClockId);
             var expected=new PeerIdentity(session,other,role==PeerRole.Participant?PeerRole.Operator:PeerRole.Participant,"simulator/"+other,ControlSource.Simulator,other+"-monotonic");
             Monitor=new ReceiveMonitor(expected,DevelopmentFixtures.Faults(),"simulator-no-hardware",Clock.ClockId);
+            Monitor.FaultRecorded+=fault=>{FaultObserved(fault);RecordFault(fault);};
             Synchronizer=new ClockSynchronizer(Clock.ClockId,expected.ClockId,DevelopmentFixtures.Clocks());
             socket=transport??new UdpPeer(new IPEndPoint(IPAddress.Loopback,localPort),new IPEndPoint(IPAddress.Loopback,remotePort),false);
         }
@@ -136,13 +139,7 @@ namespace AvatarStroop.Runtime
             if(!RecordingCapture.Capture())return false;
             foreach(var e in Monitor.Events)
             {
-                // Diagnostic fault history is bounded, so the cursor is the record's
-                // monotonic sequence, never a list index that trimming would shift.
-                if(e.Sequence<=recordingFaultSequence)continue;
-                if(!Recording.TryAppend("peer_fault",SimulationJournalCapture.Fields("fault_sequence",e.Sequence,"kind",e.Kind,"source_id",e.SourceId,
-                    "local_seconds",e.LocalSeconds,"clock_id",Clock.ClockId,"detail",e.Detail,
-                    "discarded_fault_events",Monitor.DiscardedEvents)))return false;
-                recordingFaultSequence=e.Sequence;
+                if(!RecordFault(e))return false;
             }
             if(DiscardedPacketObservations!=recordedDiscardedPackets)
             {
@@ -166,6 +163,15 @@ namespace AvatarStroop.Runtime
             if(flush||(allowPeriodicFlush&&Clock.Now>=nextRecordingFlush))
             {if(!Recording.Flush())return false;nextRecordingFlush=Clock.Now+recordingFlushInterval;}
             return !Recording.IsFaulted;
+        }
+        bool RecordFault(FaultEvent fault)
+        {
+            if(Recording==null||fault.Sequence<=recordingFaultSequence)return true;
+            if(!Recording.TryAppend("peer_fault",SimulationJournalCapture.Fields("fault_sequence",fault.Sequence,"kind",fault.Kind,"source_id",fault.SourceId,
+                "local_seconds",fault.LocalSeconds,"clock_id",Clock.ClockId,"detail",fault.Detail,
+                "discarded_fault_events",Monitor.DiscardedEvents)))return false;
+            recordingFaultSequence=fault.Sequence;
+            return true;
         }
         public bool CloseRecording()
         {return Recording==null||CaptureRecording()&&Recording.Close();}
@@ -195,6 +201,8 @@ namespace AvatarStroop.Runtime
         void RetainRecentPackets()
         {
             if(packets.Count<=MaximumRetainedPackets)return;
+            // Archive the entire new batch before any diagnostic entries are evicted.
+            BeforePacketRetention();
             int removed=packets.Count-MaximumRetainedPackets;
             packets.RemoveRange(0,removed);
             DiscardedPacketObservations+=removed;
@@ -378,6 +386,14 @@ namespace AvatarStroop.Runtime
         }
         protected override void ConnectionFaulted(){RefreshPresentation();}
         protected override void PacketsDiscarded(int removed){packetAuditCursor=Math.Max(0,packetAuditCursor-removed);}
+        protected override void BeforePacketRetention(){RecordNetworkAudit();}
+        protected override void FaultObserved(FaultEvent fault)
+        {
+            if(fault.Sequence<=faultAuditSequence)return;
+            Audit.RecordTransport(new TransportAuditRecord(CurrentAuditContext(),ControlSource.Simulator,fault.SourceId,null,Clock.ClockId,fault.LocalSeconds,
+                fault.Kind,null,null,null,null,fault.Detail));
+            faultAuditSequence=fault.Sequence;
+        }
         protected override SimulationJournalCapture CreateRecordingCapture(ContinuousJournal journal)
         {return new SimulationJournalCapture(journal,Experiment,Audit);}
         protected override void AcceptedPacket(WirePacket packet,double received)
@@ -453,10 +469,7 @@ namespace AvatarStroop.Runtime
             }
             foreach(var fault in Monitor.Events)
             {
-                if(fault.Sequence<=faultAuditSequence)continue;
-                Audit.RecordTransport(new TransportAuditRecord(CurrentAuditContext(),ControlSource.Simulator,fault.SourceId,null,Clock.ClockId,fault.LocalSeconds,
-                    fault.Kind,null,null,null,null,fault.Detail));
-                faultAuditSequence=fault.Sequence;
+                FaultObserved(fault);
             }
             clockAudit.Record(Synchronizer,Audit,CurrentAuditContext(),Clock.Now);
         }
@@ -517,3 +530,4 @@ namespace AvatarStroop.Runtime
         }
     }
 }
+

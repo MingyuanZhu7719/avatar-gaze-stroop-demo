@@ -29,12 +29,9 @@ namespace AvatarStroop.Unity
         bool worldDiagnosticFailed;
         long statusSequence;
         float nextStatusAt;
-        // Presentation observations are sampled instead of recorded once per rendered
-        // frame: one row per frame grows avatar_presentations.csv with frame count
-        // rather than with trials and retains every observation in memory.
-        const double PresentationAuditIntervalSeconds=.1;
-        double nextPresentationAuditAt;
-        string lastPresentationAuditKey;
+        // Record discrete renderer/input transitions immediately; sample only steady
+        // state poses at 10 Hz, not every rendered frame.
+        readonly PresentationAuditSampler presentationAudit=new PresentationAuditSampler();
         OwnerCommandDispatcher ownerCommands;
 #if STROOP_XR_PREVIEW
         QuestLinkPreviewRig questPreview;
@@ -345,11 +342,10 @@ namespace AvatarStroop.Unity
         {
             if(participant==null||participant.CurrentAvatar==null)return;
             if(observed.CapturedOutput==null)return;
-            string key=observed.TrialId+"/"+observed.Phase;
-            double now=participant.Clock.Now;
-            if(key==lastPresentationAuditKey&&now<nextPresentationAuditAt)return;
-            lastPresentationAuditKey=key;nextPresentationAuditAt=now+PresentationAuditIntervalSeconds;
-            participant.Audit.RecordPresentation(new AvatarPresentationRecord(new AuditContext(observed.BlockIndex,observed.Segment,observed.TrialId),observed.ClockId,observed.RenderProxySeconds,
+            var context=new AuditContext(observed.BlockIndex,observed.Segment,observed.TrialId);
+            if(!presentationAudit.ShouldRecord(participant.Clock.Now,context,observed.Phase,observed.CapturedOutput,
+                observed.AnyAvatarRendererObserved,observed.HeadHeld,observed.EyesHeld,observed.VisibilityRequested))return;
+            participant.Audit.RecordPresentation(new AvatarPresentationRecord(context,observed.ClockId,observed.RenderProxySeconds,
                 observed.TimestampMeaning,observed.Phase,observed.CapturedOutput,"development_renderer_policy",observed.AppliedPose,
                 observed.AnyAvatarRendererObserved,observed.HeadHeld,observed.EyesHeld,observed.VisibilityRequested));
             participant.CaptureRecording(false,false);
@@ -394,3 +390,4 @@ namespace AvatarStroop.Unity
         }
     }
 }
+
