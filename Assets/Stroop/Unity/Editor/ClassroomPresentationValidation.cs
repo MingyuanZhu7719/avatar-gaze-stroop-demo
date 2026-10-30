@@ -28,6 +28,9 @@ namespace AvatarStroop.Unity.Editor
             public float stimulus_character_size;
             public float avatar_yaw_degrees=225,desktop_pitch_degrees=15.5f;
             public float desktop_yaw_degrees=-4;
+            public Vector3 nominal_participant_reference=WorldSpaceExperimentView.CenteredParticipantReference;
+            public float participant_fixture_pitch_degrees=15,participant_fixture_yaw_degrees=4;
+            public bool start_alignment_once_xz_yaw=true,tracked_height_pitch_roll_preserved=true;
             public bool active_participant_view_has_only_world_content_and_real_faults=true;
             public bool quest_menu_world_fixed=true;
             public Vector3 menu_world=WorldSpaceExperimentView.FixedMenuPosition;
@@ -95,6 +98,7 @@ namespace AvatarStroop.Unity.Editor
                 Require(menu!=null&&menu.parent==content&&Near(menu.position,WorldSpaceExperimentView.FixedMenuPosition),"Quest menu is not world fixed");
                 Require(Quaternion.Angle(menu.rotation,Quaternion.identity)<.001f&&Near(menu.localScale,Vector3.one),"world menu rotation/scale changed");
                 Require(!menu.IsChildOf(view.PresentationCamera.transform),"Quest menu follows camera");
+                Require(Near(view.ParticipantReferencePosition,WorldSpaceExperimentView.CenteredParticipantReference),"nominal centred participant reference changed");
                 var backing=menu.Find("FixedWorldMenuBacking");
                 Require(backing!=null&&backing.GetComponent<Renderer>().sharedMaterial.color.a==1,"opaque fixed menu backing missing");
                 var legend=content.Find("QuestControllerLegend");
@@ -136,7 +140,7 @@ namespace AvatarStroop.Unity.Editor
         static AutomaticGazeGeometry Geometry(WorldSpaceExperimentView view)
         {
             var root=view.AvatarRoot;var head=view.AvatarHead.position;
-            return DevelopmentGeometry.FromLocalDirections(Vec(root.InverseTransformDirection(view.PresentationCamera.transform.position-head)),
+            return DevelopmentGeometry.FromLocalDirections(Vec(root.InverseTransformDirection(view.ParticipantReferencePosition-head)),
                 Vec(root.InverseTransformDirection(view.TaskWorldPosition-head)),WorldSpaceExperimentView.GeometryVersion);
         }
         static AvatarOutput Output(WorldSpaceExperimentView view,Condition condition,Phase phase)
@@ -159,7 +163,7 @@ namespace AvatarStroop.Unity.Editor
             foreach(var condition in new[]{Condition.A,Condition.C})
             {
                 Apply(view,Phase.MainTask,condition,Colour.Green);
-                Vector3 target=condition==Condition.A?view.PresentationCamera.transform.position:view.TaskWorldPosition;
+                Vector3 target=condition==Condition.A?view.ParticipantReferencePosition:view.TaskWorldPosition;
                 Vector3 expected=target-view.AvatarHead.position;
                 CheckDirection(expected,view.AvatarHead.forward,"head misses actual "+condition+" target");
                 // The shared gaze model defines directions from the head origin;
@@ -195,14 +199,19 @@ namespace AvatarStroop.Unity.Editor
         {
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Single);
             var camera=new GameObject("SyntheticFixtureCamera").AddComponent<Camera>();
-            camera.transform.position=new Vector3(0,1.6f,0);camera.fieldOfView=60;
+            camera.transform.position=role==Actor.Participant?WorldSpaceExperimentView.CenteredParticipantReference:new Vector3(0,1.6f,0);camera.fieldOfView=60;
             camera.nearClipPlane=.05f;camera.farClipPlane=20;camera.aspect=1100f/720;
             camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=new Color(.035f,.045f,.06f);
             camera.stereoTargetEye=StereoTargetEyeMask.None;
             var view=new GameObject("SyntheticFixturePresentation").AddComponent<WorldSpaceExperimentView>();
             view.Initialize(camera,role);view.SetPresentationAvailable(false);
             if(role==Actor.Participant)
+            {
                 view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED", "X red | Y green | A blue | B yellow\nLeft menu: pause; while paused, B: withdraw");
+                // Synthetic mono composition only. Runtime initial yaw is +Z;
+                // actual tracked pitch/roll are never authored or flattened.
+                camera.transform.rotation=Quaternion.Euler(15,4,0);
+            }
             // Fixture provenance belongs to filenames/JSON, not a fake fault
             // painted into the participant's otherwise clean active view.
             view.SetFaults(new string[0]);
@@ -222,6 +231,12 @@ namespace AvatarStroop.Unity.Editor
                     var warning=Menu(views[0]);
                     Require(warning!=null&&Near(warning.position,WorldSpaceExperimentView.FixedMenuPosition),"saved fixed world menu changed");
                     Require(Quaternion.Angle(views[0].PresentationCamera.transform.localRotation,Quaternion.identity)<.001f,"Quest camera retained desktop pitch");
+                    Require(Near(views[0].PresentationCamera.transform.position,WorldSpaceExperimentView.CenteredParticipantReference),"saved authored participant station is not board centred");
+#if STROOP_XR_PREVIEW
+                    var rig=new SerializedObject(views[0].GetComponent<QuestLinkPreviewRig>());
+                    var origin=rig.FindProperty("origin").objectReferenceValue as Behaviour;
+                    Require(origin!=null&&!origin.enabled,"saved XROrigin can automatically initialize/recenter runtime");
+#endif
                 }
                 foreach(var renderer in scene.GetRootGameObjects().SelectMany(root=>root.GetComponentsInChildren<Renderer>(true)))
                     Require(renderer.sharedMaterial!=null&&!String.IsNullOrEmpty(AssetDatabase.GetAssetPath(renderer.sharedMaterial)),"saved material is transient/missing");
@@ -250,6 +265,38 @@ namespace AvatarStroop.Unity.Editor
             Require(content.GetComponentsInChildren<Transform>(true).Length==objects,"migration duplicated objects");
             Require(content.GetComponentsInChildren<Renderer>(true).Select(r=>r.sharedMaterial).Distinct().Count()==materials,"migration duplicated materials");
             Require(Stimulus(view)==word&&view.AvatarHead==head&&oldEyes.All(t=>t!=null),"migration replaced gaze/stimulus identity");
+        }
+        static void CheckInitialAlignment(WorldSpaceExperimentView view)
+        {
+            var reference=view.ParticipantReferencePosition;var camera=view.PresentationCamera;
+            var savedPosition=camera.transform.position;camera.transform.position+=new Vector3(.4f,.3f,-.2f);
+            Require(Near(view.ParticipantReferencePosition,reference),"automatic gaze reference follows tracked head movement");camera.transform.position=savedPosition;
+            foreach(float heightOffset in new[]{0f,1.6f})foreach(float yaw in new[]{0f,90f,-125f,180f})
+            {
+                var root=new GameObject("SyntheticTrackingOrigin");var parent=new GameObject("SyntheticHeightOffset");var head=new GameObject("SyntheticTrackedHead");
+                parent.transform.SetParent(root.transform,false);parent.transform.localPosition=new Vector3(0,heightOffset,0);head.transform.SetParent(parent.transform,false);
+                root.transform.SetPositionAndRotation(new Vector3(.3f,0,-.7f),Quaternion.Euler(0,35,0));
+                Vector3 rawPosition=new Vector3(2,1.2f,-3);Quaternion rawRotation=Quaternion.Euler(0,yaw,0)*Quaternion.Euler(20,0,10);
+                head.transform.SetLocalPositionAndRotation(rawPosition,rawRotation);
+                float initialY=head.transform.position.y;Vector3 initialForward=head.transform.forward,initialUp=head.transform.up;
+                var placement=new QuestPreviewStartAlignment();var oldRoot=root.transform.localToWorldMatrix;
+                Require(!placement.TryApply(false,root.transform,parent.transform,rawPosition,rawRotation,reference)&&!placement.Applied&&oldRoot==root.transform.localToWorldMatrix,"unready input moves initial origin");
+                Require(!placement.TryApply(true,root.transform,parent.transform,rawPosition,Quaternion.Euler(90,0,0),reference)&&!placement.Applied,"near vertical initial pose has undefined yaw but aligns");
+                Require(!placement.TryApply(true,root.transform,parent.transform,new Vector3(Single.NaN,0,0),rawRotation,reference)&&!placement.Applied,"nonfinite pose aligns");
+                Require(placement.TryApply(true,root.transform,parent.transform,rawPosition,rawRotation,reference)&&placement.Applied,"valid initial alignment failed");
+                Require(Mathf.Abs(head.transform.position.x-reference.x)<.0001f&&Mathf.Abs(head.transform.position.z-reference.z)<.0001f,"initial head is not horizontally centred on board");
+                Require(Mathf.Abs(head.transform.position.y-initialY)<.0001f,"alignment changed tracked height");
+                Require(Vector3.Dot(Vector3.ProjectOnPlane(head.transform.forward,Vector3.up).normalized,Vector3.forward)>.99999f,"initial yaw does not face board");
+                Require(Mathf.Abs(head.transform.forward.y-initialForward.y)<.0001f&&Mathf.Abs(head.transform.up.y-initialUp.y)<.0001f,"alignment flattened pitch/roll");
+                var alignedRoot=root.transform.localToWorldMatrix;Vector3 alignedHead=head.transform.position,delta=new Vector3(.3f,.2f,-.4f);
+                head.transform.localPosition=rawPosition+delta;head.transform.localRotation=rawRotation*Quaternion.Euler(0,15,0);
+                Vector3 actualDelta=head.transform.position-alignedHead,expectedDelta=parent.transform.TransformVector(delta);
+                Require(Near(actualDelta,expectedDelta)&&Mathf.Abs(actualDelta.magnitude-delta.magnitude)<.0001f&&Mathf.Abs(actualDelta.y-.2f)<.0001f,"later physical movement is cancelled or rescaled");
+                Require(!placement.TryApply(false,root.transform,parent.transform,head.transform.localPosition,head.transform.localRotation,reference)&&
+                    !placement.TryApply(true,root.transform,parent.transform,head.transform.localPosition,head.transform.localRotation,reference)&&
+                    root.transform.localToWorldMatrix==alignedRoot,"tracking recovery re-aligns or locks physical movement");
+                UnityEngine.Object.DestroyImmediate(root);
+            }
         }
         static void CheckFraming(WorldSpaceExperimentView view)
         {
@@ -397,7 +444,7 @@ namespace AvatarStroop.Unity.Editor
                 throw new InvalidOperationException("Actual fixture rendering requires graphics and the built-in pipeline; do not use -nographics.");
             Directory.CreateDirectory(output);checks=0;var files=new List<string>();
             CheckSavedScenes();
-            var view=NewFixture(Actor.Participant);CheckMigration(view);CheckGeometry(view);CheckActivePresentation(view);CheckFixedMenuAndTransitions(view);CheckFaultOcclusionGate(view);
+            var view=NewFixture(Actor.Participant);CheckMigration(view);CheckInitialAlignment(view);CheckGeometry(view);CheckActivePresentation(view);CheckFixedMenuAndTransitions(view);CheckFaultOcclusionGate(view);
             Apply(view,Phase.MainTask,Condition.A,Colour.Green);
             CheckUnobstructed(view.PresentationCamera.transform.position,view.TaskWorldPosition,
                 Content(view).Find("ClassroomEnvironment").GetComponentsInChildren<Renderer>(true)
@@ -443,6 +490,14 @@ namespace AvatarStroop.Unity.Editor
             view.SetFaults(new string[0]);view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED","X red | Y green | A blue | B yellow");
             Apply(view,Phase.Preparation,Condition.A,Colour.Green);Render(view,output,"synthetic-preparation.png");files.Add("synthetic-preparation.png");
             CheckMenuReadable(view);
+            var fixtureRotation=view.PresentationCamera.transform.rotation;
+            view.PresentationCamera.transform.rotation=Quaternion.identity;
+            var centred=view.PresentationCamera.WorldToViewportPoint(view.TaskWorldPosition);
+            Require(Mathf.Abs(centred.x-.5f)<.0001f,"level centred start does not face whiteboard centre");
+            Render(view,output,"synthetic-centred-forward-preparation.png");files.Add("synthetic-centred-forward-preparation.png");
+            Apply(view,Phase.MainTask,Condition.A,Colour.Green);
+            Render(view,output,"synthetic-centred-forward-main.png");files.Add("synthetic-centred-forward-main.png");
+            view.PresentationCamera.transform.rotation=fixtureRotation;
             var router=new QuestPreviewInputRouter();var frame=router.Update(Phase.Questionnaire,4,Stick(0));
             var candidates=new List<int>{frame.CandidateRating.Value};
             foreach(var phase in new[]{Phase.PracticeCorrection,Phase.Questionnaire,Phase.Paused})

@@ -24,10 +24,15 @@ namespace AvatarStroop.Unity
         WorldSpaceExperimentView view;
         XRManagerSettings manager;
         XRDisplaySubsystem display;
+        XRInputSubsystem inputSubsystem;
         InputActionMap actions;
         InputAction position, rotation, trackingState, tracked, x, y, a, b, trigger, menu, stick;
         readonly QuestPreviewInputRouter router = new QuestPreviewInputRouter();
+        readonly QuestPreviewStartAlignment initialAlignment = new QuestPreviewStartAlignment();
         bool ownsLoader, focusKnown, displayFocused;
+        int alignedFrame=-1;
+        TrackingOriginModeFlags alignedTrackingMode=TrackingOriginModeFlags.Unknown;
+        bool referenceSpaceChanged;
         string failure, lastDiagnostic;
         public bool HeadViewReady { get; private set; }
         public bool InputReady { get; private set; }
@@ -36,6 +41,7 @@ namespace AvatarStroop.Unity
         // Explicit scene authoring only; no global runtime selection or startup hook.
         public void Configure(Camera camera)
         {
+            if(Application.isPlaying)throw new InvalidOperationException("Quest rig configuration is an Editor authoring action only.");
             if(camera == null) throw new ArgumentNullException("camera");
             view = GetComponent<WorldSpaceExperimentView>();
             if(view == null || view.Role != Actor.Participant)
@@ -52,10 +58,19 @@ namespace AvatarStroop.Unity
                 camera.transform.localPosition = Vector3.zero; camera.transform.localRotation = Quaternion.identity;
                 poseDriver = camera.gameObject.AddComponent<TrackedPoseDriver>();
                 origin = root.AddComponent<XROrigin>();
+                origin.enabled=false;
                 origin.Origin = root; origin.Camera = camera; origin.CameraFloorOffsetObject = offset;
                 origin.CameraYOffset = 1.6f; origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Device;
                 root.SetActive(true);
             }
+            // Keep the authored hierarchy/offset but opt out of XROrigin.Start,
+            // which otherwise sets runtime mode and repeatedly tries recentering.
+            origin.enabled=false;
+            // The authored scene and automatic-gaze reference share the planned
+            // station. Actual device-position/yaw compensation happens once at
+            // runtime; setting the Editor camera alone cannot provide that.
+            origin.Origin.transform.SetPositionAndRotation(new Vector3(WorldSpaceExperimentView.CenteredParticipantReference.x,0,WorldSpaceExperimentView.CenteredParticipantReference.z),Quaternion.identity);
+            camera.transform.localPosition=Vector3.zero;camera.transform.localRotation=Quaternion.identity;
             camera.stereoTargetEye = StereoTargetEyeMask.Both;
             view.SetHeadsetPreview("Quest Link preview; waiting for headset and controllers", "X red | Y green | A blue | B yellow\nLeft menu: pause; while paused, B: withdraw");
             view.SetPresentationAvailable(false);
@@ -63,11 +78,13 @@ namespace AvatarStroop.Unity
 
         void Awake()
         {
+            if(origin!=null)origin.enabled=false;
             view = GetComponent<WorldSpaceExperimentView>();
             try
             {
                 if(view == null || view.Role != Actor.Participant || previewCamera == null || origin == null || poseDriver == null)
                     throw new InvalidOperationException("Participant Quest preview rig is incomplete");
+                origin.enabled=false;
                 view.SetPresentationAvailable(false);
                 view.SetPresentationAvailabilityCheck(LivePresentationAvailable);
                 // Register and enable every action BEFORE OpenXR initializes its
@@ -128,6 +145,8 @@ namespace AvatarStroop.Unity
             {
                 display = manager.activeLoader.GetLoadedSubsystem<XRDisplaySubsystem>();
                 if(display == null) throw new InvalidOperationException("OpenXR display subsystem is unavailable");
+                inputSubsystem = manager.activeLoader.GetLoadedSubsystem<XRInputSubsystem>();
+                if(inputSubsystem == null)throw new InvalidOperationException("OpenXR input subsystem is unavailable");
                 display.displayFocusChanged += DisplayFocusChanged;
                 manager.StartSubsystems();
                 Debug.Log("QUEST PREVIEW: OpenXR start requested; actual headset display has not been verified. Gaze remains synthetic.");
@@ -142,6 +161,26 @@ namespace AvatarStroop.Unity
             {
                 HeadViewReady = InputReady = false;
                 if(view != null) view.SetPresentationAvailable(false);
+            }
+        }
+        static bool SupportedMode(TrackingOriginModeFlags mode)
+        {return mode==TrackingOriginModeFlags.Device||mode==TrackingOriginModeFlags.Floor;}
+        void TryInitialAlignment(bool trackedHead,TrackingOriginModeFlags mode)
+        {
+            if(initialAlignment.Applied)return;
+            bool originReady=inputSubsystem!=null&&inputSubsystem.running&&
+                SupportedMode(mode)&&origin!=null&&!origin.enabled&&origin.CameraFloorOffsetObject!=null;
+            if(!trackedHead||!focusKnown||!displayFocused||!originReady)return;
+            // Read the provider's existing convention, never request a new mode.
+            // Preserve the old Device=1.6 / Floor=0 height-offset semantics.
+            var offset=origin.CameraFloorOffsetObject.transform;
+            var positionOffset=offset.localPosition;positionOffset.y=mode==TrackingOriginModeFlags.Floor?0:origin.CameraYOffset;
+            offset.localPosition=positionOffset;
+            if(initialAlignment.TryApply(true,origin.Origin.transform,previewCamera.transform.parent,
+                position.ReadValue<Vector3>(),rotation.ReadValue<Quaternion>(),WorldSpaceExperimentView.CenteredParticipantReference))
+            {
+                alignedFrame=Time.frameCount;alignedTrackingMode=mode;
+                Debug.Log("QUEST PREVIEW START ALIGNED: mode="+mode+"; board-centred XZ and forward yaw; tracked height/pitch/roll preserved; one application transform only; no runtime recenter or real eye data.");
             }
         }
         bool LivePresentationAvailable()
@@ -169,7 +208,7 @@ namespace AvatarStroop.Unity
             return Finite(p.x) && Finite(p.y) && Finite(p.z) && Finite(q.x) && Finite(q.y) && Finite(q.z) && Finite(q.w) && Mathf.Abs(norm-1f)<.02f;
         }
 
-        void RefreshState()
+        void RefreshState(bool allowInitialAlignment=false)
         {
             bool running = failure == null && display != null && display.running;
             bool bound = Bound(position) && Bound(rotation) && Bound(trackingState) && Bound(tracked);
@@ -181,12 +220,24 @@ namespace AvatarStroop.Unity
             // is located through OpenXR view/reference spaces, so that API can
             // report false for a valid tracked head. Retain it for Touch only.
             bool head = running && isTracked && (tracking & 3) == 3 && poseValid;
-            HeadViewReady = head && (!focusKnown || displayFocused);
+            var mode=inputSubsystem!=null&&inputSubsystem.running?inputSubsystem.GetTrackingOriginMode():TrackingOriginModeFlags.Unknown;
+            if(initialAlignment.Applied&&SupportedMode(mode)&&mode!=alignedTrackingMode)referenceSpaceChanged=true;
+            // Render-time readiness queries may close the gate but must never
+            // move the origin between capture and culling/post-render.
+            if(allowInitialAlignment)TryInitialAlignment(head,mode);
+            // Permit a subsequent input/before-render update before admitting
+            // presentation. Never counteract later physical movement.
+            HeadViewReady = head && (!focusKnown || displayFocused) && initialAlignment.Applied &&
+                !referenceSpaceChanged && mode==alignedTrackingMode && Time.frameCount>alignedFrame;
             InputReady = HeadViewReady && Active(x) && Active(y) && Active(a) && Active(b) && Active(trigger) && Active(menu) && Active(stick);
             Diagnostic = failure ?? (!running ? "Waiting for OpenXR display; connect Quest Link before launch" :
                 !bound ? "Waiting for headset input bindings" :
                 !isTracked || (tracking & 3) != 3 ? "Headset position / rotation tracking unavailable" :
                 !poseValid ? "Headset pose is invalid; view is not current" :
+                !SupportedMode(mode) ? "XR reference space unavailable; Device or Floor tracking is required" :
+                referenceSpaceChanged ? "XR reference space changed; restart this preview to align again" :
+                !initialAlignment.Applied ? "Preparing board-centred start; keep Link focused and look forward briefly" :
+                Time.frameCount<=alignedFrame ? "Applying the board-centred start before presentation" :
                 !HeadViewReady ? "Headset has no XR focus; return to the preview in Link" :
                 !InputReady ? "Head pose available; waiting for both Touch controllers" :
                 "Head pose and Touch input available | avatar gaze: SIMULATED");
@@ -205,7 +256,7 @@ namespace AvatarStroop.Unity
 
         void Update()
         {
-            try { RefreshState(); }
+            try { RefreshState(true); }
             catch(Exception error) { Fail("XR input unavailable: " + error.Message); if(view != null) view.SetPresentationAvailable(false); }
             if(view != null) view.SetHeadsetPreview(Diagnostic, "X red | Y green | A blue | B yellow\nLeft menu: pause; while paused, B: withdraw");
         }

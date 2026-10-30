@@ -28,18 +28,19 @@ namespace AvatarStroop.Tests
 
         public static void Register(TestSuite t)
         {
-            t.Run("AC-05 classroom scene A and C head eye rays point to actual world targets",()=>{
-                var head=new Vec3(.65,1.6,1.9);var participant=new Vec3(0,1.6,0);var task=new Vec3(-.5,1.65,2);
+            t.Run("AC-05 classroom scene A and C head eye rays point to nominal participant and task targets",()=>{
+                // The participant is the authored centred reference, not a live tracked head pose.
+                var head=new Vec3(.65,1.6,1.9);var participant=new Vec3(-.5,1.6,0);var task=new Vec3(-.5,1.65,2);
                 var participantWorld=Subtract(participant,head);var taskWorld=Subtract(task,head);
                 // The fixed body faces yaw 225. Its inverse and forward rotations differ.
-                var geometry=DevelopmentGeometry.FromLocalDirections(Yaw(participantWorld,-225),Yaw(taskWorld,-225),"classroom-test-v2");
+                var geometry=DevelopmentGeometry.FromLocalDirections(Yaw(participantWorld,-225),Yaw(taskWorld,-225),"centered-reference-v3");
                 var a=AutomaticGaze.Evaluate(Condition.A,GazeTarget.Participant,0,geometry).Pose.Value;
                 var c=AutomaticGaze.Evaluate(Condition.C,GazeTarget.Participant,0,geometry).Pose.Value;
                 DirectionNear(Unit(participantWorld),Yaw(Forward(a.HeadRotation),225));
                 DirectionNear(Unit(participantWorld),Yaw(a.EyeDirection,225));
                 DirectionNear(Unit(taskWorld),Yaw(Forward(c.HeadRotation),225));
                 DirectionNear(Unit(taskWorld),Yaw(c.EyeDirection,225));
-                CoOriented(a);CoOriented(c);Check.Equal("classroom-test-v2",geometry.Version);
+                CoOriented(a);CoOriented(c);Check.Equal("centered-reference-v3",geometry.Version);
                 Check.True(a.EyeDirection.X < 0,"Participant target lies on negative avatar-root-local X");
                 Check.True(c.EyeDirection.X > 0,"Task target lies on positive avatar-root-local X");
             });

@@ -36,6 +36,8 @@ namespace AvatarStroop.Unity.Editor
         {
             public string role,scene;public int camera_count,rig_count;
             public bool role_matches,camera_linked,rig_references_valid,stereo_both;
+            public bool origin_automatic_initialization_disabled;
+            public Vector3 nominal_participant_reference;
         }
         [Serializable] sealed class SceneEvidenceFile {public bool hardware_validated=false;public SceneEvidence[] scenes;}
 
@@ -166,6 +168,11 @@ namespace AvatarStroop.Unity.Editor
                     origin.CameraFloorOffsetObject!=null&&camera.transform.parent==origin.CameraFloorOffsetObject.transform&&
                     Mathf.Approximately(origin.CameraYOffset,1.6f)&&origin.RequestedTrackingOriginMode==XROrigin.TrackingOriginMode.Device&&
                     !camera.allowDynamicResolution;
+                evidence.origin_automatic_initialization_disabled=origin!=null&&!origin.enabled;
+                evidence.nominal_participant_reference=views[0].ParticipantReferencePosition;
+                evidence.rig_references_valid=evidence.rig_references_valid&&evidence.origin_automatic_initialization_disabled&&
+                    Vector3.Distance(camera.transform.position,WorldSpaceExperimentView.CenteredParticipantReference)<.0001f&&
+                    Vector3.Distance(views[0].ParticipantReferencePosition,WorldSpaceExperimentView.CenteredParticipantReference)<.0001f;
             }
             if(!evidence.role_matches||!evidence.camera_linked||!evidence.rig_references_valid||
                 evidence.rig_count!=(participant?1:0)||(participant&&!evidence.stereo_both))
