@@ -53,7 +53,7 @@ namespace AvatarStroop.Unity
                 if(view.Role==Actor.Participant)
                 {
                     Transform root=view.AvatarRoot;Vector3 origin=view.AvatarHead.position;
-                    Vector3 participantDirection=root.InverseTransformDirection(view.PresentationCamera.transform.position-origin);
+                    Vector3 participantDirection=root.InverseTransformDirection(view.ParticipantReferencePosition-origin);
                     Vector3 taskDirection=root.InverseTransformDirection(view.TaskWorldPosition-origin);
                     var geometry=DevelopmentGeometry.FromLocalDirections(ToVec(participantDirection),ToVec(taskDirection),WorldSpaceExperimentView.GeometryVersion);
                     participant=new ParticipantSimulationApplication(previewOptions.SessionId,previewOptions.ParticipantPort,previewOptions.OperatorPort,geometry);

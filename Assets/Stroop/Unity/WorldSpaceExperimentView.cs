@@ -13,7 +13,8 @@ namespace AvatarStroop.Unity
     {
         public const string RenderClockId = "unity-realtime-since-startup";
         public const string RenderTimestampMeaning = "camera-post-render-proxy-not-photon-onset";
-        public const string GeometryVersion = "development-classroom-root-local-v2";
+        public const string GeometryVersion = "development-classroom-centered-reference-v3";
+        public static readonly Vector3 CenteredParticipantReference = new Vector3(-.5f,1.6f,0);
         // One preview size for every word/ink; never fit or resize per trial.
         // fontSize remains 100 for glyph atlas quality, independently of world size.
         public const float StimulusCharacterSize = .0225f;
@@ -58,6 +59,10 @@ namespace AvatarStroop.Unity
         public static readonly Vector3 FixedMenuPosition = new Vector3(-.5f,1.55f,1.90f);
         public const float FixedMenuWidth=1.35f, FixedMenuHeight=1.05f;
         public bool HasWorldFixedMenu { get { return headsetPreview&&role==Actor.Participant; } }
+        // A/B automatic gaze targets a declared reference station, never live
+        // HMD samples. Actual startup alignment preserves the tracked height.
+        public Vector3 ParticipantReferencePosition
+        {get{return HasWorldFixedMenu?CenteredParticipantReference:presentationCamera.transform.position;}}
         public bool CanShowWorldDiagnostics
         {
             get { return HasWorldFixedMenu&&isActiveAndEnabled&&contentRoot!=null&&warningRoot!=null&&
