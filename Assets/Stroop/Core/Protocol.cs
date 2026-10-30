@@ -12,6 +12,9 @@ namespace AvatarStroop.Core
     public enum RunKind { Simulation, Apparatus }
     public enum Phase { Preparation, Familiarization, Practice, PracticeCorrection, PracticeRetry,
         BlockPreparation, BlockReady, Countdown, MainTask, Questionnaire, Rest, Paused,
+        // Retained for a future fault-recovery decision. It is not currently entered:
+        // explicit pause/resume now follows PRD section 3 for practice as well as the
+        // main task, so no state waits for an owner decision that does not exist.
         NeedsProtocolDecision, Ended }
     public enum EndReason { Completed, PracticeFailed, Withdrawn, TechnicalEnd }
     public enum TrialOutcome { Pending, Responded, Interrupted }

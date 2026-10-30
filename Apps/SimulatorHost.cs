@@ -102,9 +102,9 @@ namespace AvatarStroop.Apps
                             Report(writer,"main_trials",app.Experiment.Trials.Count(x=>!x.IsPractice));Report(writer,"ratings",app.Experiment.Ratings.Count);
                             Report(writer,"interrupted_main_trials",app.Experiment.Trials.Count(x=>!x.IsPractice&&x.Outcome==TrialOutcome.Interrupted));
                             Report(writer,"applied_remote_stops",app.AppliedRemoteStops);Report(writer,"export_directory",exported.DirectoryPath);
-                            Report(writer,"received_samples",app.Packets.Count(x=>x.Accepted&&x.Packet!=null&&x.Packet.Kind==WireKind.HeadEye));
-                            Report(writer,"valid_presentations",app.Outputs.Count(x=>x.HeadValid&&x.EyeValid&&x.ActualSource==ControlSource.Simulator));
-                            Report(writer,"automatic_fallbacks",app.Outputs.Count(x=>x.ActualSource==ControlSource.Automatic));
+                            Report(writer,"received_samples",app.AcceptedHeadEyePackets);
+                            Report(writer,"valid_presentations",app.ValidSimulatorPresentations);
+                            Report(writer,"automatic_fallbacks",app.AutomaticFallbacks);
                             var map=app.Synchronizer.Snapshot();Report(writer,"clock_mapping_available",map.Available);Report(writer,"clock_drift_available",map.DriftAvailable);
                             Report(writer,"clock_unavailable_reason",map.UnavailableReason);Report(writer,"clock_last_rejection",app.Synchronizer.LastRejection);
                             Report(writer,"clock_uncertainty_seconds",map.UncertaintySeconds);Report(writer,"clock_offset_seconds",map.RemoteMinusLocalSeconds);
@@ -140,8 +140,8 @@ namespace AvatarStroop.Apps
             {if(e.Phase!=Phase.Paused||app.AppliedRemoteStops!=1||e.Trials.Count(x=>!x.IsPractice&&x.Outcome==TrialOutcome.Interrupted)!=1||e.Trials.Count(x=>!x.IsPractice)>=24)return false;}
             else if(e.Phase!=Phase.Rest||e.Trials.Count(x=>!x.IsPractice)!=24||e.Ratings.Count!=5)return false;
             if(!app.Synchronizer.Snapshot().Available||app.ClockExchanges.Count<3||
-                app.Packets.Count(x=>x.Accepted&&x.Packet!=null&&x.Packet.Kind==WireKind.HeadEye)<=20||
-                !app.Outputs.Any(x=>x.HeadValid&&x.EyeValid&&x.ActualSource==ControlSource.Simulator))return false;
+                app.AcceptedHeadEyePackets<=20||
+                app.ValidSimulatorPresentations==0)return false;
             if(scenario=="safety-stop")return e.Phase==Phase.Paused&&app.AppliedRemoteStops==1&&
                 e.Trials.Count(x=>!x.IsPractice&&x.Outcome==TrialOutcome.Interrupted)==1&&e.Trials.Count(x=>!x.IsPractice)<24;
             return e.Phase==Phase.Rest&&e.Trials.Count(x=>!x.IsPractice)==24&&e.Ratings.Count==5&&
@@ -223,7 +223,7 @@ namespace AvatarStroop.Apps
                 if(op!=null){Report(writer,"phase",op.CurrentTask==null?"Unavailable":op.CurrentTask.Phase.ToString());Report(writer,"observed_trials",op.ObservedTrials.Count);Report(writer,"stop_acknowledged",op.StopDelivery.Acknowledged);}
                 var faults=app.Monitor.Snapshot(app.Clock.Now,app.Synchronizer);var map=app.Synchronizer.Snapshot();
                 Report(writer,"recovery_required",faults.RecoveryDecisionRequired);Report(writer,"head_usable",faults.HeadUsable);Report(writer,"eye_usable",faults.EyeUsable);
-                Report(writer,"clock_available",map.Available);Report(writer,"clock_unavailable_reason",map.UnavailableReason);Report(writer,"accepted_packets",app.Packets.Count(x=>x.Accepted));
+                Report(writer,"clock_available",map.Available);Report(writer,"clock_unavailable_reason",map.UnavailableReason);Report(writer,"accepted_packets",app.AcceptedPacketObservations);
                 foreach(var warning in faults.Warnings)writer.WriteLine("warning\t"+warning.Kind+"\t"+warning.Message);
                 foreach(var fault in app.Monitor.Events.Skip(Math.Max(0,app.Monitor.Events.Count-64)))writer.WriteLine("fault\t"+fault.Kind+"\t"+fault.Detail);
             }

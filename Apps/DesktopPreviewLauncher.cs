@@ -31,7 +31,8 @@ namespace AvatarStroop.Apps
         DesktopPreviewStatus latest;
         OwnerCommand pending;
         long lastSequence=-1;
-        double lastStatusAt, sentAt;
+        double lastStatusAt, sentAt, launchedAt;
+        string portNote="";
         int lastBlock=-99;
         bool released;
 
@@ -109,6 +110,7 @@ namespace AvatarStroop.Apps
             {pp=((IPEndPoint)a.Client.LocalEndPoint).Port;op=((IPEndPoint)b.Client.LocalEndPoint).Port;}
             string common=" -screen-fullscreen 0 -screen-width 1100 -screen-height 720 --stroop-session "+session+" --stroop-participant-port "+pp+" --stroop-operator-port "+op+" --stroop-startup "+Quote(startup);
             latest=null;pending=null;lastSequence=-1;lastBlock=-99;released=false;source.SelectedIndex=-1;
+            portNote="participant="+pp+", operator="+op;launchedAt=clock.Elapsed.TotalSeconds;
             operatorPlayer=Start(o,common+" -logFile "+Quote(Path.Combine(sessionDirectory,"operator.log"))+" --stroop-journal "+Quote(Path.Combine(sessionDirectory,"operator.journal")));
             participant=Start(p,common+" -logFile "+Quote(Path.Combine(sessionDirectory,"participant.log"))+" --stroop-journal "+Quote(Path.Combine(sessionDirectory,"participant.journal"))+" --stroop-owner-commands "+Quote(commands)+" --stroop-status "+Quote(statusPath));
             state.Text="\u542f\u52a8\u4e2d\uff1a\u7b49\u5f85\u4e24\u4e2a\u7a97\u53e3\u7ed1\u5b9a\u672c\u6b21\u72ec\u7acb\u9884\u89c8\u4f1a\u8bdd\u3002";
@@ -145,6 +147,7 @@ namespace AvatarStroop.Apps
                     else if(clock.Elapsed.TotalSeconds-sentAt>3)receipt.Text="\u547d\u4ee4\u5df2\u6392\u961f\uff0c\u4ecd\u672a\u786e\u8ba4\u3002\u4e0d\u4f1a\u81ea\u52a8\u91cd\u8bd5\uff1b\u7b49\u5f85\u72b6\u6001\u4e0e\u56de\u6267\u3002";
                 }
                 if(!Alive(participant)||!Alive(operatorPlayer))state.Text="\u9884\u89c8\u7a97\u53e3\u672a\u8fd0\u884c\u6216\u5df2\u7ecf\u9000\u51fa\u3002\u8bf7\u67e5\u770b\u672c\u6b21\u65e5\u5fd7\uff1b\u5173\u95ed\u5269\u4f59\u7a97\u53e3\u540e\u53ef\u660e\u786e\u542f\u52a8\u65b0\u4f1a\u8bdd\u3002";
+                else if(!released&&clock.Elapsed.TotalSeconds-launchedAt>15)state.Text="\u4e24\u4e2a\u9884\u89c8\u7a97\u53e3\u5df2\u542f\u52a8\u4f46\u672a\u5b8c\u6210\u542f\u52a8\u63e1\u624b\uff08"+portNote+"\uff09\u3002\u53ef\u80fd\u539f\u56e0\uff1a\u672c\u6b21\u63a2\u6d4b\u7684\u7aef\u53e3\u5df2\u88ab\u5176\u4ed6\u7a0b\u5e8f\u5360\u7528\uff0c\u6216\u7a97\u53e3\u672a\u6210\u529f\u7ed1\u5b9a\u3002\u8bf7\u4f7f\u7528\u201c\u5173\u95ed\u4e24\u4e2a\u9884\u89c8\u7a97\u53e3\u201d\u540e\u91cd\u8bd5\uff1b\u65e5\u5fd7\uff1a"+sessionDirectory;
                 else if(!Fresh)state.Text="\u7b49\u5f85\u9884\u89c8\u72b6\u6001\u66f4\u65b0\u3002\u63a7\u5236\u6682\u4e0d\u53ef\u7528\uff1b\u6ca1\u6709\u786e\u8ba4\u5b9e\u9a8c\u5df2\u5f00\u59cb\u3002";
                 else state.Text="\u9636\u6bb5\uff1a"+latest.Phase+"   |   \u7ec4\uff1a"+(latest.BlockIndex+1)+" / 4   |   \u6761\u4ef6\uff1a"+(latest.Condition.HasValue?latest.Condition.ToString():"\u2014")+"\n\u5df2\u9501\u5b9a\u6765\u6e90\uff1a"+(latest.LockedSource.HasValue?latest.LockedSource.ToString():"\u672a\u9009\u62e9")+"   |   \u6765\u6e90\u5c31\u7eea\uff1a"+(latest.Ready?"\u662f":"\u5426")+"\n"+latest.Message;
                 guidance.Text=Instruction();

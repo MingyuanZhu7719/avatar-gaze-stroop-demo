@@ -69,13 +69,18 @@ namespace AvatarStroop.Runtime
         bool connectionFaultRecorded;
         bool networkStarted;
         double nextRecordingFlush,recordingFlushInterval;
-        int recordingFaultCursor;
+        long recordingFaultSequence=-1,recordedDiscardedPackets;
         long recordingClockRevision=-1;
         protected SimulationJournalCapture RecordingCapture {get;private set;}
         public ContinuousJournal Recording {get;private set;}
         public string RecordingWarning {get{return Recording!=null&&Recording.IsFaulted?
             "RECORDING FAILED: "+Recording.Error+"; last acknowledged sequence="+Recording.LastFlushedSequence.ToString(CultureInfo.InvariantCulture)+
             ", bytes="+Recording.LastFlushedOffset.ToString(CultureInfo.InvariantCulture):null;}}
+        // Diagnostic packet history is a bounded safety valve, not a sampling policy:
+        // the participant archives every observation before eviction, including bursts
+        // larger than this window. Received/accepted totals stay exact in the
+        // counters below, so a bounded list can never change a reported count.
+        public const int MaximumRetainedPackets=8192;
         readonly List<PacketObservation> packets=new List<PacketObservation>();
         readonly List<ClockExchangeObservation> clockExchanges=new List<ClockExchangeObservation>();
         public MonotonicClock Clock {get;private set;}
@@ -84,6 +89,13 @@ namespace AvatarStroop.Runtime
         public ClockSynchronizer Synchronizer {get;private set;}
         public IReadOnlyList<PacketObservation> Packets {get{return packets.AsReadOnly();}}
         public IReadOnlyList<ClockExchangeObservation> ClockExchanges {get{return clockExchanges.AsReadOnly();}}
+        public long DiscardedPacketObservations {get;private set;}
+        public long AcceptedPacketObservations {get;private set;}
+        public long AcceptedHeadEyePackets {get;private set;}
+        // Lets the participant keep its audit cursor aligned when the list is trimmed.
+        protected virtual void PacketsDiscarded(int removed){}
+        protected virtual void BeforePacketRetention(){}
+        protected virtual void FaultObserved(FaultEvent fault){}
         protected SimulationPeer(string session,PeerRole role,int localPort,int remotePort,UdpPeer transport=null)
         {
             string own=role==PeerRole.Participant?"participant":"operator",other=role==PeerRole.Participant?"operator":"participant";
@@ -91,6 +103,7 @@ namespace AvatarStroop.Runtime
             Identity=new PeerIdentity(session,own,role,"simulator/"+own,ControlSource.Simulator,Clock.ClockId);
             var expected=new PeerIdentity(session,other,role==PeerRole.Participant?PeerRole.Operator:PeerRole.Participant,"simulator/"+other,ControlSource.Simulator,other+"-monotonic");
             Monitor=new ReceiveMonitor(expected,DevelopmentFixtures.Faults(),"simulator-no-hardware",Clock.ClockId);
+            Monitor.FaultRecorded+=fault=>{FaultObserved(fault);RecordFault(fault);};
             Synchronizer=new ClockSynchronizer(Clock.ClockId,expected.ClockId,DevelopmentFixtures.Clocks());
             socket=transport??new UdpPeer(new IPEndPoint(IPAddress.Loopback,localPort),new IPEndPoint(IPAddress.Loopback,remotePort),false);
         }
@@ -117,15 +130,23 @@ namespace AvatarStroop.Runtime
                 "durability_scope","successful_FileStream_Flush_true_return;physical_power_loss_not_verified","recovery_policy","offline_evidence_only_no_task_resume"));
             CaptureRecording(true);
         }
-        public bool CaptureRecording(bool flush=false)
+        // allowPeriodicFlush=false lets a camera render callback append evidence without
+        // performing a durable FileStream.Flush(true) on the render thread; the normal
+        // update loop still performs the periodic flush.
+        public bool CaptureRecording(bool flush=false,bool allowPeriodicFlush=true)
         {
             if(Recording==null)return true;
             if(!RecordingCapture.Capture())return false;
-            for(;recordingFaultCursor<Monitor.Events.Count;recordingFaultCursor++)
+            foreach(var e in Monitor.Events)
             {
-                var e=Monitor.Events[recordingFaultCursor];
-                if(!Recording.TryAppend("peer_fault",SimulationJournalCapture.Fields("fault_index",recordingFaultCursor,"kind",e.Kind,"source_id",e.SourceId,
-                    "local_seconds",e.LocalSeconds,"clock_id",Clock.ClockId,"detail",e.Detail)))return false;
+                if(!RecordFault(e))return false;
+            }
+            if(DiscardedPacketObservations!=recordedDiscardedPackets)
+            {
+                if(!Recording.TryAppend("packet_retention",SimulationJournalCapture.Fields("discarded_packet_observations",DiscardedPacketObservations,
+                    "retained_packet_observations",packets.Count,"limit",MaximumRetainedPackets,
+                    "policy","bounded_diagnostic_history;totals_are_exact_counters")))return false;
+                recordedDiscardedPackets=DiscardedPacketObservations;
             }
             if(Identity.Role==PeerRole.Operator)
             {
@@ -139,9 +160,18 @@ namespace AvatarStroop.Runtime
                     recordingClockRevision=map.Revision;
                 }
             }
-            if(flush||Clock.Now>=nextRecordingFlush)
+            if(flush||(allowPeriodicFlush&&Clock.Now>=nextRecordingFlush))
             {if(!Recording.Flush())return false;nextRecordingFlush=Clock.Now+recordingFlushInterval;}
             return !Recording.IsFaulted;
+        }
+        bool RecordFault(FaultEvent fault)
+        {
+            if(Recording==null||fault.Sequence<=recordingFaultSequence)return true;
+            if(!Recording.TryAppend("peer_fault",SimulationJournalCapture.Fields("fault_sequence",fault.Sequence,"kind",fault.Kind,"source_id",fault.SourceId,
+                "local_seconds",fault.LocalSeconds,"clock_id",Clock.ClockId,"detail",fault.Detail,
+                "discarded_fault_events",Monitor.DiscardedEvents)))return false;
+            recordingFaultSequence=fault.Sequence;
+            return true;
         }
         public bool CloseRecording()
         {return Recording==null||CaptureRecording()&&Recording.Close();}
@@ -165,6 +195,21 @@ namespace AvatarStroop.Runtime
         protected void TickNetwork()
         {
             networkStarted=true;
+            try { TickNetworkCore(); }
+            finally { RetainRecentPackets(); }
+        }
+        void RetainRecentPackets()
+        {
+            if(packets.Count<=MaximumRetainedPackets)return;
+            // Archive the entire new batch before any diagnostic entries are evicted.
+            BeforePacketRetention();
+            int removed=packets.Count-MaximumRetainedPackets;
+            packets.RemoveRange(0,removed);
+            DiscardedPacketObservations+=removed;
+            PacketsDiscarded(removed);
+        }
+        void TickNetworkCore()
+        {
             if(connectionFaultRecorded)return;
             UdpReceiveResult received;
             while((received=socket.Poll())!=null)
@@ -175,6 +220,8 @@ namespace AvatarStroop.Runtime
                 var decision=Monitor.Observe(received.Packet,now,Synchronizer);
                 packets.Add(new PacketObservation{Packet=received.Packet,ReceivedSeconds=now,Accepted=decision.Accepted,Reason=decision.Reason,MissingBeforePacket=decision.MissingBeforePacket});
                 if(!decision.Accepted)continue;
+                AcceptedPacketObservations++;
+                if(received.Packet.Kind==WireKind.HeadEye)AcceptedHeadEyePackets++;
                 if(received.Packet.Kind==WireKind.TimeRequest)
                     Send(WirePacket.TimeReply(Identity,NextPacketSequence(),Clock.Now,received.Packet.ExchangeId,received.Packet.RequestClockId,received.Packet.RequestSentSeconds,now));
                 else if(received.Packet.Kind==WireKind.TimeReply)
@@ -303,12 +350,16 @@ namespace AvatarStroop.Runtime
         int avatarBlock=-1,avatarSegment=-1;
         double nextSnapshot,nextDriver;
         string previousSnapshotKey;
+        // Bounded diagnostic history; the counters below stay exact so a reported
+        // count never depends on how many frames are retained.
+        public const int MaximumRetainedOutputs=4096;
         readonly List<AvatarOutput> outputs=new List<AvatarOutput>();
         readonly List<string> applicationWarnings=new List<string>();
         readonly HashSet<string> trialFaults=new HashSet<string>();
         readonly SafetyStopInbox stopInbox=new SafetyStopInbox();
         readonly AutomaticGazeGeometry geometry;
-        int packetAuditCursor,faultAuditCursor;
+        int packetAuditCursor;
+        long faultAuditSequence=-1;
         readonly ClockAuditRecorder clockAudit=new ClockAuditRecorder();
         public int AppliedRemoteStops {get{return stopInbox.AppliedCount;}}
         public AuditLog Audit {get;private set;}
@@ -316,6 +367,10 @@ namespace AvatarStroop.Runtime
         public AvatarOutput CurrentAvatar {get;private set;}
         public FaultSnapshot CurrentFaults {get;private set;}
         public IReadOnlyList<AvatarOutput> Outputs {get{return outputs.AsReadOnly();}}
+        public long OutputObservations {get;private set;}
+        public long ValidSimulatorPresentations {get;private set;}
+        public long AutomaticFallbacks {get;private set;}
+        public long DiscardedOutputs {get;private set;}
         public IReadOnlyList<string> ApplicationWarnings {get{return applicationWarnings.AsReadOnly();}}
         public ParticipantSimulationApplication(string session,int localPort,int remotePort,AutomaticGazeGeometry geometry=null)
             :this(session,localPort,remotePort,geometry,null){}
@@ -330,6 +385,15 @@ namespace AvatarStroop.Runtime
             Experiment.RecordPreparation(Actor.Owner,"consent_screening_calibration","not_applicable_synthetic_software_rehearsal");
         }
         protected override void ConnectionFaulted(){RefreshPresentation();}
+        protected override void PacketsDiscarded(int removed){packetAuditCursor=Math.Max(0,packetAuditCursor-removed);}
+        protected override void BeforePacketRetention(){RecordNetworkAudit();}
+        protected override void FaultObserved(FaultEvent fault)
+        {
+            if(fault.Sequence<=faultAuditSequence)return;
+            Audit.RecordTransport(new TransportAuditRecord(CurrentAuditContext(),ControlSource.Simulator,fault.SourceId,null,Clock.ClockId,fault.LocalSeconds,
+                fault.Kind,null,null,null,null,fault.Detail));
+            faultAuditSequence=fault.Sequence;
+        }
         protected override SimulationJournalCapture CreateRecordingCapture(ContinuousJournal journal)
         {return new SimulationJournalCapture(journal,Experiment,Audit);}
         protected override void AcceptedPacket(WirePacket packet,double received)
@@ -365,7 +429,11 @@ namespace AvatarStroop.Runtime
                 CurrentAvatar=Experiment.LockedControl==ControlSelection.Automatic
                     ?avatar.Render(Experiment.Phase,Experiment.ActiveSeconds)
                     :avatar.RenderValidated(Experiment.Phase,Experiment.ActiveSeconds,sample,sample!=null&&CurrentFaults.HeadUsable,sample!=null&&CurrentFaults.EyeUsable);
-                outputs.Add(CurrentAvatar);
+                outputs.Add(CurrentAvatar);OutputObservations++;
+                if(CurrentAvatar.HeadValid&&CurrentAvatar.EyeValid&&CurrentAvatar.ActualSource==ControlSource.Simulator)ValidSimulatorPresentations++;
+                if(CurrentAvatar.ActualSource==ControlSource.Automatic)AutomaticFallbacks++;
+                if(outputs.Count>MaximumRetainedOutputs)
+                {int removed=outputs.Count-MaximumRetainedOutputs;outputs.RemoveRange(0,removed);DiscardedOutputs+=removed;}
                 if(Experiment.Phase==Phase.MainTask && Experiment.LockedControl!=ControlSelection.Automatic)
                 {
                     foreach(var warning in CurrentFaults.Warnings)FlagTrialOnce(warning.Kind.ToString());
@@ -399,11 +467,9 @@ namespace AvatarStroop.Runtime
                     (packet==null?"decode":packet.Kind.ToString())+":"+item.Reason,sample==null?(long?)null:sample.Sequence));
                 if(item.Accepted&&sample!=null)Audit.RecordOperatorSample(sample,context.TrialId);
             }
-            for(;faultAuditCursor<Monitor.Events.Count;faultAuditCursor++)
+            foreach(var fault in Monitor.Events)
             {
-                var fault=Monitor.Events[faultAuditCursor];
-                Audit.RecordTransport(new TransportAuditRecord(CurrentAuditContext(),ControlSource.Simulator,fault.SourceId,null,Clock.ClockId,fault.LocalSeconds,
-                    fault.Kind,null,null,null,null,fault.Detail));
+                FaultObserved(fault);
             }
             clockAudit.Record(Synchronizer,Audit,CurrentAuditContext(),Clock.Now);
         }
@@ -464,3 +530,4 @@ namespace AvatarStroop.Runtime
         }
     }
 }
+

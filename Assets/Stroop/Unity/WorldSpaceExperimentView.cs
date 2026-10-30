@@ -39,6 +39,11 @@ namespace AvatarStroop.Unity
         Transform controllerLegend;
         readonly Vector3[] hudCorners = new Vector3[4];
         readonly Vector3[] hudProjectionPoints = new Vector3[4], stimulusProjectionPoints = new Vector3[8];
+        // The stimulus box is identical for every label in one layout pass, so it is
+        // projected once per pass instead of once per label per eye.
+        readonly Rect[] stimulusEyeBoxes = new Rect[3];
+        readonly int[] stimulusEyeVisibility = new int[3];
+        int layoutStamp, stimulusProjectionStamp = -1;
         string previewDiagnostic = "", previewControls = "", faultCaption = "";
         int hudDiagnosticsRemaining=3;
         float nextHudDiagnosticAt;
@@ -122,6 +127,7 @@ namespace AvatarStroop.Unity
             if(!headsetPreview) camera.transform.rotation = Quaternion.Euler(15.5f, -4, 0);
             EnsureHudLayout();
             var witness = stimulusText.GetComponent<StimulusRenderWitness>();
+            if(witness == null) witness = stimulusText.gameObject.AddComponent<StimulusRenderWitness>();
             witness.Bind(this);
             foreach(var avatarWitness in avatarRoot.GetComponentsInChildren<AvatarRenderWitness>(true)) avatarWitness.Bind(this);
             RefreshOverlayFontTextures(null);
@@ -176,7 +182,7 @@ namespace AvatarStroop.Unity
             OperatorViewProvisional = role == Actor.Operator && view.OperatorViewProvisional;
             provisionalText.text = OperatorViewProvisional ? "PROVISIONAL OPERATOR VIEW\nD / non-main display policy awaits review" : "";
             // No correctness, RT, response result, or score enters the operator view.
-            messageText.text = role == Actor.Operator ? "" : ParticipantMessage(view);
+            SetMessageText(role == Actor.Operator ? "" : ParticipantMessage(view));
             RefreshAvatarVisibility();
             RefreshLegendVisibility();
             RefreshWarnings();
@@ -199,10 +205,15 @@ namespace AvatarStroop.Unity
 
         public void SetHeadsetPreview(string diagnostic, string controls)
         {
-            RequireLayout(); headsetPreview = true;
+            RequireLayout();
+            string nextDiagnostic = diagnostic ?? "", nextControls = controls ?? "";
+            // Called several times per frame by the Quest rig; only relayout when a
+            // rendered string actually changes.
+            bool changed = !headsetPreview || nextDiagnostic != previewDiagnostic || nextControls != previewControls;
+            headsetPreview = true;
             EnsureControllerLegend();RefreshLegendVisibility();
             EnsureHudLayout();
-            previewDiagnostic = diagnostic ?? ""; previewControls = controls ?? "";
+            previewDiagnostic = nextDiagnostic; previewControls = nextControls;
             if(previewStatusText == null)
             {
                 previewStatusText = Text("QuestPreviewRuntimeStatus", warningRoot, Vector3.zero, .02f, 48, Color.white);
@@ -213,11 +224,11 @@ namespace AvatarStroop.Unity
                 previewInputText = Text("QuestPreviewInputStatus", warningRoot, Vector3.zero, .02f, 48, Color.white);
                 SetOverlay(previewInputText);
             }
-            previewStatusText.text = previewDiagnostic;
-            previewInputText.text = previewControls;
-            if(currentView != null && role == Actor.Participant) messageText.text = ParticipantMessage(currentView);
+            if(previewStatusText.text != previewDiagnostic) previewStatusText.text = previewDiagnostic;
+            if(previewInputText.text != previewControls) previewInputText.text = previewControls;
+            if(currentView != null && role == Actor.Participant) SetMessageText(ParticipantMessage(currentView));
             RefreshWarnings();
-            LayoutHud();
+            if(changed) LayoutHud();
         }
 
         // Quest menus are fixed to the room, including faults and interrupted
@@ -226,15 +237,26 @@ namespace AvatarStroop.Unity
         void EnsureHudLayout()
         {
             if(warningRoot == null) return;
-            warningRoot.SetParent(HasWorldFixedMenu?contentRoot:presentationCamera.transform,false);
+            // Called on every Quest diagnostic update, so parenting work is conditional
+            // and the banner lookup tolerates a scene authored before it existed.
+            var parent = HasWorldFixedMenu?contentRoot:presentationCamera.transform;
+            if(warningRoot.parent != parent) warningRoot.SetParent(parent,false);
             warningRoot.localPosition=HasWorldFixedMenu?FixedMenuPosition:new Vector3(0,0,HudDistance);
             warningRoot.localRotation=Quaternion.identity;
             warningRoot.localScale=Vector3.one;
-            developmentBanner = warningRoot.Find("PermanentDevelopmentBanner").GetComponent<TextMesh>();
+            var banner = warningRoot.Find("PermanentDevelopmentBanner");
+            if(banner == null)
+            {
+                // A scene authored before the banner existed still gets one instead of
+                // failing the whole layout pass.
+                developmentBanner = Text("PermanentDevelopmentBanner", warningRoot, Vector3.zero, .019f, 48, new Color(1, .75f, .2f));
+                SetOverlay(developmentBanner);
+            }
+            else developmentBanner = banner.GetComponent<TextMesh>();
             foreach(var label in new[]{phaseText,messageText,provisionalText,avatarLabel})
             {
                 if(label == null) continue;
-                label.transform.SetParent(warningRoot, false);
+                if(label.transform.parent != warningRoot) label.transform.SetParent(warningRoot, false);
                 label.transform.localRotation = Quaternion.identity;
                 var material = label.GetComponent<MeshRenderer>().sharedMaterial;
                 if(material == null || material.shader == null || material.shader.name != "AvatarStroop/WorldSpaceOverlay") SetOverlay(label);
@@ -279,6 +301,7 @@ namespace AvatarStroop.Unity
         }
         void LayoutHud()
         {
+            layoutStamp++;
             if(warningRoot == null || developmentBanner == null || presentationCamera == null) return;
             var frustum=HasWorldFixedMenu?new Rect(-FixedMenuWidth*.5f,-FixedMenuHeight*.5f,FixedMenuWidth,FixedMenuHeight):HudFrustum(Camera.MonoOrStereoscopicEye.Mono);
             if(!HasWorldFixedMenu&&presentationCamera.stereoEnabled)
@@ -420,7 +443,9 @@ namespace AvatarStroop.Unity
             var box=HudBox(frustum,viewport);
             float preferredHeight=frustum.height*lineHeight;
             int columns=Mathf.Clamp(Mathf.FloorToInt(box.width/(preferredHeight*.52f)),24,110);
-            label.text=WrapHud(value??"",columns,maxLines);
+            string fitted=WrapHud(value??"",columns,maxLines);
+            // TextMesh.text regenerates the glyph mesh even for an identical string.
+            if(label.text!=fitted) label.text=fitted;
             label.anchor=TextAnchor.UpperLeft;label.alignment=TextAlignment.Left;
             label.transform.localScale=Vector3.one;
             var renderer=label.GetComponent<MeshRenderer>();
@@ -434,25 +459,41 @@ namespace AvatarStroop.Unity
             // current stimulus instead of claiming its renderer proves visibility.
             renderer.enabled=!HudOverlapsStimulus(viewport,frustum);
         }
-        bool HudOverlapsStimulus(Rect viewport,Rect frustum)
+        static Camera.MonoOrStereoscopicEye EyeFor(int index)
         {
-            if(displayedTrial==null||stimulusText==null||!stimulusText.gameObject.activeInHierarchy) return false;
-            var labelBox=HudBox(frustum,viewport);
+            return index==0?Camera.MonoOrStereoscopicEye.Mono:index==1?Camera.MonoOrStereoscopicEye.Left:Camera.MonoOrStereoscopicEye.Right;
+        }
+        void ProjectStimulusForLayout()
+        {
+            if(stimulusProjectionStamp==layoutStamp) return;
+            stimulusProjectionStamp=layoutStamp;
             var bounds=stimulusText.GetComponent<MeshRenderer>().bounds;
             int at=0;
             for(int x=-1;x<=1;x+=2)for(int y=-1;y<=1;y+=2)for(int z=-1;z<=1;z+=2)
                 stimulusProjectionPoints[at++]=bounds.center+Vector3.Scale(bounds.extents,new Vector3(x,y,z));
+            int eyes=presentationCamera.stereoEnabled?3:1;
+            for(int index=0;index<eyes;index++)
+            {
+                Rect box;
+                stimulusEyeVisibility[index]=ProjectHudPoints(stimulusProjectionPoints,EyeFor(index),out box);
+                stimulusEyeBoxes[index]=box;
+            }
+        }
+        bool HudOverlapsStimulus(Rect viewport,Rect frustum)
+        {
+            if(displayedTrial==null||stimulusText==null||!stimulusText.gameObject.activeInHierarchy) return false;
+            ProjectStimulusForLayout();
+            var labelBox=HudBox(frustum,viewport);
             hudProjectionPoints[0]=warningRoot.TransformPoint(new Vector3(labelBox.xMin,labelBox.yMin,0));
             hudProjectionPoints[1]=warningRoot.TransformPoint(new Vector3(labelBox.xMin,labelBox.yMax,0));
             hudProjectionPoints[2]=warningRoot.TransformPoint(new Vector3(labelBox.xMax,labelBox.yMin,0));
             hudProjectionPoints[3]=warningRoot.TransformPoint(new Vector3(labelBox.xMax,labelBox.yMax,0));
             for(int eyeIndex=0;eyeIndex<(presentationCamera.stereoEnabled?3:1);eyeIndex++)
             {
-                var eye=eyeIndex==0?Camera.MonoOrStereoscopicEye.Mono:eyeIndex==1?Camera.MonoOrStereoscopicEye.Left:Camera.MonoOrStereoscopicEye.Right;
-                Rect stimulusBox,hudBox;
-                int stimulusVisible=ProjectHudPoints(stimulusProjectionPoints,eye,out stimulusBox);
+                int stimulusVisible=stimulusEyeVisibility[eyeIndex];
                 if(stimulusVisible==0) continue;
-                if(stimulusVisible<0||ProjectHudPoints(hudProjectionPoints,eye,out hudBox)!=1||hudBox.Overlaps(stimulusBox)) return true;
+                Rect hudBox;
+                if(stimulusVisible<0||ProjectHudPoints(hudProjectionPoints,EyeFor(eyeIndex),out hudBox)!=1||hudBox.Overlaps(stimulusEyeBoxes[eyeIndex])) return true;
             }
             return false;
         }
@@ -548,6 +589,10 @@ namespace AvatarStroop.Unity
             if(currentView != null && role == Actor.Participant) messageText.text = ParticipantMessage(currentView);
         }
 
+        void SetMessageText(string value)
+        {
+            if(messageText != null && messageText.text != value) messageText.text = value;
+        }
         void RefreshAvatarVisibility()
         {
             bool visible = currentView != null && (role == Actor.Operator
@@ -581,8 +626,10 @@ namespace AvatarStroop.Unity
             }
             if(additional>0) text.AppendLine("Additional fault flags: "+additional);
             faultCaption = text.Length == 0 ? (headsetPreview ? "" : "Development display; hardware validation pending.") : text.ToString().TrimEnd();
-            faultText.text = faultCaption;
-            faultText.color = text.Length == 0 ? new Color(1, .82f, .35f) : new Color(1, .42f, .35f);
+            if(faultText.text != faultCaption) faultText.text = faultCaption;
+            // TextMesh.color also rebuilds the glyph mesh, so it is assigned only on change.
+            var faultColour = text.Length == 0 ? new Color(1, .82f, .35f) : new Color(1, .42f, .35f);
+            if(faultText.color != faultColour) faultText.color = faultColour;
         }
 
         void BeforeCameraCull(Camera camera)
@@ -849,7 +896,7 @@ namespace AvatarStroop.Unity
             }
             if(view.Phase == Phase.Rest) return view.ReadyEnabled ? "Rest as long as you need.\n" + (headsetPreview ? "Right trigger when ready." : "Press Space when ready.") : "Rest. Ready is not yet available.";
             if(view.Phase == Phase.Paused) return headsetPreview ? "Paused\nRight trigger to actively resume.\nB to withdraw and end preview." : "Paused\nPress R to actively resume when ready.";
-            if(view.Phase == Phase.NeedsProtocolDecision) return headsetPreview ? "Practice was interrupted.\nWaiting for an explicit owner protocol decision.\nNo automatic retry or continuation. B withdraws." : "Practice was interrupted.\nWaiting for an explicit owner protocol decision.\nNo automatic retry or continuation. Esc withdraws.";
+            if(view.Phase == Phase.NeedsProtocolDecision) return headsetPreview ? "A protocol decision is pending.\nNo automatic retry, resume or continuation is applied.\nB withdraws." : "A protocol decision is pending.\nNo automatic retry, resume or continuation is applied.\nEsc withdraws.";
             if(view.Phase == Phase.Ended) return "Simulation ended.\nThe owner can export the actual records.\nClose this window when finished.";
             return "";
         }
