@@ -7,7 +7,7 @@ using AvatarStroop.Core;
 
 namespace AvatarStroop.Runtime
 {
-    public enum OwnerCommandKind { Practice, Lock, Begin, Export }
+    public enum OwnerCommandKind { Practice, Lock, Begin, Export, RestartPreview }
     public sealed class OwnerCommand
     {
         public string RequestId {get;private set;}
@@ -132,7 +132,7 @@ namespace AvatarStroop.Runtime
     // This whitelist invokes owner capabilities supplied by the local host; it creates no authority or source fallback.
     public static class OwnerCommandExecution
     {
-        public static string Execute(OwnerCommand command,Action practice,Action<ControlSelection> lockBlock,Action begin,Action export)
+        public static string Execute(OwnerCommand command,Action practice,Action<ControlSelection> lockBlock,Action begin,Action export,Action<string> restartPreview=null)
         {
             if(command==null)throw new ArgumentNullException("command");
             switch(command.Kind)
@@ -143,6 +143,9 @@ namespace AvatarStroop.Runtime
                     if(lockBlock==null)return "lock_unavailable";lockBlock(command.Source.Value);break;
                 case OwnerCommandKind.Begin:if(begin==null)return "begin_unavailable";begin();break;
                 case OwnerCommandKind.Export:if(export==null)return "export_unavailable";export();break;
+                // The host explicitly supplies technical-end authority. This
+                // command itself never launches a process or resumes a trial.
+                case OwnerCommandKind.RestartPreview:if(restartPreview==null)return "restart_preview_unavailable";restartPreview(command.RequestId);break;
                 default:return "command_unavailable";
             }
             return null;

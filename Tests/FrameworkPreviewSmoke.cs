@@ -19,6 +19,8 @@ namespace AvatarStroop.Tests
             var suite=new TestSuite();
             DesktopPreviewTests.Register(suite);
             OwnerCommandTests.Register(suite);
+            PreviewRecoveryTests.Register(suite);
+            PreviewRestartWorkflowTests.Register(suite);
             Console.WriteLine("FRAMEWORK PREVIEW RESULT "+suite.Passed+" passed; "+suite.Failed+" failed");
             return suite.Failed==0?0:1;
         }

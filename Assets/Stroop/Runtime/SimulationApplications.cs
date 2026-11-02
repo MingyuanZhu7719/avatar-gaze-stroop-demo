@@ -68,6 +68,8 @@ namespace AvatarStroop.Runtime
         int exchange;
         bool connectionFaultRecorded;
         bool networkStarted;
+        bool disposed;
+        string recordingCloseWarning;
         double nextRecordingFlush,recordingFlushInterval;
         long recordingFaultSequence=-1,recordedDiscardedPackets;
         long recordingClockRevision=-1;
@@ -75,7 +77,7 @@ namespace AvatarStroop.Runtime
         public ContinuousJournal Recording {get;private set;}
         public string RecordingWarning {get{return Recording!=null&&Recording.IsFaulted?
             "RECORDING FAILED: "+Recording.Error+"; last acknowledged sequence="+Recording.LastFlushedSequence.ToString(CultureInfo.InvariantCulture)+
-            ", bytes="+Recording.LastFlushedOffset.ToString(CultureInfo.InvariantCulture):null;}}
+            ", bytes="+Recording.LastFlushedOffset.ToString(CultureInfo.InvariantCulture):recordingCloseWarning;}}
         // Diagnostic packet history is a bounded safety valve, not a sampling policy:
         // the participant archives every observation before eviction, including bursts
         // larger than this window. Received/accepted totals stay exact in the
@@ -251,7 +253,27 @@ namespace AvatarStroop.Runtime
                 nextSync=Clock.Now+.1;
             }
         }
-        public void Dispose(){try{if(Recording!=null){CloseRecording();Recording.Dispose();}}finally{socket.Dispose();}}
+        public void Dispose()
+        {
+            if(disposed)return;
+            disposed=true;bool closed=false;
+            try
+            {
+                if(Recording!=null)
+                {
+                    try{closed=CloseRecording();}
+                    finally{Recording.Dispose();}
+                    if(!closed&&!Recording.IsFaulted)recordingCloseWarning="RECORDING CLOSE FAILED: final capture or close did not complete; restart verification is unavailable.";
+                }
+            }
+            finally{socket.Dispose();}
+            if(closed&&!Recording.IsFaulted&&!String.IsNullOrEmpty(Recording.Path))
+            {
+                try{PreviewRecovery.WriteClosedReceipt(Recording);}
+                catch(Exception error) when(PreviewRecovery.ExpectedFailure(error))
+                {recordingCloseWarning="RECORDING CLOSE RECEIPT FAILED: "+error.GetType().Name+": "+error.Message+"; no automatic retry; restart verification is unavailable.";}
+            }
+        }
     }
 
     public sealed class OperatorSimulationApplication : SimulationPeer
@@ -499,6 +521,20 @@ namespace AvatarStroop.Runtime
         {Experiment.LockBlock(Actor.Owner,source,"development-owner");CaptureRecording();}
         public void OwnerBeginBlock()
         {Experiment.BeginCountdown(Actor.Owner,Experiment.LockedControl.HasValue&&SourceReady(Experiment.LockedControl.Value));CaptureRecording();}
+        public void OwnerEndForRestart(string requestId)
+        {
+            string reason=PreviewRecovery.EndReason(requestId);
+            if(Experiment.Phase==Phase.Ended)throw new InvalidOperationException("An ended preview cannot be reclassified for restart");
+            if(Recording==null||Recording.IsFaulted||RecordingWarning!=null)
+                throw new InvalidOperationException("A healthy active recording is required before ending a preview for restart");
+            if(!Recording.TryAppend("preview_restart_requested",SimulationJournalCapture.Fields("request_id",requestId,
+                "reason",reason,"local_seconds",Clock.Now,"clock_id",Clock.ClockId)))
+                throw new IOException("Restart intent could not be recorded; the preview has not been ended");
+            Experiment.FlagTechnicalIssue(reason);
+            Experiment.EndTechnical(Actor.Owner,reason);
+            if(!CaptureRecording(true))
+                throw new IOException("Preview ended, but its durable recording acknowledgment failed; outcome requires review and must not be retried automatically");
+        }
 
         // Opt-in automated test driver. No GUI input path calls this method.
         public void DriveHeadlessSimulation()

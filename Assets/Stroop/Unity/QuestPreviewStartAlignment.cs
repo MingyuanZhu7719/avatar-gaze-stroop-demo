@@ -12,6 +12,20 @@ namespace AvatarStroop.Unity
         static bool Finite(float value) {return !Single.IsNaN(value)&&!Single.IsInfinity(value);}
         static bool Finite(Vector3 value) {return Finite(value.x)&&Finite(value.y)&&Finite(value.z);}
 
+        // Floor poses already contain the wearer's height. Resolve that
+        // convention before focus/pose alignment, including a delayed first
+        // focus notification. This is not a runtime tracking-origin request.
+        public bool PrepareReferenceHeight(bool referenceReady,bool floorMode,Transform cameraParent,float deviceHeight)
+        {
+            if(Applied||!referenceReady)return false;
+            if(cameraParent==null)throw new ArgumentNullException("cameraParent");
+            if(!Finite(deviceHeight)||deviceHeight<0)return false;
+            Vector3 offset=cameraParent.localPosition;
+            offset.y=floorMode?0:deviceHeight;
+            cameraParent.localPosition=offset;
+            return true;
+        }
+
         public bool TryApply(bool ready,Transform origin,Transform cameraParent,Vector3 localPosition,
             Quaternion localRotation,Vector3 nominalParticipant)
         {

@@ -24,17 +24,21 @@ namespace AvatarStroop.Apps
         readonly Button begin = ActionButton("4  \u786e\u8ba4\u5e76\u5f00\u59cb\u672c\u7ec4");
         readonly Button export = ActionButton("\u5bfc\u51fa\u6a21\u62df\u8bb0\u5f55");
         readonly Button closePlayers = ActionButton("\u5173\u95ed\u4e24\u4e2a\u9884\u89c8\u7a97\u53e3");
+        readonly Button reconnect = ActionButton("End preview and reconnect / new session");
         readonly Timer timer = new Timer { Interval=250 };
         readonly Stopwatch clock = Stopwatch.StartNew();
         Process participant, operatorPlayer;
         string session, commands, statusPath, startup, sessionDirectory;
         DesktopPreviewStatus latest;
         OwnerCommand pending;
+        OwnerCommand restartCommand;
+        PreviewRestartWorkflow restart;
+        string restartSession,restartDirectory;
         long lastSequence=-1;
         double lastStatusAt, sentAt, launchedAt;
         string portNote="";
         int lastBlock=-99;
-        bool released;
+        bool released,launchOutcomeUncertain;
 
         public DesktopPreviewLauncher()
         {
@@ -60,6 +64,7 @@ namespace AvatarStroop.Apps
 #endif
             layout.Controls.Add(MakeLabel("\u5f53\u524d\u6f14\u793a\u56fa\u5b9a\u5939\u5177\uff1aBCAD \u987a\u5e8f\uff0cB \u4ece\u53c2\u4e0e\u8005\u65b9\u5411\u5f00\u59cb\uff1b\u82f1\u6587\u95ee\u5377\uff0c1 \u79d2\u5012\u8ba1\u65f6\u3002\n\u7ec3\u4e60 8 \u9898\uff1b\u4e3b\u4efb\u52a1 4 \u00d7 24 \u9898\uff1b\u7ec4\u540e\u53e6\u6709\u81f3\u5c11 30 \u79d2\u4f11\u606f\u3002\u5b9e\u9a8c\u65b9\u6848\u53c2\u6570\u672a\u6539\u52a8\u3002",58));
             layout.Controls.Add(Row(launch,closePlayers));
+            layout.Controls.Add(Row(reconnect));
             state.BackColor=Color.FromArgb(232,241,248); state.Padding=new Padding(10); layout.Controls.Add(state);
             layout.Controls.Add(guidance);
             layout.Controls.Add(Row(practice));
@@ -77,23 +82,43 @@ namespace AvatarStroop.Apps
             layout.Controls.Add(MakeLabel("\u9996\u6b21\u542f\u52a8\u53ef\u80fd\u9700\u8981\u6570\u79d2\u3002\u4ec5\u5f53\u72b6\u6001\u6301\u7eed\u66f4\u65b0\u3001\u8bf7\u6c42\u5f97\u5230\u56de\u6267\u65f6\u624d\u786e\u8ba4\u6210\u529f\u3002",28));
             launch.Click+=(s,e)=>Guard(Launch);
             closePlayers.Click+=(s,e)=>Guard(CloseOwnedPlayers);
+            reconnect.Click+=(s,e)=>Guard(BeginRestart);
             practice.Click+=(s,e)=>Send(OwnerCommandKind.Practice);
             lockBlock.Click+=(s,e)=>Send(OwnerCommandKind.Lock);
             begin.Click+=(s,e)=>Send(OwnerCommandKind.Begin);
             export.Click+=(s,e)=>Send(OwnerCommandKind.Export);
             source.SelectedIndexChanged+=(s,e)=>RefreshControls();
             timer.Tick+=(s,e)=>Poll(); timer.Start(); RefreshControls();
-            FormClosing+=(s,e)=> { if(Alive(participant)||Alive(operatorPlayer)) { e.Cancel=true; receipt.Text="\u8bf7\u5148\u4f7f\u7528\u201c\u5173\u95ed\u4e24\u4e2a\u9884\u89c8\u7a97\u53e3\u201d\uff0c\u6216\u624b\u52a8\u5173\u95ed\u5b83\u4eec\uff0c\u7136\u540e\u5173\u95ed\u63a7\u5236\u53f0\u3002"; } };
+            FormClosing+=(s,e)=> {
+                if(RestartBlocksActions&&restart.Stage!=PreviewRestartStage.Blocked)
+                {e.Cancel=true;receipt.Text="Reconnect is pending. Wait for its result; closing this console cannot confirm the old session ended.";return;}
+                if(Alive(participant)||Alive(operatorPlayer)) { e.Cancel=true; receipt.Text="\u8bf7\u5148\u4f7f\u7528\u201c\u5173\u95ed\u4e24\u4e2a\u9884\u89c8\u7a97\u53e3\u201d\uff0c\u6216\u624b\u52a8\u5173\u95ed\u5b83\u4eec\uff0c\u7136\u540e\u5173\u95ed\u63a7\u5236\u53f0\u3002"; }
+            };
         }
         static Label MakeLabel(string value,int height) { return new Label { Text=value,AutoSize=false,Height=height,Dock=DockStyle.Top,Margin=new Padding(0,3,0,5) }; }
         static Button ActionButton(string value) { return new Button { Text=value,AutoSize=true,Height=38,MinimumSize=new Size(155,38),Margin=new Padding(0,0,12,0) }; }
         static FlowLayoutPanel Row(params Control[] children) { var row=new FlowLayoutPanel { AutoSize=true,Dock=DockStyle.Top,WrapContents=true,Margin=new Padding(0,5,0,8) };row.Controls.AddRange(children);return row; }
-        static bool Alive(Process process) { try{return process!=null&&!process.HasExited;}catch(InvalidOperationException){return false;} }
+        static bool Alive(Process process) {bool exited;return ObserveExit(process,out exited)&&!exited;}
+        static bool ObserveExit(Process process,out bool exited)
+        {
+            exited=false;if(process==null)return false;
+            try{exited=process.HasExited;return true;}
+            catch(InvalidOperationException){return false;}
+            catch(System.ComponentModel.Win32Exception){return false;}
+        }
+        static bool CanReplace(Process process){bool exited;return process==null||(ObserveExit(process,out exited)&&exited);}
+        bool RestartBlocksActions {get{return restart!=null&&restart.BlocksActions;}}
         static string Quote(string value) { if(value.IndexOf('"')>=0||value.IndexOf('\r')>=0||value.IndexOf('\n')>=0)throw new ArgumentException("Invalid launch path");return "\""+value+"\""; }
         void Guard(Action action) {try{action();}catch(Exception error){receipt.Text="\u672a\u5b8c\u6210\uff1a"+error.Message;}RefreshControls();}
         void Launch()
         {
-            if(Alive(participant)||Alive(operatorPlayer))throw new InvalidOperationException("\u8bf7\u5148\u5173\u95ed\u73b0\u6709\u9884\u89c8\u7a97\u53e3\u3002");
+            if(RestartBlocksActions)throw new InvalidOperationException("Reconnect must finish or its old records must be reviewed; a new launch cannot bypass it.");
+            LaunchCore();
+        }
+        void LaunchCore()
+        {
+            if(launchOutcomeUncertain)throw new InvalidOperationException("A prior launch returned no process handle. Review its outcome before using a new console; this console cannot retry it.");
+            if(!CanReplace(participant)||!CanReplace(operatorPlayer))throw new InvalidOperationException("Existing preview process exit is not confirmed. Close the owned windows first.");
             string root=AppDomain.CurrentDomain.BaseDirectory;
             string p=Path.Combine(root,"Participant","AvatarStroopParticipant.exe"),o=Path.Combine(root,"Operator","AvatarStroopOperator.exe");
             if(!File.Exists(p)||!File.Exists(o))throw new FileNotFoundException("\u64ad\u653e\u5668\u6587\u4ef6\u7f3a\u5931\u3002\u8bf7\u4fdd\u7559\u5b8c\u6574\u5305\u4e2d\u7684 Participant \u548c Operator \u6587\u4ef6\u5939\u3002");
@@ -117,11 +142,22 @@ namespace AvatarStroop.Apps
             folder.Text="\u672c\u6b21\u6a21\u62df\u65e5\u5fd7\uff1a"+sessionDirectory;
             receipt.Text="\u542f\u52a8\u8bf7\u6c42\u5df2\u53d1\u9001\uff1b\u7ec3\u4e60\u5c1a\u672a\u5f00\u59cb\uff0c\u63a7\u5236\u6765\u6e90\u5c1a\u672a\u9009\u62e9\u3002";
         }
-        static Process Start(string path,string args) { return Process.Start(new ProcessStartInfo(path,args) {UseShellExecute=false,WorkingDirectory=Path.GetDirectoryName(path)}); }
-        bool Fresh {get{return latest!=null&&released&&Alive(participant)&&Alive(operatorPlayer)&&clock.Elapsed.TotalSeconds-lastStatusAt<3;}}
+        Process Start(string path,string args)
+        {
+            var process=Process.Start(new ProcessStartInfo(path,args) {UseShellExecute=false,WorkingDirectory=Path.GetDirectoryName(path)});
+            if(process==null)
+            {
+                launchOutcomeUncertain=true;
+                throw new InvalidOperationException("Preview launch returned no process handle; its outcome cannot be confirmed and this console will not retry it.");
+            }
+            return process;
+        }
+        bool ParticipantFresh {get{return latest!=null&&released&&Alive(participant)&&clock.Elapsed.TotalSeconds-lastStatusAt<3;}}
+        bool Fresh {get{return ParticipantFresh&&Alive(operatorPlayer);}}
         void Poll()
         {
             if(session==null)return;
+            if(RestartBlocksActions){PollRestart();RefreshControls();return;}
             try
             {
                 if(!released&&Alive(participant)&&Alive(operatorPlayer))
@@ -188,9 +224,10 @@ namespace AvatarStroop.Apps
         }
         void RefreshControls()
         {
-            bool free=Fresh&&pending==null;
-            launch.Enabled=!Alive(participant)&&!Alive(operatorPlayer);
-            closePlayers.Enabled=Alive(participant)||Alive(operatorPlayer);
+            bool free=!RestartBlocksActions&&Fresh&&pending==null;
+            launch.Enabled=!launchOutcomeUncertain&&!RestartBlocksActions&&CanReplace(participant)&&CanReplace(operatorPlayer);
+            closePlayers.Enabled=(!RestartBlocksActions||restart.Stage==PreviewRestartStage.Blocked)&&(Alive(participant)||Alive(operatorPlayer));
+            reconnect.Enabled=!RestartBlocksActions&&ParticipantFresh&&pending==null&&latest.Phase!=Phase.Ended;
             practice.Enabled=free&&(latest.Phase==Phase.Preparation||latest.Phase==Phase.Familiarization||latest.Phase==Phase.PracticeRetry);
             source.Enabled=free&&latest.Phase==Phase.BlockPreparation;
             lockBlock.Enabled=source.Enabled&&source.SelectedIndex>=0;
@@ -200,6 +237,7 @@ namespace AvatarStroop.Apps
         void Send(OwnerCommandKind kind)
         {
             Guard(()=>{
+                if(RestartBlocksActions)throw new InvalidOperationException("Owner actions are blocked while reconnect is pending or requires review.");
                 if(!Fresh||pending!=null)throw new InvalidOperationException("\u9700\u8981\u6700\u65b0\u72b6\u6001\uff0c\u4e14\u4e0a\u4e00\u6761\u547d\u4ee4\u5fc5\u987b\u5df2\u6709\u786e\u8ba4\u3002");
                 ControlSelection? chosen=null;
                 if(kind==OwnerCommandKind.Lock){if(source.SelectedIndex<0)throw new InvalidOperationException("\u8bf7\u660e\u786e\u9009\u62e9\u672c\u7ec4\u6765\u6e90\u3002");chosen=source.SelectedIndex==0?ControlSelection.Automatic:ControlSelection.SimulatorRehearsal;}
@@ -210,10 +248,111 @@ namespace AvatarStroop.Apps
         }
         void CloseOwnedPlayers()
         {
+            if(RestartBlocksActions&&restart.Stage!=PreviewRestartStage.Blocked)
+                throw new InvalidOperationException("The acknowledged reconnect flow owns window closure. Wait for its result.");
             // Explicit owner click only; never kill or enumerate unrelated applications.
             if(Alive(participant))participant.CloseMainWindow();
             if(Alive(operatorPlayer))operatorPlayer.CloseMainWindow();
             receipt.Text="\u5df2\u8bf7\u6c42\u6b63\u5e38\u5173\u95ed\u3002\u8bf7\u7b49\u5f85\u7a97\u53e3\u9000\u51fa\uff1b\u6ca1\u6709\u5f3a\u5236\u7ec8\u6b62\u8fdb\u7a0b\u3002";
+        }
+        void BeginRestart()
+        {
+            if(RestartBlocksActions||!ParticipantFresh||pending!=null||latest.Phase==Phase.Ended)
+                throw new InvalidOperationException("Reconnect requires current participant status and no pending owner command.");
+            var choice=MessageBox.Show(this,
+                "End this preview as a technical interruption and reconnect in a NEW session?\n\n"+
+                "Current practice and block progress will not resume. The new session starts at Preparation with no control source selected.\n\n"+
+                "Old records remain in:\n"+sessionDirectory+"\n\n"+
+                "A new preview opens only after the ending is acknowledged, both owned windows exit normally, and both saved journals pass verification.",
+                "End preview and reconnect",MessageBoxButtons.OKCancel,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2);
+            if(choice!=DialogResult.OK)return;
+            // The modal dialog pumps messages; recheck the live state after it.
+            if(RestartBlocksActions||!ParticipantFresh||pending!=null||latest.Phase==Phase.Ended)
+                throw new InvalidOperationException("Participant status changed while confirming; no reconnect command was sent.");
+            var command=new OwnerCommand(Guid.NewGuid().ToString("N"),OwnerCommandKind.RestartPreview);
+            var workflow=new PreviewRestartWorkflow();double now=clock.Elapsed.TotalSeconds;
+            if(!workflow.TryBegin(command,ParticipantFresh,pending!=null,now))throw new InvalidOperationException("Reconnect could not begin.");
+            restart=workflow;restartCommand=command;restartSession=session;restartDirectory=sessionDirectory;
+            folder.Height=96;receipt.Height=90;
+            pending=command;sentAt=now;
+            try {OwnerCommandFile.Append(commands,command);}
+            catch(Exception error)
+            {
+                restart.Stop("owner_command_append_uncertain:"+error.Message+";no_automatic_retry");
+                ShowRestartState();throw;
+            }
+            ShowRestartState();
+        }
+        static string RequestCloseOnce(Process process,string role)
+        {
+            bool exited;
+            if(!ObserveExit(process,out exited))return role+" process state is unknown";
+            if(exited)return null;
+            try
+            {
+                if(process.CloseMainWindow())return null;
+                // A normal exit can race the close request; require evidence.
+                if(ObserveExit(process,out exited)&&exited)return null;
+                return role+" window did not accept the normal close request";
+            }
+            catch(Exception error){return role+" close outcome is uncertain: "+error.Message;}
+        }
+        void PollRestart()
+        {
+            try
+            {
+                restart.Poll(clock.Elapsed.TotalSeconds);
+                if(restart.Stage==PreviewRestartStage.AwaitingAcknowledgement)
+                {
+                    var ack=OwnerCommandFile.FindAcknowledgement(commands,restartCommand);
+                    if(restart.ObserveAcknowledgement(ack,clock.Elapsed.TotalSeconds))pending=null;
+                }
+                if(restart.TryRequestClose(clock.Elapsed.TotalSeconds))
+                {
+                    // Each request is consumed once before either process call.
+                    string participantFailure=RequestCloseOnce(participant,"Participant");
+                    string operatorFailure=RequestCloseOnce(operatorPlayer,"Operator");
+                    if(participantFailure!=null||operatorFailure!=null)
+                        restart.Stop("normal_close_failed:"+participantFailure+" "+operatorFailure);
+                }
+                if(restart.Stage==PreviewRestartStage.AwaitingExit)
+                {
+                    bool participantExited,operatorExited;
+                    bool participantKnown=ObserveExit(participant,out participantExited),operatorKnown=ObserveExit(operatorPlayer,out operatorExited);
+                    restart.ObserveExit(participantKnown,participantExited,operatorKnown,operatorExited,clock.Elapsed.TotalSeconds);
+                }
+                if(restart.Stage==PreviewRestartStage.Verifying)
+                {
+                    string reason;
+                    bool verified=PreviewRecovery.VerifyClosedSession(restartDirectory,restartSession,restart.RequestId,out reason);
+                    restart.ObserveVerification(verified,reason,clock.Elapsed.TotalSeconds);
+                }
+                if(restart.TryClaimLaunch(clock.Elapsed.TotalSeconds))
+                {
+                    LaunchCore();restart.CompleteLaunch();
+                    receipt.Text="Old preview ended and its saved records passed verification. A NEW session is opening; practice has not started and no source is selected.";
+                    folder.Text="New session: "+sessionDirectory+"\nPreserved interrupted session: "+restartDirectory;
+                }
+            }
+            catch(Exception error){restart.Stop("reconnect_action_failed:"+error.Message+";outcome_may_be_uncertain_no_automatic_retry");}
+            if(RestartBlocksActions)ShowRestartState();
+        }
+        void ShowRestartState()
+        {
+            folder.Text="Preserved session: "+restartDirectory;
+            if(sessionDirectory!=restartDirectory)folder.Text+="\nNew launch attempt: "+sessionDirectory;
+            if(restart.Stage==PreviewRestartStage.Blocked)
+            {
+                state.Text="Reconnect stopped. No further automatic close or launch will be attempted.";
+                receipt.Text=restart.FailureReason+"\nRequest: "+restart.RequestId;
+                guidance.Text="Review the preserved session records. You may close remaining owned windows manually; this console will not bypass the unresolved result to open another session.";
+            }
+            else
+            {
+                state.Text="Explicit reconnect: "+restart.Stage+". The old preview will not resume.";
+                receipt.Text="Request: "+restart.RequestId+". Waiting for the acknowledged ending, normal process exits and complete saved records.";
+                guidance.Text="The new session will begin at Preparation. Existing progress, interrupted trials and logs stay in the old session.";
+            }
         }
         [STAThread] public static int Main()
         {
