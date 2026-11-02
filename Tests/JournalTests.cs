@@ -57,6 +57,30 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("English-only presentation does not translate historical questionnaire evidence",()=>{
+                string root=Temp();try
+                {
+                    string path=Path.Combine(root,"legacy-language-fixture.journal");
+                    // Synthetic legacy UTF-8 evidence, never an active UI translation.
+                    const string original="\u5728\u521a\u624d\u8fd9\u4e00\u7ec4\u4e2d\uff0c\u6211\u505a\u4efb\u52a1\u65f6\u6709\u88ab\u6ce8\u89c6\u7684\u611f\u89c9\u3002";
+                    using(var journal=ContinuousJournal.CreateNew(path,Identity()))
+                    {
+                        Check.True(journal.TryAppend("session_configuration",new Dictionary<string,string>{{"questionnaire_language","zh"}}));
+                        Check.True(journal.TryAppend("rating",new Dictionary<string,string>{{"item_id","observed"},{"item_version",Questionnaire.Version},{"language","zh"},{"value","5"},{"wording",original}}));
+                        Check.True(journal.Close());
+                    }
+                    byte[] before=File.ReadAllBytes(path);var rows=new List<JournalRecord>();
+                    Check.Equal(JournalReadStatus.CleanClose,Read(before,rows.Add).Status);
+                    var rating=rows.Single(x=>x.Kind=="rating");
+                    Check.Equal("zh",rating.Fields["language"]);Check.Equal("5",rating.Fields["value"]);
+                    Check.Equal("observed",rating.Fields["item_id"]);Check.Equal(original,rating.Fields["wording"]);
+                    var exported=JournalEvidenceExporter.Export(path,Path.Combine(root,"exports"));Check.True(exported.Success,exported.Error);
+                    string fields=File.ReadAllText(Path.Combine(exported.DirectoryPath,"fields.csv"),Encoding.UTF8);
+                    Check.True(fields.Contains(",language,false,zh\r\n"));Check.True(fields.Contains(",value,false,5\r\n"));Check.True(fields.Contains(original));
+                    Check.True(before.SequenceEqual(File.ReadAllBytes(path)),"Offline extraction changed original evidence");
+                    Check.True(before.SequenceEqual(File.ReadAllBytes(Path.Combine(exported.DirectoryPath,"verified-prefix.asj"))));
+                }finally{Directory.Delete(root,true);}
+            });
             suite.Run("M4 journal preserves Unicode multiline nullable text and exact values",()=>{
                 var memory=new MemoryStream();var rows=new List<JournalRecord>();int flushes=0;
                 using(var writer=new ContinuousJournal(memory,()=>flushes++,Identity("operator","session\n中文"),true))

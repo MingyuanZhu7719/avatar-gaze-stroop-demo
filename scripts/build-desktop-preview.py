@@ -60,7 +60,7 @@ def main():
     (output/'START-HERE.txt').write_text(
         'Avatar Stroop - DESKTOP SIMULATION ONLY\n\n'
         'Open AvatarStroopPreview.exe. Keep the Participant and Operator folders beside it.\n'
-        'Click Open desktop preview, then Begin practice in the owner window.\n'
+        'Click Open desktop preview, then Start / retry practice in the owner window.\n'
         'Answer in the participant window: 1 red, 2 green, 3 blue, 4 yellow (ink colour).\n'
         'Space = continue/Ready, P = pause, R = active resume, Esc = withdraw.\n'
         'At each block, the owner explicitly selects a source and confirms begin.\n'

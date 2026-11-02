@@ -68,6 +68,7 @@ namespace AvatarStroop.Tests
         public static int Main(string[] args)
         {
             var suite=new TestSuite(); TrialPlanTests.Register(suite); ExperimentTests.Register(suite);
+            AppLanguageTests.Register(suite);
             GazeControlTests.Register(suite);
             FaultTransportTests.Register(suite);
             ClockBoundaryTests.Register(suite);

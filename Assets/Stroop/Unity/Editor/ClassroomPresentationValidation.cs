@@ -36,6 +36,8 @@ namespace AvatarStroop.Unity.Editor
             public Vector3 menu_world=WorldSpaceExperimentView.FixedMenuPosition;
             public Vector2 menu_size=new Vector2(WorldSpaceExperimentView.FixedMenuWidth,WorldSpaceExperimentView.FixedMenuHeight);
             public int[] questionnaire_rendered_candidates;
+            public string ui_language="en";
+            public int[] questionnaire_rendered_items;
             public string[] ink_rgba;
             public WordBounds[] words;
             public StartupHeightEvidence startup_reference_height;
@@ -69,6 +71,7 @@ namespace AvatarStroop.Unity.Editor
             string hint=phase==Phase.Questionnaire?
                 "Left stick UP: lower number | DOWN: higher number (1-5)\nCentre between steps | A: confirm\nSelected: "+(candidate.HasValue?candidate.Value.ToString():"--")+" (not submitted)":
                 phase==Phase.Paused?"PAUSED | Right trigger: actively resume\nB: withdraw and end preview":
+                phase==Phase.NeedsProtocolDecision?"A protocol decision is pending\nNo automatic retry or resume | B: withdraw":
                 phase==Phase.PracticeCorrection||phase==Phase.Rest?"Right trigger: Continue / Ready when available\nLeft menu: pause":
                 "X red | Y green | A blue | B yellow\nRelease before the next answer | Left menu: pause";
             view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED",hint);
@@ -137,7 +140,7 @@ namespace AvatarStroop.Unity.Editor
             var result=new TaskView();
             Set(result,"Phase",phase);Set(result,"OperatorAvatarVisible",visible);
             Set(result,"ParticipantAvatarVisible",visible);Set(result,"OperatorViewProvisional",operatorRole);
-            if(phase==Phase.PracticeCorrection)Set(result,"PracticeCorrection","Respond to the ink colour, not the word. Use the button guide on the left.");
+            if(phase==Phase.PracticeCorrection)Set(result,"PracticeCorrection","Select the font colour: "+ink);
             if(phase==Phase.Questionnaire)Set(result,"QuestionnaireItem",Questionnaire.Item(4,"en"));
             if(phase==Phase.MainTask||phase==Phase.Practice)
             {Set(result,"TrialId","editor-visual-fixture");Set(result,"Stimulus",new Stimulus(word,ink));}
@@ -491,6 +494,60 @@ namespace AvatarStroop.Unity.Editor
                 }
             }
         }
+        static string NormalizedText(string value)
+        {return String.Join(" ",(value??"").Split(new[]{' ','\r','\n','\t'},StringSplitOptions.RemoveEmptyEntries));}
+        static void CheckVisibleEnglishText(WorldSpaceExperimentView view)
+        {
+            // Check actual rendered strings, including the desktop camera-owned
+            // warning surface. Source scans alone miss dynamically supplied text.
+            var labels=view.GetComponentsInChildren<TextMesh>(true)
+                .Concat(view.PresentationCamera.GetComponentsInChildren<TextMesh>(true)).Distinct();
+            foreach(var label in labels)
+            {
+                if(!label.gameObject.activeInHierarchy||!label.GetComponent<Renderer>().enabled||String.IsNullOrEmpty(label.text))continue;
+                Require(!label.text.Any(c=>(c>=0x2e80&&c<=0x9fff)||(c>=0xf900&&c<=0xfaff)||c==0xfffd),
+                    "non-English localization or undecodable text is visible: "+label.name);
+            }
+        }
+        static void CheckEnglishInstructionStates(WorldSpaceExperimentView view)
+        {
+            view.SetQuestionnaireLanguage("en");
+            bool rejected=false;
+            try{view.SetQuestionnaireLanguage("zh");}catch(ArgumentException){rejected=true;}
+            Require(rejected,"legacy questionnaire language silently reinterpreted as English presentation");
+            var compose=typeof(WorldSpaceExperimentView).GetMethod("ParticipantMessage",BindingFlags.NonPublic|BindingFlags.Instance);
+            foreach(var phase in new[]{Phase.Preparation,Phase.Familiarization,Phase.PracticeCorrection,Phase.PracticeRetry,
+                Phase.BlockPreparation,Phase.BlockReady,Phase.Countdown,Phase.Questionnaire,Phase.Rest,Phase.Paused,Phase.NeedsProtocolDecision,Phase.Ended})
+            {
+                var task=FixtureTask(phase,false,Colour.Green);
+                view.ApplyTaskView(task);view.ApplyAvatarOutput(Output(view,Condition.A,phase));FixtureControls(view,phase,phase==Phase.Questionnaire?(int?)3:null);Layout(view);
+                string expected=(string)compose.Invoke(view,new object[]{task});
+                var shown=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
+                Require(NormalizedText(shown.text)==NormalizedText(expected),"English instructions clipped in "+phase);
+                if(!String.IsNullOrEmpty(expected))Require(shown.GetComponent<Renderer>().enabled,"English instructions hidden in "+phase);
+                CheckVisibleEnglishText(view);CheckMenuReadable(view);
+            }
+            var ready=FixtureTask(Phase.Rest,false,Colour.Green);Set(ready,"ReadyEnabled",true);
+            view.ApplyTaskView(ready);FixtureControls(view,Phase.Rest);Layout(view);
+            var readyMessage=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
+            Require(NormalizedText(readyMessage.text).Contains("Rest as long as you need. Right trigger when ready."),"English ready/continue instruction clipped");
+            CheckVisibleEnglishText(view);CheckMenuReadable(view);
+        }
+        static void CheckCompleteEnglishQuestionnaire(WorldSpaceExperimentView view,int item)
+        {
+            var label=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
+            string text=NormalizedText(label.text);
+            Require(label.GetComponent<Renderer>().enabled,"English questionnaire is hidden");
+            Require(text.Contains(Questionnaire.Instruction("en")),"English questionnaire instruction truncated");
+            Require(text.Contains(Questionnaire.Item(item,"en")),"English questionnaire item truncated: "+item);
+            int previous=-1;
+            for(int score=1;score<=5;score++)
+            {
+                int at=text.IndexOf(score+" "+Questionnaire.Anchor(score,"en"),StringComparison.Ordinal);
+                Require(at>previous,"English questionnaire anchor missing, truncated or reordered: "+score);previous=at;
+            }
+            CheckVisibleEnglishText(view);CheckMenuReadable(view);
+        }
         static void CheckFaultOcclusionGate(WorldSpaceExperimentView view)
         {
             Apply(view,Phase.MainTask,Condition.A,Colour.Green);
@@ -515,6 +572,7 @@ namespace AvatarStroop.Unity.Editor
             // its idempotent presentation to apply the current HUD fit/guards
             // and dynamic font bindings before the explicit camera render.
             view.Initialize(view.PresentationCamera,view.Role);
+            CheckVisibleEnglishText(view);
             var camera=view.PresentationCamera;var previous=RenderTexture.active;
             var target=new RenderTexture(1100,720,24,RenderTextureFormat.ARGB32);
             var image=new Texture2D(1100,720,TextureFormat.RGB24,false);
@@ -597,7 +655,7 @@ namespace AvatarStroop.Unity.Editor
                 throw new InvalidOperationException("Actual fixture rendering requires graphics and the built-in pipeline; do not use -nographics.");
             Directory.CreateDirectory(output);checks=0;var files=new List<string>();
             CheckSavedScenes();
-            var view=NewFixture(Actor.Participant);CheckMigration(view);CheckInitialAlignment(view);CheckStartupReferenceHeightAndView();CheckGeometry(view);CheckActivePresentation(view);CheckFixedMenuAndTransitions(view);CheckFaultOcclusionGate(view);
+            var view=NewFixture(Actor.Participant);CheckMigration(view);CheckInitialAlignment(view);CheckStartupReferenceHeightAndView();CheckGeometry(view);CheckActivePresentation(view);CheckFixedMenuAndTransitions(view);CheckFaultOcclusionGate(view);CheckEnglishInstructionStates(view);
             Apply(view,Phase.MainTask,Condition.A,Colour.Green);
             CheckUnobstructed(view.PresentationCamera.transform.position,view.TaskWorldPosition,
                 Content(view).Find("ClassroomEnvironment").GetComponentsInChildren<Renderer>(true)
@@ -681,6 +739,16 @@ namespace AvatarStroop.Unity.Editor
             string shown=String.Join(" ",control.text.Split(new[]{' ','\r','\n','\t'},StringSplitOptions.RemoveEmptyEntries));
             Require(shown.Contains("Selected: 4")&&shown.Contains("A: confirm")&&shown.Contains("UP: lower number")&&shown.Contains("DOWN: higher number"),"questionnaire candidate/control hint missing");
             evidence.questionnaire_rendered_candidates=candidates.ToArray();
+            var renderedItems=new List<int>();
+            for(int item=0;item<Questionnaire.Count;item++)
+            {
+                var task=FixtureTask(Phase.Questionnaire,false,Colour.Green);
+                Set(task,"QuestionnaireItem",Questionnaire.Item(item,"en"));
+                view.ApplyTaskView(task);FixtureControls(view,Phase.Questionnaire,3);
+                string name="synthetic-english-questionnaire-item-"+(item+1)+".png";
+                Render(view,output,name);files.Add(name);CheckCompleteEnglishQuestionnaire(view,item);renderedItems.Add(item);
+            }
+            evidence.questionnaire_rendered_items=renderedItems.ToArray();
             view=NewFixture(Actor.Operator);ValidateView(view);Apply(view,Phase.MainTask,Condition.A,Colour.Green);CheckFraming(view);
             Render(view,output,"synthetic-operator.png");files.Add("synthetic-operator.png");
             evidence.checks=checks;evidence.images=files.ToArray();evidence.ink_rgba=colours.ToArray();evidence.words=words.ToArray();

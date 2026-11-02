@@ -38,6 +38,10 @@ namespace AvatarStroop.Unity
 #endif
         static readonly KeyCode[] colourKeys={KeyCode.Alpha1,KeyCode.Alpha2,KeyCode.Alpha3,KeyCode.Alpha4};
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void InitializeEnglishResources()
+        {AppLanguage.UseEnglishResources();}
+
         void Start()
         {
             Application.runInBackground=true;
