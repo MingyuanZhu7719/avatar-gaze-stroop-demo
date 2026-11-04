@@ -10,7 +10,7 @@ namespace AvatarStroop.Tests
         static QuestPreviewControls Controls(int buttons=0,double stick=0,bool ready=true)
         {return new QuestPreviewControls(ready,(buttons&1)!=0,(buttons&2)!=0,(buttons&4)!=0,(buttons&8)!=0,(buttons&16)!=0,(buttons&32)!=0,stick);}
         static QuestPreviewInputFrame Update(QuestPreviewInputRouter router,Experiment experiment,int buttons=0,double stick=0,bool ready=true)
-        {return router.Update(experiment.Phase,experiment.QuestionIndex,Controls(buttons,stick,ready));}
+        {return router.Update(experiment.Phase,experiment.QuestionIndex,Controls(buttons,stick,ready),experiment.Phase!=Phase.Questionnaire||experiment.QuestionnaireInstructionPending||experiment.QuestionnaireInputReady,experiment.QuestionnaireInstructionPending);}
         static void Apply(Experiment experiment,QuestPreviewInputFrame frame,bool sourceReady=true)
         {
             foreach(Colour colour in frame.ReleasedColours)experiment.ButtonChanged(colour,false);
@@ -18,6 +18,7 @@ namespace AvatarStroop.Tests
             {
                 case QuestPreviewAction.Respond:experiment.ButtonChanged(frame.Response.Value,true);break;
                 case QuestPreviewAction.SubmitRating:experiment.Rate(frame.Rating.Value);break;
+                case QuestPreviewAction.AcknowledgeInstruction:experiment.AcknowledgeQuestionnaireInstruction();break;
                 case QuestPreviewAction.ContinuePractice:experiment.ContinuePractice();break;
                 case QuestPreviewAction.Ready:experiment.Ready();break;
                 case QuestPreviewAction.Resume:experiment.Resume(sourceReady);break;
@@ -31,6 +32,109 @@ namespace AvatarStroop.Tests
         {for(int i=0;i<24;i++)Fixtures.Answer(experiment,clock);Check.Equal(Phase.Questionnaire,experiment.Phase);}
         public static void Register(TestSuite suite)
         {
+            suite.Run("Acknowledgement A cannot submit a rating or change a hidden candidate",()=>{
+                var router=new QuestPreviewInputRouter();
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4,1),true,true).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4,1),true,true).Action);
+                router.Update(Phase.Questionnaire,0,Controls(),true,true);
+                Check.Equal<int?>(null,router.Update(Phase.Questionnaire,0,Controls(0,-1),true,true).CandidateRating);
+                router.Update(Phase.Questionnaire,0,Controls(),true,true);
+                var acknowledge=router.Update(Phase.Questionnaire,0,Controls(4,-1),true,true);
+                Check.Equal(QuestPreviewAction.AcknowledgeInstruction,acknowledge.Action);Check.Equal<int?>(null,acknowledge.Rating);
+                var opened=router.Update(Phase.Questionnaire,0,Controls(4,-1),true,false);
+                Check.Equal(QuestPreviewAction.None,opened.Action);Check.Equal((int?)3,opened.CandidateRating);
+                for(int repeat=0;repeat<100;repeat++)Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4,-1),true,false).Action);
+                router.Update(Phase.Questionnaire,0,Controls(),true,false);
+                Check.Equal(QuestPreviewAction.SubmitRating,router.Update(Phase.Questionnaire,0,Controls(4),true,false).Action);
+            });
+            suite.Run("Instruction hidden by fault cannot acknowledge and restoration requires fresh A",()=>{
+                var router=new QuestPreviewInputRouter();router.Update(Phase.Questionnaire,0,Controls(),true,true);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4),false,true).Action);
+                router.Update(Phase.Questionnaire,0,Controls(),false,true);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4),false,true).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4),true,true).Action);
+                router.Update(Phase.Questionnaire,0,Controls(),true,true);
+                Check.Equal(QuestPreviewAction.Pause,router.Update(Phase.Questionnaire,0,Controls(36),true,true).Action);
+                router.Update(Phase.Paused,0,Controls(4),true,true);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4),true,true).Action);
+                router.Update(Phase.Questionnaire,0,Controls(),true,true);
+                Check.Equal(QuestPreviewAction.AcknowledgeInstruction,router.Update(Phase.Questionnaire,0,Controls(4),true,true).Action);
+            });
+            suite.Run("Rest A requires a new edge across rating and countdown; trigger cannot continue rest",()=>{
+                var router=new QuestPreviewInputRouter();router.Update(Phase.Questionnaire,4,Controls(),true);
+                Check.Equal(QuestPreviewAction.SubmitRating,router.Update(Phase.Questionnaire,4,Controls(4),true).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Rest,0,Controls(4),true).Action);
+                for(int i=0;i<100;i++)Check.Equal(QuestPreviewAction.None,router.Update(Phase.Rest,0,Controls(4),true).Action);
+                router.Update(Phase.Rest,0,Controls(),true);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Rest,0,Controls(16),true).Action);
+                router.Update(Phase.Rest,0,Controls(),true);
+                Check.Equal(QuestPreviewAction.Ready,router.Update(Phase.Rest,0,Controls(4),true).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Countdown,0,Controls(4),true).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.MainTask,0,Controls(4),true).Action);
+                router.Update(Phase.MainTask,0,Controls(),true);
+                Check.Equal(QuestPreviewAction.Respond,router.Update(Phase.MainTask,0,Controls(4),true).Action);
+            });
+            suite.Run("Covered questionnaire cannot record hidden ratings and restores the visible candidate with a fresh edge",()=>{
+                var clock=new ManualClock();var experiment=Main(clock);ToQuestionnaire(experiment,clock);
+                var router=new QuestPreviewInputRouter();router.Update(Phase.Questionnaire,0,Controls(),true);
+                Check.Equal((int?)2,router.Update(Phase.Questionnaire,0,Controls(0,1),true).CandidateRating);
+                router.Update(Phase.Questionnaire,0,Controls(),true);
+                Apply(experiment,router.Update(Phase.Questionnaire,0,Controls(4),false));
+                Apply(experiment,router.Update(Phase.Questionnaire,0,Controls(),false));
+                Apply(experiment,router.Update(Phase.Questionnaire,0,Controls(4),false));
+                Check.Equal(0,experiment.Ratings.Count);Check.Equal(0,experiment.QuestionIndex);
+                var restore=router.Update(Phase.Questionnaire,0,Controls(4),true);
+                Check.Equal(QuestPreviewAction.None,restore.Action);Check.Equal((int?)2,restore.CandidateRating);Apply(experiment,restore);
+                Apply(experiment,router.Update(Phase.Questionnaire,0,Controls(4),true));Check.Equal(0,experiment.Ratings.Count);
+                Apply(experiment,router.Update(Phase.Questionnaire,0,Controls(),true));
+                Apply(experiment,router.Update(Phase.Questionnaire,0,Controls(4),true));
+                Check.Equal(1,experiment.Ratings.Count);Check.Equal(2,experiment.Ratings[0].Value);
+            });
+            suite.Run("Covered rest consumes A through restoration while pause remains available",()=>{
+                var router=new QuestPreviewInputRouter();router.Update(Phase.Rest,0,Controls(),true);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Rest,0,Controls(4),false).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Rest,0,Controls(),false).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Rest,0,Controls(4),false).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Rest,0,Controls(4),true).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Rest,0,Controls(4),true).Action);
+                router.Update(Phase.Rest,0,Controls(),true);
+                Check.Equal(QuestPreviewAction.Ready,router.Update(Phase.Rest,0,Controls(4),true).Action);
+                router.Update(Phase.Rest,0,Controls(),true);
+                Check.Equal(QuestPreviewAction.Pause,router.Update(Phase.Rest,0,Controls(32),false).Action);
+                router.Update(Phase.Paused,0,Controls(),true);
+                Check.Equal(QuestPreviewAction.Withdraw,router.Update(Phase.Paused,0,Controls(8),true).Action);
+            });
+            suite.Run("Questionnaire controls guide consumes input and retains pause without selecting a rating",()=>{
+                var router=new QuestPreviewInputRouter();
+                Check.Equal<int?>(null,router.Update(Phase.Questionnaire,0,Controls(),false).CandidateRating);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4,-1),false).Action);
+                router.Update(Phase.Questionnaire,0,Controls(),false);
+                Check.Equal(QuestPreviewAction.Pause,router.Update(Phase.Questionnaire,0,Controls(32),false).Action);
+                Check.Equal<int?>(null,router.Update(Phase.Questionnaire,0,Controls(),false).CandidateRating);
+            });
+            suite.Run("Controls held through guide completion require release before adjustment or confirmation",()=>{
+                var router=new QuestPreviewInputRouter();router.Update(Phase.Questionnaire,0,Controls(),false);
+                router.Update(Phase.Questionnaire,0,Controls(4,1),false);
+                var opened=router.Update(Phase.Questionnaire,0,Controls(4,1),true);
+                Check.Equal(QuestPreviewAction.None,opened.Action);Check.Equal((int?)3,opened.CandidateRating);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4,1),true).Action);
+                router.Update(Phase.Questionnaire,0,Controls(),true);
+                var up=router.Update(Phase.Questionnaire,0,Controls(0,1),true);
+                Check.Equal(QuestPreviewAction.AdjustRating,up.Action);Check.Equal((int?)2,up.CandidateRating);
+                router.Update(Phase.Questionnaire,0,Controls(),true);
+                var confirm=router.Update(Phase.Questionnaire,0,Controls(4),true);
+                Check.Equal(QuestPreviewAction.SubmitRating,confirm.Action);Check.Equal((int?)2,confirm.Rating);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,1,Controls(4),true).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,1,Controls(4),true).Action);
+            });
+            suite.Run("Guide readiness cannot survive reset or reconnect as a submitted rating",()=>{
+                var router=new QuestPreviewInputRouter();router.Update(Phase.Questionnaire,0,Controls(),true);
+                router.Reset();
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4),true).Action);
+                Check.Equal(QuestPreviewAction.None,router.Update(Phase.Questionnaire,0,Controls(4),true).Action);
+                router.Update(Phase.Questionnaire,0,Controls(),true);
+                Check.Equal(QuestPreviewAction.SubmitRating,router.Update(Phase.Questionnaire,0,Controls(4),true).Action);
+            });
             suite.Run("Quest preview maps X Y A B to one new Red Green Blue Yellow edge",()=>{
                 for(int colour=0;colour<4;colour++)
                 {
@@ -143,12 +247,12 @@ namespace AvatarStroop.Tests
                 }
                 Check.Equal(Phase.Rest,experiment.Phase);Check.True(experiment.Ratings.All(x=>x.Value==2));
             });
-            suite.Run("Quest preview held early Ready trigger cannot skip the existing thirty-second rest",()=>{
+            suite.Run("Quest preview legacy minimum rest still rejects early A cannot skip the existing thirty-second rest",()=>{
                 var clock=new ManualClock();var experiment=Main(clock);ToQuestionnaire(experiment,clock);Fixtures.Ratings(experiment,clock);var router=new QuestPreviewInputRouter();
-                Apply(experiment,Update(router,experiment));var early=Update(router,experiment,16);Check.Equal(QuestPreviewAction.Ready,early.Action);Apply(experiment,early);Check.Equal(Phase.Rest,experiment.Phase);
-                clock.Advance(31);var held=Update(router,experiment,16);Check.Equal(QuestPreviewAction.None,held.Action);Apply(experiment,held);Check.Equal(Phase.Rest,experiment.Phase);
-                Apply(experiment,Update(router,experiment));Apply(experiment,Update(router,experiment,16));Check.Equal(Phase.BlockPreparation,experiment.Phase);Check.Equal(1,experiment.BlockIndex);
-                Check.Equal(QuestPreviewAction.None,Update(router,experiment,16).Action);Check.Equal<ControlSelection?>(null,experiment.LockedControl);
+                Apply(experiment,Update(router,experiment));var early=Update(router,experiment,4);Check.Equal(QuestPreviewAction.Ready,early.Action);Apply(experiment,early);Check.Equal(Phase.Rest,experiment.Phase);
+                clock.Advance(31);var held=Update(router,experiment,4);Check.Equal(QuestPreviewAction.None,held.Action);Apply(experiment,held);Check.Equal(Phase.Rest,experiment.Phase);
+                Apply(experiment,Update(router,experiment));Apply(experiment,Update(router,experiment,4));Check.Equal(Phase.BlockPreparation,experiment.Phase);Check.Equal(1,experiment.BlockIndex);
+                Check.Equal(QuestPreviewAction.None,Update(router,experiment,4).Action);Check.Equal<ControlSelection?>(null,experiment.LockedControl);
             });
             suite.Run("Quest preview pause wins over response and paused B withdraw wins over resume",()=>{
                 var clock=new ManualClock();var experiment=Main(clock);experiment.MarkPresented(experiment.CurrentTrial.TrialId);var router=new QuestPreviewInputRouter();Apply(experiment,Update(router,experiment));
@@ -162,7 +266,7 @@ namespace AvatarStroop.Tests
                 foreach(Phase phase in Enum.GetValues(typeof(Phase)))
                 {
                     var router=new QuestPreviewInputRouter();router.Update(phase,0,Controls());var frame=router.Update(phase,0,Controls(16));
-                    var expected=phase==Phase.PracticeCorrection?QuestPreviewAction.ContinuePractice:phase==Phase.Rest?QuestPreviewAction.Ready:phase==Phase.Paused?QuestPreviewAction.Resume:QuestPreviewAction.None;
+                    var expected=phase==Phase.PracticeCorrection?QuestPreviewAction.ContinuePractice:phase==Phase.Paused?QuestPreviewAction.Resume:QuestPreviewAction.None;
                     Check.Equal(expected,frame.Action,phase.ToString());
                     router=new QuestPreviewInputRouter();router.Update(phase,0,Controls());frame=router.Update(phase,0,Controls(32));
                     Check.Equal(phase==Phase.Paused||phase==Phase.Ended||phase==Phase.NeedsProtocolDecision?QuestPreviewAction.None:QuestPreviewAction.Pause,frame.Action);

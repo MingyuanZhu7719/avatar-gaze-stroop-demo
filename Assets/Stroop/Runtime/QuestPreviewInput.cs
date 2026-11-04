@@ -5,7 +5,7 @@ using AvatarStroop.Core;
 
 namespace AvatarStroop.Runtime
 {
-    public enum QuestPreviewAction { None, Respond, AdjustRating, SubmitRating, ContinuePractice, Ready, Resume, Pause, Withdraw }
+    public enum QuestPreviewAction { None, Respond, AdjustRating, SubmitRating, ContinuePractice, Ready, Resume, Pause, Withdraw, AcknowledgeInstruction }
 
     // One complete controller sample. The Unity adapter may set DeviceReady only
     // when the XR runtime/head pose are valid and both controllers are readable.
@@ -48,7 +48,7 @@ namespace AvatarStroop.Runtime
         public const double StickPressThreshold=.65;
         public const double StickReleaseThreshold=.25;
         const int Faces=15,Trigger=16,Menu=32;
-        bool sampled,stickArmed;
+        bool sampled,stickArmed,previousInputReady,previousInstructionPending;
         Phase previousPhase;
         int previousItem,previousButtons,emittedColours,candidate=3;
 
@@ -58,11 +58,11 @@ namespace AvatarStroop.Runtime
         public IReadOnlyList<Colour> Reset()
         {
             var released=Colours(emittedColours);
-            sampled=false;stickArmed=false;previousButtons=0;emittedColours=0;previousItem=-1;candidate=3;
+            sampled=false;stickArmed=false;previousInputReady=false;previousInstructionPending=false;previousButtons=0;emittedColours=0;previousItem=-1;candidate=3;
             return released;
         }
 
-        public QuestPreviewInputFrame Update(Phase startPhase,int questionnaireItem,QuestPreviewControls controls)
+        public QuestPreviewInputFrame Update(Phase startPhase,int questionnaireItem,QuestPreviewControls controls,bool phaseInputReady=true,bool instructionPending=false)
         {
             if(!Enum.IsDefined(typeof(Phase),startPhase))throw new ArgumentOutOfRangeException("startPhase");
             if(startPhase==Phase.Questionnaire&&(questionnaireItem<0||questionnaireItem>=Questionnaire.Count))
@@ -74,14 +74,18 @@ namespace AvatarStroop.Runtime
             int buttons=controls.Buttons;
             var released=Colours(emittedColours&~buttons&Faces);
             emittedColours&=buttons;
-            bool boundary=!sampled||startPhase!=previousPhase||item!=previousItem;
+            bool contextBoundary=!sampled||startPhase!=previousPhase||item!=previousItem;
+            bool boundary=contextBoundary||((startPhase==Phase.Questionnaire||startPhase==Phase.Rest)&&phaseInputReady!=previousInputReady)||
+                (startPhase==Phase.Questionnaire&&instructionPending!=previousInstructionPending);
             if(boundary)
             {
-                sampled=true;previousPhase=startPhase;previousItem=item;previousButtons=buttons;candidate=3;
+                bool pauseEdge=!contextBoundary&&(buttons&Menu)!=0&&(previousButtons&Menu)==0;
+                sampled=true;previousPhase=startPhase;previousItem=item;previousButtons=buttons;previousInputReady=phaseInputReady;previousInstructionPending=instructionPending;
+                if(contextBoundary)candidate=3;
                 stickArmed=Math.Abs(controls.LeftStickY)<=StickReleaseThreshold;
                 // A phase/question/reconnection starts with an observation, never
                 // an action. Held controls must be released or centred first.
-                return Frame(startPhase,item,true,QuestPreviewAction.None,null,null,released);
+                return Frame(startPhase,item,true,pauseEdge?QuestPreviewAction.Pause:QuestPreviewAction.None,null,null,released);
             }
 
             // Consume every physical edge before choosing one action. Simultaneous
@@ -91,6 +95,12 @@ namespace AvatarStroop.Runtime
             if((pressed&Menu)!=0&&startPhase!=Phase.Paused&&startPhase!=Phase.Ended&&startPhase!=Phase.NeedsProtocolDecision)
                 return Frame(startPhase,item,true,QuestPreviewAction.Pause,null,null,released);
 
+            // A guide or fault may replace the rating/Ready content. Consume
+            // controls while hidden; restoration is another fresh-edge boundary.
+            // Explicit pause remains available and does not resolve the fault.
+            if((startPhase==Phase.Questionnaire||startPhase==Phase.Rest)&&!phaseInputReady)
+                return Frame(startPhase,item,true,QuestPreviewAction.None,null,null,released);
+
             if(startPhase==Phase.Practice||startPhase==Phase.MainTask)
             {
                 // Explicit deterministic simultaneous-press priority: X, Y, A, B.
@@ -99,6 +109,10 @@ namespace AvatarStroop.Runtime
             }
             else if(startPhase==Phase.Questionnaire)
             {
+                // The instruction owns A until acknowledged. Its transition is
+                // a fresh-edge boundary, so that same press can never rate.
+                if(instructionPending)
+                    return Frame(startPhase,item,true,(pressed&4)!=0?QuestPreviewAction.AcknowledgeInstruction:QuestPreviewAction.None,null,null,released);
                 // Changing the displayed candidate and confirming cannot happen
                 // in one frame. A held stick never repeats without a neutral sample.
                 // Scores are displayed top-to-bottom as 1..5: +Y/up moves to
@@ -118,10 +132,11 @@ namespace AvatarStroop.Runtime
                 // it does not resolve, resume or bypass the pending protocol issue.
                 if((pressed&8)!=0)return Frame(startPhase,item,true,QuestPreviewAction.Withdraw,null,null,released);
             }
+            else if(startPhase==Phase.Rest&&(pressed&4)!=0)
+                return Frame(startPhase,item,true,QuestPreviewAction.Ready,null,null,released);
             else if((pressed&Trigger)!=0)
             {
                 if(startPhase==Phase.PracticeCorrection)return Frame(startPhase,item,true,QuestPreviewAction.ContinuePractice,null,null,released);
-                if(startPhase==Phase.Rest)return Frame(startPhase,item,true,QuestPreviewAction.Ready,null,null,released);
             }
             return Frame(startPhase,item,true,QuestPreviewAction.None,null,null,released);
         }
@@ -135,7 +150,7 @@ namespace AvatarStroop.Runtime
             return 0;
         }
         QuestPreviewInputFrame Frame(Phase phase,int item,bool ready,QuestPreviewAction action,Colour? response,int? rating,IReadOnlyList<Colour> released)
-        {return new QuestPreviewInputFrame(phase,item,ready,action,response,rating,ready&&phase==Phase.Questionnaire?(int?)candidate:null,released);}
+        {return new QuestPreviewInputFrame(phase,item,ready,action,response,rating,ready&&phase==Phase.Questionnaire&&previousInputReady&&!previousInstructionPending?(int?)candidate:null,released);}
         static IReadOnlyList<Colour> Colours(int mask)
         {
             var result=new List<Colour>();for(int i=0;i<4;i++)if((mask&(1<<i))!=0)result.Add((Colour)i);

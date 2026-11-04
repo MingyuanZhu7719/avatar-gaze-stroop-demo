@@ -16,7 +16,8 @@ using AvatarStroop.Runtime;
 namespace AvatarStroop.Fixtures
 {
     // Offline presentation fixture only. No Show, Application.Run, DoEvents,
-    // clicks, Poll, owner commands, sockets or participant processes are used.
+    // clicks, Poll, queued owner commands, sockets or participant processes are
+    // used. Export checks use only synthetic snapshots under fixture output.
     public static class EnglishLauncherPresentation
     {
         static readonly BindingFlags PrivateInstance=BindingFlags.Instance|BindingFlags.NonPublic;
@@ -39,7 +40,7 @@ namespace AvatarStroop.Fixtures
         }
         static void CheckNoSessionEffects(DesktopPreviewLauncher form)
         {
-            foreach(string name in new[]{"participant","operatorPlayer","session","commands","statusPath","startup","sessionDirectory","pending","restartCommand","restart","restartSession","restartDirectory"})
+            foreach(string name in new[]{"participant","operatorPlayer","session","commands","statusPath","startup","sessionDirectory","pending","restartCommand","restart","restartSession","restartDirectory","verifiedExport"})
                 Require(Field(name).GetValue(form)==null,"fixture acquired runtime/session state: "+name);
             Require(!Directory.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"sessions")),"fixture created a sessions directory");
             Require(!form.Visible,"fixture made a real window visible");
@@ -138,7 +139,7 @@ namespace AvatarStroop.Fixtures
             }
             Require(!form.Visible,"offscreen form became visible after drawing");
         }
-        static void ExerciseGuidance(DesktopPreviewLauncher form,string scenario)
+        static void ExerciseGuidance(DesktopPreviewLauncher form,string scenario,string output)
         {
             // Only this fixture's own process handles satisfy the pure Fresh
             // predicate. No process or lifecycle method is invoked. Session/path
@@ -157,15 +158,89 @@ namespace AvatarStroop.Fixtures
                         Set(form,"latest",status);Set(form,"lastStatusAt",Get<Stopwatch>(form,"clock").Elapsed.TotalSeconds);
                         string instruction=(string)typeof(DesktopPreviewLauncher).GetMethod("Instruction",PrivateInstance).Invoke(form,null);
                         Get<Label>(form,"guidance").Text=instruction;
+                        typeof(DesktopPreviewLauncher).GetMethod("RefreshControls",PrivateInstance).Invoke(form,null);
+                        if(phase==Phase.Ended)
+                        {
+                            Require(Get<Button>(form,"export").Enabled,"fresh Ended preview cannot export");
+                            Require(!Get<Button>(form,"openExport").Enabled,"unverified Ended preview can open an export");
+                        }
                         form.PerformLayout();Measure(form,scenario+"-"+phase);
                     }
+                    foreach(Phase phase in new[]{Phase.BlockPreparation,Phase.BlockReady})
+                    {
+                        Set(form,"latest",new DesktopPreviewStatus("synthetic-ui-fixture",0,phase,3,Condition.D,ControlSelection.Automatic,true,"Synthetic D guidance only."));
+                        Set(form,"lastStatusAt",Get<Stopwatch>(form,"clock").Elapsed.TotalSeconds);
+                        string instruction=(string)typeof(DesktopPreviewLauncher).GetMethod("Instruction",PrivateInstance).Invoke(form,null);
+                        Require(instruction.Contains("no avatar")&&instruction.Contains("either source"),"D guidance does not explain source-independent absence");
+                        Get<Label>(form,"guidance").Text=instruction;form.PerformLayout();Measure(form,scenario+"-D-"+phase);
+                    }
+                    CheckSessionSourceContinuity(form,scenario,output);
                 }
                 finally
                 {
                     Set(form,"participant",null);Set(form,"operatorPlayer",null);Set(form,"released",false);Set(form,"latest",null);
-                    Get<Label>(form,"guidance").Text="";
+                    Get<Label>(form,"guidance").Text="";Get<ComboBox>(form,"source").SelectedIndex=-1;
                 }
             }
+        }
+        static string PresentStatus(DesktopPreviewLauncher form,Phase phase,int block,ControlSelection? selected,bool ready)
+        {
+            var conditions=new[]{Condition.B,Condition.C,Condition.A,Condition.D};
+            Set(form,"latest",new DesktopPreviewStatus("synthetic-ui-fixture",0,phase,block,conditions[block],selected,ready,"Synthetic presentation only; no session was started."));
+            Set(form,"lastStatusAt",Get<Stopwatch>(form,"clock").Elapsed.TotalSeconds);
+            typeof(DesktopPreviewLauncher).GetMethod("RefreshControls",PrivateInstance).Invoke(form,null);
+            string instruction=(string)typeof(DesktopPreviewLauncher).GetMethod("Instruction",PrivateInstance).Invoke(form,null);
+            Get<Label>(form,"guidance").Text=instruction;
+            Get<Label>(form,"state").Text=(string)typeof(DesktopPreviewLauncher).GetMethod("StatusSummary",PrivateInstance).Invoke(form,null);
+            return instruction;
+        }
+        static void CheckSessionSourceContinuity(DesktopPreviewLauncher form,string scenario,string output)
+        {
+            var selector=Get<ComboBox>(form,"source");var confirm=Get<Button>(form,"lockBlock");var begin=Get<Button>(form,"begin");
+            PresentStatus(form,Phase.BlockPreparation,0,null,false);selector.SelectedIndex=-1;
+            Require(selector.Enabled&&!confirm.Enabled&&!begin.Enabled,"initial source must require an explicit selection before confirmation");
+            selector.SelectedIndex=1;
+            Require(selector.Enabled&&confirm.Enabled&&!begin.Enabled,"initial source selection did not require confirmation before start");
+            PresentStatus(form,Phase.BlockReady,0,ControlSelection.SimulatorRehearsal,false);
+            Require(!selector.Enabled&&!confirm.Enabled&&!begin.Enabled,"initial block can start before confirmed source is ready");
+            PresentStatus(form,Phase.BlockReady,0,ControlSelection.SimulatorRehearsal,true);
+            Require(!selector.Enabled&&!confirm.Enabled&&begin.Enabled,"first block does not retain its explicit owner start");
+            Require(selector.SelectedIndex==1,"first source acknowledgement did not display the confirmed simulated source");
+            Require(begin.Text.Contains("first block")&&confirm.Text.Contains("session source"),"owner captions imply repeated block source confirmation");
+            form.PerformLayout();Measure(form,scenario+"-first-block-ready");
+            if(scenario.EndsWith("-normal",StringComparison.Ordinal))Draw(form,output,scenario+"-first-block-ready",true);
+            string missingInitial=PresentStatus(form,Phase.BlockReady,0,null,false);
+            Require(!selector.Enabled&&!confirm.Enabled&&!begin.Enabled&&missingInitial.Contains("source is missing"),"initial ready state without a source was treated as confirmed");
+            foreach(ControlSelection selected in new[]{ControlSelection.Automatic,ControlSelection.SimulatorRehearsal})
+                for(int block=1;block<4;block++)
+                    foreach(Phase phase in new[]{Phase.BlockPreparation,Phase.BlockReady})
+                        foreach(bool ready in new[]{false,true})
+                        {
+                            string instruction=PresentStatus(form,phase,block,selected,ready);
+                            Require(!selector.Enabled&&!confirm.Enabled&&!begin.Enabled,"later block exposed owner selection/confirmation/start: "+block+"/"+phase+"/"+ready);
+                            Require(selector.SelectedIndex==(selected==ControlSelection.Automatic?0:1),"later block lost or replaced its confirmed source");
+                            Require(instruction.Contains("confirmed session source"),"later block did not explain source continuity");
+                            if(phase==Phase.BlockReady)
+                            {
+                                Require(instruction.Contains("countdown starts automatically"),"later ready block did not explain automatic countdown");
+                                Require(ready||instruction.Contains("when ready"),"unready source guidance lacks readiness wait");
+                            }
+                            else Require(instruction.Contains("stopped continuation"),"unexpected later preparation incorrectly promised automatic countdown");
+                            form.PerformLayout();Measure(form,scenario+"-retained-source-"+selected+"-"+block+"-"+phase+"-"+ready);
+                        }
+            PresentStatus(form,Phase.BlockReady,3,ControlSelection.SimulatorRehearsal,false);
+            if(scenario.EndsWith("-normal",StringComparison.Ordinal))Draw(form,output,scenario+"-later-block-waiting",true);
+            foreach(Phase phase in new[]{Phase.BlockPreparation,Phase.BlockReady})
+            {
+                string instruction=PresentStatus(form,phase,2,null,false);
+                Require(!selector.Enabled&&!confirm.Enabled&&!begin.Enabled,"unexpected later unlocked state enabled an owner action");
+                Require(instruction.Contains("source is missing")&&instruction.Contains("stopped"),"missing retained source did not fail closed in guidance");
+                Require(Get<Label>(form,"state").Text.Contains("Not confirmed"),"missing source was mislabeled as confirmed");
+            }
+            PresentStatus(form,Phase.BlockReady,1,ControlSelection.LiveWoz,false);
+            Require(selector.SelectedIndex==-1&&!selector.Enabled&&!confirm.Enabled&&!begin.Enabled,"unsupported retained source was silently replaced by a preview source");
+            Require(Get<Label>(form,"state").Text.Contains("Live WoZ"),"unsupported retained source was concealed in status");
+            Require(Get<OwnerCommand>(form,"pending")==null,"presentation checks queued an owner command");
         }
         static void CheckConfirmation(string output,string flavour)
         {
@@ -186,6 +261,52 @@ namespace AvatarStroop.Fixtures
                 Draw(confirmation,output,flavour+"-confirmation");
                 Require(!Directory.Exists(preserved)&&!Directory.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"sessions")),"confirmation created session data");
                 Require(confirmation.DialogResult==DialogResult.None&&!confirmation.Visible,"drawing the confirmation accepted or displayed it");
+            }
+        }
+        static void CheckExportPresentation(string output,string flavour)
+        {
+            string root=Path.Combine(output,"synthetic-export-evidence-"+flavour+"-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
+            const string sessionId="synthetic-ui-export";
+            var allocation=new Allocation("synthetic-ui",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
+            var experiment=new Experiment(new SessionConfiguration(sessionId,42,allocation,RunKind.Simulation,"en",3),new MonotonicClock("synthetic-ui-clock"));
+            var audit=new AuditLog(sessionId,RunKind.Simulation);var provenance=new ExportProvenance("offline-ui-fixture","synthetic only","synthetic only");
+            using(var form=new DesktopPreviewLauncher())
+            {
+                var timer=Get<System.Windows.Forms.Timer>(form,"timer");timer.Stop();
+                try
+                {
+                    Set(form,"session",sessionId);Set(form,"sessionDirectory",root);
+                    Get<Label>(form,"state").Text="Synthetic export-receipt presentation only. No preview process or participant session was started.";
+                    Get<Label>(form,"folder").Text="Raw session records: "+root;
+                    var observe=typeof(DesktopPreviewLauncher).GetMethod("ObserveExportAcknowledgement",PrivateInstance);
+                    var refresh=typeof(DesktopPreviewLauncher).GetMethod("RefreshControls",PrivateInstance);
+                    Action<OwnerCommand,bool> acknowledge=(command,accepted)=>{
+                        Get<Label>(form,"receipt").Text=(accepted?"Acknowledged: ":"Rejected: ")+"Export - synthetic fixture";
+                        observe.Invoke(form,new object[]{command,new OwnerAcknowledgement(command.RequestId,accepted,"synthetic fixture",OwnerCommandCodec.Hash(command))});refresh.Invoke(form,null);
+                    };
+                    var first=new OwnerCommand(Guid.NewGuid().ToString("N"),OwnerCommandKind.Export);
+                    acknowledge(first,true);
+                    Require(Get<PreviewExportReceipt>(form,"verifiedExport")==null&&!Get<Button>(form,"openExport").Enabled,"ACK without receipt exposed a folder");
+                    var result=AuditExporter.Export(experiment,audit,Path.Combine(root,"exports"),provenance);
+                    PreviewExportReceipt.WriteCompleted(root,sessionId,first.RequestId,result);acknowledge(first,true);
+                    Require(Get<TextBox>(form,"exportedFolder").ReadOnly&&Get<TextBox>(form,"exportedFolder").Text==result.DirectoryPath,"verified CSV folder is not shown read-only");
+                    Require(Get<Button>(form,"openExport").Enabled,"verified export has no explicit open action");
+                    var failed=new OwnerCommand(Guid.NewGuid().ToString("N"),OwnerCommandKind.Export);acknowledge(failed,false);
+                    Require(Get<TextBox>(form,"exportedFolder").Text==result.DirectoryPath&&Get<Label>(form,"exportState").Text.Contains("rejected"),"failed later export hid or relabeled prior success");
+                    acknowledge(failed,true);
+                    Require(Get<TextBox>(form,"exportedFolder").Text==result.DirectoryPath&&Get<Label>(form,"exportState").Text.Contains("could not be verified"),"missing later receipt replaced prior success");
+                    CreateOffscreenControls(form);form.PerformLayout();Measure(form,flavour+"-export-unverified");
+                    Draw(form,output,flavour+"-export-unverified",true);
+                    var second=AuditExporter.Export(experiment,audit,Path.Combine(root,"exports"),provenance);
+                    PreviewExportReceipt.WriteCompleted(root,sessionId,failed.RequestId,second);acknowledge(failed,true);
+                    Require(result.DirectoryPath!=second.DirectoryPath&&Get<TextBox>(form,"exportedFolder").Text==second.DirectoryPath,"second export did not show its distinct folder");
+                    Require(Directory.Exists(result.DirectoryPath),"previous CSV snapshot disappeared");
+                    form.PerformLayout();Measure(form,flavour+"-export-verified");Draw(form,output,flavour+"-export-verified",true);
+                    typeof(DesktopPreviewLauncher).GetMethod("ResetExportPresentation",PrivateInstance).Invoke(form,null);
+                    Require(Get<PreviewExportReceipt>(form,"verifiedExport")==null&&Get<TextBox>(form,"exportedFolder").Text==""&&!Get<Button>(form,"openExport").Enabled,"new launch reset kept a stale export");
+                    Set(form,"session",null);Set(form,"sessionDirectory",null);CheckNoSessionEffects(form);
+                }
+                finally{timer.Stop();timer.Dispose();}
             }
         }
         [STAThread]
@@ -226,13 +347,14 @@ namespace AvatarStroop.Fixtures
                             Measure(form,scenario+"-initial");
                             Draw(form,output,scenario+"-initial");
                             if(size=="normal")Draw(form,output,flavour+"-full-content",true);
-                            ExerciseGuidance(form,scenario);
+                            ExerciseGuidance(form,scenario,output);
                             CheckNoSessionEffects(form);
                         }
                         finally{timer.Stop();timer.Dispose();}
                     }
                 }
                 CheckConfirmation(output,flavour);
+                CheckExportPresentation(output,flavour);
                 File.WriteAllLines(Path.Combine(output,flavour+"-text-metrics.tsv"),metrics,new UTF8Encoding(false));
                 File.WriteAllLines(Path.Combine(output,flavour+"-failures.txt"),failures,new UTF8Encoding(false));
                 Console.WriteLine("OFFSCREEN_ENGLISH_LAUNCHER "+flavour+": "+checks+" checks, "+failures.Count+" failures; no visible form or session.");

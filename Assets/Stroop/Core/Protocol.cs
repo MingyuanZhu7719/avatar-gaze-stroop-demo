@@ -66,20 +66,38 @@ namespace AvatarStroop.Core
         public RunKind RunKind { get; private set; }
         public string QuestionnaireLanguage { get; private set; }
         public double CountdownSeconds { get; private set; }
+        public double MinimumRestSeconds { get; private set; }
+        public bool SkipFinalRest { get; private set; }
+        public double QuestionnaireInstructionSeconds { get; private set; }
+        public bool QuestionnaireInstructionRequiresAcknowledgement { get; private set; }
+        public bool ParticipantPacedRest { get; private set; }
+        public bool RetainControlAcrossBlocks { get; private set; }
         public const string ProtocolVersion = "2026-10-28-prd-66dbdb5";
-        public const string SoftwareVersion = "0.4.0-dev";
+        public const string SoftwareVersion = "0.5.1-dev";
         // New sessions explicitly use the approved English wording. Historical
         // journal language fields are preserved by the separate evidence reader.
         public SessionConfiguration(string sessionId, uint seed, Allocation allocation, RunKind runKind,
-            string questionnaireLanguage, double countdownSeconds)
+            string questionnaireLanguage, double countdownSeconds, double minimumRestSeconds=30,
+            bool skipFinalRest=false, double questionnaireInstructionSeconds=0,
+            bool questionnaireInstructionRequiresAcknowledgement=false, bool participantPacedRest=false,
+            bool retainControlAcrossBlocks=false)
         {
             if (String.IsNullOrWhiteSpace(sessionId) || allocation == null) throw new ArgumentException("Session identity required");
             if (questionnaireLanguage != "en") throw new ArgumentException("New sessions require the approved English questionnaire (en); historical language identifiers are not converted");
             if (Double.IsNaN(countdownSeconds) || Double.IsInfinity(countdownSeconds) || countdownSeconds <= 0)
                 throw new ArgumentOutOfRangeException("countdownSeconds", "Explicit provisional countdown must be positive");
+            if (Double.IsNaN(minimumRestSeconds) || Double.IsInfinity(minimumRestSeconds) || minimumRestSeconds < 0)
+                throw new ArgumentOutOfRangeException("minimumRestSeconds", "Minimum rest duration must be finite and nonnegative");
+            if (Double.IsNaN(questionnaireInstructionSeconds) || Double.IsInfinity(questionnaireInstructionSeconds) || questionnaireInstructionSeconds < 0)
+                throw new ArgumentOutOfRangeException("questionnaireInstructionSeconds", "Questionnaire instruction duration must be finite and nonnegative");
             if (!Enum.IsDefined(typeof(RunKind), runKind)) throw new ArgumentException("Invalid run kind");
             SessionId = sessionId; Seed = seed; Allocation = allocation; RunKind = runKind;
             QuestionnaireLanguage = questionnaireLanguage; CountdownSeconds = countdownSeconds;
+            MinimumRestSeconds = minimumRestSeconds; SkipFinalRest = skipFinalRest;
+            QuestionnaireInstructionSeconds = questionnaireInstructionSeconds;
+            QuestionnaireInstructionRequiresAcknowledgement = questionnaireInstructionRequiresAcknowledgement;
+            ParticipantPacedRest = participantPacedRest;
+            RetainControlAcrossBlocks = retainControlAcrossBlocks;
         }
     }
 
@@ -147,6 +165,7 @@ namespace AvatarStroop.Core
         public string PracticeCorrection { get; internal set; }
         public string QuestionnaireItem { get; internal set; }
         public bool ReadyEnabled { get; internal set; }
+        public bool SourceContinuationPending { get; internal set; }
         public string SourceLabel { get; internal set; }
     }
 }

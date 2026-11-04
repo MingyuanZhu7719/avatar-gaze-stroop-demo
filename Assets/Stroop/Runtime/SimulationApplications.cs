@@ -394,15 +394,19 @@ namespace AvatarStroop.Runtime
         public long AutomaticFallbacks {get;private set;}
         public long DiscardedOutputs {get;private set;}
         public IReadOnlyList<string> ApplicationWarnings {get{return applicationWarnings.AsReadOnly();}}
-        public ParticipantSimulationApplication(string session,int localPort,int remotePort,AutomaticGazeGeometry geometry=null)
-            :this(session,localPort,remotePort,geometry,null){}
-        internal ParticipantSimulationApplication(string session,int localPort,int remotePort,AutomaticGazeGeometry geometry,UdpPeer transport)
+        public bool WaitingForRetainedSource {get{return Experiment.RetainedSourceContinuationPending&&!SourceReady(Experiment.LockedControl.Value);}}
+        public ParticipantSimulationApplication(string session,int localPort,int remotePort,AutomaticGazeGeometry geometry=null,bool enhancedPreview=false)
+            :this(session,localPort,remotePort,geometry,null,enhancedPreview){}
+        internal ParticipantSimulationApplication(string session,int localPort,int remotePort,AutomaticGazeGeometry geometry,UdpPeer transport,bool enhancedPreview=false)
             :base(session,PeerRole.Participant,localPort,remotePort,transport)
         {
             this.geometry=geometry??DevelopmentFixtures.Geometry();
             // Deliberately named integration fixture, not a participant allocation schedule.
             var allocation=new Allocation("simulation-integration-fixture-BCAD",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
-            Experiment=new Experiment(new SessionConfiguration(session,20261028,allocation,RunKind.Simulation,"en",1),Clock);
+            // Explicit Unity preview policy; headless integration fixtures retain their
+            // historical timing and final-rest behavior unless they opt in as well.
+            Experiment=new Experiment(new SessionConfiguration(session,20261028,allocation,RunKind.Simulation,"en",
+                enhancedPreview?3:1,30,enhancedPreview,0,enhancedPreview,enhancedPreview,enhancedPreview),Clock);
             Audit=new AuditLog(session,RunKind.Simulation);
             Experiment.RecordPreparation(Actor.Owner,"consent_screening_calibration","not_applicable_synthetic_software_rehearsal");
         }
@@ -424,9 +428,14 @@ namespace AvatarStroop.Runtime
             stopInbox.ApplyOnce(packet.StopRequestId,()=>Experiment.Pause(Actor.Operator));
             Send(WirePacket.SafetyStopAck(Identity,NextPacketSequence(),Clock.Now,packet.StopRequestId));
         }
-        public void Tick()
+        public void Tick(){Tick(true);}
+        // The host supplies its current admission gates (for example startup,
+        // recording and headset input). Retaining a source cannot waive them.
+        public void Tick(bool retainedAdmissionReady)
         {
             TickNetwork();
+            if(retainedAdmissionReady&&Experiment.RetainedSourceContinuationPending)
+                Experiment.TryBeginRetainedBlockCountdown(SourceReady(Experiment.LockedControl.Value));
             if(Experiment.Phase!=Phase.Countdown||!Experiment.LockedControl.HasValue||SourceReady(Experiment.LockedControl.Value))Experiment.Tick();
             RefreshPresentation();BroadcastTask();RecordNetworkAudit();CaptureRecording();
         }
@@ -434,6 +443,8 @@ namespace AvatarStroop.Runtime
         public void RefreshPresentation()
         {
             CurrentFaults=Monitor.Snapshot(Clock.Now,Synchronizer);applicationWarnings.Clear();
+            if(WaitingForRetainedSource)
+                applicationWarnings.Add("Waiting for the confirmed source to be ready for this block. Owner confirmation is not required; source recovery gates remain active.");
             if(!Experiment.LockedControl.HasValue){CurrentAvatar=null;return;}
             if(Experiment.LockedControl.HasValue && Experiment.BlockIndex>=0)
             {
@@ -560,7 +571,9 @@ namespace AvatarStroop.Runtime
                 case Phase.PracticeCorrection:Experiment.ContinuePractice();break;
                 case Phase.BlockPreparation:OwnerLockNextBlock(ControlSelection.SimulatorRehearsal);break;
                 case Phase.BlockReady:if(SourceReady(ControlSelection.SimulatorRehearsal))OwnerBeginBlock();break;
-                case Phase.Questionnaire:Experiment.Rate(3);break;
+                case Phase.Questionnaire:
+                    if(Experiment.QuestionnaireInstructionPending)Experiment.AcknowledgeQuestionnaireInstruction();
+                    else if(Experiment.QuestionnaireInputReady)Experiment.Rate(3);break;
             }
             nextDriver=Clock.Now+(Experiment.Phase==Phase.MainTask?.12:.04);
         }

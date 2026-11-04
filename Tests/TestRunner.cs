@@ -68,6 +68,7 @@ namespace AvatarStroop.Tests
         public static int Main(string[] args)
         {
             var suite=new TestSuite(); TrialPlanTests.Register(suite); ExperimentTests.Register(suite);
+            PreviewFlowTests.Register(suite);
             AppLanguageTests.Register(suite);
             GazeControlTests.Register(suite);
             FaultTransportTests.Register(suite);
@@ -85,6 +86,7 @@ namespace AvatarStroop.Tests
             RetentionTests.Register(suite);
             PreviewRecoveryTests.Register(suite);
             PreviewRestartWorkflowTests.Register(suite);
+            PreviewExportReceiptTests.Register(suite);
             Console.WriteLine("RESULT "+suite.Passed+" passed; "+suite.Failed+" failed");
             return suite.Failed==0?0:1;
         }

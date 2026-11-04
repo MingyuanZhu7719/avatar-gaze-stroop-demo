@@ -13,8 +13,11 @@ namespace AvatarStroop.Unity
     {
         public const string RenderClockId = "unity-realtime-since-startup";
         public const string RenderTimestampMeaning = "camera-post-render-proxy-not-photon-onset";
-        public const string GeometryVersion = "development-classroom-centered-reference-v3";
+        public const string GeometryVersion = "development-classroom-centered-reference-v4";
         public static readonly Vector3 CenteredParticipantReference = new Vector3(-.5f,1.6f,0);
+        public static readonly Vector3 BoardPosition = new Vector3(-.5f,1.55f,1.94f);
+        public static readonly Vector3 TaskDisplayPosition = new Vector3(-.5f,1.55f,1.90f);
+        public const float DesktopVerticalFieldOfView = 64f;
         // One preview size for every word/ink; never fit or resize per trial.
         // fontSize remains 100 for glyph atlas quality, independently of world size.
         public const float StimulusCharacterSize = .0225f;
@@ -38,6 +41,14 @@ namespace AvatarStroop.Unity
         TextMesh developmentBanner;
         Transform headerBacking, footerBacking, worldMenuBacking;
         Transform controllerLegend;
+        Transform phaseAnimationRoot, progressTrack, progressFill, instructionDemo, demoStick, demoConfirm, completionSparks;
+        TextMesh phaseNumber, demoUp, demoDown, demoConfirmLabel, demoCaption;
+        double countdownRemaining, countdownDuration, restRemaining, restDuration, instructionRemaining, instructionDuration;
+        bool completed, questionnaireInstructionPending;
+        int questionnaireAnsweredCount;
+        double instructionAnimationStartedAt;
+        bool questionnaireResponseVisible, questionnaireInstructionVisible, restResponseVisible;
+        double completedAt;
         readonly Vector3[] hudCorners = new Vector3[4];
         readonly Vector3[] hudProjectionPoints = new Vector3[4], stimulusProjectionPoints = new Vector3[8];
         // The stimulus box is identical for every label in one layout pass, so it is
@@ -50,6 +61,7 @@ namespace AvatarStroop.Unity
         float nextHudDiagnosticAt;
         bool lastHudStereo;
         bool faultCoversStimulus;
+        bool hasPresentationFault;
         // A centred, bounded angular panel is easier to read through the headset
         // lenses than labels spread over the full render frustum. Distance alone
         // would not help because the text fitter otherwise scales with the frustum.
@@ -59,6 +71,28 @@ namespace AvatarStroop.Unity
         public static readonly Vector3 FixedMenuPosition = new Vector3(-.5f,1.55f,1.90f);
         public const float FixedMenuWidth=1.35f, FixedMenuHeight=1.05f;
         public bool HasWorldFixedMenu { get { return headsetPreview&&role==Actor.Participant; } }
+        // Input consumers combine this last completed layout result with the
+        // engine's instruction gate and their existing device/readiness guards.
+        // A fault panel or introduction must never accept an unseen rating.
+        public bool QuestionnaireResponseVisible
+        {
+            get { return questionnaireResponseVisible&&role==Actor.Participant&&currentView!=null&&
+                currentView.Phase==Phase.Questionnaire&&!questionnaireInstructionPending&&questionnaireLanguage!=null&&!hasPresentationFault&&
+                !String.IsNullOrWhiteSpace(currentView.QuestionnaireItem)&&messageText!=null&&
+                messageText.gameObject.activeInHierarchy&&messageText.GetComponent<MeshRenderer>().enabled; }
+        }
+        public bool QuestionnaireInstructionVisible
+        {
+            get { return questionnaireInstructionVisible&&role==Actor.Participant&&QuestionnaireIntro&&
+                questionnaireLanguage!=null&&!hasPresentationFault&&messageText!=null&&messageText.gameObject.activeInHierarchy&&
+                messageText.GetComponent<MeshRenderer>().enabled&&(!headsetPreview||(previewInputText!=null&&
+                previewInputText.gameObject.activeInHierarchy&&previewInputText.GetComponent<MeshRenderer>().enabled)); }
+        }
+        public bool RestResponseVisible
+        {
+            get { return restResponseVisible&&role==Actor.Participant&&currentView!=null&&currentView.Phase==Phase.Rest&&!hasPresentationFault&&
+                messageText!=null&&messageText.gameObject.activeInHierarchy&&messageText.GetComponent<MeshRenderer>().enabled; }
+        }
         // A/B automatic gaze targets a declared reference station, never live
         // HMD samples. Actual startup alignment preserves the tracked height.
         public Vector3 ParticipantReferencePosition
@@ -126,10 +160,15 @@ namespace AvatarStroop.Unity
             presentationCamera = camera; role = displayRole;
             if(contentRoot == null) BuildLayout();
             EnsureClassroomLayout();
-            // The full standing body reaches below a level 60-degree mono view.
-            // A desktop-only pitch keeps the feet and board stand in frame without moving
-            // the camera or gaze targets. Quest's tracked camera is not changed.
-            if(!headsetPreview) camera.transform.rotation = Quaternion.Euler(15.5f, -4, 0);
+            // The closer, full-menu-height board and standing feet span more
+            // than the old 60-degree mono crop at this pitch. A 64-degree desktop
+            // view retains both with margin, without moving camera/gaze anchors.
+            // An established headset view keeps its tracked projection and pose.
+            if(!headsetPreview)
+            {
+                camera.transform.rotation = Quaternion.Euler(15.5f, -4, 0);
+                camera.fieldOfView = DesktopVerticalFieldOfView;
+            }
             EnsureHudLayout();
             var witness = stimulusText.GetComponent<StimulusRenderWitness>();
             if(witness == null) witness = stimulusText.gameObject.AddComponent<StimulusRenderWitness>();
@@ -192,6 +231,32 @@ namespace AvatarStroop.Unity
             RefreshLegendVisibility();
             RefreshWarnings();
         }
+
+        // Presentation consumes protocol time; it never advances a phase, enables
+        // input, or decides that an interrupted experiment was completed.
+        public void SetPhaseProgress(double countdownRemaining, double countdownDuration,
+            double restRemaining, double restDuration, double instructionRemaining,
+            double instructionDuration, bool completed, bool questionnaireInstructionPending=false, int questionnaireAnsweredCount=0)
+        {
+            this.countdownDuration=SafeSeconds(countdownDuration);
+            this.countdownRemaining=Math.Min(SafeSeconds(countdownRemaining),this.countdownDuration);
+            this.restDuration=SafeSeconds(restDuration);
+            this.restRemaining=Math.Min(SafeSeconds(restRemaining),this.restDuration);
+            this.instructionDuration=SafeSeconds(instructionDuration);
+            this.instructionRemaining=Math.Min(SafeSeconds(instructionRemaining),this.instructionDuration);
+            if(questionnaireInstructionPending&&!this.questionnaireInstructionPending)
+                instructionAnimationStartedAt=Time.realtimeSinceStartupAsDouble;
+            this.questionnaireInstructionPending=questionnaireInstructionPending;
+            this.questionnaireAnsweredCount=Mathf.Clamp(questionnaireAnsweredCount,0,Questionnaire.Count);
+            if(completed&&!this.completed)completedAt=Time.realtimeSinceStartupAsDouble;
+            this.completed=completed;
+        }
+        static double SafeSeconds(double value)
+        {return Double.IsNaN(value)||Double.IsInfinity(value)?0:Math.Max(0,value);}
+        bool QuestionnaireIntro {get{return currentView!=null&&currentView.Phase==Phase.Questionnaire&&questionnaireInstructionPending;}}
+        bool UsesPhasePanel
+        {get{return HasWorldFixedMenu&&currentView!=null&&(currentView.Phase==Phase.Countdown||currentView.Phase==Phase.Questionnaire||
+            currentView.Phase==Phase.Rest||(currentView.Phase==Phase.Ended&&completed));}}
 
         public void SetPresentationAvailable(bool available)
         {
@@ -285,6 +350,7 @@ namespace AvatarStroop.Unity
                     material.renderQueue=4990;backing.GetComponent<MeshRenderer>().sharedMaterial=material;
                     worldMenuBacking=backing.transform;
                 }
+                EnsurePhaseAnimation();
             }
         }
 
@@ -306,6 +372,9 @@ namespace AvatarStroop.Unity
         }
         void LayoutHud()
         {
+            questionnaireResponseVisible=false;
+            questionnaireInstructionVisible=false;
+            restResponseVisible=false;
             layoutStamp++;
             if(warningRoot == null || developmentBanner == null || presentationCamera == null) return;
             var frustum=HasWorldFixedMenu?new Rect(-FixedMenuWidth*.5f,-FixedMenuHeight*.5f,FixedMenuWidth,FixedMenuHeight):HudFrustum(Camera.MonoOrStereoscopicEye.Mono);
@@ -331,6 +400,7 @@ namespace AvatarStroop.Unity
             // gate; only a completed layout may clear an obscuring fault.
             faultCoversStimulus=false;
             bool trial=currentView!=null&&(currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask);
+            if(phaseAnimationRoot!=null)phaseAnimationRoot.gameObject.SetActive(false);
             if(CleanTaskPresentation)
             {
                 foreach(var label in new[]{developmentBanner,phaseText,messageText,provisionalText,avatarLabel,previewStatusText,previewInputText})
@@ -351,6 +421,12 @@ namespace AvatarStroop.Unity
                     faultText.GetComponent<MeshRenderer>().enabled=true;
                     faultCoversStimulus=true;
                 }
+                LogHudProjection(frustum);
+                return;
+            }
+            if(UsesPhasePanel)
+            {
+                LayoutPhasePanel(frustum);
                 LogHudProjection(frustum);
                 return;
             }
@@ -384,7 +460,185 @@ namespace AvatarStroop.Unity
                 headerBacking.gameObject.SetActive(false);footerBacking.gameObject.SetActive(false);
                 PositionBacking(worldMenuBacking,frustum,new Rect(0,0,1,1),true);
             }
+            questionnaireInstructionVisible=role==Actor.Participant&&QuestionnaireIntro;
+            questionnaireResponseVisible=role==Actor.Participant&&currentView!=null&&currentView.Phase==Phase.Questionnaire&&!questionnaireInstructionPending;
+            restResponseVisible=role==Actor.Participant&&currentView!=null&&currentView.Phase==Phase.Rest;
             LogHudProjection(frustum);
+        }
+        void EnsurePhaseAnimation()
+        {
+            if(phaseAnimationRoot!=null)return;
+            phaseAnimationRoot=warningRoot.Find("PhaseProgressAnimation");
+            if(phaseAnimationRoot!=null)
+            {
+                progressTrack=phaseAnimationRoot.Find("ProgressTrack");progressFill=phaseAnimationRoot.Find("ProgressFill");
+                phaseNumber=phaseAnimationRoot.Find("PhaseRemainingSeconds").GetComponent<TextMesh>();
+                instructionDemo=phaseAnimationRoot.Find("QuestionnaireControllerGuide");
+                demoStick=instructionDemo.Find("AnimatedLeftStick");demoConfirm=instructionDemo.Find("AnimatedConfirmA");
+                demoConfirmLabel=instructionDemo.Find("ConfirmButtonA").GetComponent<TextMesh>();
+                demoUp=instructionDemo.Find("LeftStickUp").GetComponent<TextMesh>();demoDown=instructionDemo.Find("LeftStickDown").GetComponent<TextMesh>();
+                demoCaption=phaseAnimationRoot.Find("ControllerGuideStep").GetComponent<TextMesh>();
+                completionSparks=phaseAnimationRoot.Find("GentleCompletionFireworks");
+                SetProgressRenderOrder();return;
+            }
+            phaseAnimationRoot=Child("PhaseProgressAnimation",warningRoot,Vector3.zero);
+            progressTrack=FlowShape("ProgressTrack",PrimitiveType.Quad,phaseAnimationRoot,Vector3.zero,Vector3.one,new Color(.16f,.23f,.26f));
+            progressFill=FlowShape("ProgressFill",PrimitiveType.Quad,phaseAnimationRoot,Vector3.zero,Vector3.one,new Color(.42f,.73f,.75f));
+            SetProgressRenderOrder();
+            phaseNumber=Text("PhaseRemainingSeconds",phaseAnimationRoot,Vector3.zero,.02f,64,new Color(.73f,.90f,.91f));SetOverlay(phaseNumber);
+            instructionDemo=Child("QuestionnaireControllerGuide",phaseAnimationRoot,Vector3.zero);
+            FlowShape("LeftControllerFace",PrimitiveType.Sphere,instructionDemo,new Vector3(-.29f,.06f,0),new Vector3(.20f,.27f,.02f),new Color(.36f,.42f,.45f));
+            FlowShape("LeftControllerGrip",PrimitiveType.Capsule,instructionDemo,new Vector3(-.29f,-.055f,0),new Vector3(.085f,.06f,.02f),new Color(.36f,.42f,.45f));
+            FlowShape("StickTravel",PrimitiveType.Quad,instructionDemo,new Vector3(-.29f,.065f,-.01f),new Vector3(.013f,.13f,1),new Color(.68f,.75f,.76f));
+            demoStick=FlowShape("AnimatedLeftStick",PrimitiveType.Sphere,instructionDemo,new Vector3(-.29f,.065f,-.02f),new Vector3(.065f,.065f,.02f),new Color(.68f,.90f,.90f));
+            FlowShape("RightControllerFace",PrimitiveType.Sphere,instructionDemo,new Vector3(.30f,.06f,0),new Vector3(.20f,.27f,.02f),new Color(.36f,.42f,.45f));
+            FlowShape("RightControllerGrip",PrimitiveType.Capsule,instructionDemo,new Vector3(.30f,-.055f,0),new Vector3(.085f,.06f,.02f),new Color(.36f,.42f,.45f));
+            demoConfirm=FlowShape("AnimatedConfirmA",PrimitiveType.Sphere,instructionDemo,new Vector3(.30f,.035f,-.02f),new Vector3(.080f,.080f,.02f),new Color(.68f,.90f,.90f));
+            demoConfirmLabel=Text("ConfirmButtonA",instructionDemo,new Vector3(.30f,.035f,-.04f),.009f,64,new Color(.08f,.15f,.16f));demoConfirmLabel.text="A";SetOverlay(demoConfirmLabel);
+            demoUp=Text("LeftStickUp",instructionDemo,Vector3.zero,.02f,48,Color.white);SetOverlay(demoUp);
+            demoDown=Text("LeftStickDown",instructionDemo,Vector3.zero,.02f,48,Color.white);SetOverlay(demoDown);
+            demoCaption=Text("ControllerGuideStep",phaseAnimationRoot,Vector3.zero,.02f,48,Color.white);SetOverlay(demoCaption);
+            completionSparks=Child("GentleCompletionFireworks",phaseAnimationRoot,Vector3.zero);
+            for(int burst=0;burst<2;burst++)for(int ray=0;ray<10;ray++)
+                FlowShape("Spark"+burst+"_"+ray,PrimitiveType.Quad,completionSparks,Vector3.zero,new Vector3(.012f,.025f,1),
+                    burst==0?new Color(.61f,.77f,.79f):new Color(.84f,.73f,.51f));
+            phaseAnimationRoot.gameObject.SetActive(false);
+        }
+        void SetProgressRenderOrder()
+        {
+            // Transparent distance sorting is insufficient: as a left-anchored
+            // fill shrinks, its centre can be farther from the camera than the
+            // track. ZTest Always then lets the opaque track paint over the fill.
+            // Explicit queues preserve the fill from either eye and off-axis.
+            progressTrack.GetComponent<Renderer>().sharedMaterial.renderQueue=4995;
+            progressFill.GetComponent<Renderer>().sharedMaterial.renderQueue=4996;
+        }
+        Transform FlowShape(string name,PrimitiveType type,Transform parent,Vector3 position,Vector3 scale,Color colour)
+        {
+            var shape=Primitive(name,type,parent,position,scale,colour);
+            var material=NewMaterial(Shader.Find("AvatarStroop/WorldSpaceOverlay"),colour);
+            material.renderQueue=4995;shape.GetComponent<MeshRenderer>().sharedMaterial=material;
+            return shape.transform;
+        }
+        void FitCentered(TextMesh label,string value,Rect frustum,Rect area,float lineHeight)
+        {
+            FitHud(label,value,frustum,area,lineHeight,100);
+            var box=HudBox(frustum,area);var bounds=label.GetComponent<MeshRenderer>().localBounds;
+            var scale=label.transform.localScale.x;
+            label.transform.localPosition=new Vector3(box.center.x-bounds.center.x*scale,box.center.y-bounds.center.y*scale,-.002f);
+        }
+        void LayoutPhasePanel(Rect frustum)
+        {
+            Phase phase=currentView.Phase;bool questionnaire=phase==Phase.Questionnaire;
+            bool intro=questionnaire&&QuestionnaireIntro,rest=phase==Phase.Rest,countdown=phase==Phase.Countdown;
+            bool celebration=phase==Phase.Ended&&completed;
+            foreach(var label in new[]{provisionalText,avatarLabel,previewStatusText})
+                if(label!=null){label.text="";label.GetComponent<MeshRenderer>().enabled=false;}
+            PositionBacking(headerBacking,frustum,new Rect(),false);PositionBacking(footerBacking,frustum,new Rect(),false);
+            PositionBacking(worldMenuBacking,frustum,new Rect(0,0,1,1),true);
+            FitHud(developmentBanner,"QUEST PREVIEW | SIMULATED GAZE | NOT A STUDY RUN",frustum,new Rect(.04f,.025f,.92f,.04f),.026f,2);
+            if(!String.IsNullOrWhiteSpace(faultCaption))
+            {
+                // Essential faults take precedence over progress decorations.
+                // This presentation does not itself pause/resume the protocol.
+                FitCentered(phaseText,"Preview needs attention",frustum,new Rect(.04f,.08f,.92f,.08f),.050f);
+                FitHud(messageText,"",frustum,new Rect(.04f,.18f,.92f,.1f),.04f,100);
+                FitHud(faultText,faultCaption,frustum,new Rect(.04f,.22f,.92f,.48f),.043f,100);
+                FitHud(previewInputText,"Please wait. Use the owner controls for recovery.\nThe session does not resume automatically.",frustum,new Rect(.04f,.79f,.92f,.15f),.035f,100);
+                phaseAnimationRoot.gameObject.SetActive(false);return;
+            }
+            string title=questionnaire?(intro?"How to answer":"About the last block"):rest?"Rest":countdown?"Get ready":"Thank you!";
+            FitCentered(phaseText,title,frustum,new Rect(.04f,.08f,.92f,.08f),.057f);
+            string message=ParticipantMessage(currentView);
+            if(questionnaire&&!intro)
+            {
+                FitHud(messageText,message,frustum,new Rect(.04f,.185f,.92f,.54f),.045f,100);
+                questionnaireResponseVisible=true;
+            }
+            else if(intro)
+            {
+                FitCentered(messageText,message,frustum,new Rect(.04f,.66f,.92f,.16f),.034f);
+                questionnaireInstructionVisible=true;
+            }
+            else
+                FitCentered(messageText,message,frustum,new Rect(.04f,.55f,.92f,.15f),.045f);
+            restResponseVisible=rest;
+            string controls=intro?"Press A when ready to open the questions.\nThe guide repeats until you continue.":
+                questionnaire?previewControls:rest?(currentView.ReadyEnabled?"A: continue whenever you are ready. No minimum wait.":"Continue is not yet available."):
+                countdown?"Keep the controllers ready.":"The owner can export the records. You may remove the headset.";
+            FitHud(previewInputText,controls,frustum,new Rect(.04f,.81f,.92f,.105f),.032f,100);
+            FitHud(faultText,faultCaption,frustum,new Rect(.04f,.925f,.92f,.065f),.026f,100);
+            phaseAnimationRoot.gameObject.SetActive(true);
+            phaseNumber.gameObject.SetActive(countdown||rest);instructionDemo.gameObject.SetActive(intro);demoCaption.gameObject.SetActive(questionnaire);
+            if(questionnaire&&!intro)
+                FitCentered(demoCaption,questionnaireAnsweredCount+" of "+Questionnaire.Count+" answers submitted",frustum,new Rect(.08f,.78f,.84f,.025f),.024f);
+            if(countdown||rest)
+            {
+                double remaining=countdown?countdownRemaining:restRemaining;
+                string number=countdown?Math.Ceiling(remaining).ToString("0"):
+                    Math.Floor(Math.Max(0,restDuration-restRemaining)).ToString("0")+(restRemaining<=0?"+":"");
+                FitCentered(phaseNumber,number,frustum,new Rect(.25f,.245f,.50f,.25f),.22f);
+                // A single smooth, small pulse per second; no flashing or camera motion.
+                float pulse=1+.035f*Mathf.Sin((float)(remaining%1)*Mathf.PI);
+                var centre=phaseNumber.GetComponent<Renderer>().localBounds.center;
+                Vector3 anchor=phaseNumber.transform.localPosition+centre*phaseNumber.transform.localScale.x;
+                phaseNumber.transform.localScale*=pulse;
+                phaseNumber.transform.localPosition=anchor-centre*phaseNumber.transform.localScale.x;
+            }
+            if(intro)
+            {
+                LayoutInstructionDemo(frustum,Time.realtimeSinceStartupAsDouble-instructionAnimationStartedAt);
+            }
+            bool progress=countdown||rest||questionnaire;
+            progressTrack.gameObject.SetActive(progress);progressFill.gameObject.SetActive(progress);
+            if(progress)
+            {
+                var box=HudBox(frustum,new Rect(.08f,.755f,.84f,.018f));
+                if(intro)box=HudBox(frustum,new Rect(.08f,.65f,.84f,.008f));
+                // Countdown means remaining protocol time. Rest means elapsed
+                // portion of the optional reference, and stays full afterwards.
+                // The intro is an untimed, repeating demonstration, not a wait.
+                float fraction=countdown?(countdownDuration<=0?0:Mathf.Clamp01((float)(countdownRemaining/countdownDuration))):
+                    rest?(restDuration<=0?1:Mathf.Clamp01((float)(1-restRemaining/restDuration))):intro?1:questionnaireAnsweredCount/(float)Questionnaire.Count;
+                progressTrack.localPosition=new Vector3(box.center.x,box.center.y,-.002f);progressTrack.localScale=new Vector3(box.width,box.height,1);
+                progressFill.localPosition=new Vector3(box.xMin+box.width*fraction*.5f,box.center.y,-.004f);progressFill.localScale=new Vector3(box.width*fraction,box.height,1);
+            }
+            LayoutCompletionFireworks(celebration,Time.realtimeSinceStartupAsDouble-completedAt);
+        }
+        void LayoutInstructionDemo(Rect frustum,double elapsed)
+        {
+            double normalized=SafeSeconds(elapsed)%6/6;
+            int step=(int)(normalized*3);float within=(float)(normalized*3-step);
+            float travel=Mathf.Sin(within*Mathf.PI)*.060f*(step==0?1:step==1?-1:0);
+            instructionDemo.localPosition=new Vector3(0,.015f,-.004f);
+            demoStick.localPosition=new Vector3(-.29f,.065f+travel,-.02f);
+            float size=.080f*(1+(step==2?.10f*Mathf.Sin(within*Mathf.PI):0));demoConfirm.localScale=new Vector3(size,size,.02f);
+            FitCentered(demoUp,"UP / LOWER",frustum,new Rect(.13f,.255f,.31f,.045f),.030f);
+            FitCentered(demoDown,"DOWN / HIGHER",frustum,new Rect(.13f,.60f,.31f,.045f),.030f);
+            FitCentered(demoCaption,step==0?"1  LEFT STICK UP: 3 to 2":step==1?"2  LEFT STICK DOWN: 2 to 3":"3  PRESS A TO CONFIRM",frustum,new Rect(.04f,.18f,.92f,.055f),.038f);
+            demoUp.color=step==0?new Color(.68f,.90f,.90f):Color.white;demoDown.color=step==1?new Color(.68f,.90f,.90f):Color.white;
+        }
+        void LayoutCompletionFireworks(bool celebration,double elapsed)
+        {
+            // Two small muted radial bursts, at most six seconds. No audio,
+            // bright flashes, random motion, or effects after withdrawal/fault.
+            bool visible=celebration&&elapsed>=0&&elapsed<6;
+            completionSparks.gameObject.SetActive(visible);
+            if(!visible)return;
+            for(int burst=0;burst<2;burst++)
+            {
+                float age=(float)((elapsed+.45+burst*.7)%3)/3;
+                float radius=.025f+.135f*age;
+                float size=.016f*Mathf.Sin(age*Mathf.PI);
+                for(int ray=0;ray<10;ray++)
+                {
+                    float angle=(ray*36+burst*18)*Mathf.Deg2Rad;
+                    var spark=completionSparks.GetChild(burst*10+ray);
+                    spark.localPosition=new Vector3((burst==0?-.38f:.38f)+Mathf.Cos(angle)*radius,.13f+Mathf.Sin(angle)*radius-age*age*.025f,-.006f);
+                    spark.localRotation=Quaternion.Euler(0,0,angle*Mathf.Rad2Deg-90);
+                    spark.localScale=new Vector3(size*.65f,size*1.5f,1);
+                }
+            }
         }
         void LogHudProjection(Rect frustum)
         {
@@ -627,10 +881,11 @@ namespace AvatarStroop.Unity
             foreach(string fault in faults)
             {
                 if(!unique.Add(fault))continue;
-                if(headsetPreview&&!CleanTaskPresentation&&String.Equals(fault.Trim(),previewDiagnostic.Trim(),StringComparison.Ordinal)) continue;
+                if(headsetPreview&&!CleanTaskPresentation&&!UsesPhasePanel&&String.Equals(fault.Trim(),previewDiagnostic.Trim(),StringComparison.Ordinal)) continue;
                 if(shown<3){text.AppendLine(Wrap(fault,52,2));shown++;}else additional++;
             }
             if(additional>0) text.AppendLine("Additional fault flags: "+additional);
+            hasPresentationFault=text.Length>0;
             faultCaption = text.Length == 0 ? (headsetPreview ? "" : "Development display; hardware validation pending.") : text.ToString().TrimEnd();
             if(faultText.text != faultCaption) faultText.text = faultCaption;
             // TextMesh.color also rebuilds the glyph mesh, so it is assigned only on change.
@@ -733,11 +988,11 @@ namespace AvatarStroop.Unity
         void EnsureClassroomLayout()
         {
             // Migrate the generated presentation as well as newly created scenes.
-            // Text depth and head/eye offsets are preserved. Place the body
-            // in front of the board so its task gaze does not pass through the
-            // opaque board back. Bootstrap derives both gaze targets from these
-            // final world-space anchors and the fixed body orientation.
-            stimulusText.transform.localPosition = new Vector3(-.5f, 1.65f, 2);
+            // Align the physical writing inset with the fixed experiment menu.
+            // From participant to board: text/task 1.900, menu backing 1.910,
+            // writing front 1.915, white face front 1.925, frame front 1.940.
+            // Bootstrap derives gaze targets from these final world anchors.
+            stimulusText.transform.localPosition = TaskDisplayPosition;
             stimulusText.characterSize = StimulusCharacterSize;
             stimulusText.transform.localScale = Vector3.one;
             avatarRoot.localPosition = new Vector3(.65f, .9f, 1.9f);
@@ -750,7 +1005,7 @@ namespace AvatarStroop.Unity
                 Primitive("LeftWall", PrimitiveType.Cube, room, new Vector3(-3,1.5f,1.8f), new Vector3(.10f,3,5.6f), new Color(.62f,.65f,.64f));
                 Primitive("RightWall", PrimitiveType.Cube, room, new Vector3(3,1.5f,1.8f), new Vector3(.10f,3,5.6f), new Color(.66f,.68f,.66f));
                 Primitive("Skirting", PrimitiveType.Cube, room, new Vector3(0,.08f,4.53f), new Vector3(6,.16f,.03f), new Color(.43f,.46f,.44f));
-                var board = Child("Whiteboard", room, new Vector3(-.5f,1.65f,2.04f));
+                var board = Child("Whiteboard", room, BoardPosition);
                 Primitive("Frame", PrimitiveType.Cube, board, new Vector3(0,0,.035f), new Vector3(1.4f,.94f,.07f), new Color(.39f,.42f,.42f));
                 Primitive("OffWhiteFace", PrimitiveType.Cube, board, new Vector3(0,0,-.005f), new Vector3(1.34f,.88f,.02f), new Color(.90f,.91f,.87f));
                 // Keep the existing saturated ink RGB against a neutral dark
@@ -762,6 +1017,19 @@ namespace AvatarStroop.Unity
                     Primitive(side<0?"LeftSupport":"RightSupport",PrimitiveType.Cube,board,new Vector3(side*.53f,-.97f,.055f),new Vector3(.035f,1.33f,.04f),new Color(.43f,.46f,.46f));
                     Primitive(side<0?"LeftFoot":"RightFoot",PrimitiveType.Cube,board,new Vector3(side*.53f,-1.62f,.04f),new Vector3(.20f,.05f,.46f),new Color(.37f,.40f,.40f));
                 }
+            }
+            var physicalBoard=contentRoot.Find("ClassroomEnvironment/Whiteboard");
+            physicalBoard.localPosition=BoardPosition;
+            physicalBoard.Find("Frame").localScale=new Vector3(1.50f,1.20f,.07f);
+            physicalBoard.Find("OffWhiteFace").localScale=new Vector3(1.44f,1.14f,.02f);
+            physicalBoard.Find("WritingArea").localScale=new Vector3(1.38f,1.08f,.01f);
+            physicalBoard.Find("Tray").localPosition=new Vector3(0,-.61f,-.035f);
+            physicalBoard.Find("Tray").localScale=new Vector3(1.50f,.035f,.16f);
+            for(int side=-1;side<=1;side+=2)
+            {
+                var support=physicalBoard.Find(side<0?"LeftSupport":"RightSupport");
+                support.localPosition=new Vector3(side*.53f,-.90f,.055f);support.localScale=new Vector3(.035f,1.24f,.04f);
+                physicalBoard.Find(side<0?"LeftFoot":"RightFoot").localPosition=new Vector3(side*.53f,-1.52f,.04f);
             }
             if(avatarRoot.Find("StandingBody") == null)
             {
@@ -791,8 +1059,8 @@ namespace AvatarStroop.Unity
         void EnsureControllerLegend()
         {
             controllerLegend=contentRoot.Find("QuestControllerLegend");
-            if(controllerLegend!=null)return;
-            controllerLegend=Child("QuestControllerLegend",contentRoot,new Vector3(-1.60f,1.55f,2.04f));
+            if(controllerLegend!=null){controllerLegend.localPosition=new Vector3(-1.60f,1.55f,BoardPosition.z);return;}
+            controllerLegend=Child("QuestControllerLegend",contentRoot,new Vector3(-1.60f,1.55f,BoardPosition.z));
             Primitive("LegendFrame",PrimitiveType.Cube,controllerLegend,Vector3.zero,new Vector3(.55f,.82f,.035f),new Color(.78f,.81f,.79f));
             Primitive("LegendFace",PrimitiveType.Cube,controllerLegend,new Vector3(0,0,-.022f),new Vector3(.525f,.795f,.014f),new Color(.12f,.15f,.16f));
             BuildControllerLegend("LeftController",-.135f,true);
@@ -889,21 +1157,32 @@ namespace AvatarStroop.Unity
                 return headsetPreview ? "Use the owner controls to begin practice\nonce the headset and both Touch controllers are ready.\nNo practice or source starts automatically." :
                     "Use the separate owner controls to begin practice.\nNo practice or source starts automatically.";
             if(view.Phase == Phase.BlockPreparation || view.Phase == Phase.BlockReady)
+            {
+                if(view.SourceContinuationPending)
+                    return "Waiting for the same confirmed source to be ready.\nNo additional owner confirmation is needed.\nIf a fault blocks readiness, follow the owner recovery guidance.";
                 return "Waiting for the owner to configure and begin\nthis block in the separate preview control window.";
+            }
             if(view.Phase == Phase.PracticeRetry) return "Practice needs one retry.\nAsk the owner to start it in the control window.";
             if(view.Phase == Phase.PracticeCorrection) return view.PracticeCorrection + (headsetPreview ? "\nRight trigger to continue when ready." : "\nPress Space to continue when ready.");
+            if(view.Phase == Phase.Countdown) return (HasWorldFixedMenu?"":"Starting in "+Math.Ceiling(countdownRemaining).ToString("0")+" seconds.\n")+
+                "The next block begins shortly.\nRespond to the font colour.";
             if(view.Phase == Phase.Questionnaire)
             {
                 if(questionnaireLanguage == null) return "QUESTIONNAIRE LANGUAGE NOT CONFIGURED";
+                if(QuestionnaireIntro) return headsetPreview?
+                    "Left stick: UP lowers; DOWN raises.\nCentre between steps. A confirms.\nDemonstration only; no answer is recorded.":
+                    "Use keys 1 to 5 to select and submit a rating.\nRead at your own pace. Press Space when ready\nto open the questions. No answer is recorded here.";
                 var message = new StringBuilder(Wrap(Questionnaire.Instruction(questionnaireLanguage), 48, 2));
                 message.Append("\n\n").Append(Wrap(view.QuestionnaireItem ?? "", 48, 5)).AppendLine();
                 for(int score = 1; score <= 5; score++) message.Append("\n").Append(score).Append("  ").Append(Questionnaire.Anchor(score, questionnaireLanguage));
                 return message.ToString();
             }
-            if(view.Phase == Phase.Rest) return view.ReadyEnabled ? "Rest as long as you need.\n" + (headsetPreview ? "Right trigger when ready." : "Press Space when ready.") : "Rest. Ready is not yet available.";
+            if(view.Phase == Phase.Rest) return view.ReadyEnabled ? "Rest as long as you need.\n" +
+                (HasWorldFixedMenu?(restDuration>0?"Seconds rested ("+Math.Ceiling(restDuration).ToString("0")+" s optional reference).":"Continue whenever ready."):
+                headsetPreview?"A when ready.":"Press Space when ready.") : "Rest before continuing.\nContinue is not yet available.";
             if(view.Phase == Phase.Paused) return headsetPreview ? "Paused\nRight trigger to actively resume.\nB to withdraw and end preview." : "Paused\nPress R to actively resume when ready.";
             if(view.Phase == Phase.NeedsProtocolDecision) return headsetPreview ? "A protocol decision is pending.\nNo automatic retry, resume or continuation is applied.\nB withdraws." : "A protocol decision is pending.\nNo automatic retry, resume or continuation is applied.\nEsc withdraws.";
-            if(view.Phase == Phase.Ended) return "Simulation ended.\nThe owner can export the actual records.\nClose this window when finished.";
+            if(view.Phase == Phase.Ended) return completed?"The preview is complete.\nThank you for taking part.":"Simulation ended.\nThe owner can export the actual records.\nClose this window when finished.";
             return "";
         }
         static string Wrap(string message, int columns, int maxLines)

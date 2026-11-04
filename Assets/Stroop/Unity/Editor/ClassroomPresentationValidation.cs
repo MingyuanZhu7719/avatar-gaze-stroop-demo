@@ -28,6 +28,8 @@ namespace AvatarStroop.Unity.Editor
             public float stimulus_character_size;
             public float avatar_yaw_degrees=225,desktop_pitch_degrees=15.5f;
             public float desktop_yaw_degrees=-4;
+            public float desktop_vertical_fov_degrees=WorldSpaceExperimentView.DesktopVerticalFieldOfView;
+            public float synthetic_mono_vertical_fov_degrees=WorldSpaceExperimentView.DesktopVerticalFieldOfView;
             public Vector3 nominal_participant_reference=WorldSpaceExperimentView.CenteredParticipantReference;
             public float participant_fixture_pitch_degrees=15,participant_fixture_yaw_degrees=4;
             public bool start_alignment_once_xz_yaw=true,tracked_height_pitch_roll_preserved=true;
@@ -38,6 +40,14 @@ namespace AvatarStroop.Unity.Editor
             public int[] questionnaire_rendered_candidates;
             public string ui_language="en";
             public int[] questionnaire_rendered_items;
+            public int[] countdown_rendered_seconds;
+            public int[] rest_rendered_seconds;
+            public string[] questionnaire_guide_steps;
+            public bool completion_only_gentle_fireworks,phase_animation_world_fixed;
+            public bool progress_fill_rendered_above_track,questionnaire_intro_waits_for_acknowledgement;
+            public bool rest_reference_persists_and_allows_immediate_continue;
+            public Vector3 board_world=WorldSpaceExperimentView.BoardPosition;
+            public float writing_front_z=1.915f,menu_backing_z=1.910f,task_text_z=1.900f;
             public string[] ink_rgba;
             public WordBounds[] words;
             public StartupHeightEvidence startup_reference_height;
@@ -72,7 +82,9 @@ namespace AvatarStroop.Unity.Editor
                 "Left stick UP: lower number | DOWN: higher number (1-5)\nCentre between steps | A: confirm\nSelected: "+(candidate.HasValue?candidate.Value.ToString():"--")+" (not submitted)":
                 phase==Phase.Paused?"PAUSED | Right trigger: actively resume\nB: withdraw and end preview":
                 phase==Phase.NeedsProtocolDecision?"A protocol decision is pending\nNo automatic retry or resume | B: withdraw":
-                phase==Phase.PracticeCorrection||phase==Phase.Rest?"Right trigger: Continue / Ready when available\nLeft menu: pause":
+                phase==Phase.Rest?"A: continue whenever ready. No minimum rest.\nLeft menu: pause":
+                phase==Phase.PracticeCorrection?"Right trigger: continue when ready\nLeft menu: pause":
+                phase==Phase.Ended?"Session ended. No participant response is required.":
                 "X red | Y green | A blue | B yellow\nRelease before the next answer | Left menu: pause";
             view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED",hint);
         }
@@ -82,7 +94,7 @@ namespace AvatarStroop.Unity.Editor
             Require(view!=null&&view.PresentationCamera!=null,"presentation/camera missing");
             var content=Content(view);var word=Stimulus(view);
             Require(content!=null&&word!=null,"world stimulus missing");
-            Require(Near(view.TaskWorldPosition,new Vector3(-.5f,1.65f,2)),"task anchor changed");
+            Require(Near(view.TaskWorldPosition,WorldSpaceExperimentView.TaskDisplayPosition),"task anchor changed");
             Require(Near(view.AvatarRoot.position,new Vector3(.65f,.9f,1.9f)),"standing avatar anchor changed");
             Require(Quaternion.Angle(view.AvatarRoot.localRotation,Quaternion.Euler(0,225,0))<.001f,"standing body orientation changed");
             Require(Near(view.AvatarHead.localPosition,new Vector3(0,.7f,0)),"head offset changed");
@@ -91,11 +103,16 @@ namespace AvatarStroop.Unity.Editor
             Require(word.GetComponent<StimulusRenderWitness>()!=null,"actual stimulus witness missing");
             Require(word.transform.parent==content,"stimulus must remain world space, not HUD");
             var board=content.Find("ClassroomEnvironment/Whiteboard");
-            Require(board!=null&&Near(board.position,new Vector3(-.5f,1.65f,2.04f)),"board position mismatch");
+            Require(board!=null&&Near(board.position,WorldSpaceExperimentView.BoardPosition),"board position mismatch");
             var writing=board.Find("WritingArea").GetComponent<Renderer>();
             Require(writing.bounds.min.z>view.TaskWorldPosition.z+.01f,"writing surface occludes word plane");
             Require(writing.bounds.center.x==view.TaskWorldPosition.x&&Mathf.Approximately(writing.bounds.center.y,view.TaskWorldPosition.y),"writing area not centred on word");
             Require(board.Find("OffWhiteFace")!=null,"whiteboard face missing");
+            Require(Mathf.Abs(writing.bounds.min.z-1.915f)<.0001f,"physical writing surface depth changed");
+            Require(writing.bounds.size.x>=WorldSpaceExperimentView.FixedMenuWidth&&writing.bounds.size.y>=WorldSpaceExperimentView.FixedMenuHeight,
+                "physical writing inset does not contain the entire fixed display region");
+            Require(Near(view.TaskWorldPosition,WorldSpaceExperimentView.FixedMenuPosition),"word and menu do not share the physical display anchor");
+            Require(board.position.z<2.04f,"board was not moved toward the participant");
             Require(content.GetComponentsInChildren<Collider>(true).Length==0,"scenery unexpectedly adds colliders/AOIs");
             var body=view.AvatarRoot.Find("StandingBody");
             Require(body!=null,"standing body missing");
@@ -114,7 +131,7 @@ namespace AvatarStroop.Unity.Editor
                 var backing=menu.Find("FixedWorldMenuBacking");
                 Require(backing!=null&&backing.GetComponent<Renderer>().sharedMaterial.color.a==1,"opaque fixed menu backing missing");
                 var legend=content.Find("QuestControllerLegend");
-                Require(legend!=null&&legend.parent==content&&Near(legend.position,new Vector3(-1.60f,1.55f,2.04f)),"controller legend is not fixed world space left of board");
+                Require(legend!=null&&legend.parent==content&&Near(legend.position,new Vector3(-1.60f,1.55f,WorldSpaceExperimentView.BoardPosition.z)),"controller legend is not fixed world space left of board");
                 Require(legend.GetComponentsInChildren<AvatarRenderWitness>(true).Length==0,"legend incorrectly belongs to avatar visibility");
                 foreach(string hand in new[]{"LeftController","RightController"})
                     Require(legend.Find(hand+"/ControllerFace")!=null&&legend.Find(hand+"/Grip")!=null,"controller silhouette missing");
@@ -207,22 +224,24 @@ namespace AvatarStroop.Unity.Editor
                 Require(!renderer.bounds.IntersectRay(ray,out hit)||hit>=delta.magnitude-.001f,message+": "+renderer.name);
             }
         }
-        static WorldSpaceExperimentView NewFixture(Actor role)
+        static WorldSpaceExperimentView NewFixture(Actor role,bool headset=true)
         {
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Single);
             var camera=new GameObject("SyntheticFixtureCamera").AddComponent<Camera>();
-            camera.transform.position=role==Actor.Participant?WorldSpaceExperimentView.CenteredParticipantReference:new Vector3(0,1.6f,0);camera.fieldOfView=60;
+            camera.transform.position=role==Actor.Participant?WorldSpaceExperimentView.CenteredParticipantReference:new Vector3(0,1.6f,0);
+            camera.fieldOfView=WorldSpaceExperimentView.DesktopVerticalFieldOfView;
             camera.nearClipPlane=.05f;camera.farClipPlane=20;camera.aspect=1100f/720;
             camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=new Color(.035f,.045f,.06f);
             camera.stereoTargetEye=StereoTargetEyeMask.None;
             var view=new GameObject("SyntheticFixturePresentation").AddComponent<WorldSpaceExperimentView>();
             view.Initialize(camera,role);view.SetPresentationAvailable(false);
-            if(role==Actor.Participant)
+            if(role==Actor.Participant&&headset)
             {
                 view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED", "X red | Y green | A blue | B yellow\nLeft menu: pause; while paused, B: withdraw");
                 // Synthetic mono composition only. Runtime initial yaw is +Z;
                 // actual tracked pitch/roll are never authored or flattened.
                 camera.transform.rotation=Quaternion.Euler(15,4,0);
+                Require(Mathf.Approximately(camera.fieldOfView,WorldSpaceExperimentView.DesktopVerticalFieldOfView),"synthetic mono fixture field of view changed");
             }
             // Fixture provenance belongs to filenames/JSON, not a fake fault
             // painted into the participant's otherwise clean active view.
@@ -428,13 +447,20 @@ namespace AvatarStroop.Unity.Editor
             {
                 Apply(view,Phase.MainTask,condition,Colour.Green);view.Initialize(view.PresentationCamera,view.Role);
                 Require(legend.gameObject.activeInHierarchy&&legend.localToWorldMatrix==matrix,"legend changed with A-D condition");
+                Require(!Menu(view).Find("PhaseProgressAnimation").gameObject.activeInHierarchy,"phase animation is visible during main answering");
                 foreach(var label in Menu(view).GetComponentsInChildren<TextMesh>(true))
-                    Require(!label.GetComponent<Renderer>().enabled||String.IsNullOrEmpty(label.text),"healthy active participant contains HUD text: "+label.name);
+                    Require(!label.gameObject.activeInHierarchy||!label.GetComponent<Renderer>().enabled||String.IsNullOrEmpty(label.text),"healthy active participant contains HUD text: "+label.name);
             }
             foreach(var phase in new[]{Phase.Practice,Phase.PracticeCorrection,Phase.Questionnaire,Phase.Paused,Phase.Rest})
             {
                 Apply(view,phase,Condition.A,Colour.Green);view.Initialize(view.PresentationCamera,view.Role);
                 Require(legend.gameObject.activeInHierarchy==(phase==Phase.Practice||phase==Phase.PracticeCorrection),"legend misleading in "+phase);
+                if(phase==Phase.Practice)
+                {
+                    Require(!Menu(view).Find("PhaseProgressAnimation").gameObject.activeInHierarchy,"phase animation is visible during practice answering");
+                    foreach(var label in Menu(view).GetComponentsInChildren<TextMesh>(true))
+                        Require(!label.gameObject.activeInHierarchy||!label.GetComponent<Renderer>().enabled||String.IsNullOrEmpty(label.text),"healthy practice contains HUD text: "+label.name);
+                }
                 if(phase==Phase.PracticeCorrection||phase==Phase.Questionnaire||phase==Phase.Paused)
                 {
                     var message=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
@@ -530,14 +556,21 @@ namespace AvatarStroop.Unity.Editor
             var ready=FixtureTask(Phase.Rest,false,Colour.Green);Set(ready,"ReadyEnabled",true);
             view.ApplyTaskView(ready);FixtureControls(view,Phase.Rest);Layout(view);
             var readyMessage=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
-            Require(NormalizedText(readyMessage.text).Contains("Rest as long as you need. Right trigger when ready."),"English ready/continue instruction clipped");
+            Require(NormalizedText(readyMessage.text).Contains("Rest as long as you need."),"English ready/continue instruction clipped");
+            Require(NormalizedText(Menu(view).Find("QuestPreviewInputStatus").GetComponent<TextMesh>().text).Contains("A: continue whenever you are ready. No minimum wait."),"rest does not offer immediate A continuation");
             CheckVisibleEnglishText(view);CheckMenuReadable(view);
+            var retained=FixtureTask(Phase.BlockReady,false,Colour.Green);Set(retained,"SourceContinuationPending",true);
+            view.ApplyTaskView(retained);Layout(view);
+            string waiting=NormalizedText(Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>().text);
+            Require(waiting.Contains("same confirmed source")&&waiting.Contains("No additional owner confirmation")&&waiting.Contains("owner recovery guidance"),
+                "later block readiness asks for a new owner confirmation or implies automatic recovery");
         }
         static void CheckCompleteEnglishQuestionnaire(WorldSpaceExperimentView view,int item)
         {
             var label=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
             string text=NormalizedText(label.text);
             Require(label.GetComponent<Renderer>().enabled,"English questionnaire is hidden");
+            Require(view.QuestionnaireResponseVisible,"visible ready questionnaire is not available to the input presentation gate");
             Require(text.Contains(Questionnaire.Instruction("en")),"English questionnaire instruction truncated");
             Require(text.Contains(Questionnaire.Item(item,"en")),"English questionnaire item truncated: "+item);
             int previous=-1;
@@ -546,7 +579,161 @@ namespace AvatarStroop.Unity.Editor
                 int at=text.IndexOf(score+" "+Questionnaire.Anchor(score,"en"),StringComparison.Ordinal);
                 Require(at>previous,"English questionnaire anchor missing, truncated or reordered: "+score);previous=at;
             }
+            int lines=label.text.Split('\n').Length;
+            Require(label.GetComponent<Renderer>().bounds.size.y/lines>=.040f,"questionnaire type is no longer enlarged/readable: "+item);
             CheckVisibleEnglishText(view);CheckMenuReadable(view);
+        }
+        static void CheckPhaseFlowFixtures(WorldSpaceExperimentView view,string output,List<string> files,Evidence evidence)
+        {
+            view.SetQuestionnaireLanguage("en");view.SetFaults(new string[0]);
+            var menu=Menu(view);var animation=menu.Find("PhaseProgressAnimation");
+            Require(animation!=null&&animation.parent==menu&&menu.parent==Content(view),"phase animation is not fixed to the classroom menu");
+            var number=animation.Find("PhaseRemainingSeconds").GetComponent<TextMesh>();
+            var fill=animation.Find("ProgressFill");var track=animation.Find("ProgressTrack");
+            var guide=animation.Find("QuestionnaireControllerGuide");
+            var sparks=animation.Find("GentleCompletionFireworks");
+            var instructions=menu.Find("ParticipantInstructions").GetComponent<TextMesh>();
+            Vector3 menuPosition=menu.position;Quaternion menuRotation=menu.rotation;
+            foreach(int remaining in new[]{3,2,1})
+            {
+                view.SetPhaseProgress(remaining,3,0,30,0,3,false);Apply(view,Phase.Countdown,Condition.A,Colour.Green);Layout(view);
+                Require(number.gameObject.activeInHierarchy&&number.text==remaining.ToString(),"countdown does not show actual remaining seconds");
+                Require(Mathf.Abs(fill.localScale.x/track.localScale.x-remaining/3f)<.0001f,"countdown bar is not derived from remaining protocol time");
+                Require(!guide.gameObject.activeInHierarchy&&!sparks.gameObject.activeInHierarchy&&!Stimulus(view).gameObject.activeInHierarchy,"countdown leaks rating guide, fireworks or stimulus");
+                string name="synthetic-countdown-"+remaining+".png";Render(view,output,name);files.Add(name);CheckMenuReadable(view);
+            }
+            evidence.countdown_rendered_seconds=new[]{3,2,1};
+            view.SetPhaseProgress(45,120,0,30,0,3,false);Apply(view,Phase.Countdown,Condition.A,Colour.Green);Layout(view);
+            for(int repeat=0;repeat<5;repeat++)
+            {
+                Apply(view,Phase.Paused,Condition.A,Colour.Green);Layout(view);
+                Require(!animation.gameObject.activeInHierarchy,"countdown progress leaks into pause");
+                Apply(view,Phase.Countdown,Condition.A,Colour.Green);Layout(view);
+                Require(number.text=="45"&&fill.gameObject.activeInHierarchy&&Mathf.Abs(fill.localScale.x/track.localScale.x-.375f)<.0001f,
+                    "long countdown changed without protocol time or disappeared after pause");
+            }
+            string longCountdown="synthetic-countdown-long-paused-resumed.png";Render(view,output,longCountdown);files.Add(longCountdown);
+            var captions=new[]{"LEFT STICK UP: 3 to 2","LEFT STICK DOWN: 2 to 3","PRESS A TO CONFIRM"};
+            var slugs=new[]{"up","down","confirm-a"};
+            var stick=guide.Find("AnimatedLeftStick");
+            var guideStarted=typeof(WorldSpaceExperimentView).GetField("instructionAnimationStartedAt",BindingFlags.NonPublic|BindingFlags.Instance);
+            var animateGuide=typeof(WorldSpaceExperimentView).GetMethod("LayoutInstructionDemo",BindingFlags.NonPublic|BindingFlags.Instance);
+            var panel=new Rect(-WorldSpaceExperimentView.FixedMenuWidth*.5f,-WorldSpaceExperimentView.FixedMenuHeight*.5f,
+                WorldSpaceExperimentView.FixedMenuWidth,WorldSpaceExperimentView.FixedMenuHeight);
+            for(int step=0;step<3;step++)
+            {
+                view.SetPhaseProgress(0,3,0,30,0,3,false,true);
+                guideStarted.SetValue(view,Time.realtimeSinceStartupAsDouble-(1+step*2));
+                Apply(view,Phase.Questionnaire,Condition.A,Colour.Green);FixtureControls(view,Phase.Questionnaire,3);Layout(view);
+                Require(guide.gameObject.activeInHierarchy&&!number.gameObject.activeInHierarchy&&!sparks.gameObject.activeInHierarchy,"questionnaire introduction presentation missing or leaked another phase");
+                Require(view.QuestionnaireInstructionVisible&&!view.QuestionnaireResponseVisible,"introduction acknowledgement/rating visibility gates disagree");
+                var caption=animation.Find("ControllerGuideStep").GetComponent<TextMesh>();
+                Require(NormalizedText(caption.text).Contains(captions[step]),"guide timeline does not show UP, DOWN, A in order");
+                Require(!instructions.text.Contains(Questionnaire.Item(4,"en"))&&!instructions.text.Contains(Questionnaire.Anchor(1,"en")),"rating choices shown before acknowledgement");
+                string hint=menu.Find("QuestPreviewInputStatus").GetComponent<TextMesh>().text;
+                Require(hint.Contains("Press A when ready")&&!hint.Contains("Selected:")&&!hint.Contains("opens in"),"introduction must allow A immediately without a timer or rating candidate");
+                Require(instructions.text.Contains("UP lowers")&&instructions.text.Contains("DOWN raises")&&instructions.text.Contains("A confirms"),"guide changed or omitted rating input meaning");
+                Require(step==0?stick.localPosition.y>.065f:step==1?stick.localPosition.y<.065f:Mathf.Abs(stick.localPosition.y-.065f)<.0001f,"animated stick direction disagrees with UP/decrement or DOWN/increment");
+                animateGuide.Invoke(view,new object[]{panel,1.0+step*2});var matrix=stick.localToWorldMatrix;
+                animateGuide.Invoke(view,new object[]{panel,121.0+step*2});Require(stick.localToWorldMatrix==matrix,"instruction demonstration does not loop after a long wait");
+                Require(!view.AvatarRoot.gameObject.activeInHierarchy,"avatar visible in questionnaire introduction");
+                string name="synthetic-questionnaire-guide-"+slugs[step]+".png";Render(view,output,name);files.Add(name);CheckMenuReadable(view);
+            }
+            evidence.questionnaire_guide_steps=new[]{"UP decrements","DOWN increments","A confirms"};
+            // Zero instruction time never dismisses the pending introduction.
+            guideStarted.SetValue(view,Time.realtimeSinceStartupAsDouble-301);
+            for(int repeat=0;repeat<5;repeat++)
+            {
+                Apply(view,Phase.Paused,Condition.A,Colour.Green);Layout(view);
+                Require(!animation.gameObject.activeInHierarchy&&!view.QuestionnaireInstructionVisible&&!view.QuestionnaireResponseVisible,"paused introduction still accepts input");
+                Apply(view,Phase.Questionnaire,Condition.A,Colour.Green);Layout(view);
+                Require(view.QuestionnaireInstructionVisible&&track.gameObject.activeInHierarchy&&fill.gameObject.activeInHierarchy,"long introduction expired or lost its bar after pause/resume");
+            }
+            string longGuide="synthetic-questionnaire-guide-after-300s.png";Render(view,output,longGuide);files.Add(longGuide);
+            view.SetPhaseProgress(0,3,0,30,0,3,false,false);Apply(view,Phase.Questionnaire,Condition.A,Colour.Green);FixtureControls(view,Phase.Questionnaire,3);Layout(view);
+            Require(!guide.gameObject.activeInHierarchy&&!view.QuestionnaireInstructionVisible,"instruction guide did not disappear after acknowledgement");CheckCompleteEnglishQuestionnaire(view,4);
+            for(int answered=0;answered<Questionnaire.Count;answered++)
+            {
+                view.SetPhaseProgress(0,3,0,30,0,3,false,false,answered);
+                var question=FixtureTask(Phase.Questionnaire,false,Colour.Green);Set(question,"QuestionnaireItem",Questionnaire.Item(answered,"en"));
+                view.ApplyTaskView(question);Layout(view);CheckCompleteEnglishQuestionnaire(view,answered);
+                Require(track.gameObject.activeInHierarchy&&fill.gameObject.activeInHierarchy&&Mathf.Abs(fill.localScale.x/track.localScale.x-answered/5f)<.0001f,
+                    "questionnaire bar does not persist and reflect submitted answers");
+                Require(animation.Find("ControllerGuideStep").GetComponent<TextMesh>().text==answered+" of 5 answers submitted","questionnaire progress description is inaccurate");
+                string name="synthetic-questionnaire-progress-"+answered+".png";Render(view,output,name);files.Add(name);
+                Apply(view,Phase.Paused,Condition.A,Colour.Green);Layout(view);
+                view.ApplyTaskView(question);Layout(view);
+                Require(view.QuestionnaireResponseVisible&&Mathf.Abs(fill.localScale.x/track.localScale.x-answered/5f)<.0001f,"questionnaire progress resets after pause");
+            }
+            foreach(int remaining in new[]{30,27,15,1,0})
+            {
+                view.SetPhaseProgress(0,3,remaining,30,0,3,false);
+                var rest=FixtureTask(Phase.Rest,false,Colour.Green);Set(rest,"ReadyEnabled",true);
+                view.ApplyTaskView(rest);view.ApplyAvatarOutput(Output(view,Condition.A,Phase.Rest));FixtureControls(view,Phase.Rest);Layout(view);
+                Require(number.text==(30-remaining).ToString()+(remaining==0?"+":""),"rest does not show elapsed seconds within its optional reference");
+                Require(view.RestResponseVisible&&!view.QuestionnaireResponseVisible,"rest instructions are unavailable to the input presentation gate");
+                Require(!view.AvatarRoot.gameObject.activeInHierarchy&&!guide.gameObject.activeInHierarchy&&!sparks.gameObject.activeInHierarchy,"rest leaks avatar, controller guide or celebration");
+                Require(track.gameObject.activeInHierarchy&&fill.gameObject.activeInHierarchy&&Mathf.Abs(fill.localScale.x/track.localScale.x-(1-remaining/30f))<.0001f,"rest progress does not show elapsed reference or disappears at completion");
+                Require(instructions.text.Contains("Rest as long as you need.")&&NormalizedText(instructions.text).Contains("optional reference"),"rest wording implies a required wait");
+                Require(NormalizedText(menu.Find("QuestPreviewInputStatus").GetComponent<TextMesh>().text).Contains("A: continue whenever you are ready. No minimum wait."),"rest A is not immediately available");
+                string name="synthetic-rest-"+remaining+".png";Render(view,output,name);files.Add(name);CheckMenuReadable(view);
+            }
+            evidence.rest_rendered_seconds=new[]{30,27,15,1,0};
+            for(int repeat=0;repeat<10;repeat++)
+            {
+                Apply(view,Phase.Paused,Condition.A,Colour.Green);Layout(view);
+                Require(!animation.gameObject.activeInHierarchy&&!view.RestResponseVisible,"paused rest still accepts readiness");
+                var rest=FixtureTask(Phase.Rest,false,Colour.Green);Set(rest,"ReadyEnabled",true);view.ApplyTaskView(rest);Layout(view);
+                Require(fill.gameObject.activeInHierarchy&&fill.localScale.x==track.localScale.x&&number.text=="30+","rest loses its completed reference after repeated long/pause layouts");
+            }
+            // Exercise transparent ordering off axis; Render checks actual pixels.
+            var cameraPosition=view.PresentationCamera.transform.position;var cameraRotation=view.PresentationCamera.transform.rotation;
+            view.PresentationCamera.transform.position+=new Vector3(.3f,.1f,-.1f);
+            view.PresentationCamera.transform.LookAt(menu.position);
+            view.SetPhaseProgress(0,3,27,30,0,3,false);Layout(view);
+            string oblique="synthetic-rest-short-fill-oblique.png";Render(view,output,oblique);files.Add(oblique);
+            view.PresentationCamera.transform.SetPositionAndRotation(cameraPosition,cameraRotation);
+            evidence.progress_fill_rendered_above_track=true;
+            evidence.questionnaire_intro_waits_for_acknowledgement=true;
+            evidence.rest_reference_persists_and_allows_immediate_continue=true;
+            const string matchingDiagnostic="Head pose available; waiting for both Touch controllers";
+            foreach(var phase in new[]{Phase.Countdown,Phase.Questionnaire,Phase.Rest})
+            {
+                view.SetPhaseProgress(2,3,15,30,0,3,false,true);Apply(view,phase,Condition.A,Colour.Green);
+                view.SetHeadsetPreview(matchingDiagnostic,"");view.SetFaults(new[]{matchingDiagnostic,PreviewRecovery.Guidance});Layout(view);
+                var fault=menu.Find("WorldSpaceFaultMessages").GetComponent<TextMesh>();
+                string message=NormalizedText(fault.text);
+                Require(fault.GetComponent<Renderer>().enabled&&message.Contains(matchingDiagnostic)&&message.Contains("NEW session")&&message.Contains("will not resume"),"phase panel hides duplicate tracking diagnostic or recovery guidance: "+phase);
+                Require(!animation.gameObject.activeInHierarchy,"phase decoration remains visible over a required fault");
+                Require(!view.QuestionnaireResponseVisible&&!view.QuestionnaireInstructionVisible,"hidden questionnaire accepts ratings or acknowledgement behind the fault-priority panel");
+                Require(!view.RestResponseVisible,"hidden rest instructions accept Ready behind the fault-priority panel");
+                CheckMenuReadable(view);
+            }
+            string faultName="synthetic-rest-tracking-recovery-fault.png";Render(view,output,faultName);files.Add(faultName);
+            view.SetFaults(new string[0]);FixtureControls(view,Phase.Rest);
+            Layout(view);Require(view.RestResponseVisible,"rest presentation gate does not recover after the fault is cleared");
+            view.SetPhaseProgress(0,3,0,30,0,3,false);Apply(view,Phase.Questionnaire,Condition.A,Colour.Green);Layout(view);
+            Require(view.QuestionnaireResponseVisible,"questionnaire presentation gate does not recover after the fault is cleared");
+            view.SetPhaseProgress(0,3,0,30,0,3,true);Apply(view,Phase.Ended,Condition.A,Colour.Green);FixtureControls(view,Phase.Ended);Layout(view);
+            Require(sparks.gameObject.activeInHierarchy&&instructions.text.Contains("Thank you for taking part."),"completed preview has no thank-you or gentle fireworks");
+            Require(!track.gameObject.activeInHierarchy&&!number.gameObject.activeInHierarchy&&!view.AvatarRoot.gameObject.activeInHierarchy,"completion leaks a rest countdown or avatar");
+            var animate=typeof(WorldSpaceExperimentView).GetMethod("LayoutCompletionFireworks",BindingFlags.NonPublic|BindingFlags.Instance);
+            animate.Invoke(view,new object[]{true,1.0});var first=sparks.GetChild(0).localPosition;
+            animate.Invoke(view,new object[]{true,1.5});Require(first!=sparks.GetChild(0).localPosition,"completion rays are static");
+            foreach(var renderer in sparks.GetComponentsInChildren<Renderer>())
+                Require(renderer.sharedMaterial.color.maxColorComponent<=.84f,"completion effect exceeds restrained brightness");
+            animate.Invoke(view,new object[]{true,6.0});Require(!sparks.gameObject.activeInHierarchy,"completion fireworks do not stop after six seconds");
+            string completedName="synthetic-completed-thank-you-fireworks.png";Render(view,output,completedName);files.Add(completedName);CheckMenuReadable(view);
+            view.SetPhaseProgress(0,3,0,30,0,3,false);Apply(view,Phase.Ended,Condition.A,Colour.Green);FixtureControls(view,Phase.Ended);Layout(view);
+            Require(!sparks.gameObject.activeInHierarchy&&!instructions.text.Contains("preview is complete"),"withdrawal/fault ending receives completion fireworks or completion wording");
+            string withdrawnName="synthetic-withdrawn-no-celebration.png";Render(view,output,withdrawnName);files.Add(withdrawnName);CheckMenuReadable(view);
+            // A stale caller completion flag is also insufficient outside Ended.
+            view.SetPhaseProgress(0,3,0,30,0,3,true);Apply(view,Phase.NeedsProtocolDecision,Condition.A,Colour.Green);Layout(view);
+            Require(!sparks.gameObject.activeInHierarchy,"fault/protocol-decision phase celebrates despite not being Ended");
+            view.SetPhaseProgress(0,3,0,30,0,3,false);Apply(view,Phase.MainTask,Condition.D,Colour.Green);Layout(view);
+            Require(!animation.gameObject.activeInHierarchy&&!view.AvatarRoot.gameObject.activeInHierarchy,"phase animation or avatar leaks into no-avatar D answering");
+            Require(Near(menu.position,menuPosition)&&Quaternion.Angle(menu.rotation,menuRotation)<.0001f,"phase transition moved the fixed menu");
+            evidence.completion_only_gentle_fireworks=true;evidence.phase_animation_world_fixed=true;
         }
         static void CheckFaultOcclusionGate(WorldSpaceExperimentView view)
         {
@@ -580,6 +767,7 @@ namespace AvatarStroop.Unity.Editor
             {
                 camera.targetTexture=target;camera.Render();RenderTexture.active=target;
                 image.ReadPixels(new Rect(0,0,1100,720),0,0);image.Apply();
+                if(!requireUniform)CheckRenderedProgress(view,image);
                 if(requireUniform)
                 {
                     var pixels=image.GetPixels32();var first=pixels[0];
@@ -593,6 +781,48 @@ namespace AvatarStroop.Unity.Editor
                 camera.targetTexture=null;RenderTexture.active=previous;
                 UnityEngine.Object.DestroyImmediate(image);UnityEngine.Object.DestroyImmediate(target);
             }
+        }
+        static float ColourDistance(Color a,Color b)
+        {return Vector3.Distance(new Vector3(a.r,a.g,a.b),new Vector3(b.r,b.g,b.b));}
+        static void CheckRenderedProgress(WorldSpaceExperimentView view,Texture2D image)
+        {
+            var menu=Menu(view);if(menu==null)return;
+            var animation=menu.Find("PhaseProgressAnimation");
+            if(animation==null||!animation.gameObject.activeInHierarchy)return;
+            var fill=animation.Find("ProgressFill");var track=animation.Find("ProgressTrack");
+            if(!fill.gameObject.activeInHierarchy||fill.localScale.x<.01f)return;
+            var renderer=fill.GetComponent<Renderer>();var trackRenderer=track.GetComponent<Renderer>();
+            Require(renderer.enabled&&renderer.sharedMaterial.renderQueue>trackRenderer.sharedMaterial.renderQueue,
+                "progress fill can be hidden by transparent distance sorting");
+            var viewport=view.PresentationCamera.WorldToViewportPoint(renderer.bounds.center);
+            Require(viewport.z>view.PresentationCamera.nearClipPlane&&viewport.z<view.PresentationCamera.farClipPlane&&
+                viewport.x>.01f&&viewport.x<.99f&&viewport.y>.01f&&viewport.y<.99f,"progress fill lies outside the camera clipping/viewport bounds");
+            var pixel=image.GetPixel(Mathf.Clamp((int)(viewport.x*image.width),0,image.width-1),Mathf.Clamp((int)(viewport.y*image.height),0,image.height-1));
+            var expected=renderer.sharedMaterial.color;var covered=trackRenderer.sharedMaterial.color;
+            float fillDistance=Mathf.Min(ColourDistance(pixel,expected),ColourDistance(pixel,expected.gamma));
+            float trackDistance=Mathf.Min(ColourDistance(pixel,covered),ColourDistance(pixel,covered.gamma));
+            Require(fillDistance<.10f&&fillDistance<trackDistance,"progress renderer is enabled but its actual pixels are missing or covered: "+pixel);
+        }
+        static void CheckDesktopQuestionnaire(string output,List<string> files)
+        {
+            var view=NewFixture(Actor.Participant,false);view.SetQuestionnaireLanguage("en");
+            view.SetPhaseProgress(0,3,0,30,0,3,false,true);
+            Apply(view,Phase.Questionnaire,Condition.A,Colour.Green);Layout(view);
+            var instructions=view.PresentationCamera.GetComponentsInChildren<TextMesh>(true).Single(label=>label.name=="ParticipantInstructions");
+            Require(view.QuestionnaireInstructionVisible&&!view.QuestionnaireResponseVisible,"desktop introduction cannot be acknowledged or admits hidden ratings");
+            string text=NormalizedText(instructions.text);
+            Require(text.Contains("keys 1 to 5")&&text.Contains("Press Space when ready")&&!text.Contains("Selection opens after"),"desktop introduction omits its real input or requires a timed wait");
+            for(int repeat=0;repeat<5;repeat++){Layout(view);Require(view.QuestionnaireInstructionVisible,"desktop introduction expires on repeated layouts");}
+            string intro="synthetic-desktop-questionnaire-introduction.png";Render(view,output,intro);files.Add(intro);
+            view.SetFaults(new[]{"Synthetic readiness fault"});Layout(view);
+            Require(!view.QuestionnaireInstructionVisible&&!view.QuestionnaireResponseVisible,"desktop fault permits introduction/rating input");
+            view.SetFaults(new string[0]);Apply(view,Phase.Paused,Condition.A,Colour.Green);Layout(view);
+            Require(!view.QuestionnaireInstructionVisible&&!view.QuestionnaireResponseVisible,"desktop pause permits acknowledgement");
+            Apply(view,Phase.Questionnaire,Condition.A,Colour.Green);Layout(view);Require(view.QuestionnaireInstructionVisible,"desktop intro does not recover after explicit resume");
+            view.SetPhaseProgress(0,3,0,30,0,3,false,false);Layout(view);
+            Require(!view.QuestionnaireInstructionVisible&&view.QuestionnaireResponseVisible,"desktop acknowledgement does not reveal rating input");
+            Require(NormalizedText(instructions.text).Contains(Questionnaire.Item(4,"en")),"desktop acknowledgement fails to reveal the question");
+            string ready="synthetic-desktop-questionnaire-ready.png";Render(view,output,ready);files.Add(ready);
         }
         static StartupHeightEvidence RenderStartupHeightFixtures(WorldSpaceExperimentView view,string output,List<string> files)
         {
@@ -749,6 +979,8 @@ namespace AvatarStroop.Unity.Editor
                 Render(view,output,name);files.Add(name);CheckCompleteEnglishQuestionnaire(view,item);renderedItems.Add(item);
             }
             evidence.questionnaire_rendered_items=renderedItems.ToArray();
+            CheckPhaseFlowFixtures(view,output,files,evidence);
+            CheckDesktopQuestionnaire(output,files);
             view=NewFixture(Actor.Operator);ValidateView(view);Apply(view,Phase.MainTask,Condition.A,Colour.Green);CheckFraming(view);
             Render(view,output,"synthetic-operator.png");files.Add("synthetic-operator.png");
             evidence.checks=checks;evidence.images=files.ToArray();evidence.ink_rgba=colours.ToArray();evidence.words=words.ToArray();

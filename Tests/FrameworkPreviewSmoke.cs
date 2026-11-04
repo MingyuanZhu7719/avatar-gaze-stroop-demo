@@ -22,6 +22,7 @@ namespace AvatarStroop.Tests
             OwnerCommandTests.Register(suite);
             PreviewRecoveryTests.Register(suite);
             PreviewRestartWorkflowTests.Register(suite);
+            PreviewExportReceiptTests.Register(suite);
             Console.WriteLine("FRAMEWORK PREVIEW RESULT "+suite.Passed+" passed; "+suite.Failed+" failed");
             return suite.Failed==0?0:1;
         }

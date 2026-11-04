@@ -60,13 +60,13 @@ namespace AvatarStroop.Unity
                     Vector3 participantDirection=root.InverseTransformDirection(view.ParticipantReferencePosition-origin);
                     Vector3 taskDirection=root.InverseTransformDirection(view.TaskWorldPosition-origin);
                     var geometry=DevelopmentGeometry.FromLocalDirections(ToVec(participantDirection),ToVec(taskDirection),WorldSpaceExperimentView.GeometryVersion);
-                    participant=new ParticipantSimulationApplication(previewOptions.SessionId,previewOptions.ParticipantPort,previewOptions.OperatorPort,geometry);
+                    participant=new ParticipantSimulationApplication(previewOptions.SessionId,previewOptions.ParticipantPort,previewOptions.OperatorPort,geometry,true);
                     view.SetQuestionnaireLanguage(participant.Experiment.Configuration.QuestionnaireLanguage);
                     view.StimulusRendered+=AcknowledgeStimulus;
                     view.AvatarPresented+=RecordAvatarPresentation;
                     if(previewOptions.OwnerCommandsPath!=null)
                         ownerCommands=new OwnerCommandDispatcher(previewOptions.OwnerCommandsPath,participant.Identity.SessionId,ExecuteOwnerCommand);
-                    view.ApplyTaskView(participant.Experiment.View(Actor.Participant));
+                    ApplyParticipantView();
                 }
                 else operatorApp=new OperatorSimulationApplication(previewOptions.SessionId,previewOptions.OperatorPort,previewOptions.ParticipantPort,false);
                 ConfigureRecording();
@@ -117,13 +117,15 @@ namespace AvatarStroop.Unity
                 updateFailed=false;
                 if(participant!=null)
                 {
-                    participant.Tick();
+                    participant.Tick(RetainedBlockAdmissionReady());
                     if(ownerCommands!=null)ownerCommands.DispatchPending();
                     ReadParticipantInput();participant.RefreshPresentation();participant.CaptureRecording();
-                    view.ApplyTaskView(participant.Experiment.View(Actor.Participant));
+                    ApplyParticipantView();
                     if(participant.CurrentAvatar!=null)view.ApplyAvatarOutput(participant.CurrentAvatar);
                     else view.ClearAvatarOutput();
                     var warnings=RecordingWarnings(participant);
+                    if(participant.WaitingForRetainedSource)
+                        warnings.Add("Waiting for the confirmed control source. The next block cannot start until it is ready; no source substitution is allowed.");
                     if(participant.CurrentFaults!=null)
                     {
                         bool selectedTracking=participant.Experiment.LockedControl==ControlSelection.SimulatorRehearsal;
@@ -163,11 +165,23 @@ namespace AvatarStroop.Unity
                 if(questPreview!=null&&(command.Kind==OwnerCommandKind.Practice||command.Kind==OwnerCommandKind.Begin)&&!questPreview.InputReady)
                     return "Quest preview is not ready: "+questPreview.Diagnostic;
 #endif
-                string rejection=OwnerCommandExecution.Execute(command,participant.OwnerBeginPractice,participant.OwnerLockNextBlock,participant.OwnerBeginBlock,ExportSnapshot,participant.OwnerEndForRestart);
+                string rejection=OwnerCommandExecution.Execute(command,participant.OwnerBeginPractice,participant.OwnerLockNextBlock,participant.OwnerBeginBlock,()=>ExportSnapshot(command.RequestId),participant.OwnerEndForRestart);
                 actionError=rejection==null?null:"Owner action rejected: "+rejection;
                 return rejection;
             }
             catch(Exception error){actionError="Owner action failed: "+error.Message;throw;}
+        }
+
+        bool RetainedBlockAdmissionReady()
+        {
+            // A new block retains the source choice, not a past device or storage
+            // readiness result. Match the owner status admission checks here.
+            bool ready=startupError==null&&startupReleased&&recordingSetupError==null&&!updateFailed&&
+                participant!=null&&participant.RecordingWarning==null;
+#if STROOP_XR_PREVIEW
+            if(questPreview!=null)ready=ready&&questPreview.InputReady;
+#endif
+            return ready;
         }
 
         void PublishStatus(bool force)
@@ -289,7 +303,7 @@ namespace AvatarStroop.Unity
                 if(Input.GetKeyUp(colourKeys[i]))e.ButtonChanged((Colour)i,false);
                 if(Input.GetKeyDown(colourKeys[i]))e.ButtonChanged((Colour)i,true);
             }
-            if(inputPhase==Phase.Questionnaire)
+            if(inputPhase==Phase.Questionnaire&&e.QuestionnaireInputReady&&view.QuestionnaireResponseVisible)
             {
                 for(int score=1;score<=5;score++)
                     if(Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1+score-1))){e.Rate(score);break;}
@@ -297,7 +311,8 @@ namespace AvatarStroop.Unity
             if(Input.GetKeyDown(KeyCode.Space))
             {
                 if(inputPhase==Phase.PracticeCorrection)e.ContinuePractice();
-                else if(inputPhase==Phase.Rest)e.Ready();
+                else if(inputPhase==Phase.Rest&&view.RestResponseVisible)e.Ready();
+                else if(inputPhase==Phase.Questionnaire&&e.QuestionnaireInstructionPending&&view.QuestionnaireInstructionVisible)e.AcknowledgeQuestionnaireInstruction();
             }
             if(Input.GetKeyDown(KeyCode.P))e.Pause(Actor.Participant);
             if(Input.GetKeyDown(KeyCode.R)&&e.Phase==Phase.Paused)
@@ -309,7 +324,9 @@ namespace AvatarStroop.Unity
         void ReadQuestPreviewInput()
         {
             var e=participant.Experiment;
-            var frame=questPreview.ReadInput(e.Phase,e.QuestionIndex);
+            bool phaseInputReady=e.Phase==Phase.Questionnaire?(e.QuestionnaireInstructionPending?view.QuestionnaireInstructionVisible:e.QuestionnaireInputReady&&view.QuestionnaireResponseVisible):
+                e.Phase!=Phase.Rest||view.RestResponseVisible;
+            var frame=questPreview.ReadInput(e.Phase,e.QuestionIndex,phaseInputReady,e.QuestionnaireInstructionPending);
             foreach(var colour in frame.ReleasedColours)e.ButtonChanged(colour,false);
             // Consume XR edges even if a keyboard safety action takes priority.
             // Keyboard colour/rating/continue inputs are disabled for this preview
@@ -320,6 +337,7 @@ namespace AvatarStroop.Unity
             {
                 case QuestPreviewAction.Respond:e.ButtonChanged(frame.Response.Value,true);break;
                 case QuestPreviewAction.SubmitRating:e.Rate(frame.Rating.Value);break;
+                case QuestPreviewAction.AcknowledgeInstruction:e.AcknowledgeQuestionnaireInstruction();break;
                 case QuestPreviewAction.ContinuePractice:e.ContinuePractice();break;
                 case QuestPreviewAction.Ready:e.Ready();break;
                 case QuestPreviewAction.Resume:e.Resume(questPreview.InputReady&&participant.SourceReady(e.LockedControl??ControlSelection.Automatic));break;
@@ -366,14 +384,31 @@ namespace AvatarStroop.Unity
         [ContextMenu("Owner / Confirm readiness and begin countdown")]
         public void OwnerBeginBlock(){OwnerAction(()=>participant.OwnerBeginBlock());}
         [ContextMenu("Owner / Export synthetic audit snapshot")]
-        public void OwnerExport(){OwnerAction(ExportSnapshot);}
-        void ExportSnapshot()
+        public void OwnerExport(){OwnerAction(()=>ExportSnapshot(null));}
+        void ExportSnapshot(string requestId)
         {
-            string folder=Path.GetFullPath(Path.Combine(Application.dataPath,"..","exports"));
+            // Keep new exports beside the owner's session records. The request-bound
+            // receipt reports the actual completed directory, not a guessed location.
+            string sessionFolder=previewOptions.OwnerCommandsPath!=null?Path.GetDirectoryName(previewOptions.OwnerCommandsPath):
+                previewOptions.JournalPath!=null?Path.GetDirectoryName(previewOptions.JournalPath):null;
+            string folder=Path.GetFullPath(sessionFolder==null?Path.Combine(Application.dataPath,"..","exports"):Path.Combine(sessionFolder,"exports"));
             var result=participant.Export(folder,new ExportProvenance("unity-development-owner",
                 "participant app monotonic observation of camera-post-render callback; not photon onset",InputTimingProvenance));
             if(!result.Success)throw new IOException(result.Error);
+            // Preserve the discoverable CSV path even if the subsequent receipt
+            // fails. Such failure rejects the command but never deletes the bundle.
             Debug.Log("SIMULATION audit export: "+result.DirectoryPath);
+            if(requestId!=null)PreviewExportReceipt.WriteCompleted(sessionFolder,participant.Identity.SessionId,requestId,result);
+        }
+
+        void ApplyParticipantView()
+        {
+            var e=participant.Experiment;var configuration=e.Configuration;
+            view.SetPhaseProgress(e.CountdownRemainingSeconds,configuration.CountdownSeconds,
+                e.RestRemainingSeconds,configuration.MinimumRestSeconds,
+                e.QuestionnaireInstructionRemainingSeconds,configuration.QuestionnaireInstructionSeconds,
+                e.Phase==Phase.Ended&&e.EndReason==EndReason.Completed,e.QuestionnaireInstructionPending,e.QuestionIndex);
+            view.ApplyTaskView(e.View(Actor.Participant));
         }
         [ContextMenu("Operator / Safety stop")]
         public void SafetyStop()

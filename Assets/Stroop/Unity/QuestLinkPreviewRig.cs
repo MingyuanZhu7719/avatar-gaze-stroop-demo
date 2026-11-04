@@ -277,7 +277,7 @@ namespace AvatarStroop.Unity
             if(view != null) view.SetHeadsetPreview(Diagnostic, "X red | Y green | A blue | B yellow\nLeft menu: pause; while paused, B: withdraw");
         }
 
-        public QuestPreviewInputFrame ReadInput(Phase phase, int questionIndex)
+        public QuestPreviewInputFrame ReadInput(Phase phase, int questionIndex, bool phaseInputReady=true, bool instructionPending=false)
         {
             var controls = new QuestPreviewControls(false,false,false,false,false,false,false,0);
             try
@@ -288,13 +288,19 @@ namespace AvatarStroop.Unity
             catch(Exception error) { Fail("Controller sample unavailable: " + error.Message); }
             // Even failed reads reach the router with DeviceReady=false, returning
             // release edges for previously emitted colours instead of holding them.
-            var frame = router.Update(phase, questionIndex, controls);
+            var frame = router.Update(phase, questionIndex, controls, phaseInputReady, instructionPending);
             string hint;
-            if(phase == Phase.Questionnaire)
+            if(phase == Phase.Questionnaire && !phaseInputReady)
+                hint = "Rating controls unavailable: follow the fixed panel.\nRelease A and centre the stick before choosing.\nLeft menu: pause";
+            else if(phase == Phase.Questionnaire && instructionPending)
+                hint = "Watch the guide for as long as you need.\nA: open the questionnaire\nRelease A before confirming an answer.";
+            else if(phase == Phase.Questionnaire)
                 hint = "Left stick UP: lower number | DOWN: higher number (1-5)\nCentre between steps | A: confirm\nSelected: " + (frame.CandidateRating.HasValue ? frame.CandidateRating.Value.ToString() : "--") + " (not submitted)";
             else if(phase == Phase.Paused) hint = "PAUSED | Right trigger: actively resume\nB: withdraw and end preview";
             else if(phase == Phase.NeedsProtocolDecision) hint = "A protocol decision is pending\nNo automatic retry or resume | B: withdraw";
-            else if(phase == Phase.PracticeCorrection || phase == Phase.Rest) hint = "Right trigger: Continue / Ready when available\nLeft menu: pause";
+            else if(phase == Phase.Rest && !phaseInputReady) hint = "Rest controls unavailable: follow the fixed panel.\nRelease A before continuing.\nLeft menu: pause";
+            else if(phase == Phase.Rest) hint = "A: continue whenever you are ready\nThe timer is a suggestion, not a minimum.\nLeft menu: pause";
+            else if(phase == Phase.PracticeCorrection) hint = "Right trigger: continue\nLeft menu: pause";
             else hint = "X red | Y green | A blue | B yellow\nRelease before the next answer | Left menu: pause";
             if(view != null) view.SetHeadsetPreview(Diagnostic, hint);
             return frame;

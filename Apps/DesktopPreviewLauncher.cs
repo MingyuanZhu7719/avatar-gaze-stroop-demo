@@ -16,13 +16,16 @@ namespace AvatarStroop.Apps
         readonly Label state = MakeLabel("Not started. Open desktop preview launches the participant and operator windows.", 106);
         readonly Label guidance = MakeLabel("", 65);
         readonly Label receipt = MakeLabel("Command results appear here. Unacknowledged commands are never retried automatically.", 64);
-        readonly Label folder = MakeLabel("", 48);
+        readonly Label folder = MakeLabel("", 64);
+        readonly Label exportState = MakeLabel("CSV export: no verified export for this session.", 64);
+        readonly TextBox exportedFolder = new TextBox { ReadOnly=true,Multiline=true,WordWrap=false,ScrollBars=ScrollBars.Horizontal,Dock=DockStyle.Top,Height=48 };
         readonly ComboBox source = new ComboBox { DropDownStyle=ComboBoxStyle.DropDownList, Width=330 };
         readonly Button launch = ActionButton("1  Open desktop preview");
         readonly Button practice = ActionButton("2  Start / retry practice");
-        readonly Button lockBlock = ActionButton("3  Lock block source");
-        readonly Button begin = ActionButton("4  Confirm and start block");
+        readonly Button lockBlock = ActionButton("3  Confirm session source");
+        readonly Button begin = ActionButton("4  Start first block");
         readonly Button export = ActionButton("Export simulation records");
+        readonly Button openExport = ActionButton("Open exported data");
         readonly Button closePlayers = ActionButton("Close both preview windows");
         readonly Button reconnect = ActionButton("End preview and reconnect / new session");
         readonly Timer timer = new Timer { Interval=250 };
@@ -34,10 +37,10 @@ namespace AvatarStroop.Apps
         OwnerCommand restartCommand;
         PreviewRestartWorkflow restart;
         string restartSession,restartDirectory;
+        PreviewExportReceipt verifiedExport;
         long lastSequence=-1;
         double lastStatusAt, sentAt, launchedAt;
         string portNote="";
-        int lastBlock=-99;
         bool released,launchOutcomeUncertain;
 
         public DesktopPreviewLauncher()
@@ -63,7 +66,7 @@ namespace AvatarStroop.Apps
 #else
             layout.Controls.Add(MakeLabel("DEVELOPMENT ONLY | Desktop simulation | No eye tracking | Not a study run",32));
 #endif
-            layout.Controls.Add(MakeLabel("Preview setup: BCAD order; B starts toward the participant. English questionnaire; 1-second countdown.\n8 practice trials; 4 blocks of 24 main trials; at least 30 seconds of rest after each block. Protocol parameters are unchanged.",64));
+            layout.Controls.Add(MakeLabel("Fixed preview fixture: BCAD order; B starts toward the participant. This is not a fresh participant allocation.\nEnglish questionnaire; 3-second countdown; 8 practice trials; 4 blocks of 24 main trials.\nRest after blocks 1-3 has no minimum; Continue starts the next countdown when the source is ready.",86));
             layout.Controls.Add(Row(launch,closePlayers));
             layout.Controls.Add(Row(reconnect));
             state.BackColor=Color.FromArgb(232,241,248); state.Padding=new Padding(10); layout.Controls.Add(state);
@@ -71,15 +74,16 @@ namespace AvatarStroop.Apps
             layout.Controls.Add(Row(practice));
             source.Items.AddRange(new object[]{"Automatic reference control","Simulated head/eye input (not live WoZ)"});
             source.SelectedIndex=-1;
-            layout.Controls.Add(MakeLabel("Choose and lock a control source before each block. No default selection. Live WoZ is not connected.",30));
+            layout.Controls.Add(MakeLabel("Confirm a gaze-control source once after practice; it stays selected for all 4 blocks. No default selection.\nThe source controls gaze input; the A-D avatar conditions still change in BCAD order. D has no avatar with either source. Live WoZ is not connected.",70));
             layout.Controls.Add(Row(source,lockBlock,begin));
             receipt.ForeColor=Color.FromArgb(33,75,96); layout.Controls.Add(receipt);
 #if QUEST_PREVIEW_LAUNCHER
-            layout.Controls.Add(MakeLabel("Touch: X red / Y green / A blue / B yellow. Release before the next answer.\nRating: left stick UP lowers / DOWN raises 1-5; centre between steps, then A to confirm.\nRight trigger: Continue / Ready. Left menu: pause. Paused: trigger resumes; B withdraws. PC P / Esc: safety controls.",78));
+            layout.Controls.Add(MakeLabel("Touch: X red / Y green / A blue / B yellow. Release before the next answer.\nRatings: read the introduction, then A. Stick UP lowers / DOWN raises 1-5; centre, then A confirms.\nA continues after rest immediately; right trigger continues after correction. Left menu pauses.\nPaused: trigger resumes; B withdraws. PC P / Esc: safety controls.",100));
 #else
-            layout.Controls.Add(MakeLabel("Participant keys: 1 red / 2 green / 3 blue / 4 yellow. Answer the ink colour.\nSpace: Continue after correction / Ready after rest. P: pause. R: resume. Esc: withdraw.\nThe avatar is hidden during practice, ratings, rest and condition D. Operator window: P requests a safety stop.",78));
+            layout.Controls.Add(MakeLabel("Participant keys: 1 red / 2 green / 3 blue / 4 yellow. Answer the ink colour.\nSpace: Continue after correction, rating introduction or rest. Rest has no minimum.\nP: pause. R: resume. Esc: withdraw. Avatar hidden during practice, ratings, rest and D.\nOperator window: P requests a safety stop.",100));
 #endif
-            layout.Controls.Add(Row(export)); layout.Controls.Add(folder);
+            layout.Controls.Add(Row(export,openExport));layout.Controls.Add(exportState);
+            layout.Controls.Add(MakeLabel("Last verified CSV folder:",28));layout.Controls.Add(exportedFolder);layout.Controls.Add(folder);
             layout.Controls.Add(MakeLabel("Startup may take several seconds. Success requires current status updates and an acknowledgement for each request.",44));
             launch.Click+=(s,e)=>Guard(Launch);
             closePlayers.Click+=(s,e)=>Guard(CloseOwnedPlayers);
@@ -88,6 +92,7 @@ namespace AvatarStroop.Apps
             lockBlock.Click+=(s,e)=>Send(OwnerCommandKind.Lock);
             begin.Click+=(s,e)=>Send(OwnerCommandKind.Begin);
             export.Click+=(s,e)=>Send(OwnerCommandKind.Export);
+            openExport.Click+=(s,e)=>Guard(OpenExport);
             source.SelectedIndexChanged+=(s,e)=>RefreshControls();
             timer.Tick+=(s,e)=>Poll(); timer.Start(); RefreshControls();
             FormClosing+=(s,e)=> {
@@ -135,12 +140,13 @@ namespace AvatarStroop.Apps
             using(var b=new UdpClient(new IPEndPoint(IPAddress.Loopback,0)))
             {pp=((IPEndPoint)a.Client.LocalEndPoint).Port;op=((IPEndPoint)b.Client.LocalEndPoint).Port;}
             string common=" -screen-fullscreen 0 -screen-width 1100 -screen-height 720 --stroop-session "+session+" --stroop-participant-port "+pp+" --stroop-operator-port "+op+" --stroop-startup "+Quote(startup);
-            latest=null;pending=null;lastSequence=-1;lastBlock=-99;released=false;source.SelectedIndex=-1;
+            latest=null;pending=null;lastSequence=-1;released=false;source.SelectedIndex=-1;
+            ResetExportPresentation();
             portNote="participant="+pp+", operator="+op;launchedAt=clock.Elapsed.TotalSeconds;
             operatorPlayer=Start(o,common+" -logFile "+Quote(Path.Combine(sessionDirectory,"operator.log"))+" --stroop-journal "+Quote(Path.Combine(sessionDirectory,"operator.journal")));
             participant=Start(p,common+" -logFile "+Quote(Path.Combine(sessionDirectory,"participant.log"))+" --stroop-journal "+Quote(Path.Combine(sessionDirectory,"participant.journal"))+" --stroop-owner-commands "+Quote(commands)+" --stroop-status "+Quote(statusPath));
             state.Text="Starting: waiting for both windows to join this separate preview session.";
-            folder.Text="Simulation records: "+sessionDirectory;
+            folder.Text="Raw session records: "+sessionDirectory;
             receipt.Text="Launch requested. Practice has not started and no control source is selected.";
         }
         Process Start(string path,string args)
@@ -175,26 +181,50 @@ namespace AvatarStroop.Apps
                     if(next.SessionId!=session)throw new InvalidDataException("Status belongs to another session and was rejected.");
                     if(next.Sequence<lastSequence)throw new InvalidDataException("Status sequence moved backward and was rejected.");
                     if(next.Sequence>lastSequence){latest=next;lastSequence=next.Sequence;lastStatusAt=clock.Elapsed.TotalSeconds;}
-                    if(next.BlockIndex!=lastBlock){lastBlock=next.BlockIndex;source.SelectedIndex=-1;}
                 }
                 if(pending!=null)
                 {
                     var ack=OwnerCommandFile.FindAcknowledgement(commands,pending);
-                    if(ack!=null){receipt.Text=(ack.Accepted?"Acknowledged: ":"Rejected: ")+pending.Kind+" - "+ack.Reason;pending=null;}
+                    if(ack!=null)
+                    {
+                        var acknowledged=pending;pending=null;
+                        receipt.Text=(ack.Accepted?"Acknowledged: ":"Rejected: ")+acknowledged.Kind+" - "+ack.Reason;
+                        if(acknowledged.Kind==OwnerCommandKind.Export)ObserveExportAcknowledgement(acknowledged,ack);
+                    }
                     else if(clock.Elapsed.TotalSeconds-sentAt>3)receipt.Text="Command queued; acknowledgement is still pending. No automatic retry. Waiting for status and receipt.";
                 }
                 if(!Alive(participant)||!Alive(operatorPlayer))state.Text="A preview window is not running or has exited. Review this session's logs. Close any remaining window before explicitly starting a new session.";
                 else if(!released&&clock.Elapsed.TotalSeconds-launchedAt>15)state.Text="Both preview windows started but the startup handshake is incomplete ("+portNote+"). A selected port may be occupied, or a window may have failed to bind. Close both preview windows before retrying. Logs: "+sessionDirectory;
                 else if(!Fresh)state.Text="Waiting for current preview status. Controls are unavailable; experiment startup has not been confirmed.";
-                else state.Text="Phase: "+latest.Phase+"   |   Block: "+(latest.BlockIndex+1)+" / 4   |   Condition: "+(latest.Condition.HasValue?latest.Condition.ToString():"-")+"\nLocked source: "+(latest.LockedSource.HasValue?latest.LockedSource.ToString():"Not selected")+"   |   Source ready: "+(latest.Ready?"Yes":"No")+"\n"+latest.Message;
+                else state.Text=StatusSummary();
                 guidance.Text=Instruction();
             }
             catch(IOException error){state.Text="Status unavailable: "+error.Message;latest=null;}
             catch(Exception error){state.Text="Controls stopped: "+error.Message;latest=null;}
             RefreshControls();
         }
+        string StatusSummary()
+        {
+            string progress=latest.BlockIndex<0?"Before main blocks":"Block: "+(latest.BlockIndex+1)+" / 4";
+            string selected=!latest.LockedSource.HasValue?"Not confirmed":latest.LockedSource==ControlSelection.Automatic?"Automatic reference":latest.LockedSource==ControlSelection.SimulatorRehearsal?"Simulated head/eye input":"Live WoZ";
+            return "Phase: "+latest.Phase+"   |   "+progress+"   |   Condition: "+(latest.Condition.HasValue?latest.Condition.ToString():"-")+
+                "\nSession source: "+selected+"   |   Source ready: "+(latest.Ready?"Yes":"No")+"\n"+latest.Message;
+        }
         string Instruction()
         {
+            if(Fresh&&(latest.Phase==Phase.BlockPreparation||latest.Phase==Phase.BlockReady))
+            {
+                string condition=latest.Condition==Condition.D?" Condition D has no avatar with either source.":" The source stays fixed while avatar conditions change.";
+                if(latest.BlockIndex>0)
+                {
+                    if(!latest.LockedSource.HasValue)return "The session source is missing. This block is stopped; review the session before reconnecting."+condition;
+                    if(latest.Phase==Phase.BlockPreparation)return "The confirmed session source is retained. Unexpected block preparation has stopped continuation; review this session."+condition;
+                    return (latest.Ready?"Continuing with the confirmed session source. The 3-second countdown starts automatically.":"Waiting for the confirmed session source to be ready. The 3-second countdown starts automatically when ready.")+condition;
+                }
+                if(latest.Phase==Phase.BlockPreparation)return "Practice is complete. Choose and confirm the session source once, then start the first block."+condition;
+                if(!latest.LockedSource.HasValue)return "The session source is missing. This block is stopped; review the session before reconnecting."+condition;
+                return (latest.Ready?"Session source confirmed and ready. Select Start first block for the 3-second countdown.":"Session source confirmed but not ready. Keep both preview windows running; start the first block when ready.")+condition;
+            }
 #if QUEST_PREVIEW_LAUNCHER
             if(!Fresh)return "Waiting for both preview processes. Quest Link must already be connected; gaze remains simulated. No source or practice starts automatically.";
             switch(latest.Phase)
@@ -203,8 +233,8 @@ namespace AvatarStroop.Apps
                     return "When headset and both Touch controllers report ready, the owner may begin practice. Answer the ink colour using X / Y / A / B.";
                 case Phase.Practice: case Phase.MainTask:return "Touch: X red / Y green / A blue / B yellow. Release before another answer. Left menu pauses.";
                 case Phase.PracticeCorrection:return "Read the correction in the headset, then make a new right-trigger press to continue.";
-                case Phase.Questionnaire:return "Left stick UP: lower number; DOWN: higher number (1-5). Release to centre between steps. A confirms the visible candidate only.";
-                case Phase.Rest:return "Rest at least 30 seconds, then make a new right-trigger press when Ready is available. Rest may be extended.";
+                case Phase.Questionnaire:return "Read the introduction at your own pace, then press A. For ratings, stick UP lowers / DOWN raises 1-5; centre between steps. A confirms.";
+                case Phase.Rest:return "Rest as long as needed; there is no minimum. A continues immediately. The next 3-second countdown starts when the confirmed source is ready.";
                 case Phase.Paused:return "Paused. Right trigger actively resumes; B withdraws. The owner cannot remotely resume the participant.";
             }
 #endif
@@ -212,12 +242,11 @@ namespace AvatarStroop.Apps
             switch(latest.Phase)
             {
                 case Phase.Preparation: case Phase.Familiarization: case Phase.PracticeRetry:return "Owner: select Start / retry practice. Then use the participant window to answer the ink colour with the number keys.";
-                case Phase.BlockPreparation:return "Practice or the previous block is complete. Check the condition, then choose and lock this block's control source.";
-                case Phase.BlockReady:return latest.Ready?"Source ready. The owner may confirm and start this block.":"Source not ready. Keep both preview windows running. The selected source will not change automatically.";
+                case Phase.Countdown:return "The 3-second countdown is running. The main task begins automatically when it finishes.";
                 case Phase.Practice: case Phase.MainTask:return "Answer the ink colour in the participant window. Release the key before answering the next trial.";
                 case Phase.PracticeCorrection:return "Read the correction in the participant window, then press Space to continue.";
-                case Phase.Questionnaire:return "Use keys 1-5 in the participant window to answer each of the five rating items.";
-                case Phase.Rest:return "Rest for at least 30 seconds. Press Space when Ready is available. You may rest longer.";
+                case Phase.Questionnaire:return "Read the introduction at your own pace, then press Space. Use keys 1-5 to answer each of the five rating items.";
+                case Phase.Rest:return "Rest as long as needed; there is no minimum. Space continues immediately. The next 3-second countdown starts when the confirmed source is ready.";
                 case Phase.Paused:return "Paused. The participant must press R to resume. The owner console cannot resume remotely.";
                 case Phase.Ended:return "This simulation has ended. Export the recorded data, then close the preview windows.";
                 default:return "Follow the current instructions in the participant window. Responses and phase changes are not automatic.";
@@ -225,15 +254,21 @@ namespace AvatarStroop.Apps
         }
         void RefreshControls()
         {
+            if(latest!=null&&latest.LockedSource.HasValue)
+            {
+                int confirmed=latest.LockedSource==ControlSelection.Automatic?0:latest.LockedSource==ControlSelection.SimulatorRehearsal?1:-1;
+                if(source.SelectedIndex!=confirmed)source.SelectedIndex=confirmed;
+            }
             bool free=!RestartBlocksActions&&Fresh&&pending==null;
             launch.Enabled=!launchOutcomeUncertain&&!RestartBlocksActions&&CanReplace(participant)&&CanReplace(operatorPlayer);
             closePlayers.Enabled=(!RestartBlocksActions||restart.Stage==PreviewRestartStage.Blocked)&&(Alive(participant)||Alive(operatorPlayer));
             reconnect.Enabled=!RestartBlocksActions&&ParticipantFresh&&pending==null&&latest.Phase!=Phase.Ended;
             practice.Enabled=free&&(latest.Phase==Phase.Preparation||latest.Phase==Phase.Familiarization||latest.Phase==Phase.PracticeRetry);
-            source.Enabled=free&&latest.Phase==Phase.BlockPreparation;
+            source.Enabled=free&&latest.BlockIndex==0&&latest.Phase==Phase.BlockPreparation&&!latest.LockedSource.HasValue;
             lockBlock.Enabled=source.Enabled&&source.SelectedIndex>=0;
-            begin.Enabled=free&&latest.Phase==Phase.BlockReady&&latest.Ready;
+            begin.Enabled=free&&latest.BlockIndex==0&&latest.Phase==Phase.BlockReady&&latest.LockedSource.HasValue&&latest.Ready;
             export.Enabled=free;
+            openExport.Enabled=!RestartBlocksActions&&verifiedExport!=null;
         }
         void Send(OwnerCommandKind kind)
         {
@@ -241,11 +276,58 @@ namespace AvatarStroop.Apps
                 if(RestartBlocksActions)throw new InvalidOperationException("Owner actions are blocked while reconnect is pending or requires review.");
                 if(!Fresh||pending!=null)throw new InvalidOperationException("Current status is required, and the previous command must be acknowledged.");
                 ControlSelection? chosen=null;
-                if(kind==OwnerCommandKind.Lock){if(source.SelectedIndex<0)throw new InvalidOperationException("Explicitly select a control source for this block.");chosen=source.SelectedIndex==0?ControlSelection.Automatic:ControlSelection.SimulatorRehearsal;}
+                if(kind==OwnerCommandKind.Lock)
+                {
+                    if(latest.BlockIndex!=0||latest.Phase!=Phase.BlockPreparation||latest.LockedSource.HasValue)
+                        throw new InvalidOperationException("The session source is confirmed only once, after practice and before the first block.");
+                    if(source.SelectedIndex<0||source.SelectedIndex>1)throw new InvalidOperationException("Explicitly select the session control source.");
+                    chosen=source.SelectedIndex==0?ControlSelection.Automatic:ControlSelection.SimulatorRehearsal;
+                }
+                if(kind==OwnerCommandKind.Begin&&(latest.BlockIndex!=0||latest.Phase!=Phase.BlockReady||!latest.LockedSource.HasValue||!latest.Ready))
+                    throw new InvalidOperationException("Owner start is available only for the first block with a confirmed ready source.");
                 pending=new OwnerCommand(Guid.NewGuid().ToString("N"),kind,chosen);sentAt=clock.Elapsed.TotalSeconds;
+                if(kind==OwnerCommandKind.Export)ExportOutcome("CSV export requested; waiting for acknowledgement and a verified folder.");
                 // Preserve this ID even if append throws: the write outcome may be uncertain.
                 OwnerCommandFile.Append(commands,pending);receipt.Text="Queued: "+kind+"; waiting for the participant application to acknowledge.";
             });
+        }
+        void ResetExportPresentation()
+        {
+            verifiedExport=null;exportedFolder.Text="";
+            exportState.Text="CSV export: no verified export for this session.";openExport.Enabled=false;
+        }
+        void ExportOutcome(string message)
+        {
+            exportState.Text=message+(verifiedExport==null?" No verified CSV folder is available.":" The previous verified export remains available below.");
+        }
+        void ObserveExportAcknowledgement(OwnerCommand command,OwnerAcknowledgement acknowledgement)
+        {
+            if(command==null||acknowledgement==null||command.Kind!=OwnerCommandKind.Export||
+                acknowledgement.RequestId!=command.RequestId||acknowledgement.CommandHash!=OwnerCommandCodec.Hash(command))
+                throw new InvalidDataException("Export acknowledgement does not match the pending request");
+            if(!acknowledgement.Accepted){ExportOutcome("CSV export rejected; no new export was verified.");return;}
+            PreviewExportReceipt evidence;string reason;
+            if(!PreviewExportReceipt.TryReadVerified(sessionDirectory,session,command.RequestId,out evidence,out reason))
+            {
+                ExportOutcome("Export was acknowledged, but its CSV folder could not be verified. No new folder was selected.");
+                receipt.Text=reason;return;
+            }
+            verifiedExport=evidence;exportedFolder.Text=evidence.DirectoryPath;
+            exportState.Text="CSV snapshot saved and verified. Use Open exported data to view its files. This does not certify study completion.";
+        }
+        void OpenExport()
+        {
+            if(RestartBlocksActions||verifiedExport==null)throw new InvalidOperationException("A verified export is required before opening a folder");
+            PreviewExportReceipt current;string reason;
+            if(!PreviewExportReceipt.TryReadVerified(sessionDirectory,session,verifiedExport.RequestId,out current,out reason)||
+                current.DirectoryPath!=verifiedExport.DirectoryPath)
+            {
+                ResetExportPresentation();exportState.Text="The previously verified CSV folder is unavailable or changed. No folder was opened.";
+                throw new InvalidDataException(reason??"Export directory changed");
+            }
+            // This is an explicit owner click, never part of acknowledgement,
+            // export, startup or retry. Revalidate before passing a path to Shell.
+            Process.Start(new ProcessStartInfo(current.DirectoryPath){UseShellExecute=true,Verb="open"});
         }
         void CloseOwnedPlayers()
         {

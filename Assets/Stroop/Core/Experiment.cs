@@ -15,11 +15,13 @@ namespace AvatarStroop.Core
         readonly Stimulus[][] lists = new Stimulus[4][];
         Stimulus[] practice;
         Phase beforePause;
-        bool resumeCountdown;
+        bool resumeCountdown,questionnaireInstructionPending;
         double lastTime, countdownAt, restAt, ratingAt, pausedAt, activeAccum;
         double? activeSince;
         int trialIndex, practiceCorrect, questionIndex;
         TrialRecord current;
+        string sourceConfirmationOwner;
+        long sourceConfirmationSequence;
 
         public SessionConfiguration Configuration { get; private set; }
         public Phase Phase { get; private set; }
@@ -36,8 +38,16 @@ namespace AvatarStroop.Core
         public IReadOnlyList<RatingRecord> Ratings { get { return ratings.AsReadOnly(); } }
         public Condition? CurrentCondition { get { return BlockIndex >= 0 && BlockIndex < 4 ? (Condition?)Configuration.Allocation.Order[BlockIndex] : null; } }
         public double ActiveSeconds { get { return activeAccum + (activeSince.HasValue ? Time() - activeSince.Value : 0); } }
-        public double RestSeconds { get { return Phase == Phase.Rest ? Time() - restAt : 0; } }
-        public bool ReadyEnabled { get { return Phase == Phase.Rest && Time() >= restAt + 30; } }
+        public double RestSeconds { get { return InPhaseOrPaused(Phase.Rest) ? PhaseTime()-restAt : 0; } }
+        public double CountdownRemainingSeconds { get { return Remaining(Phase.Countdown,countdownAt,Configuration.CountdownSeconds); } }
+        public double RestRemainingSeconds { get { return Remaining(Phase.Rest,restAt,Configuration.MinimumRestSeconds); } }
+        public double QuestionnaireInstructionRemainingSeconds { get { return Configuration.QuestionnaireInstructionRequiresAcknowledgement?0:Remaining(Phase.Questionnaire,ratingAt,Configuration.QuestionnaireInstructionSeconds); } }
+        public bool QuestionnaireInstructionPending { get { return InPhaseOrPaused(Phase.Questionnaire)&&questionnaireInstructionPending&&
+            (Configuration.QuestionnaireInstructionRequiresAcknowledgement||PhaseTime()<ratingAt+Configuration.QuestionnaireInstructionSeconds); } }
+        public bool QuestionnaireInputReady { get { return Phase==Phase.Questionnaire&&(Configuration.QuestionnaireInstructionRequiresAcknowledgement?
+            !questionnaireInstructionPending:Time()>=ratingAt+Configuration.QuestionnaireInstructionSeconds); } }
+        public bool ReadyEnabled { get { return Phase == Phase.Rest && (Configuration.ParticipantPacedRest||Time() >= restAt + Configuration.MinimumRestSeconds); } }
+        public bool RetainedSourceContinuationPending { get { return Configuration.RetainControlAcrossBlocks&&BlockIndex>0&&Phase==Phase.BlockReady&&LockedControl.HasValue; } }
 
         public Experiment(SessionConfiguration configuration, IClock clock)
         {
@@ -53,7 +63,15 @@ namespace AvatarStroop.Core
                 "order", String.Join("", Array.ConvertAll(configuration.Allocation.Order, x=>x.ToString())),
                 "b_initial_target", configuration.Allocation.BInitialTarget.ToString(), "seed", configuration.Seed.ToString(CultureInfo.InvariantCulture),
                 "list_by_block", String.Join(",", configuration.Allocation.ListByBlock),
-                "countdown_seconds", Number(configuration.CountdownSeconds), "questionnaire_language", configuration.QuestionnaireLanguage);
+                "countdown_seconds", Number(configuration.CountdownSeconds), "questionnaire_language", configuration.QuestionnaireLanguage,
+                "minimum_rest_seconds",Number(configuration.MinimumRestSeconds),"skip_final_rest",configuration.SkipFinalRest.ToString(),
+                "questionnaire_instruction_seconds",Number(configuration.QuestionnaireInstructionSeconds),
+                "questionnaire_instruction_requires_acknowledgement",configuration.QuestionnaireInstructionRequiresAcknowledgement.ToString(),
+                "rest_policy",configuration.ParticipantPacedRest?"participant_continue_no_minimum_no_automatic_advance":"minimum_duration_then_explicit_continue",
+                "source_lock_policy",configuration.RetainControlAcrossBlocks?"explicit_once_after_practice_retained_for_session":"explicit_per_block",
+                "presentation_policy",configuration.QuestionnaireInstructionRequiresAcknowledgement||configuration.ParticipantPacedRest||configuration.RetainControlAcrossBlocks?
+                    "participant-paced-session-preview-v2":"configured-preview-flow-v1",
+                "questionnaire_duration_policy","phase_elapsed_including_instructions_excluding_explicit_pauses");
         }
 
         public void RecordPreparation(Actor actor, string field, string status)
@@ -81,10 +99,14 @@ namespace AvatarStroop.Core
             if(String.IsNullOrWhiteSpace(ownerId) || !Enum.IsDefined(typeof(ControlSelection),selection)) throw new ArgumentException("Owner and source required");
             if(selection == ControlSelection.SimulatorRehearsal && Configuration.RunKind != RunKind.Simulation)
                 throw new InvalidOperationException("Simulator data cannot enter apparatus sessions");
+            if(Configuration.RetainControlAcrossBlocks&&(BlockIndex!=0||LockedControl.HasValue))
+                throw new InvalidOperationException("The session source is confirmed once after practice and retained for all four blocks");
             LockedControl=selection;
-            Log("block_configuration_locked", "owner", ownerId, "condition", CurrentCondition.ToString(),
-                "selection", selection.ToString(), "b_initial_target", Configuration.Allocation.BInitialTarget.ToString(),
-                "list_index", Configuration.Allocation.ListByBlock[BlockIndex].ToString());
+            sourceConfirmationOwner=ownerId;
+            sourceConfirmationSequence=events.Count;
+            if(Configuration.RetainControlAcrossBlocks)
+                Log("session_source_confirmed","owner",ownerId,"selection",selection.ToString(),"scope","all_four_blocks");
+            RecordBlockSource(false);
             Move(Phase.BlockReady);
         }
 
@@ -95,9 +117,19 @@ namespace AvatarStroop.Core
             if(!sourceReady) throw new InvalidOperationException("Selected source is unavailable or not revalidated");
             countdownAt=Time(); resumeCountdown=false; Move(Phase.Countdown);
         }
+        // The adapter must supply current readiness for this block and segment. A
+        // retained choice never grants readiness and never clears a recovery gate.
+        public bool TryBeginRetainedBlockCountdown(bool sourceReady)
+        {
+            if(!RetainedSourceContinuationPending||!sourceReady)return false;
+            Log("retained_source_countdown_started","selection",LockedControl.Value.ToString(),
+                "confirmation_event_sequence",sourceConfirmationSequence.ToString(CultureInfo.InvariantCulture));
+            BeginCountdown(Actor.Owner,true);return true;
+        }
         public void Tick()
         {
             double now=Time();
+            CompleteQuestionnaireInstruction(now);
             if(Phase == Phase.Countdown && now >= countdownAt+Configuration.CountdownSeconds)
             {
                 if(!resumeCountdown) { trialIndex=0; Segment=0; activeAccum=0; activeSince=null; }
@@ -147,23 +179,51 @@ namespace AvatarStroop.Core
         {
             Require(Phase.Questionnaire);
             if(value < 1 || value > 5) throw new ArgumentOutOfRangeException("value");
+            double now=Time();
+            if(Configuration.QuestionnaireInstructionRequiresAcknowledgement?questionnaireInstructionPending:now<ratingAt+Configuration.QuestionnaireInstructionSeconds)
+                throw new InvalidOperationException(Configuration.QuestionnaireInstructionRequiresAcknowledgement?
+                    "Acknowledge the questionnaire control instructions before selecting a rating":
+                    "Wait for the questionnaire control instructions to finish before selecting a rating");
+            CompleteQuestionnaireInstruction(now);
             var item=Questionnaire.Id(questionIndex);
-            ratings.Add(new RatingRecord {BlockIndex=BlockIndex,ItemId=item,Value=value,Time=Time(),Language=Configuration.QuestionnaireLanguage,Version=Questionnaire.Version});
+            ratings.Add(new RatingRecord {BlockIndex=BlockIndex,ItemId=item,Value=value,Time=now,Language=Configuration.QuestionnaireLanguage,Version=Questionnaire.Version});
             Log("rating", "item", item, "value", value.ToString(), "language", Configuration.QuestionnaireLanguage, "version", Questionnaire.Version);
             questionIndex++;
             if(questionIndex == Questionnaire.Count)
             {
                 Log("questionnaire_completed", "duration_seconds", Number(Time()-ratingAt));
-                restAt=Time(); Move(Phase.Rest);
+                if(BlockIndex==3&&Configuration.SkipFinalRest)
+                {
+                    Log("final_rest_skipped","minimum_rest_seconds",Number(Configuration.MinimumRestSeconds));
+                    Finish(Core.EndReason.Completed,"four_blocks_and_ratings_complete_final_rest_skipped");
+                }
+                else {restAt=Time(); Move(Phase.Rest);}
             }
+        }
+        public bool AcknowledgeQuestionnaireInstruction()
+        {
+            if(Phase!=Phase.Questionnaire||!Configuration.QuestionnaireInstructionRequiresAcknowledgement||!questionnaireInstructionPending)return false;
+            questionnaireInstructionPending=false;
+            Log("questionnaire_instruction_completed","completion_policy","explicit_participant_acknowledgement",
+                "observed_elapsed_seconds",Number(Time()-ratingAt));
+            return true;
         }
         public bool Ready()
         {
             Require(Phase.Rest);
             if(!ReadyEnabled) return false;
-            Log("rest_ready", "rest_seconds", Number(RestSeconds));
+            if(Configuration.RetainControlAcrossBlocks&&!LockedControl.HasValue)
+                throw new InvalidOperationException("The confirmed session source must remain locked before continuing");
+            Log("rest_ready", "rest_seconds", Number(RestSeconds),"continuation_policy",
+                Configuration.ParticipantPacedRest?"participant_continue_no_minimum":"minimum_duration_then_explicit_continue");
             if(BlockIndex == 3) Finish(Core.EndReason.Completed, "four_blocks_ratings_and_rest_complete");
-            else { BlockIndex++; Segment=0; LockedControl=null; current=null; Move(Phase.BlockPreparation); }
+            else
+            {
+                BlockIndex++; Segment=0; current=null;
+                if(Configuration.RetainControlAcrossBlocks)
+                {RecordBlockSource(true);Move(Phase.BlockReady);}
+                else {LockedControl=null;Move(Phase.BlockPreparation);}
+            }
             return true;
         }
 
@@ -171,6 +231,7 @@ namespace AvatarStroop.Core
         {
             if(Phase == Phase.Ended || Phase == Phase.Paused || Phase == Phase.NeedsProtocolDecision) return;
             if(!Enum.IsDefined(typeof(Actor),actor)) throw new ArgumentException("Unknown actor");
+            CompleteQuestionnaireInstruction(Time());
             beforePause=Phase; pausedAt=Time(); FreezeActive();
             if((Phase == Phase.MainTask || Phase == Phase.Practice) && current != null && current.Outcome == TrialOutcome.Pending)
             {
@@ -250,6 +311,7 @@ namespace AvatarStroop.Core
                 PracticeCorrection=actor == Actor.Participant && Phase == Phase.PracticeCorrection ? "Select the font colour: " + current.Stimulus.Ink : null,
                 QuestionnaireItem=actor == Actor.Participant && Phase == Phase.Questionnaire ? Questionnaire.Item(questionIndex,Configuration.QuestionnaireLanguage) : null,
                 ReadyEnabled=ReadyEnabled,
+                SourceContinuationPending=RetainedSourceContinuationPending,
                 SourceLabel=LockedControl == ControlSelection.SimulatorRehearsal ? "SIMULATOR REHEARSAL — NOT LIVE WOZ" : LockedControl.ToString()
             };
         }
@@ -284,7 +346,32 @@ namespace AvatarStroop.Core
         {
             FreezeActive(); Log("block_task_ended", "active_seconds", Number(activeAccum));
             current=null; questionIndex=0; ratingAt=Time(); Move(Phase.Questionnaire);
+            questionnaireInstructionPending=Configuration.QuestionnaireInstructionRequiresAcknowledgement||Configuration.QuestionnaireInstructionSeconds>0;
+            if(questionnaireInstructionPending)
+                Log("questionnaire_instruction_started","duration_seconds",Number(Configuration.QuestionnaireInstructionSeconds),
+                    "input_policy",Configuration.QuestionnaireInstructionRequiresAcknowledgement?
+                        "ratings_disabled_until_explicit_participant_acknowledgement":"ratings_disabled_until_instruction_duration_elapsed");
         }
+        void CompleteQuestionnaireInstruction(double now)
+        {
+            if(Configuration.QuestionnaireInstructionRequiresAcknowledgement||Phase!=Phase.Questionnaire||!questionnaireInstructionPending||now<ratingAt+Configuration.QuestionnaireInstructionSeconds)return;
+            questionnaireInstructionPending=false;
+            Log("questionnaire_instruction_completed","duration_seconds",Number(Configuration.QuestionnaireInstructionSeconds),
+                "observed_elapsed_seconds",Number(now-ratingAt));
+        }
+        void RecordBlockSource(bool retained)
+        {
+            Log("block_configuration_locked","owner",sourceConfirmationOwner,"condition",CurrentCondition.ToString(),
+                "selection",LockedControl.Value.ToString(),"b_initial_target",Configuration.Allocation.BInitialTarget.ToString(),
+                "list_index",Configuration.Allocation.ListByBlock[BlockIndex].ToString(),
+                "selection_origin",retained?"retained_session":"explicit_owner_confirmation",
+                "confirmation_block_index",(Configuration.RetainControlAcrossBlocks?0:BlockIndex).ToString(CultureInfo.InvariantCulture),
+                "confirmation_event_sequence",sourceConfirmationSequence.ToString(CultureInfo.InvariantCulture));
+        }
+        bool InPhaseOrPaused(Phase phase){return Phase==phase||(Phase==Phase.Paused&&beforePause==phase);}
+        double PhaseTime(){double now=Time();return Phase==Phase.Paused?pausedAt:now;}
+        double Remaining(Phase phase,double started,double duration)
+        {return InPhaseOrPaused(phase)?Math.Max(0,started+duration-PhaseTime()):0;}
         void Finish(EndReason reason, string detail)
         {
             FreezeActive();
