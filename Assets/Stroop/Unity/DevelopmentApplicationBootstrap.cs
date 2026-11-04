@@ -38,6 +38,10 @@ namespace AvatarStroop.Unity
 #endif
         static readonly KeyCode[] colourKeys={KeyCode.Alpha1,KeyCode.Alpha2,KeyCode.Alpha3,KeyCode.Alpha4};
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void InitializeEnglishResources()
+        {AppLanguage.UseEnglishResources();}
+
         void Start()
         {
             Application.runInBackground=true;
@@ -124,7 +128,8 @@ namespace AvatarStroop.Unity
                     {
                         bool selectedTracking=participant.Experiment.LockedControl==ControlSelection.SimulatorRehearsal;
                         warnings.AddRange(participant.CurrentFaults.Warnings
-                            .Where(x=>selectedTracking||x.Kind==FaultKind.ConnectionFault||x.Kind==FaultKind.RecoveryDecisionRequired).Select(x=>x.Kind+": "+x.Message));
+                            .Where(x=>selectedTracking||x.Kind==FaultKind.ConnectionFault||x.Kind==FaultKind.RecoveryDecisionRequired)
+                            .Select(x=>x.Kind==FaultKind.RecoveryDecisionRequired?PreviewRecovery.Guidance:x.Kind+": "+x.Message));
                         if(selectedTracking)warnings.AddRange(participant.ApplicationWarnings);
                     }
                     if(actionError!=null)warnings.Add(actionError);
@@ -136,7 +141,8 @@ namespace AvatarStroop.Unity
                     operatorApp.Tick();view.ApplyTaskView(operatorApp.View());
                     var warnings=RecordingWarnings(operatorApp);
                     warnings.AddRange(operatorApp.Monitor.Snapshot(operatorApp.Clock.Now,operatorApp.Synchronizer).Warnings
-                        .Where(x=>x.Kind==FaultKind.ConnectionFault||x.Kind==FaultKind.RecoveryDecisionRequired).Select(x=>x.Kind+": "+x.Message));
+                        .Where(x=>x.Kind==FaultKind.ConnectionFault||x.Kind==FaultKind.RecoveryDecisionRequired)
+                        .Select(x=>x.Kind==FaultKind.RecoveryDecisionRequired?PreviewRecovery.Guidance:x.Kind+": "+x.Message));
                     if(operatorApp.CurrentTask==null)warnings.Add("Task stream unavailable or stale. No participant eye/body synchronization.");
                     if(operatorApp.StopDelivery.Pending)warnings.Add("SAFETY STOP PENDING — delivery is not acknowledged.");
                     else if(operatorApp.StopDelivery.Acknowledged)warnings.Add("Safety stop acknowledged by participant application.");
@@ -157,7 +163,7 @@ namespace AvatarStroop.Unity
                 if(questPreview!=null&&(command.Kind==OwnerCommandKind.Practice||command.Kind==OwnerCommandKind.Begin)&&!questPreview.InputReady)
                     return "Quest preview is not ready: "+questPreview.Diagnostic;
 #endif
-                string rejection=OwnerCommandExecution.Execute(command,participant.OwnerBeginPractice,participant.OwnerLockNextBlock,participant.OwnerBeginBlock,ExportSnapshot);
+                string rejection=OwnerCommandExecution.Execute(command,participant.OwnerBeginPractice,participant.OwnerLockNextBlock,participant.OwnerBeginBlock,ExportSnapshot,participant.OwnerEndForRestart);
                 actionError=rejection==null?null:"Owner action rejected: "+rejection;
                 return rejection;
             }
@@ -176,6 +182,7 @@ namespace AvatarStroop.Unity
                 if(startupError!=null)messages.Add(startupError);
                 if(recordingSetupError!=null)messages.Add(recordingSetupError);
                 if(participant!=null&&participant.RecordingWarning!=null)messages.Add(participant.RecordingWarning);
+                if(participant!=null&&participant.CurrentFaults!=null&&participant.CurrentFaults.RecoveryDecisionRequired)messages.Add(PreviewRecovery.Guidance);
                 if(actionError!=null)messages.Add(actionError);
                 if(statusWriteError!=null)messages.Add(statusWriteError);
 #if STROOP_XR_PREVIEW

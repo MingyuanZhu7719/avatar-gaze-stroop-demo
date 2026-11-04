@@ -14,6 +14,7 @@ namespace AvatarStroop.Apps
         static readonly SimulationLifecycleFiles lifecycleFiles=new SimulationLifecycleFiles();
         public static int Main(string[] args)
         {
+            AppLanguage.UseEnglishResources();
             try
             {
                 if(args.Length==3&&args[0]=="journal-extract")

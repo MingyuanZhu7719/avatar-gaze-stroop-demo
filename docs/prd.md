@@ -1,106 +1,110 @@
-# PRD：VR Stroop Avatar Pilot
+# PRD: VR Stroop Avatar Pilot
 
-**版本：v0.1 · 2026-10-28 · 已获用户批准作为开发基线**
+**Version: v0.1 - 2026-10-28 - User-approved development baseline**
 
-基线：[已发布实验方案 d9db8f8](https://github.com/MingyuanZhu7719/avatar-gaze-stroop-demo/blob/d9db8f84678f435b2cf62343ccbb717c5d256868/docs/experiment-design.md)。本稿将该方案及最新双端视图、负责人选模式、VR 内报错要求转为软件需求；不修改研究参数，不代表已有可运行软件或完成设备验证。SDK、通信和同步实现另写技术方案。
+Baseline: [Published experiment design d9db8f8](https://github.com/MingyuanZhu7719/avatar-gaze-stroop-demo/blob/d9db8f84678f435b2cf62343ccbb717c5d256868/docs/experiment-design.md). This document translates that design and the latest requirements for views in both applications, owner-only mode selection, and in-VR fault reporting into software requirements. It does not change research parameters or establish that runnable software or device validation already exists. SDK, communication, and synchronization implementations belong in a separate technical design.
 
-## 1. 产品目标
+**Pending protocol change:** The later request for four named experimental options - Automatic, live human WoZ, no avatar, and direct gaze at the participant's eyes - is not implemented by this English-only revision. Automatic behavior and the direct-eye targeting method remain undefined. The current A/B/C/D conditions and separate control sources below retain their existing meanings until that redesign is explicitly specified; Automatic must not silently be equated with the old alternating B condition.
 
-支持一次可核对、可重复执行的 pilot：呈现不同 avatar 注视条件，了解参与者的体验差异，同时记录行为、眼动和实际呈现过程。**被观察感的变化本身有研究价值；被评价感仍然测量，不要求其一定显著。**
+**Current implementation boundary:** The development preview implements the existing four conditions with automatic reference control or explicitly simulated head/eye input. Real VIVE Pro Eye WoZ acquisition and calibrated mapping are not connected; apparatus sessions remain blocked. Participant-directed automatic gaze currently aims at a fixed declared reference station, not a measured or continuously followed eye position. Software tests, builds, and synthetic renders do not establish acceptance of real WoZ or direct eye contact.
 
-软件成功的标准是流程正确、呈现与来源可追溯、故障可见、记录完整且能核对。主要研究对比及统计设置待定；本稿不把 RT 定为主要研究终点，不以显著性、预期方向或“某条件必须更有被评价感”作为软件验收条件。
+## 1. Product objective
 
-## 2. 角色、设备和可见内容
+Support a pilot whose procedure can be checked and repeated: present different avatar gaze conditions, examine differences in participant experience, and record behavior, eye tracking, and the actual presentation. **Changes in feeling observed have research value in their own right; feeling evaluated is still measured, without requiring a statistically significant effect.**
 
-采用两套 **VIVE Pro Eye、两台独立电脑、两个独立应用**。操作者应用采集并实时发送真实头部转动和眼睛注视；参与者应用接收后驱动参与者可见的操作者 avatar。自动模式由程序驱动同一 avatar。当前方向的实时控制需求已确认，链路尚未实测；反向显示参与者 avatar 不等于已确认反向同步其眼动。
+Software success means correct flow, traceable presentation and sources, visible failures, and complete records that can be reconciled. The principal research comparisons and statistical settings remain undecided. This PRD does not designate RT as the primary research endpoint, or make statistical significance, an expected direction, or a requirement that a particular condition produce more perceived evaluation a software acceptance criterion.
 
-| 角色或界面 | 已确认的职责 / 可见内容 | 边界 |
+## 2. Roles, devices, and visible content
+
+Use **two VIVE Pro Eye headsets, two independent computers, and two independent applications**. The operator application acquires and transmits real head rotation and eye gaze in real time; the participant application receives them and drives the operator avatar visible to the participant. Automatic mode drives the same avatar programmatically. This direction of real-time control is confirmed as a requirement, but the link has not been measured on the apparatus. Showing a participant avatar in the reverse direction does not establish a requirement to synchronize that participant's eye gaze in reverse.
+
+| Role or interface | Confirmed responsibilities / visible content | Boundaries |
 |---|---|---|
-| 参与者 VR | 做 Stroop、按键作答、填写评分；正常主任务可见题目和操作者 avatar | 练习无 avatar；D 隐藏操作者 avatar；问卷和休息按基线隐藏 avatar。参与者不选择实验模式 |
-| 操作者 VR | 可见参与者 avatar 和当前题目；WoZ 时按指定条件与节奏控制自己的头转和眼动 | 参与者 avatar 的驱动信号、姿态和眼动同步范围待定；是否显示正确率、答题结果或 RT 待定 |
-| 实验负责人 | 配置会话，选择自动 / WoZ 模式，核对已分配的条件、顺序和 B 初始目标，确认开始；每组前锁定并记录配置 | 此处指 people in charge of the experiment，不是受试者；模式选择入口不能交给参与者，不能随意覆盖平衡分配 |
-| 管理屏幕 / 管理入口 | 提供会话与流程控制、配置核对和数据导出入口 | 具体屏幕布局、是否另有 VR 管理入口及角色兼任方式待定；不预设新增账号系统 |
+| Participant VR | Perform Stroop, respond with buttons, and provide ratings; see the task and operator avatar during the ordinary main task | No avatar in practice; D hides the operator avatar; questionnaires and rest hide it according to the baseline. Participants do not select the experimental mode |
+| Operator VR | See the participant avatar and current task item; in WoZ, control their own head rotation and eye gaze according to the assigned condition and timing | The participant avatar's driving signals, pose, and extent of eye-gaze synchronization remain undecided; whether to show accuracy, response results, or RT remains undecided |
+| Experiment owner | Configure the session, select Automatic / WoZ, check the assigned condition, order, and B initial target, and confirm the start; lock and record configuration before each block | This means the people in charge of the experiment, not the participant. Mode selection must not be exposed to participants or arbitrarily override counterbalanced allocation |
+| Administration screen / entry point | Provide session and flow controls, configuration checks, and data export | Screen layout, any additional VR administration entry point, and whether one person may hold multiple roles remain undecided. No new account system is assumed |
 
-操作者侧在练习、D、问卷及休息阶段具体显示什么，以及参与者 avatar 的外观与几何映射，均需在界面设计中确认。已确认的参与者侧无-avatar规则保持不变。不得自动增加身体、手部或语音同步。
+The operator-side content during practice, D, questionnaires, and rest, and the participant avatar's appearance and geometric mapping, still require interface-design decisions. The confirmed participant-side no-avatar rules remain unchanged. Do not automatically add body, hand, or voice synchronization.
 
-## 3. 实验流程和保留参数
+## 3. Experiment flow and retained parameters
 
-| 状态 / 阶段 | 软件必须支持的行为 |
+| State / stage | Required software behavior |
 |---|---|
-| 会话准备 | 建立研究会话 ID，核对版本、负责人配置、设备连接、头眼追踪、映射和双端题目对应关系；记录必要的筛查 / 同意状态。软件检查不等于研究审批 |
-| 熟悉与校准 | 支持四种颜色、按钮映射和词义熟悉；分别检查参与者测量眼动与操作者控制眼动。校准与有效性标准待设备验证，不增加隐藏的练习通过门槛 |
-| 练习 | 每次 8 题、参与者侧无 avatar，4 一致 + 4 不一致；只计首次反应，至少 6/8（75%）通过；最多两次尝试。错误后纠正并等待明确 Continue；纠正不改分数。两次均未过则结束标准任务 |
-| 主任务准备 | 按已分配顺序进入下一组；负责人选择模式，核对并锁定已分配的条件、顺序及 B 初始目标，记录配置。何种模式用于哪个会话 / 组的分配规则待协议确认 |
-| 主任务运行 | A、B、C、D 各一组；每组 24 题：12 一致 + 12 不一致，共 96 个计划试次。首次有效新按键即记录并推进；按键保持不能连答多题；无固定三秒等待、参与者侧无正确性反馈、不擅加作答 deadline |
-| 组后评分 | 参与者侧隐藏操作者 avatar，依次采集五个独立的 1–5 分项目：专注、分心、被观察、被评价、负面评价担忧。各条件同措辞、同顺序；沿用[基线问项及锚点](https://github.com/MingyuanZhu7719/avatar-gaze-stroop-demo/blob/d9db8f84678f435b2cf62343ccbb717c5d256868/docs/experiment-design.md#8-post-block-questionnaire)，不合并总分 |
-| 休息与下一组 | 评分后额外至少 30 秒中性休息，不把评分时间算入；参与者可延长，达到最低时长后才允许 Ready。第四组也先完成评分和休息，再进入结束流程 |
-| 显式暂停 / 退出 | 保留参与者暂停、退出及操作者安全停止入口。显式暂停按基线在参与者侧隐藏题目和操作者 avatar、冻结任务与活动注视时钟；中断试次不记作答错误。主动恢复遵守下一计划试次、不静默重做原则；追踪 / 网络故障的自动暂停与重连恢复规则另列待定 |
-| 结束与导出 | 区分正常完成、练习未过、退出和技术结束；保留实际完成情况与中断记录，按获批数据安排导出，不补造未完成试次 |
+| Session preparation | Establish a study session ID; check versions, owner configuration, device connections, head/eye tracking, mapping, and matching task items across both applications; record necessary screening / consent status. Software checks do not constitute research approval |
+| Familiarization and calibration | Support familiarization with all four colors, button mappings, and word meanings; check participant measurement gaze separately from operator control gaze. Calibration and validity criteria await device validation; add no hidden practice pass criteria |
+| Practice | 8 trials per attempt, no participant-side avatar, 4 congruent + 4 incongruent; score only the first response and require at least 6/8 (75%) to pass; at most two attempts. After an error, show a correction and wait for an explicit Continue action; correction does not change the score. End the standardized task after two failed attempts |
+| Main-task preparation | Enter the next block in the assigned order; the owner selects the mode, checks and locks the assigned condition, order, and B initial target, and records configuration. Rules assigning modes to sessions / blocks await protocol confirmation |
+| Main-task execution | One block each of A, B, C, and D; 24 trials per block: 12 congruent + 12 incongruent, for 96 planned trials. Record and advance on the first valid new button press; holding a button must not answer multiple trials. No fixed three-second wait, participant-side correctness feedback, or unapproved response deadline |
+| Post-block ratings | Hide the operator avatar from the participant; collect five separate 1-5 ratings in order: focus, distraction, feeling observed, feeling evaluated, and worry about negative evaluation. Use identical wording and order across conditions; retain the [baseline items and anchors](https://github.com/MingyuanZhu7719/avatar-gaze-stroop-demo/blob/d9db8f84678f435b2cf62343ccbb717c5d256868/docs/experiment-design.md#8-post-block-questionnaire); do not combine them into a total score |
+| Rest and the next block | Provide at least 30 seconds of additional neutral rest after ratings, excluding rating time; participants may extend it. Enable Ready only after the minimum. The fourth block also receives ratings and rest before the closing flow |
+| Explicit pause / withdrawal | Retain participant pause and withdrawal and operator safety-stop controls. An explicit pause follows the baseline: hide the task and operator avatar from the participant and freeze task and active-gaze clocks; mark an interrupted trial without treating it as an incorrect response. Explicit resumption proceeds to the next planned trial without silently repeating the interrupted item. Automatic pause and reconnection recovery for tracking / network faults remain separate decisions |
+| Ending and export | Distinguish normal completion, practice failure, withdrawal, and technical ending; preserve actual completion and interruption records, export under the approved data arrangements, and do not fabricate uncompleted trials |
 
-题目与顺序继续按基线生成：RED / GREEN / BLUE / YELLOW；四种一致词色组合各出现三次，十二种不一致组合各出现一次，每词和每色各六次。使用相同多重集的四份受约束顺序，避免完全相同词色刺激紧邻重复，并记录列表 ID / seed。Williams 顺序为 **ABDC、BCAD、CDBA、DACB**，B 的初始注视目标独立平衡；不能把 D 固定放第一组，不能按表现加题。48 题/组不是本期基线。
+Continue to generate items and orders according to the baseline: RED / GREEN / BLUE / YELLOW; each of the four congruent word-color pairs appears three times, and each of the twelve incongruent pairs appears once, giving six occurrences of each word and ink color. Use four constrained orders with the same multiset, avoid immediate repetition of an identical word-color stimulus, and record list IDs / seeds. Williams sequences are **ABDC, BCAD, CDBA, DACB**, with B's initial gaze target balanced independently. Do not always put D first or add trials based on performance. 48 trials per block is not the current baseline.
 
-## 4. 两种控制模式
+## 4. Two control modes in the current baseline
 
-| 模式 | 控制来源 | 必须共用的部分 |
+| Mode | Control source | Required shared elements |
 |---|---|---|
-| 自动 | 参与者应用的程序源生成指定头眼运动 | 同一参与者可见 avatar、呈现接口、Stroop 流程、问卷和日志结构 |
-| 真实头眼 WoZ | 独立操作者电脑 / 应用采集其 VIVE Pro Eye 的真实头转和眼动，经实时传输在参与者端映射 | 共用部分不代表轨迹、延迟或实际执行精度相同；WoZ 不能被按钮切目标或预录自动轨迹替代 |
+| Automatic | A program source in the participant application generates the prescribed head/eye movement | The same participant-visible avatar, presentation interface, Stroop flow, questionnaires, and logging structure |
+| Real head/eye WoZ | An independent operator computer / application acquires real head rotation and eye gaze from its VIVE Pro Eye and transmits them in real time for mapping in the participant application | Shared elements do not imply identical trajectories, latency, or actual execution precision; button-based target switches or prerecorded automatic trajectories must not substitute for WoZ |
 
-- A 朝参与者、B 交替、C 朝任务、D 隐藏 avatar。B 的规定节奏仍为 **3.0 秒停留 + 0.5 秒转动，计划周期 7.0 秒**；自动模式按参考轨迹执行，操作者按该规则操作，实际偏差单独记录。
-- 操作者 avatar 的身体保持固定。操作者真实头眼信号不能被强制重定时成自动轨迹，不能静默切换、混合或回退到自动源。参与者眼动、错误或反应速度不用于选择注视目标，也不用于提示操作者改变规则。
-- 模式来源与变更必须可追溯；运行中切换模式不属于已确认流程。两种模式的存在不自动扩展为八个研究条件。
+- A is participant-directed, B alternates, C is task-directed, and D hides the avatar. B retains the prescribed **3.0-second dwell + 0.5-second turn, with a planned 7.0-second cycle**. Automatic mode executes the reference trajectory; the operator follows the rule, with actual deviations recorded separately.
+- The operator avatar's body stays fixed. Real operator head/eye signals must not be forcibly retimed into the automatic trajectory or silently switched, blended, or replaced with the automatic source. Participant gaze, errors, or response speed must not select gaze targets or cue the operator to depart from the rule.
+- Selected sources and changes must remain traceable. Switching modes during a run is not part of the confirmed flow. Two control modes do not automatically create eight research conditions.
 
-## 5. 故障与中断
+## 5. Failures and interruptions
 
-| 事件 | 已确认的软件要求 | 尚待确认 |
+| Event | Confirmed software requirements | Still to be decided |
 |---|---|---|
-| 头部或眼动追踪中断 / 失效 | 必须在 VR 内明确报错，不能只写桌面日志；区分头、眼有效性，记录来源、发生 / 检出 / 恢复事件和受影响阶段；失效数据不能标为有效 | 哪端或是否双端提示、检出阈值、提示文案 / 持续时间；是否自动暂停、隐藏 / 保持哪些内容及恢复流程 |
-| 网络中断 / 失联 | 必须在 VR 内明确报错，记录连接状态、数据新鲜度和故障时间；不得静默改成自动控制或把旧样本伪装成当前有效输入 | 超时与重连判定、是否自动暂停、谁确认恢复、恢复到哪个流程 / 试次及如何处理故障期间数据 |
-| 主动暂停 / 安全停止 | 采用第3节的显式暂停要求，留下可核对的时钟、状态和中断记录 | 具体按钮映射及确认界面在界面 / 技术设计中确定 |
+| Interrupted / invalid head or eye tracking | Report the fault clearly inside VR, not only in desktop logs; distinguish head and eye validity; record source, occurrence / detection / recovery events, and affected stages. Invalid data must not be labelled valid | Which application, or whether both, shows the warning; detection thresholds, wording / duration; automatic pause, which content is hidden / held, and the recovery flow |
+| Network interruption / disconnection | Report the fault clearly inside VR and record connection state, data freshness, and fault times. Do not silently switch to automatic control or present old samples as current valid input | Timeout and reconnection criteria, automatic pause, who confirms recovery, the resumption state / trial, and treatment of data collected during the fault |
+| Explicit pause / safety stop | Apply the explicit-pause requirements in section 3 and retain clocks, states, and interruption records that can be checked | Specific button mappings and confirmation interfaces belong in interface / technical design |
 
-**VR 报错不自动等同于暂停策略已经确定。** 自动暂停与故障恢复待定，不得由开发者静默补成默认行为；其最终规则须与基线“不静默重复中断题、不计为作答错误”的原则对齐。错误提示的位置和内容也需审阅，不能未经确认附带成绩反馈。
+**An in-VR warning does not mean a pause policy has been selected.** Automatic pause and fault recovery remain undecided and must not silently become developer-chosen defaults. Their final rules must respect the baseline principles of not silently repeating interrupted items or scoring them as incorrect responses. Warning placement and content also require review; do not add performance feedback without confirmation. Section 13 defines the later, development-preview-only new-session restart policy; formal apparatus recovery remains unresolved.
 
-## 6. 数据与可核对性
+## 6. Data and auditability
 
-各数据流须能通过会话、组、试次 / 片段 ID 关联；采用去标识研究编号，保留协议和软件版本。身份对应表、访问权限、保留与删除安排待确认，不宣称完全匿名。可导出机器可读数据及字段说明，具体文件格式与存储技术另定。
+Data streams must be joinable by session, block, and trial / segment IDs. Use pseudonymous study IDs and retain protocol and software versions. Identity linkage, access, retention, and deletion arrangements remain undecided; do not claim complete anonymity. Export machine-readable data and field descriptions; specific file formats and storage technology belong in a separate decision.
 
-| 数据流 | 最少保留内容 |
+| Data stream | Minimum retained content |
 |---|---|
-| 会话与流程 | 负责人配置、模式 / 实际来源、操作者与设备角色、顺序、B 初始目标、列表 / seed、练习次数、状态转换、完成 / 退出 / 中断原因 |
-| 题目与行为 | 词、字体颜色、一致性、试次身份、实际呈现和首次反应时间、RT、正确性、有效性及中断标记；主任务不把正确性回馈给参与者 |
-| 操作者控制与 avatar 呈现 | 真实头转 / 眼动、分别的有效性、采样来源和时间；预定目标 / 时刻、实际接收 / 映射 / 呈现状态、停留 / 转动和偏差 |
-| 参与者眼动 | 独立的参与者来源、时间、有效性、校准结果及 AOI 分类；不得用操作者眼动替代。AOI / 无效与 D 条件不适用的处理沿用基线 |
-| 传输与同步 | 源采集、发送、接收和呈现时间及钟源定义；时钟映射、偏移 / 漂移和不确定性；可测延迟、丢包、失序、陈旧样本及追踪 / 网络故障 |
-| 体验与休息 | 五项原始评分、问项版本和语言、评分 / 实际休息时长、Ready、暂停和移除头显事件；可选归因题是否纳入待定 |
+| Session and flow | Owner configuration, selected mode / actual source, operator and device roles, order, B initial target, lists / seeds, practice attempts, state transitions, and completion / withdrawal / interruption reasons |
+| Task items and behavior | Word, font color, congruency, trial identity, actual presentation and first-response times, RT, correctness, validity, and interruption flags; do not return correctness feedback to participants during the main task |
+| Operator control and avatar presentation | Real head rotation / eye gaze, separate validity, sample source and time; prescribed targets / times, actual received / mapped / rendered state, dwell / turns, and deviations |
+| Participant eye tracking | Independent participant source, time, validity, calibration results, and AOI classification; never substitute operator gaze. Retain the baseline handling of AOIs, invalid data, and structural non-applicability in D |
+| Transport and synchronization | Source capture, send, receive, and presentation times and clock definitions; clock mapping, offset / drift and uncertainty; measurable latency, packet loss, out-of-order and stale samples, and tracking / network faults |
+| Experience and rest | Five raw ratings, item version and language, rating / actual rest duration, Ready, pause, and headset-removal events; inclusion of the optional attribution item remains undecided |
 
-同步行为与眼动意味着时间轴应可对齐和核查，不表示已达到某个精度。具体同步算法、采样率与性能阈值需在技术方案中确定并实测；模拟输入必须明确标记，不能混入真实采集数据。
+Synchronizing behavior and gaze means that timelines must be alignable and auditable; it does not establish any achieved accuracy. Specific synchronization algorithms, sample rates, and performance thresholds must be specified in the technical design and measured on the apparatus. Simulated input must be explicitly labelled and kept separate from real acquired data.
 
-## 7. 软件验收清单
+## 7. Software acceptance checklist
 
-以可重复的测试会话和导出记录验收。下列属于软件功能检查，不要求参与者产生预定心理效果或统计显著结果；涉及待定项的最终通过标准须先补齐。
+Use repeatable test sessions and exported records for acceptance. These are software-function checks, not requirements for predetermined psychological effects or statistically significant results. Final pass criteria involving unresolved items must first be specified.
 
-| 编号 | 可核对的通过要求 |
+| ID | Verifiable acceptance requirement |
 |---|---|
-| AC-01 角色与视图 | 验证参与者看到题目及操作者 avatar、操作者看到参与者 avatar 和同一当前题目；参与者侧练习、D、问卷及休息符合隐藏规则；不会把参与者 avatar 显示误当作其眼动同步已实现 |
-| AC-02 模式权限 | 负责人能在每组前选择模式，核对并锁定已分配的条件、顺序及 B 初始目标，记录可查；受试者不能选择模式，不能随意覆盖平衡分配。不能仅因是 WoZ 操作者就默认其拥有负责人权限 |
-| AC-03 完整流程 | 测试练习通过、一次重试通过、两次未过、正常四组、延长休息、主动暂停和退出；题量、评分顺序及状态记录均与第3节一致 |
-| AC-04 题目与行为 | 自动核对 24 题的组成和列表约束；核对双端题目 / 试次身份。主任务首次新按键只推进一次、保持按键不连答、无固定三秒等待、参与者侧无正确性反馈；RT 及首次反应可从事件时间复核 |
-| AC-05 控制来源 | 自动源与真实操作者源分别通过同一呈现接口；能从日志核对实际来源和 avatar 输出。自动参考时间可检查，人工实际轨迹和偏差保留，不以强制同轨迹冒充通过 |
-| AC-06 VR 故障可见 | 分别注入头 / 眼追踪失效及网络中断，确认 VR 内出现可识别报错且日志对应；无静默自动回退或伪造有效样本。提示端、时限及暂停 / 恢复行为按待定项冻结后验收 |
-| AC-07 数据联查 | 一次测试会话的行为、双方眼动、avatar、评分与异常可按身份和时间关联；缺失、失效、模式来源和中断可见；五项评分独立，无伪造完成记录 |
-| AC-08 实机记录 | 在两台独立电脑与两套 VIVE Pro Eye 上验证双应用数据链及视图，记录实际延迟、同步误差、追踪有效性和恢复事件；数值门槛待定，桌面演示或截图配置不视为实机通过 |
+| AC-01 Roles and views | Verify that participants see the task and operator avatar and that operators see the participant avatar and the same current task item. Apply participant-side hiding rules in practice, D, questionnaires, and rest. Do not mistake displaying a participant avatar for implemented synchronization of that participant's eye gaze |
+| AC-02 Mode permissions | Before each block, the owner can select the mode, check and lock the assigned condition, order, and B initial target, and inspect the recorded configuration. Participants cannot select the mode or arbitrarily override counterbalanced allocation. Being the WoZ operator does not automatically confer experiment-owner authority |
+| AC-03 Complete flow | Test passing practice, passing after one retry, failing both attempts, the normal four blocks, extended rest, explicit pause, and withdrawal. Trial counts, rating order, and state records must match section 3 |
+| AC-04 Task and behavior | Automatically check the 24-trial composition and list constraints; check matching task / trial identity in both applications. In the main task, one new press advances only once, held buttons do not answer repeatedly, there is no fixed three-second wait or participant-side correctness feedback, and RT and first response can be reconciled against event times |
+| AC-05 Control sources | Automatic and real operator sources pass through the same presentation interface; actual source and avatar output can be checked in logs. Automatic reference times are testable, while actual human trajectories and deviations are preserved rather than forced into identical trajectories to simulate a pass |
+| AC-06 Visible VR faults | Inject head / eye tracking failures and network interruptions separately; verify identifiable in-VR errors and corresponding logs, with no silent automatic fallback or fabricated valid samples. Accept warning endpoints, deadlines, and pause / recovery behavior only after the unresolved rules are frozen |
+| AC-07 Joined evidence | Join behavior, both parties' eye tracking, avatar presentation, ratings, and faults from a test session by identity and time. Missing / invalid data, mode provenance, and interruptions remain visible; retain five separate ratings and no fabricated completion records |
+| AC-08 Apparatus evidence | Validate the two-application data link and views on two independent computers and two VIVE Pro Eye setups. Record actual latency, synchronization error, tracking validity, and recovery events. Numerical thresholds remain undecided; desktop demonstrations or configuration screenshots do not count as apparatus acceptance |
 
-## 8. 范围外与待定项
+## 8. Out of scope and unresolved items
 
-本期 PRD 不增加身体 / 手部 / 语音同步，不把 WoZ 改为基于参与者表现的反应式 avatar，不加入运行中模式切换、48题/组或额外研究条件，不选择 SDK / 引擎版本、网络协议或同步算法，也不将“研究显著”定义成软件成功。
+This PRD does not add body / hand / voice synchronization, turn WoZ into an avatar that reacts to participant performance, introduce mode switching during a run, adopt 48 trials per block or additional research conditions, select SDK / engine versions, network protocols, or synchronization algorithms, or define statistical significance as software success.
 
-| 类别 | 待确认内容 |
+| Category | Decisions still required |
 |---|---|
-| 产品与交互 | 故障提示在哪端显示；追踪 / 网络失效是否自动暂停，重连后谁确认、如何恢复及题目落点；操作者能否看正确率 / 答题结果 / RT；参与者 avatar 的驱动和眼动同步范围；管理入口和非主任务阶段操作者视图 |
-| 技术方案（单独形成） | 引擎 / SDK 版本、操作者电脑配置、通信协议和网络设置、坐标映射、采样与数据格式、同步方案、超时 / 追踪有效性和延迟等阈值、断线 / 失效安全策略及持久化实现 |
-| 研究与采集准备 | 主要研究对比、样本量 / 精度、统计模型及阈值、RT 处理等未决参数；问卷语言和可选归因题；审批、筛查、校准 / AOI、数据保存与退出安排。保持待定，不在本 PRD 里补定或转写成软件成功指标 |
+| Product and interaction | Which application shows fault warnings; automatic pause on tracking / network failure, who confirms reconnection, how to resume, and the next trial; whether operators see accuracy / response results / RT; the participant avatar's driving signals and extent of eye-gaze synchronization; administration entry points and operator views outside the main task |
+| Technical design (separate document) | Engine / SDK versions, operator-computer configuration, communication protocol and network settings, coordinate mapping, sampling and data formats, synchronization, timeout / tracking-validity / latency thresholds, disconnection / failure safety policies, and persistence implementation |
+| Research and collection readiness | Principal research comparisons, sample size / precision, statistical models and thresholds, RT processing, and other unresolved parameters; suitability of the English questionnaire for the participant protocol and inclusion of the optional attribution item; approval, screening, calibration / AOIs, data retention, and withdrawal arrangements. Keep these unresolved rather than selecting values in this PRD or converting them into software-success criteria |
 
-**批准状态：**用户已确认本稿的软件范围、双端视图与角色、流程、日志和可验收要求，并授权发布与分阶段开发。未决项继续保持待定；实现、测试及实机验证状态由开发记录单独报告。
+**Approval status:** The user approved this document's software scope, views and roles in both applications, flow, logging, and verifiable requirements, and authorized publication and staged development. Unresolved items remain unresolved; development records separately report implementation, testing, and apparatus-validation status. The current application presentation language is English, as specified in section 14.
 
 
 ## 9. Classroom presentation requirement (user clarification, 2026-10-29)
@@ -143,3 +147,17 @@ At 09:34 UTC the user reported that the new fixed-menu build worked, but the par
 Preserve the board, its left graphical response guide and its right observer arrangement, the fixed menu, task words/ink/size, timing, scoring, questionnaire semantics, gaze-condition definitions and real-experiment gates. The nominal participant reference used for avatar gaze must agree with the centred standing anchor, without accidentally adopting an uninitialized camera pose or introducing live HMD-driven avatar control. Document the necessary preview target-angle/geometry-version change. Do not change OS/runtime recenter settings, drivers or VIVE bindings.
 
 Check initial valid and invalid poses, offset/yaw compensation, one-time application, movement after alignment, repeated/focus-recovery calls and fixed scene/gaze transforms. Build independently and preserve the current session. The user's "ok" accepts usability of the previous fixed-menu preview only; the centred revision needs its own headset check and does not constitute research or apparatus validation.
+
+## 13. First-entry height and explicit preview restart (user clarification, 2026-11-02)
+
+At first entry, resolve the active runtime's existing Floor/Device height convention before showing the classroom, and obtain actual current OpenXR focus without depending on a first edge callback. Keep real measured height and physical pitch/roll. Only the initial application-space X/Z/yaw centring is permitted; subsequent headset movement or re-wear must not trigger another alignment. A neutral initial waiting view is acceptable while the reference/pose is unavailable, with status available in the owner window. This changes no system tracking-origin mode or recenter setting.
+
+For a latched connection-recovery state, provide an explicit development-owner action labelled as ending the current preview and reconnecting into a NEW session, with confirmation that previous progress will not resume and existing records are retained. Record the request, fault context, TechnicalEnd and any interrupted pending trial in the old session; require the exact command acknowledgement before requesting orderly process closure. Require both owned processes to have known exits and both journal chains/close-flush receipts to verify before creating the new session. Unknown command results, storage failures, missing receipts or closure timeouts stop the chain for review; no force termination or automatic retry is permitted.
+
+The new session must have a fresh session ID and separate journals/owner queue, start at Preparation, and inherit no prior-session readiness. Under the existing source policy, SimulatorRehearsal requires fresh handshake, clock and matching-sample readiness; Automatic and practice retain their existing gates. Practice and source choices remain explicit owner actions. Do not resume or repeat an old trial, merge the two runs as continuous valid data, clear the old recovery latch, relax the timeout threshold, or infer validity from packets returning. Delayed packets from previous sessions, duplicates and out-of-order traffic must remain rejected. The recovery action must remain reachable when only the operator has failed but the participant still publishes fresh status. This is a development-preview restart policy; formal apparatus and in-session experimental recovery remain gated.
+
+## 14. English-only PRD and application presentation (user clarification, 2026-11-02)
+
+The PRD and all application-visible text must be in English only, with no Chinese localization option. This includes titles, menus, buttons, instructions, status and error messages, confirmation dialogs, questionnaires, and rating anchors in participant, operator, and owner applications. Preserve the meaning of each instruction and questionnaire item, response mappings, rating direction and values, timing, permissions, and failure behavior.
+
+This language change does not implement the pending four-option experimental redesign described above. Preserve stored data identifiers and historical records; do not rewrite previous sessions or present historical translations as new participant data. English presentation does not establish participant comprehension or apparatus / research acceptance.

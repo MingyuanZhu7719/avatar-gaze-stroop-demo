@@ -12,6 +12,7 @@ namespace AvatarStroop.Apps
     {
         public static int Main(string[] args)
         {
+            AppLanguage.UseEnglishResources();
             try
             {
                 if(args.Length<2)return Usage();

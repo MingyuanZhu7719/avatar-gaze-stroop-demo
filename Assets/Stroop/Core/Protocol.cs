@@ -68,12 +68,13 @@ namespace AvatarStroop.Core
         public double CountdownSeconds { get; private set; }
         public const string ProtocolVersion = "2026-10-28-prd-66dbdb5";
         public const string SoftwareVersion = "0.4.0-dev";
-        // No countdown or questionnaire language is silently selected for a study.
+        // New sessions explicitly use the approved English wording. Historical
+        // journal language fields are preserved by the separate evidence reader.
         public SessionConfiguration(string sessionId, uint seed, Allocation allocation, RunKind runKind,
             string questionnaireLanguage, double countdownSeconds)
         {
             if (String.IsNullOrWhiteSpace(sessionId) || allocation == null) throw new ArgumentException("Session identity required");
-            if (questionnaireLanguage != "en" && questionnaireLanguage != "zh") throw new ArgumentException("Choose versioned en or zh wording");
+            if (questionnaireLanguage != "en") throw new ArgumentException("New sessions require the approved English questionnaire (en); historical language identifiers are not converted");
             if (Double.IsNaN(countdownSeconds) || Double.IsInfinity(countdownSeconds) || countdownSeconds <= 0)
                 throw new ArgumentOutOfRangeException("countdownSeconds", "Explicit provisional countdown must be positive");
             if (!Enum.IsDefined(typeof(RunKind), runKind)) throw new ArgumentException("Invalid run kind");

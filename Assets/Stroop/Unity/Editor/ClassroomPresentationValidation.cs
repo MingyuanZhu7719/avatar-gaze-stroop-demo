@@ -36,10 +36,21 @@ namespace AvatarStroop.Unity.Editor
             public Vector3 menu_world=WorldSpaceExperimentView.FixedMenuPosition;
             public Vector2 menu_size=new Vector2(WorldSpaceExperimentView.FixedMenuWidth,WorldSpaceExperimentView.FixedMenuHeight);
             public int[] questionnaire_rendered_candidates;
+            public string ui_language="en";
+            public int[] questionnaire_rendered_items;
             public string[] ink_rgba;
             public WordBounds[] words;
+            public StartupHeightEvidence startup_reference_height;
         }
         [Serializable] sealed class WordBounds {public string word;public Vector3 world_size;}
+        [Serializable] sealed class StartupHeightEvidence
+        {
+            public string kind="synthetic-floor-origin-reproduction-not-headset-capture";
+            public bool xr_focus_or_tracking_events_injected=false;
+            public float authored_device_offset,raw_floor_height,before_world_height,prepared_world_height;
+            public Vector3 raw_head_euler;
+            public bool raw_pose_unchanged,waiting_render_uniform,render_settings_restored;
+        }
         static int checks;
         static void Require(bool value,string message)
         {if(!value)throw new InvalidOperationException("Classroom validation: "+message);checks++;}
@@ -60,6 +71,7 @@ namespace AvatarStroop.Unity.Editor
             string hint=phase==Phase.Questionnaire?
                 "Left stick UP: lower number | DOWN: higher number (1-5)\nCentre between steps | A: confirm\nSelected: "+(candidate.HasValue?candidate.Value.ToString():"--")+" (not submitted)":
                 phase==Phase.Paused?"PAUSED | Right trigger: actively resume\nB: withdraw and end preview":
+                phase==Phase.NeedsProtocolDecision?"A protocol decision is pending\nNo automatic retry or resume | B: withdraw":
                 phase==Phase.PracticeCorrection||phase==Phase.Rest?"Right trigger: Continue / Ready when available\nLeft menu: pause":
                 "X red | Y green | A blue | B yellow\nRelease before the next answer | Left menu: pause";
             view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED",hint);
@@ -128,7 +140,7 @@ namespace AvatarStroop.Unity.Editor
             var result=new TaskView();
             Set(result,"Phase",phase);Set(result,"OperatorAvatarVisible",visible);
             Set(result,"ParticipantAvatarVisible",visible);Set(result,"OperatorViewProvisional",operatorRole);
-            if(phase==Phase.PracticeCorrection)Set(result,"PracticeCorrection","Respond to the ink colour, not the word. Use the button guide on the left.");
+            if(phase==Phase.PracticeCorrection)Set(result,"PracticeCorrection","Select the font colour: "+ink);
             if(phase==Phase.Questionnaire)Set(result,"QuestionnaireItem",Questionnaire.Item(4,"en"));
             if(phase==Phase.MainTask||phase==Phase.Practice)
             {Set(result,"TrialId","editor-visual-fixture");Set(result,"Stimulus",new Stimulus(word,ink));}
@@ -298,6 +310,97 @@ namespace AvatarStroop.Unity.Editor
                 UnityEngine.Object.DestroyImmediate(root);
             }
         }
+        static void CheckStartupReferenceHeightAndView()
+        {
+            // Exercise the actual placement/reveal helpers with delayed caller
+            // readiness, without constructing an XR loader or claiming to test
+            // native focus events, TrackedPoseDriver timing, or headset output.
+            foreach(bool floorMode in new[]{true,false})
+            foreach(float rawHeight in floorMode?new[]{1.25f,1.6f,1.92f}:new[]{-.2f,.25f})
+            {
+                var root=new GameObject("SyntheticStartupOrigin");
+                var parent=new GameObject("SyntheticStartupHeightOffset");
+                var camera=new GameObject("SyntheticStartupTrackedCamera").AddComponent<Camera>();
+                try
+                {
+                    parent.transform.SetParent(root.transform,false);camera.transform.SetParent(parent.transform,false);
+                    root.transform.SetPositionAndRotation(new Vector3(.4f,0,-.3f),Quaternion.Euler(0,27,0));
+                    var authoredOffset=new Vector3(.17f,1.6f,-.22f);
+                    parent.transform.localPosition=authoredOffset;
+                    var rawPosition=new Vector3(.3f,rawHeight,-.5f);
+                    var rawRotation=Quaternion.Euler(0,37,0)*Quaternion.Euler(14,0,-9);
+                    camera.transform.SetLocalPositionAndRotation(rawPosition,rawRotation);
+                    camera.cullingMask=0x13579;camera.clearFlags=floorMode?CameraClearFlags.Depth:CameraClearFlags.Skybox;
+                    camera.backgroundColor=new Color(.2f,.4f,.6f,.8f);
+                    int savedMask=camera.cullingMask;var savedFlags=camera.clearFlags;var savedBackground=camera.backgroundColor;
+                    var placement=new QuestPreviewStartAlignment();var startup=new QuestPreviewStartupView(camera);
+                    var originalRoot=root.transform.localToWorldMatrix;
+                    Require(camera.enabled&&camera.cullingMask==0&&camera.clearFlags==CameraClearFlags.SolidColor&&!startup.Revealed,
+                        "startup room is visible or tracking camera was disabled before reference readiness");
+                    Require(Mathf.Abs(camera.transform.position.y-(rawHeight+1.6f))<.0001f,"synthetic authored height no longer reproduces additive offset");
+                    for(int delayedUpdate=0;delayedUpdate<3;delayedUpdate++)
+                    {
+                        Require(!placement.PrepareReferenceHeight(false,floorMode,parent.transform,1.6f)&&
+                            !placement.TryApply(false,root.transform,parent.transform,rawPosition,rawRotation,WorldSpaceExperimentView.CenteredParticipantReference)&&
+                            !startup.TryReveal(false),"delayed reference/pose/focus readiness admitted startup");
+                        Require(root.transform.localToWorldMatrix==originalRoot&&Near(parent.transform.localPosition,authoredOffset)&&
+                            Near(camera.transform.localPosition,rawPosition)&&Quaternion.Angle(camera.transform.localRotation,rawRotation)<.001f&&camera.cullingMask==0,
+                            "delayed startup changed origin, raw pose, or visibility");
+                    }
+                    foreach(float invalidHeight in new[]{Single.NaN,Single.PositiveInfinity,Single.NegativeInfinity,-.01f})
+                        Require(!placement.PrepareReferenceHeight(true,floorMode,parent.transform,invalidHeight)&&Near(parent.transform.localPosition,authoredOffset),
+                            "invalid configured device height changed the reference offset");
+                    // Origin convention may resolve before either pose or focus.
+                    // It may also change before the one-shot placement commits.
+                    foreach(bool preparingFloor in new[]{true,false,floorMode})
+                    {
+                        Require(placement.PrepareReferenceHeight(true,preparingFloor,parent.transform,1.6f),"supported startup origin height was not prepared");
+                        Require(Near(parent.transform.localPosition,new Vector3(authoredOffset.x,preparingFloor?0:1.6f,authoredOffset.z))&&
+                            parent.transform.localRotation==Quaternion.identity&&Near(parent.transform.localScale,Vector3.one)&&
+                            root.transform.localToWorldMatrix==originalRoot&&Near(camera.transform.localPosition,rawPosition)&&
+                            Quaternion.Angle(camera.transform.localRotation,rawRotation)<.001f&&!placement.Applied&&!startup.Revealed,
+                            "height preparation changed XZ, raw pose, alignment, or visibility");
+                    }
+                    float expectedHeight=rawHeight+(floorMode?0:1.6f);
+                    Require(Mathf.Abs(camera.transform.position.y-expectedHeight)<.0001f,"startup convention flattened real height or retained the Floor lift");
+                    Require(!placement.TryApply(true,root.transform,parent.transform,rawPosition,new Quaternion(0,0,0,0),WorldSpaceExperimentView.CenteredParticipantReference)&&
+                        !placement.TryApply(false,root.transform,parent.transform,rawPosition,rawRotation,WorldSpaceExperimentView.CenteredParticipantReference)&&
+                        !startup.TryReveal(false)&&root.transform.localToWorldMatrix==originalRoot&&camera.cullingMask==0,
+                        "invalid pose or unavailable focus aligned/revealed the prepared room");
+                    Vector3 beforeForward=camera.transform.forward,beforeUp=camera.transform.up;
+                    Require(placement.TryApply(true,root.transform,parent.transform,rawPosition,rawRotation,WorldSpaceExperimentView.CenteredParticipantReference),
+                        "prepared startup did not align when caller became ready");
+                    Require(Mathf.Abs(camera.transform.position.y-expectedHeight)<.0001f&&
+                        Mathf.Abs(camera.transform.forward.y-beforeForward.y)<.0001f&&Mathf.Abs(camera.transform.up.y-beforeUp.y)<.0001f,
+                        "startup alignment changed tracked height, pitch, or roll");
+                    Require(!startup.TryReveal(false)&&!startup.Revealed&&camera.cullingMask==0,"alignment alone bypassed the later-frame readiness gate");
+                    Require(startup.TryReveal(true)&&startup.Revealed&&camera.cullingMask==savedMask&&camera.clearFlags==savedFlags&&camera.backgroundColor.Equals(savedBackground),
+                        "first ready view did not exactly restore camera render settings");
+                    var alignedRoot=root.transform.localToWorldMatrix;var preparedOffset=parent.transform.localPosition;
+                    Vector3 alignedHead=camera.transform.position,delta=new Vector3(.28f,-.13f,.34f);
+                    var movedRotation=rawRotation*Quaternion.Euler(-7,17,5);
+                    camera.transform.SetLocalPositionAndRotation(rawPosition+delta,movedRotation);
+                    Require(Near(camera.transform.position-alignedHead,parent.transform.TransformVector(delta))&&
+                        Quaternion.Angle(camera.transform.localRotation,movedRotation)<.001f,"physical translation/pitch/roll were cancelled after startup");
+                    // A later owner of render settings must not be overwritten
+                    // by a second reveal attempt after remove/re-wear.
+                    camera.cullingMask=0x2468;camera.clearFlags=CameraClearFlags.Nothing;
+                    var laterBackground=new Color(.6f,.3f,.1f,.9f);camera.backgroundColor=laterBackground;
+                    foreach(bool readyAfterLoss in new[]{false,true,false,true})
+                    {
+                        Require(!placement.PrepareReferenceHeight(readyAfterLoss,!floorMode,parent.transform,4f)&&
+                            !placement.TryApply(readyAfterLoss,root.transform,parent.transform,camera.transform.localPosition,camera.transform.localRotation,WorldSpaceExperimentView.CenteredParticipantReference)&&
+                            !startup.TryReveal(readyAfterLoss),"tracking/focus recovery reapplied startup placement or reveal");
+                        Require(root.transform.localToWorldMatrix==alignedRoot&&Near(parent.transform.localPosition,preparedOffset)&&
+                            Near(camera.transform.position-alignedHead,parent.transform.TransformVector(delta))&&
+                            Quaternion.Angle(camera.transform.localRotation,movedRotation)<.001f&&
+                            camera.cullingMask==0x2468&&camera.clearFlags==CameraClearFlags.Nothing&&camera.backgroundColor.Equals(laterBackground)&&startup.Revealed,
+                            "remove/re-wear changed reference height, physical movement, or later render settings");
+                    }
+                }
+                finally {UnityEngine.Object.DestroyImmediate(root);}
+            }
+        }
         static void CheckFraming(WorldSpaceExperimentView view)
         {
             var camera=view.PresentationCamera;
@@ -391,6 +494,60 @@ namespace AvatarStroop.Unity.Editor
                 }
             }
         }
+        static string NormalizedText(string value)
+        {return String.Join(" ",(value??"").Split(new[]{' ','\r','\n','\t'},StringSplitOptions.RemoveEmptyEntries));}
+        static void CheckVisibleEnglishText(WorldSpaceExperimentView view)
+        {
+            // Check actual rendered strings, including the desktop camera-owned
+            // warning surface. Source scans alone miss dynamically supplied text.
+            var labels=view.GetComponentsInChildren<TextMesh>(true)
+                .Concat(view.PresentationCamera.GetComponentsInChildren<TextMesh>(true)).Distinct();
+            foreach(var label in labels)
+            {
+                if(!label.gameObject.activeInHierarchy||!label.GetComponent<Renderer>().enabled||String.IsNullOrEmpty(label.text))continue;
+                Require(!label.text.Any(c=>(c>=0x2e80&&c<=0x9fff)||(c>=0xf900&&c<=0xfaff)||c==0xfffd),
+                    "non-English localization or undecodable text is visible: "+label.name);
+            }
+        }
+        static void CheckEnglishInstructionStates(WorldSpaceExperimentView view)
+        {
+            view.SetQuestionnaireLanguage("en");
+            bool rejected=false;
+            try{view.SetQuestionnaireLanguage("zh");}catch(ArgumentException){rejected=true;}
+            Require(rejected,"legacy questionnaire language silently reinterpreted as English presentation");
+            var compose=typeof(WorldSpaceExperimentView).GetMethod("ParticipantMessage",BindingFlags.NonPublic|BindingFlags.Instance);
+            foreach(var phase in new[]{Phase.Preparation,Phase.Familiarization,Phase.PracticeCorrection,Phase.PracticeRetry,
+                Phase.BlockPreparation,Phase.BlockReady,Phase.Countdown,Phase.Questionnaire,Phase.Rest,Phase.Paused,Phase.NeedsProtocolDecision,Phase.Ended})
+            {
+                var task=FixtureTask(phase,false,Colour.Green);
+                view.ApplyTaskView(task);view.ApplyAvatarOutput(Output(view,Condition.A,phase));FixtureControls(view,phase,phase==Phase.Questionnaire?(int?)3:null);Layout(view);
+                string expected=(string)compose.Invoke(view,new object[]{task});
+                var shown=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
+                Require(NormalizedText(shown.text)==NormalizedText(expected),"English instructions clipped in "+phase);
+                if(!String.IsNullOrEmpty(expected))Require(shown.GetComponent<Renderer>().enabled,"English instructions hidden in "+phase);
+                CheckVisibleEnglishText(view);CheckMenuReadable(view);
+            }
+            var ready=FixtureTask(Phase.Rest,false,Colour.Green);Set(ready,"ReadyEnabled",true);
+            view.ApplyTaskView(ready);FixtureControls(view,Phase.Rest);Layout(view);
+            var readyMessage=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
+            Require(NormalizedText(readyMessage.text).Contains("Rest as long as you need. Right trigger when ready."),"English ready/continue instruction clipped");
+            CheckVisibleEnglishText(view);CheckMenuReadable(view);
+        }
+        static void CheckCompleteEnglishQuestionnaire(WorldSpaceExperimentView view,int item)
+        {
+            var label=Menu(view).Find("ParticipantInstructions").GetComponent<TextMesh>();
+            string text=NormalizedText(label.text);
+            Require(label.GetComponent<Renderer>().enabled,"English questionnaire is hidden");
+            Require(text.Contains(Questionnaire.Instruction("en")),"English questionnaire instruction truncated");
+            Require(text.Contains(Questionnaire.Item(item,"en")),"English questionnaire item truncated: "+item);
+            int previous=-1;
+            for(int score=1;score<=5;score++)
+            {
+                int at=text.IndexOf(score+" "+Questionnaire.Anchor(score,"en"),StringComparison.Ordinal);
+                Require(at>previous,"English questionnaire anchor missing, truncated or reordered: "+score);previous=at;
+            }
+            CheckVisibleEnglishText(view);CheckMenuReadable(view);
+        }
         static void CheckFaultOcclusionGate(WorldSpaceExperimentView view)
         {
             Apply(view,Phase.MainTask,Condition.A,Colour.Green);
@@ -409,12 +566,13 @@ namespace AvatarStroop.Unity.Editor
             Require(!(bool)covered.GetValue(view)&&(bool)gate.Invoke(view,null),"cleared fault leaves a stale presentation block");
             view.SetPresentationAvailable(false);
         }
-        static void Render(WorldSpaceExperimentView view,string output,string name)
+        static void Render(WorldSpaceExperimentView view,string output,string name,bool requireUniform=false)
         {
             // Edit Mode does not run this behaviour's LateUpdate. Reinitialize
             // its idempotent presentation to apply the current HUD fit/guards
             // and dynamic font bindings before the explicit camera render.
             view.Initialize(view.PresentationCamera,view.Role);
+            CheckVisibleEnglishText(view);
             var camera=view.PresentationCamera;var previous=RenderTexture.active;
             var target=new RenderTexture(1100,720,24,RenderTextureFormat.ARGB32);
             var image=new Texture2D(1100,720,TextureFormat.RGB24,false);
@@ -422,12 +580,65 @@ namespace AvatarStroop.Unity.Editor
             {
                 camera.targetTexture=target;camera.Render();RenderTexture.active=target;
                 image.ReadPixels(new Rect(0,0,1100,720),0,0);image.Apply();
+                if(requireUniform)
+                {
+                    var pixels=image.GetPixels32();var first=pixels[0];
+                    Require(pixels.All(pixel=>pixel.r==first.r&&pixel.g==first.g&&pixel.b==first.b),
+                        "startup waiting fixture rendered room geometry instead of a uniform neutral view");
+                }
                 File.WriteAllBytes(Path.Combine(output,name),image.EncodeToPNG());
             }
             finally
             {
                 camera.targetTexture=null;RenderTexture.active=previous;
                 UnityEngine.Object.DestroyImmediate(image);UnityEngine.Object.DestroyImmediate(target);
+            }
+        }
+        static StartupHeightEvidence RenderStartupHeightFixtures(WorldSpaceExperimentView view,string output,List<string> files)
+        {
+            var camera=view.PresentationCamera;var savedParent=camera.transform.parent;
+            var savedPosition=camera.transform.localPosition;var savedRotation=camera.transform.localRotation;
+            int savedMask=camera.cullingMask;var savedFlags=camera.clearFlags;var savedBackground=camera.backgroundColor;
+            var root=new GameObject("SyntheticRenderedStartupOrigin");var parent=new GameObject("SyntheticRenderedStartupOffset");
+            var evidence=new StartupHeightEvidence{authored_device_offset=1.6f,raw_floor_height=1.6f,raw_head_euler=Vector3.zero};
+            try
+            {
+                Apply(view,Phase.MainTask,Condition.A,Colour.Green);
+                root.transform.position=new Vector3(WorldSpaceExperimentView.CenteredParticipantReference.x,0,WorldSpaceExperimentView.CenteredParticipantReference.z);
+                parent.transform.SetParent(root.transform,false);parent.transform.localPosition=new Vector3(0,1.6f,0);
+                camera.transform.SetParent(parent.transform,false);
+                var rawPosition=new Vector3(0,1.6f,0);var rawRotation=Quaternion.identity;
+                camera.transform.SetLocalPositionAndRotation(rawPosition,rawRotation);
+                evidence.before_world_height=camera.transform.position.y;
+                Require(Mathf.Abs(evidence.before_world_height-3.2f)<.0001f,"rendered Floor fixture does not reproduce double height");
+                string before="synthetic-startup-floor-before-height-preparation.png";
+                Render(view,output,before);files.Add(before);
+                var placement=new QuestPreviewStartAlignment();var startup=new QuestPreviewStartupView(camera);
+                Require(!placement.PrepareReferenceHeight(false,true,parent.transform,1.6f)&&!startup.TryReveal(false),"unknown reference mode revealed the fixture room");
+                string waiting="synthetic-startup-waiting-reference-and-pose.png";
+                Render(view,output,waiting,true);files.Add(waiting);evidence.waiting_render_uniform=true;
+                Require(camera.cullingMask==0&&camera.transform.parent==parent.transform,"fixture initialization removed startup masking or tracking hierarchy");
+                Require(placement.PrepareReferenceHeight(true,true,parent.transform,1.6f),"rendered Floor reference was not prepared before alignment");
+                evidence.prepared_world_height=camera.transform.position.y;
+                Require(Mathf.Abs(evidence.prepared_world_height-1.6f)<.0001f&&!placement.Applied&&!startup.Revealed,
+                    "pre-focus height preparation changed startup readiness or retained double height");
+                Require(placement.TryApply(true,root.transform,parent.transform,rawPosition,rawRotation,WorldSpaceExperimentView.CenteredParticipantReference)&&
+                    !startup.TryReveal(false)&&startup.TryReveal(true),"rendered fixture failed one-shot placement and later reveal");
+                evidence.render_settings_restored=camera.cullingMask==savedMask&&camera.clearFlags==savedFlags&&camera.backgroundColor.Equals(savedBackground);
+                Require(evidence.render_settings_restored,"rendered startup fixture failed to restore its camera settings");
+                string after="synthetic-startup-floor-after-height-preparation.png";
+                Render(view,output,after);files.Add(after);
+                evidence.raw_pose_unchanged=Near(camera.transform.localPosition,rawPosition)&&Quaternion.Angle(camera.transform.localRotation,rawRotation)<.001f;
+                Require(evidence.raw_pose_unchanged&&camera.transform.parent==parent.transform,"before/after fixture changed raw head pose or hierarchy");
+                var centre=camera.WorldToViewportPoint(view.TaskWorldPosition);
+                Require(Mathf.Abs(centre.x-.5f)<.0001f&&centre.y>.45f&&centre.y<.55f,"prepared level Floor fixture does not face the board at measured height");
+                return evidence;
+            }
+            finally
+            {
+                camera.transform.SetParent(savedParent,false);camera.transform.SetLocalPositionAndRotation(savedPosition,savedRotation);
+                camera.cullingMask=savedMask;camera.clearFlags=savedFlags;camera.backgroundColor=savedBackground;
+                UnityEngine.Object.DestroyImmediate(root);
             }
         }
         public static void RenderFixtures()
@@ -444,12 +655,13 @@ namespace AvatarStroop.Unity.Editor
                 throw new InvalidOperationException("Actual fixture rendering requires graphics and the built-in pipeline; do not use -nographics.");
             Directory.CreateDirectory(output);checks=0;var files=new List<string>();
             CheckSavedScenes();
-            var view=NewFixture(Actor.Participant);CheckMigration(view);CheckInitialAlignment(view);CheckGeometry(view);CheckActivePresentation(view);CheckFixedMenuAndTransitions(view);CheckFaultOcclusionGate(view);
+            var view=NewFixture(Actor.Participant);CheckMigration(view);CheckInitialAlignment(view);CheckStartupReferenceHeightAndView();CheckGeometry(view);CheckActivePresentation(view);CheckFixedMenuAndTransitions(view);CheckFaultOcclusionGate(view);CheckEnglishInstructionStates(view);
             Apply(view,Phase.MainTask,Condition.A,Colour.Green);
             CheckUnobstructed(view.PresentationCamera.transform.position,view.TaskWorldPosition,
                 Content(view).Find("ClassroomEnvironment").GetComponentsInChildren<Renderer>(true)
                     .Concat(view.AvatarRoot.GetComponentsInChildren<Renderer>(true)),"participant word line is obstructed");
             var evidence=new Evidence{task_world=view.TaskWorldPosition,avatar_world=view.AvatarRoot.position,stimulus_character_size=Stimulus(view).characterSize};
+            evidence.startup_reference_height=RenderStartupHeightFixtures(view,output,files);
             var colours=new List<string>();
             foreach(Colour ink in Enum.GetValues(typeof(Colour)))
             {
@@ -487,6 +699,11 @@ namespace AvatarStroop.Unity.Editor
             string visibleFault=String.Join(" ",faultText.text.Split(new[]{' ','\r','\n','\t'},StringSplitOptions.RemoveEmptyEntries));
             Require(faultText.GetComponent<Renderer>().enabled&&visibleFault.Contains("Touch controllers")&&visibleFault.Contains("ConnectionFault"),"active tracking/network faults hidden");
             Require(visibleFault.IndexOf("Touch controllers",StringComparison.Ordinal)==visibleFault.LastIndexOf("Touch controllers",StringComparison.Ordinal),"tracking fault duplicated");
+            view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED","X red | Y green | A blue | B yellow");
+            view.SetFaults(new[]{PreviewRecovery.Guidance});
+            Render(view,output,"synthetic-connection-restart-guidance.png");files.Add("synthetic-connection-restart-guidance.png");
+            string restartText=String.Join(" ",faultText.text.Split(new[]{' ','\r','\n','\t'},StringSplitOptions.RemoveEmptyEntries));
+            Require(faultText.GetComponent<Renderer>().enabled&&restartText.Contains("NEW session")&&restartText.Contains("will not resume"),"explicit new-session restart guidance is hidden or incomplete");
             view.SetFaults(new string[0]);view.SetHeadsetPreview("Head pose and Touch input available | avatar gaze: SIMULATED","X red | Y green | A blue | B yellow");
             Apply(view,Phase.Preparation,Condition.A,Colour.Green);Render(view,output,"synthetic-preparation.png");files.Add("synthetic-preparation.png");
             CheckMenuReadable(view);
@@ -522,6 +739,16 @@ namespace AvatarStroop.Unity.Editor
             string shown=String.Join(" ",control.text.Split(new[]{' ','\r','\n','\t'},StringSplitOptions.RemoveEmptyEntries));
             Require(shown.Contains("Selected: 4")&&shown.Contains("A: confirm")&&shown.Contains("UP: lower number")&&shown.Contains("DOWN: higher number"),"questionnaire candidate/control hint missing");
             evidence.questionnaire_rendered_candidates=candidates.ToArray();
+            var renderedItems=new List<int>();
+            for(int item=0;item<Questionnaire.Count;item++)
+            {
+                var task=FixtureTask(Phase.Questionnaire,false,Colour.Green);
+                Set(task,"QuestionnaireItem",Questionnaire.Item(item,"en"));
+                view.ApplyTaskView(task);FixtureControls(view,Phase.Questionnaire,3);
+                string name="synthetic-english-questionnaire-item-"+(item+1)+".png";
+                Render(view,output,name);files.Add(name);CheckCompleteEnglishQuestionnaire(view,item);renderedItems.Add(item);
+            }
+            evidence.questionnaire_rendered_items=renderedItems.ToArray();
             view=NewFixture(Actor.Operator);ValidateView(view);Apply(view,Phase.MainTask,Condition.A,Colour.Green);CheckFraming(view);
             Render(view,output,"synthetic-operator.png");files.Add("synthetic-operator.png");
             evidence.checks=checks;evidence.images=files.ToArray();evidence.ink_rgba=colours.ToArray();evidence.words=words.ToArray();

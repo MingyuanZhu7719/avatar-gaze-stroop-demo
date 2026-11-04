@@ -588,7 +588,8 @@ namespace AvatarStroop.Unity
 
         public void SetQuestionnaireLanguage(string language)
         {
-            // Requires an explicit configured language; there is no study default.
+            // Validate the current English-only presentation contract. A legacy
+            // language identifier must not silently become an English display.
             Questionnaire.Instruction(language);
             questionnaireLanguage = language;
             if(currentView != null && role == Actor.Participant) messageText.text = ParticipantMessage(currentView);

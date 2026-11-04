@@ -9,6 +9,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.XR;
 using UnityEngine.XR;
 using UnityEngine.XR.Management;
+using UnityEngine.XR.OpenXR;
 using UnityEngine.XR.OpenXR.Input;
 
 namespace AvatarStroop.Unity
@@ -29,6 +30,7 @@ namespace AvatarStroop.Unity
         InputAction position, rotation, trackingState, tracked, x, y, a, b, trigger, menu, stick;
         readonly QuestPreviewInputRouter router = new QuestPreviewInputRouter();
         readonly QuestPreviewStartAlignment initialAlignment = new QuestPreviewStartAlignment();
+        QuestPreviewStartupView startupView;
         bool ownsLoader, focusKnown, displayFocused;
         int alignedFrame=-1;
         TrackingOriginModeFlags alignedTrackingMode=TrackingOriginModeFlags.Unknown;
@@ -85,6 +87,7 @@ namespace AvatarStroop.Unity
                 if(view == null || view.Role != Actor.Participant || previewCamera == null || origin == null || poseDriver == null)
                     throw new InvalidOperationException("Participant Quest preview rig is incomplete");
                 origin.enabled=false;
+                startupView=new QuestPreviewStartupView(previewCamera);
                 view.SetPresentationAvailable(false);
                 view.SetPresentationAvailabilityCheck(LivePresentationAvailable);
                 // Register and enable every action BEFORE OpenXR initializes its
@@ -170,17 +173,20 @@ namespace AvatarStroop.Unity
             if(initialAlignment.Applied)return;
             bool originReady=inputSubsystem!=null&&inputSubsystem.running&&
                 SupportedMode(mode)&&origin!=null&&!origin.enabled&&origin.CameraFloorOffsetObject!=null;
-            if(!trackedHead||!focusKnown||!displayFocused||!originReady)return;
             // Read the provider's existing convention, never request a new mode.
-            // Preserve the old Device=1.6 / Floor=0 height-offset semantics.
-            var offset=origin.CameraFloorOffsetObject.transform;
-            var positionOffset=offset.localPosition;positionOffset.y=mode==TrackingOriginModeFlags.Floor?0:origin.CameraYOffset;
-            offset.localPosition=positionOffset;
+            // A Floor pose already includes height, even before the first focus
+            // event or valid pose. Never combine it with the authored Device lift.
+            bool heightReady=originReady&&initialAlignment.PrepareReferenceHeight(true,
+                mode==TrackingOriginModeFlags.Floor,origin.CameraFloorOffsetObject.transform,origin.CameraYOffset);
+            if(!trackedHead||!focusKnown||!displayFocused||!heightReady)return;
             if(initialAlignment.TryApply(true,origin.Origin.transform,previewCamera.transform.parent,
                 position.ReadValue<Vector3>(),rotation.ReadValue<Quaternion>(),WorldSpaceExperimentView.CenteredParticipantReference))
             {
                 alignedFrame=Time.frameCount;alignedTrackingMode=mode;
-                Debug.Log("QUEST PREVIEW START ALIGNED: mode="+mode+"; board-centred XZ and forward yaw; tracked height/pitch/roll preserved; one application transform only; no runtime recenter or real eye data.");
+                Debug.Log("QUEST PREVIEW START ALIGNED: mode="+mode+"; rawHead="+position.ReadValue<Vector3>().ToString("F3")+
+                    "; heightOffset="+origin.CameraFloorOffsetObject.transform.localPosition.y.ToString("F3")+
+                    "; worldHead="+previewCamera.transform.parent.TransformPoint(position.ReadValue<Vector3>()).ToString("F3")+
+                    "; board-centred XZ and forward yaw; tracked height/pitch/roll preserved; one application transform only; no runtime recenter or real eye data.");
             }
         }
         bool LivePresentationAvailable()
@@ -211,6 +217,10 @@ namespace AvatarStroop.Unity
         void RefreshState(bool allowInitialAlignment=false)
         {
             bool running = failure == null && display != null && display.running;
+            // The initial FOCUSED transition can precede registration of the
+            // display callback. Read the official provider's current state;
+            // do not require removing/re-wearing the headset to create an edge.
+            if(running){focusKnown=true;displayFocused=OpenXRUtility.IsSessionFocused;}
             bool bound = Bound(position) && Bound(rotation) && Bound(trackingState) && Bound(tracked);
             bool isTracked = bound && Pressed(tracked);
             int tracking = bound ? trackingState.ReadValue<int>() : 0;
@@ -229,6 +239,12 @@ namespace AvatarStroop.Unity
             // presentation. Never counteract later physical movement.
             HeadViewReady = head && (!focusKnown || displayFocused) && initialAlignment.Applied &&
                 !referenceSpaceChanged && mode==alignedTrackingMode && Time.frameCount>alignedFrame;
+            // Only Update can reveal the scene. Pre-cull/post-render queries
+            // cannot change a camera's culling mask inside a render witness.
+            if(allowInitialAlignment&&startupView!=null&&startupView.TryReveal(HeadViewReady))
+                Debug.Log("QUEST PREVIEW FIRST VIEW READY: mode="+mode+"; heightOffset="+
+                    origin.CameraFloorOffsetObject.transform.localPosition.y.ToString("F3")+
+                    "; worldHead="+previewCamera.transform.position.ToString("F3")+"; actual headset acceptance pending.");
             InputReady = HeadViewReady && Active(x) && Active(y) && Active(a) && Active(b) && Active(trigger) && Active(menu) && Active(stick);
             Diagnostic = failure ?? (!running ? "Waiting for OpenXR display; connect Quest Link before launch" :
                 !bound ? "Waiting for headset input bindings" :

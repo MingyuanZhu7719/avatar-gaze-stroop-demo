@@ -17,12 +17,23 @@ namespace AvatarStroop.Tests
         {
             suite.Run("M3 owner whitelist rejects factor overrides scripts source omissions and malformed IDs",()=>{
                 OwnerCommand parsed;string error;
-                foreach(var command in new[]{Command(1),Command(2,OwnerCommandKind.Lock,ControlSelection.Automatic),Command(3,OwnerCommandKind.Lock,ControlSelection.SimulatorRehearsal),Command(4,OwnerCommandKind.Lock,ControlSelection.LiveWoz),Command(5,OwnerCommandKind.Begin),Command(6,OwnerCommandKind.Export)})
+                foreach(var command in new[]{Command(1),Command(2,OwnerCommandKind.Lock,ControlSelection.Automatic),Command(3,OwnerCommandKind.Lock,ControlSelection.SimulatorRehearsal),Command(4,OwnerCommandKind.Lock,ControlSelection.LiveWoz),Command(5,OwnerCommandKind.Begin),Command(6,OwnerCommandKind.Export),Command(7,OwnerCommandKind.RestartPreview)})
                 {Check.True(OwnerCommandCodec.TryParse(OwnerCommandCodec.Encode(command),out parsed,out error));Check.Equal(command.Source,parsed.Source);Check.Equal(command.Kind,parsed.Kind);}
                 foreach(var line in new[]{"ASOWNER|1|"+Id(1)+"|Lock|~","ASOWNER|1|"+Id(1)+"|Practice|Automatic","ASOWNER|1|"+Id(1)+"|Resume|~","ASOWNER|1|"+Id(1)+"|Lock|A","ASOWNER|1|"+Id(1)+"|Lock|Automatic|condition=A","ASOWNER|1|"+Id(1)+"|Export|/tmp/arbitrary","ASOWNER|2|"+Id(1)+"|Begin|~","ASOWNER|1|not-an-id|Begin|~","ASOWNER|1|"+Id(1)+"|1|~","ASOWNER|1|"+Id(1)+"|Lock|0","ASOWNER|1|"+Id(1)+"|Practice|~\nBegin"})
                     Check.True(!OwnerCommandCodec.TryParse(line,out parsed,out error),line);
                 Check.Throws<ArgumentException>(()=>new OwnerCommand(Id(1),OwnerCommandKind.Lock));
+                Check.Throws<ArgumentException>(()=>new OwnerCommand(Id(8),OwnerCommandKind.RestartPreview,ControlSelection.Automatic));
             });
+            suite.Run("Preview restart delegates technical end explicitly and deduplicates the exact request",()=>WithDirectory(path=>{
+                var command=Command(9,OwnerCommandKind.RestartPreview);int ends=0,unrelated=0;string endedRequest=null;
+                Check.Equal("restart_preview_unavailable",OwnerCommandExecution.Execute(command,()=>unrelated++,s=>unrelated++,()=>unrelated++,()=>unrelated++));
+                Func<OwnerCommand,string> handler=c=>OwnerCommandExecution.Execute(c,()=>unrelated++,s=>unrelated++,()=>unrelated++,()=>unrelated++,id=>{ends++;endedRequest=id;});
+                OwnerCommandFile.Append(path,command);OwnerCommandFile.Append(path,command);
+                using(var dispatcher=new OwnerCommandDispatcher(path,"restart-old-session",handler))dispatcher.DispatchPending();
+                using(var dispatcher=new OwnerCommandDispatcher(path,"restart-old-session",handler))dispatcher.DispatchPending();
+                Check.Equal(1,ends);Check.Equal(command.RequestId,endedRequest);Check.Equal(0,unrelated);
+                Check.True(OwnerCommandFile.FindAcknowledgement(path,command).Accepted);
+            }));
             suite.Run("M3 owner acknowledgement escapes delimiters newline and Unicode without command injection",()=>{
                 string reason="Rejected | newline\n中文 \\";var command=Command(1);var ack=new OwnerAcknowledgement(command.RequestId,false,reason,OwnerCommandCodec.Hash(command));
                 string wire=OwnerCommandCodec.EncodeAcknowledgement(ack);Check.True(wire.IndexOf('\n')<0);OwnerAcknowledgement decoded;Check.True(OwnerCommandCodec.TryParseAcknowledgement(wire,out decoded));Check.Equal(reason,decoded.Reason);

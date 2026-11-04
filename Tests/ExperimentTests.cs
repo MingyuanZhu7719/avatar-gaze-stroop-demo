@@ -199,11 +199,18 @@ namespace AvatarStroop.Tests
                 var trial=e.CurrentTrial;e.Withdraw();Check.Equal(TrialOutcome.Interrupted,trial.Outcome);Check.Equal(null,trial.ResponseAt);Check.Equal(null,trial.Correct);
                 Check.Equal(1,e.Trials.Count(x=>!x.IsPractice));e.Withdraw();Check.Equal(1,e.Events.Count(x=>x.Kind=="session_ended"));
             });
-            t.Run("AC-03 explicit config and exact questionnaire anchors",()=>{
-                Check.Equal("Strongly disagree",Questionnaire.Anchor(1,"en"));Check.Equal("非常同意",Questionnaire.Anchor(5,"zh"));
-                Check.Equal("在刚才这一组中，我做任务时有被注视的感觉。",Questionnaire.Item(2,"zh"));
+            t.Run("AC-03 English-only new questionnaires preserve approved anchors and reject relabeling",()=>{
+                string[] anchors={"Strongly disagree","Disagree","Neither agree nor disagree","Agree","Strongly agree"};
+                for(int score=1;score<=5;score++)Check.Equal(anchors[score-1],Questionnaire.Anchor(score,"en"));
+                Check.Equal("During this block, I felt watched while completing the task.",Questionnaire.Item(2,"en"));
+                Check.Equal("Please answer about the block you have just completed.",Questionnaire.Instruction("en"));
+                Check.Throws<ArgumentException>(()=>Questionnaire.Item(0,"zh"));
+                Check.Throws<ArgumentException>(()=>Questionnaire.Anchor(5,"zh"));
+                Check.Throws<ArgumentException>(()=>Questionnaire.Instruction("zh"));
                 Check.Throws<ArgumentException>(()=>Questionnaire.Item(0,"unconfirmed"));Check.Throws<ArgumentOutOfRangeException>(()=>Questionnaire.Anchor(6,"en"));
                 var allocation=TrialPlans.Allocate(1,42)[0];
+                Check.Throws<ArgumentException>(()=>new SessionConfiguration("x",42,allocation,RunKind.Simulation,"zh",1));
+                Check.Equal("en",new SessionConfiguration("x",42,allocation,RunKind.Simulation,"en",1).QuestionnaireLanguage);
                 Check.Throws<ArgumentOutOfRangeException>(()=>new SessionConfiguration("x",42,allocation,RunKind.Simulation,"en",0));
             });
         }

@@ -17,8 +17,11 @@ namespace AvatarStroop.Tests
             }
             Console.WriteLine("Framework CLR "+Environment.Version+"; runtime "+RuntimeEnvironment.GetRuntimeDirectory());
             var suite=new TestSuite();
+            AppLanguageTests.Register(suite);
             DesktopPreviewTests.Register(suite);
             OwnerCommandTests.Register(suite);
+            PreviewRecoveryTests.Register(suite);
+            PreviewRestartWorkflowTests.Register(suite);
             Console.WriteLine("FRAMEWORK PREVIEW RESULT "+suite.Passed+" passed; "+suite.Failed+" failed");
             return suite.Failed==0?0:1;
         }
