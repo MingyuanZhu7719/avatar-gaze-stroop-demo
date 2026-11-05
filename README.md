@@ -31,12 +31,13 @@ The latest user-accepted working baseline is now readable directly on GitHub. It
 <!-- BEGIN software-implementation -->
 ## Software implementation
 
-Milestones 1–4 implement the portable experiment core, control and fault contracts, two independent simulation applications, owner controls, auditable CSV exports, and opt-in continuous simulation journals with offline evidence extraction. Unity presentation and scene-generation source is included and compiles against the installed Unity assemblies. **Actual VR rendering, real VIVE Pro Eye acquisition, and two-PC/headset validation remain pending; apparatus sessions are blocked.**
+Milestones 1-4 implement the portable experiment core, control and fault contracts, two independent simulation applications, owner controls, auditable CSV exports, and opt-in continuous simulation journals with offline evidence extraction. Unity presentation and scene-generation source includes the Quest classroom preview and a separate VIVE Pro Eye hardware rehearsal. **The rehearsal adds real acquisition, but formal VIVE task integration, live two-PC WoZ, provenance-aware eye recording and apparatus validation remain pending; apparatus sessions are blocked.**
 
 - [Development milestones, actual test results, and remaining prerequisites](docs/development.md)
 - [Windows environment, local regression and standalone build verification](docs/windows-validation.md)
 - [Direct desktop preview launcher and owner controls](docs/desktop-preview.md) - implemented and built; shares the Windows Framework compatibility fix exercised through the Quest owner UI.
 - [Quest 3 PC Link preview and Touch interaction](docs/quest-preview.md) - actual owner UI and desktop player inspection performed; physical headset/controller acceptance remains separate.
+- [Local VIVE Pro Eye acquisition candidate](docs/vive-pro-eye-adapter.md) - native capture, validity filtering and a separate hardware rehearsal; formal WoZ transport, recording and apparatus acceptance remain blocked.
 - [Headset-preview package and compatibility assessment](docs/xr-preview-prerequisites.md)
 - [Requirements and regression coverage](docs/requirements-tests.md)
 - [Unity presentation adapter and verification limits](docs/unity-adapter.md)

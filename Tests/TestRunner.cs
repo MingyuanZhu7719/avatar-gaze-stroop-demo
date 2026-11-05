@@ -80,6 +80,12 @@ namespace AvatarStroop.Tests
             OwnerCommandTests.Register(suite);
             DesktopPreviewTests.Register(suite);
             QuestPreviewInputTests.Register(suite);
+            ViveProEyeCaptureTests.Register(suite);
+            ViveProEyeWorkerTests.Register(suite);
+            VivePreviewDiagnosticsTests.Register(suite);
+            VivePreviewMarkerContinuityTests.Register(suite);
+            VivePreviewLaunchPlanTests.Register(suite);
+            SrAnipalInteropTests.Register(suite);
             JournalTests.Register(suite);
             JournalCaptureTests.Register(suite);
             JournalRuntimeTests.Register(suite);
