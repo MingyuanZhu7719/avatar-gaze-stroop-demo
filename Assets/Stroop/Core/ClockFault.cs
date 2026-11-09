@@ -11,6 +11,31 @@ namespace AvatarStroop.Core
         public double Now {get{return timer.Elapsed.TotalSeconds;}}
         public string ClockId {get;private set;}
         public MonotonicClock(string clockId) {WireCodec.RequireIdentity(clockId);ClockId=clockId;}
+        // Synthetic in-memory commit checks only. The sealed instance owns
+        // this Stopwatch; no supplied delegate, device or IClock implementation
+        // is called. A single timestamp read has no managed wait or allocation.
+        // This does not verify physical capture time or OS scheduling latency.
+        internal bool TryReadSyntheticCommitTime(out double seconds)
+        {return TryReadSealedStopwatch(out seconds);}
+        // Same sealed stopwatch, for a software-side admission check only.
+        // It neither authenticates SDK capture time nor bounds descheduling.
+        internal bool TryReadRecordingAdmissionTime(out double seconds)
+        {return TryReadSealedStopwatch(out seconds);}
+        bool TryReadSealedStopwatch(out double seconds)
+        {
+            seconds=0;
+            try
+            {
+                if(!Stopwatch.IsHighResolution||Stopwatch.Frequency<=0||!timer.IsRunning)return false;
+                long ticks=timer.ElapsedTicks;
+                if(ticks<0)return false;
+                double value=(double)ticks/Stopwatch.Frequency;
+                if(Double.IsNaN(value)||Double.IsInfinity(value)||value<0)return false;
+                seconds=value;return true;
+            }
+            catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
+            {return false;}
+        }
     }
 
     // All values are explicit engineering choices. None are approved study thresholds.
@@ -312,6 +337,7 @@ namespace AvatarStroop.Core
         long highest=-1,missing,duplicates,outOfOrder,rejected,eventSequence;
         double lastNow=-1,lastSent=-1,lastCapture=-1;
         double? lastReceipt,lastTracking,lastHeadGood,lastEyeGood,lastTaskReceived,lastTaskSent;
+        long lastAcceptedTaskPacketSequence=-1,lastAcceptedTrackingPacketSequence=-1;
         bool handshake,recoveryRequired;
         string connectionFault;
         public HeadEyeSample LastSample {get;private set;}
@@ -391,10 +417,11 @@ namespace AvatarStroop.Core
             if(packet.Kind==WireKind.HeadEye)
             {
                 LastSample=packet.Sample;lastTracking=localReceived;lastCapture=LastSample.CaptureLocalSeconds;
+                lastAcceptedTrackingPacketSequence=packet.Sequence;
                 if(LastSample.HeadValid)lastHeadGood=localReceived;
                 if(LastSample.EyeValid)lastEyeGood=localReceived;
             }
-            if(packet.Kind==WireKind.Task){LastTask=packet.Snapshot;lastTaskReceived=localReceived;lastTaskSent=packet.SentLocalSeconds;}
+            if(packet.Kind==WireKind.Task){LastTask=packet.Snapshot;lastTaskReceived=localReceived;lastTaskSent=packet.SentLocalSeconds;lastAcceptedTaskPacketSequence=packet.Sequence;}
             return new ReceiveDecision{Accepted=true,MissingBeforePacket=gap};
         }
         bool MatchMap(ClockSynchronizer map) {return map!=null && map.Snapshot().RemoteClockId==expected.ClockId && map.Snapshot().LocalClockId==localClockId;}
@@ -405,6 +432,24 @@ namespace AvatarStroop.Core
             Time(now);double mapped,u;
             if(recoveryRequired||LastTask==null||!lastTaskReceived.HasValue||now-lastTaskReceived.Value>config.ConnectionStaleSeconds||!MatchMap(mapping)||!mapping.TryMapRemote(lastTaskSent.Value,out mapped,out u)||now-(mapped-u)>config.MaximumMappedSampleAgeSeconds||mapped-u>now)return null;
             return LastTask;
+        }
+        // Returns the accepted packet's original receipt evidence. Re-reading a
+        // cached snapshot never changes its sequence or extends its freshness.
+        public bool TryGetCurrentTaskEvidence(double now,ClockSynchronizer mapping,out TaskSnapshot task,out long packetSequence,out double localReceivedSeconds)
+        {
+            task=CurrentTask(now,mapping);packetSequence=-1;localReceivedSeconds=0;
+            if(task==null||!lastTaskReceived.HasValue||lastAcceptedTaskPacketSequence<0)return false;
+            packetSequence=lastAcceptedTaskPacketSequence;localReceivedSeconds=lastTaskReceived.Value;return true;
+        }
+        // The receipt and packet sequence belong to the accepted tracking
+        // datagram, not a later read or another packet on the connection.
+        // Both axes and mapped age must remain usable at the time of each read.
+        public bool TryGetCurrentTrackingEvidence(double now,ClockSynchronizer mapping,out HeadEyeSample sample,out long packetSequence,out double localReceivedSeconds)
+        {
+            var status=Snapshot(now,mapping);
+            sample=null;packetSequence=-1;localReceivedSeconds=0;
+            if(!status.HeadUsable||!status.EyeUsable||LastSample==null||!lastTracking.HasValue||lastAcceptedTrackingPacketSequence<0)return false;
+            sample=LastSample;packetSequence=lastAcceptedTrackingPacketSequence;localReceivedSeconds=lastTracking.Value;return true;
         }
         public FaultSnapshot Snapshot(double now,ClockSynchronizer mapping=null)
         {

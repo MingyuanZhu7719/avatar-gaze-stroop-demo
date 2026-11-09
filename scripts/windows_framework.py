@@ -44,8 +44,9 @@ def verify_preview_runtime(mono, csc, source, work_directory):
     with tempfile.TemporaryDirectory(prefix="framework-check-", dir=work_directory) as temporary:
         binary = Path(temporary) / "AvatarStroop.FrameworkPreviewSmoke.exe"
         sources = runtime_sources(source) + sorted((source / "Tests").glob("*.cs"))
-        command = compiler_command(mono, csc) + ["-target:exe", "-main:AvatarStroop.Tests.FrameworkPreviewSmoke", "-out:" + str(binary)]
-        subprocess.run(command + [str(path) for path in sources], check=True, cwd=source)
+        command = compiler_command(mono, csc) + ["-define:STROOP_TEST_BUILD", "-target:exe", "-main:AvatarStroop.Tests.FrameworkPreviewSmoke", "-out:" + str(binary)]
+        # Resolve source files from cwd to stay below Windows' command-line limit.
+        subprocess.run(command + [str(path.relative_to(source)) for path in sources], check=True, cwd=source)
         # Do not prefix this with Mono: that would hide the deployment incompatibility.
         subprocess.run([str(binary)], check=True, cwd=source,
                        env=dict(os.environ, TEMP=temporary, TMP=temporary))
@@ -56,7 +57,7 @@ def compile_preview_launcher(mono, csc, source, launcher, quest=False):
     if quest:
         command.append("-define:QUEST_PREVIEW_LAUNCHER")
     sources = runtime_sources(source) + [source / "Apps/DesktopPreviewLauncher.cs"]
-    subprocess.run(command + [str(path) for path in sources], check=True, cwd=source)
+    subprocess.run(command + [str(path.relative_to(source)) for path in sources], check=True, cwd=source)
 
 
 def main():

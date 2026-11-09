@@ -25,6 +25,7 @@ namespace AvatarStroop.Core
         {
             if(journal==null)throw new ArgumentNullException("journal");
             if((experiment==null)!=(audit==null))throw new ArgumentException("Experiment and audit must be supplied together");
+            if(experiment!=null&&experiment.Configuration.IsNamedDesign)throw new InvalidOperationException("Legacy simulation journal cannot represent named-option provenance");
             if(experiment!=null && (journal.Identity.Role!="participant" || experiment.Configuration.RunKind!=RunKind.Simulation || audit.RunKind!=RunKind.Simulation ||
                 journal.Identity.SessionId!=experiment.Configuration.SessionId || journal.Identity.SessionId!=audit.SessionId || journal.Identity.ClockId!=experiment.Events[0].ClockId))
                 throw new ArgumentException("Recording requires the matching simulation participant session");

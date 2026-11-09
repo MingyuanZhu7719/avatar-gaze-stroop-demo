@@ -52,6 +52,38 @@ namespace AvatarStroop.Tests
         {var f=Encoding.ASCII.GetString(bytes).Split('|');f[field]=value;WirePacket packet;string error;Check.True(!WireCodec.TryDecode(Encoding.ASCII.GetBytes(String.Join("|",f)),out packet,out error));Check.True(packet==null && error!=null);}
         public static void Register(TestSuite suite)
         {
+            suite.Run("M3 accepted tracking evidence preserves receipt and rejects invalid or stale axes",()=>{
+                var monitor=Monitor();var map=Map();Hello(monitor);
+                HeadEyeSample current;long packet;double receipt;
+                Check.True(!monitor.TryGetCurrentTrackingEvidence(.01,map,out current,out packet,out receipt));
+                Check.True(monitor.Observe(Track(1,0,.02),.03,map).Accepted);
+                Check.True(monitor.TryGetCurrentTrackingEvidence(.04,map,out current,out packet,out receipt));
+                Check.Equal(1L,packet);Check.Equal(0L,current.Sequence);Check.Near(.03,receipt);
+                Check.True(!monitor.Observe(Track(2,0,.05),.06,map).Accepted);
+                Check.True(monitor.TryGetCurrentTrackingEvidence(.07,map,out current,out packet,out receipt));
+                Check.Equal(1L,packet);Check.Near(.03,receipt);
+                Check.True(monitor.Observe(Track(2,1,.08,true,false),.09,map).Accepted);
+                Check.True(!monitor.TryGetCurrentTrackingEvidence(.10,map,out current,out packet,out receipt));
+                Check.Equal(null,current);Check.Equal(-1L,packet);
+                Check.True(monitor.Observe(Track(3,2,.11),.12,map).Accepted);
+                Check.True(monitor.TryGetCurrentTrackingEvidence(.13,map,out current,out packet,out receipt));
+                Check.Equal(3L,packet);Check.Equal(2L,current.Sequence);Check.Near(.12,receipt);
+                Check.True(!monitor.TryGetCurrentTrackingEvidence(.34,map,out current,out packet,out receipt));
+            });
+            suite.Run("M3 accepted task evidence keeps original receipt across reads and rejected packets",()=>{
+                var peer=Peer(role:PeerRole.Participant,source:"task-host",origin:ControlSource.Automatic);var monitor=Monitor(peer);var map=Map();
+                Check.True(monitor.Observe(WirePacket.Hello(peer,0,0,SessionConfiguration.ProtocolVersion),0).Accepted);
+                var snapshot=new TaskSnapshot("wire-session",0,0,null,null,null,Phase.BlockReady,Condition.A);
+                Check.True(monitor.Observe(WirePacket.Task(peer,1,.02,snapshot),.03,map).Accepted);
+                TaskSnapshot current;long sequence;double receipt;
+                Check.True(monitor.TryGetCurrentTaskEvidence(.04,map,out current,out sequence,out receipt));
+                Check.True(Object.ReferenceEquals(snapshot,current));Check.Equal(1L,sequence);Check.Near(.03,receipt);
+                Check.True(!monitor.Observe(WirePacket.Task(peer,1,.02,snapshot),.05,map).Accepted);
+                Check.True(monitor.TryGetCurrentTaskEvidence(.06,map,out current,out sequence,out receipt));
+                Check.Equal(1L,sequence);Check.Near(.03,receipt);
+                Check.True(!monitor.TryGetCurrentTaskEvidence(.4,map,out current,out sequence,out receipt));
+                Check.Equal(null,current);Check.Equal(-1L,sequence);
+            });
             foreach(var operation in new[]{"poll","receive","send"})
             {
                 suite.Run("M3 UDP "+operation+" connection reset closes epoch and prevents all later socket I/O",()=>{
@@ -278,7 +310,7 @@ namespace AvatarStroop.Tests
                 using(var receiver=new UdpClient(new IPEndPoint(IPAddress.Loopback,0)))
                 using(var peer=new UdpPeer(new IPEndPoint(IPAddress.Loopback,0),(IPEndPoint)receiver.Client.LocalEndPoint,false))
                 {
-                    receiver.Client.ReceiveTimeout=1000;peer.Send(WirePacket.Hello(Peer(),0,.1,SessionConfiguration.ProtocolVersion));IPEndPoint sender=null;
+                    receiver.Client.ReceiveTimeout=1000;Check.True(peer.Send(WirePacket.Hello(Peer(),0,.1,SessionConfiguration.ProtocolVersion)).Sent,"Loopback send was not accepted by the socket");IPEndPoint sender=null;
                     var bytes=receiver.Receive(ref sender);WirePacket decoded;string error;Check.True(WireCodec.TryDecode(bytes,out decoded,out error));Check.Equal(Peer().SessionId,decoded.Peer.SessionId);
                     receiver.Send(bytes,bytes.Length,peer.LocalEndpoint);var result=Wait(peer);Check.True(result.Accepted);
                     using(var outsider=new UdpClient(new IPEndPoint(IPAddress.Loopback,0))){outsider.Send(bytes,bytes.Length,peer.LocalEndpoint);Check.Equal("unexpected_endpoint",Wait(peer).Error);}

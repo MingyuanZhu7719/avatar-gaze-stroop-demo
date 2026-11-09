@@ -271,6 +271,7 @@ namespace AvatarStroop.Core
         readonly IPEndPoint local;
         bool disposed;
         public IPEndPoint LocalEndpoint {get{return new IPEndPoint(local.Address,local.Port);}}
+        public IPEndPoint RemoteEndpoint {get{return new IPEndPoint(remote.Address,remote.Port);}}
         public bool RemoteNetworkExplicitlyEnabled {get;private set;}
         public UdpConnectionFault ConnectionFault {get;private set;}
         public UdpPeer(IPEndPoint localEndpoint,IPEndPoint remoteEndpoint,bool allowRemoteNetwork)

@@ -1,6 +1,19 @@
 # avatar-gaze-stroop-demo
 VR avatar gaze and Stroop demo planning.
 
+
+## Current VIVE development source
+
+The current source includes fixed VIVE colours (up red, right green, down blue, left yellow), a fixed 0.5 trackpad threshold, headset startup alignment, clearer pause diagnostics without a participant manual-pause control, and a controlled Legacy/named recording candidate. Existing Quest preview behaviour remains supported.
+
+**Ordinary builds do not record.** Recording requires the explicit controlled Windows XR Development configuration; Legacy recording additionally requires its separate build option. Owner acknowledgement, headset choices and explicit start actions remain necessary. This is not a validated research release or a hardware-tested public player. No participant records, private logs, executables or vendor SDK binaries are distributed here.
+
+- [Current recording scope, validation and limits](docs/legacy-recording-public-evidence-20261109b.md)
+- [Short local self-test guide](docs/controlled-recording-self-test-guide.txt)
+- [Exact public production-source hashes and build restrictions](legacy-recording-public-manifest-20261109b.json)
+
+The current public source was verified by managed compilation and metadata checks against 195 production input hashes. Historical private player and synthetic-test results are identified separately in the evidence note. Real-headset recording, physical gaze accuracy and complete/durable capture remain unaccepted.
+
 <!-- BEGIN current-experiment-design -->
 ## Current experiment design
 

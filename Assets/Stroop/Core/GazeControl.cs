@@ -208,6 +208,10 @@ namespace AvatarStroop.Core
 
     public sealed class AvatarOutput
     {
+        // Non-null only for the separately versioned VIVE named design. Legacy
+        // presentation recorders must reject it rather than lose provenance.
+        public ViveNamedOptionProvenance NamedOption {get;internal set;}
+        public ViveNamedSimulationBlock NamedBlock {get;internal set;}
         // Protocol visibility request only. Tracking/network fault presentation policy is separate.
         public bool AvatarVisible { get; internal set; }
         public ControlSource SelectedSource { get; internal set; }

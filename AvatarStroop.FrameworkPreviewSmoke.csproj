@@ -7,6 +7,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <LangVersion>7.3</LangVersion>
+    <DefineConstants>$(DefineConstants);STROOP_TEST_BUILD</DefineConstants>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>

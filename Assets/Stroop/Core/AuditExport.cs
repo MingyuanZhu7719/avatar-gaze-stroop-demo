@@ -61,6 +61,7 @@ namespace AvatarStroop.Core
             bool? rendererObserved=null,bool? rendererHeadHeld=null,bool? rendererEyesHeld=null,bool? rendererVisibilityRequested=null)
         {
             if(context == null || output == null || output.Reference == null) throw new ArgumentNullException("context/output/reference");
+            if(output.NamedOption!=null)throw new InvalidOperationException("Legacy presentation record cannot represent named-option provenance");
             GazeNumbers.Identity(clockId,"clockId"); GazeNumbers.Identity(timestampSemantics,"timestampSemantics");
             GazeNumbers.Time(presentationLocalSeconds,"presentationLocalSeconds");
             if(!Enum.IsDefined(typeof(Phase),phase)) throw new ArgumentException("Unknown phase");
@@ -237,6 +238,7 @@ namespace AvatarStroop.Core
         public static ExportResult Export(Experiment experiment,AuditLog audit,string parentDirectory,ExportProvenance provenance)
         {
             if(experiment == null || audit == null || provenance == null) throw new ArgumentNullException("experiment/audit/provenance");
+            if(experiment.Configuration.IsNamedDesign||experiment.Configuration.LegacyRecordingIntent!=null)throw new InvalidOperationException("Legacy CSV export cannot represent versioned raw or named-option provenance");
             if(experiment.Configuration.SessionId != audit.SessionId || experiment.Configuration.RunKind != audit.RunKind)
                 throw new ArgumentException("Audit/session provenance mismatch");
             if(String.IsNullOrWhiteSpace(parentDirectory)) throw new ArgumentException("Explicit export parent required");
