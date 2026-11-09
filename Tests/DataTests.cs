@@ -165,7 +165,7 @@ namespace AvatarStroop.Tests
                 string root=Temp(); try {
                     var e=Fixtures.New(new ManualClock()); e.Withdraw();
                     var result=AuditExporter.Export(e,new AuditLog("test-session",RunKind.Simulation),root,Provenance());
-                    Check.True(result.Success); Check.True(!result.SessionCompleted); var row=Read(result.DirectoryPath,"session.csv").Single();
+                    Check.True(result.Success,result.Error); Check.True(!result.SessionCompleted); var row=Read(result.DirectoryPath,"session.csv").Single();
                     Check.Equal("Withdrawn",row["end_reason"]); Check.Equal("false",row["session_completed"]);
                 } finally {Directory.Delete(root,true);}
             });
@@ -173,7 +173,7 @@ namespace AvatarStroop.Tests
                 string root=Temp(); try {
                     var clock=new ManualClock();var e=Fixtures.New(clock);Fixtures.Practice(e,clock,8);
                     for(int b=0;b<4;b++){Fixtures.Start(e,clock);for(int i=0;i<24;i++)Fixtures.Answer(e,clock);Fixtures.Ratings(e,clock);clock.Advance(30);Check.True(e.Ready());}
-                    var result=AuditExporter.Export(e,new AuditLog("test-session",RunKind.Simulation),root,Provenance()); Check.True(result.Success);Check.True(result.SessionCompleted);
+                    var result=AuditExporter.Export(e,new AuditLog("test-session",RunKind.Simulation),root,Provenance()); Check.True(result.Success,result.Error);Check.True(result.SessionCompleted);
                     Check.Equal(104,Read(result.DirectoryPath,"trials.csv").Count);Check.Equal(20,Read(result.DirectoryPath,"ratings.csv").Count);
                     Check.Equal("Completed",Read(result.DirectoryPath,"session.csv").Single()["end_reason"]);
                 } finally {Directory.Delete(root,true);}

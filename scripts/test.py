@@ -51,9 +51,11 @@ def main():
     output.mkdir(exist_ok=True)
     sources = sorted((ROOT / "Assets/Stroop/Core").rglob("*.cs")) + sorted((ROOT / "Assets/Stroop/Runtime").rglob("*.cs")) + sorted((ROOT / "Tests").rglob("*.cs"))
     binary = output / "AvatarStroop.Regression.exe"
-    command = [str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-target:exe", "-main:AvatarStroop.Tests.Program", "-out:" + str(binary)]
+    command = [str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-define:STROOP_TEST_BUILD", "-target:exe", "-main:AvatarStroop.Tests.Program", "-out:" + str(binary)]
     print("Compiler: " + str(csc), flush=True)
-    subprocess.run(command + [str(p) for p in sources], check=True, cwd=str(ROOT))
+    # The source tree grows over time; absolute names can exceed the Windows
+    # command-line limit. All inputs are rooted in ROOT and cwd is fixed here.
+    subprocess.run(command + [str(p.relative_to(ROOT)) for p in sources], check=True, cwd=str(ROOT))
     return subprocess.call([str(mono), str(binary)], cwd=str(ROOT))
 
 if __name__ == "__main__":

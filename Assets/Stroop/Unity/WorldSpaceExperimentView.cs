@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using AvatarStroop.Core;
+using AvatarStroop.Runtime;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -36,13 +37,26 @@ namespace AvatarStroop.Unity
         [SerializeField] TextMesh faultText;
         [SerializeField] TextMesh provisionalText;
         [SerializeField] bool headsetPreview;
+        // Explicit opt-in display-only VIVE profile. Until input and the task
+        // bootstrap are configured it must not present Quest controls or a trial.
+        [SerializeField] bool viveUnconfiguredPreview;
+        [SerializeField] bool viveTaskPreview;
         [SerializeField] TextMesh previewInputText;
         [SerializeField] TextMesh previewStatusText;
+#if STROOP_XR_PREVIEW
+        int recordingChoiceRevision=-1,recordingChoiceCaptureFrame=-1,recordingChoiceObserved,recordingChoiceSeenRevision=-1,recordingChoiceSeenFrame=-1;
+        string recordingChoiceExpected,recordingChoiceStatusCaptured,recordingChoiceControlsCaptured;
+        const string RecordingChoiceControls="Release controls; Trigger: agree | Menu: decline";
+#endif
         TextMesh developmentBanner;
         Transform headerBacking, footerBacking, worldMenuBacking;
         Transform controllerLegend;
+        Transform viveControllerLegend;
         Transform phaseAnimationRoot, progressTrack, progressFill, instructionDemo, demoStick, demoConfirm, completionSparks;
         TextMesh phaseNumber, demoUp, demoDown, demoConfirmLabel, demoCaption;
+        Transform viveInstructionDemo, viveDemoTouch, viveDemoTrigger, viveDemoRearWand, viveDemoTriggerCallout;
+        TextMesh viveDemoUp, viveDemoDown, viveDemoTriggerLabel, viveSelectionText;
+        int viveQuestionnaireRating=3;
         double countdownRemaining, countdownDuration, restRemaining, restDuration, instructionRemaining, instructionDuration;
         bool completed, questionnaireInstructionPending;
         int questionnaireAnsweredCount;
@@ -79,14 +93,25 @@ namespace AvatarStroop.Unity
             get { return questionnaireResponseVisible&&role==Actor.Participant&&currentView!=null&&
                 currentView.Phase==Phase.Questionnaire&&!questionnaireInstructionPending&&questionnaireLanguage!=null&&!hasPresentationFault&&
                 !String.IsNullOrWhiteSpace(currentView.QuestionnaireItem)&&messageText!=null&&
-                messageText.gameObject.activeInHierarchy&&messageText.GetComponent<MeshRenderer>().enabled; }
+                messageText.gameObject.activeInHierarchy&&messageText.GetComponent<MeshRenderer>().enabled&&
+                (!viveTaskPreview||(viveSelectionText!=null&&viveSelectionText.gameObject.activeInHierarchy&&
+                    viveSelectionText.GetComponent<MeshRenderer>().enabled)); }
         }
         public bool QuestionnaireInstructionVisible
         {
             get { return questionnaireInstructionVisible&&role==Actor.Participant&&QuestionnaireIntro&&
                 questionnaireLanguage!=null&&!hasPresentationFault&&messageText!=null&&messageText.gameObject.activeInHierarchy&&
                 messageText.GetComponent<MeshRenderer>().enabled&&(!headsetPreview||(previewInputText!=null&&
-                previewInputText.gameObject.activeInHierarchy&&previewInputText.GetComponent<MeshRenderer>().enabled)); }
+                    previewInputText.gameObject.activeInHierarchy&&previewInputText.GetComponent<MeshRenderer>().enabled))&&
+                (!viveTaskPreview||(viveInstructionDemo!=null&&viveInstructionDemo.gameObject.activeInHierarchy&&
+                    viveDemoTouch!=null&&viveDemoTouch.GetComponent<MeshRenderer>().enabled&&
+                    viveDemoTrigger!=null&&viveDemoTrigger.GetComponent<MeshRenderer>().enabled&&
+                    viveDemoRearWand!=null&&viveDemoRearWand.GetComponent<MeshRenderer>().enabled&&
+                    viveDemoTriggerCallout!=null&&viveDemoTriggerCallout.GetComponent<MeshRenderer>().enabled&&
+                    viveDemoUp!=null&&viveDemoUp.gameObject.activeInHierarchy&&viveDemoUp.GetComponent<MeshRenderer>().enabled&&
+                    viveDemoDown!=null&&viveDemoDown.gameObject.activeInHierarchy&&viveDemoDown.GetComponent<MeshRenderer>().enabled&&
+                    viveDemoTriggerLabel!=null&&viveDemoTriggerLabel.gameObject.activeInHierarchy&&viveDemoTriggerLabel.GetComponent<MeshRenderer>().enabled&&
+                    demoCaption!=null&&demoCaption.gameObject.activeInHierarchy&&demoCaption.GetComponent<MeshRenderer>().enabled)); }
         }
         public bool RestResponseVisible
         {
@@ -112,6 +137,9 @@ namespace AvatarStroop.Unity
         TaskView currentView;
         AvatarOutput currentOutput;
         string displayedTrial, capturedTrial;
+        string capturedStimulusText;
+        Color capturedStimulusColor;
+        bool capturedStimulusContent;
         long presentationRevision, capturedRevision;
         int capturedFrame = -1;
         bool stimulusObservedByCamera;
@@ -125,6 +153,103 @@ namespace AvatarStroop.Unity
         // Subscribe only for the participant application. Validate the current engine
         // trial again at the receiving boundary before calling Experiment.MarkPresented.
         public event Action<string, double> StimulusRendered;
+        // VIVE raw recording needs the identity and actual TextMesh content from
+        // this render pass, rather than a separately sampled current view. This
+        // is a software render proxy, not proof of HMD visibility or persistence.
+        internal sealed class StimulusRenderObservation
+        {
+            internal readonly string TrialId,Text;
+            internal readonly long Revision;
+            internal readonly int Frame;
+            internal readonly double UnityRenderSeconds;
+            internal readonly Color InkColor;
+            internal StimulusRenderObservation(string trial,long revision,int frame,double time,string text,Color ink)
+            {TrialId=trial;Revision=revision;Frame=frame;UnityRenderSeconds=time;Text=text;InkColor=ink;}
+            internal bool MatchesTask(Colour word,Colour ink)
+            {return !String.IsNullOrEmpty(TrialId)&&Revision>=0&&Frame>=0&&
+                !Double.IsNaN(UnityRenderSeconds)&&!Double.IsInfinity(UnityRenderSeconds)&&UnityRenderSeconds>=0&&
+                String.Equals(Text,word.ToString().ToUpperInvariant(),StringComparison.Ordinal)&&InkColor.Equals(Ink(ink));}
+        }
+        internal event Action<StimulusRenderObservation> ViveRawStimulusRendered;
+        internal Func<bool> ViveRawObservationRequired;
+        // A raw non-trial panel needs an actual participant-camera render pass,
+        // not just an enabled TextMesh. It remains a software proxy, not proof
+        // of either-eye photon delivery, comprehension, consent or persistence.
+        internal sealed class ViveRawPanelObservation
+        {
+            internal readonly Phase Phase; internal readonly int Block,Frame,Rating,Answered;
+            internal readonly bool Intro,Ready; internal readonly string Item,Correction,CountdownText;
+            internal readonly long Revision; internal readonly double UnityRenderSeconds;
+            internal ViveRawPanelObservation(Phase phase,int block,int frame,int rating,int answered,bool intro,bool ready,
+                string item,string correction,string countdownText,long revision,double seconds)
+            {Phase=phase;Block=block;Frame=frame;Rating=rating;Answered=answered;Intro=intro;Ready=ready;Item=item;Correction=correction;CountdownText=countdownText;Revision=revision;UnityRenderSeconds=seconds;}
+        }
+        internal Func<ViveRawPanelObservation,bool> ViveRawPanelRendered;
+        ViveRawPanelObservation rawPanelExpected,rawPanelSeen;
+        long rawPanelRevision; int rawPanelCaptureFrame=-1,rawPanelObserved,rawPanelRequired;
+        string rawPanelPhaseText,rawPanelMessageText,rawPanelSelectionText,rawPanelCountdownText;
+        // A failed status query must never assert that recording is off.
+        // This is a display choice, not authority to record or expose a task.
+        bool ViveRawAttached()
+        {
+            if(!viveTaskPreview||ViveRawObservationRequired==null)return false;
+            try{return ViveRawObservationRequired();}catch(Exception){return true;}
+        }
+        internal static bool ViveRawPanelPhase(Phase phase)
+        {return ViveRawPanelPolicy.IsPanelPhase(phase);}
+        bool SameRawPanel(ViveRawPanelObservation sample,TaskView task,bool intro,int rating,int answered)
+        {
+            return sample!=null&&ViveRawPanelPolicy.SamePanelState(sample.Phase,sample.Block,sample.Intro,sample.Rating,
+                sample.Answered,sample.Ready,sample.Item,sample.Correction,task,intro,rating,answered)&&
+                (task.Phase!=Phase.Countdown||String.Equals(sample.CountdownText,Math.Ceiling(countdownRemaining).ToString("0"),StringComparison.Ordinal));
+        }
+        // Only the next owner update may consume a render; phase/item/rating
+        // changes or a skipped frame require another camera witness.
+        internal bool HasPriorViveRawPanelWitness(TaskView task,bool intro,int rating,int answered,int frame)
+        {
+            return ViveRawAttached()&&frame>=0&&rawPanelSeen!=null&&
+                (long)frame-rawPanelSeen.Frame==1&&SameRawPanel(rawPanelSeen,task,intro,rating,answered)&&
+                SameRawPanel(rawPanelSeen,currentView,questionnaireInstructionPending,viveQuestionnaireRating,questionnaireAnsweredCount);
+        }
+        internal bool MatchesViveRawPanel(ViveRawPanelObservation sample,TaskView task,bool intro,int rating,int answered)
+        {return SameRawPanel(sample,task,intro,rating,answered)&&SameRawPanel(sample,currentView,questionnaireInstructionPending,viveQuestionnaireRating,questionnaireAnsweredCount);}
+        internal bool TryPrepareViveRawPanel(int frame,out long revision)
+        {
+            revision=-1;rawPanelSeen=null;
+            if(!ViveRawAttached()||role!=Actor.Participant||!viveTaskPreview||currentView==null||
+                !ViveRawPanelPhase(currentView.Phase)||frame<0||rawPanelExpected!=null||rawPanelRevision==Int64.MaxValue)return false;
+            bool intro=currentView.Phase==Phase.Questionnaire&&questionnaireInstructionPending;
+            revision=++rawPanelRevision;
+            rawPanelExpected=new ViveRawPanelObservation(currentView.Phase,currentView.BlockIndex,frame,
+                currentView.Phase==Phase.Questionnaire&&!intro?viveQuestionnaireRating:0,
+                currentView.Phase==Phase.Questionnaire?questionnaireAnsweredCount:0,intro,currentView.ReadyEnabled,
+                currentView.QuestionnaireItem,currentView.PracticeCorrection,
+                currentView.Phase==Phase.Countdown?Math.Ceiling(countdownRemaining).ToString("0"):null,revision,0);
+            return true;
+        }
+        internal void CancelViveRawPanel()
+        {rawPanelExpected=null;rawPanelSeen=null;rawPanelCaptureFrame=-1;rawPanelObserved=rawPanelRequired=0;}
+        internal void SuppressViveRawPanel()
+        {if(role==Actor.Participant&&viveTaskPreview&&warningRoot!=null)warningRoot.gameObject.SetActive(false);}
+        internal bool TryRevealViveRawPanel()
+        {
+            if(!ViveRawAttached()||rawPanelExpected==null||warningRoot==null||role!=Actor.Participant)return false;
+            warningRoot.gameObject.SetActive(true);
+            return warningRoot.gameObject.activeInHierarchy;
+        }
+        static bool BindRawPanelElement(Transform element,WorldSpaceExperimentView owner,int bit)
+        {
+            if(element==null||!element.gameObject.activeInHierarchy)return false;
+            var renderer=element.GetComponent<Renderer>();if(renderer==null||!renderer.enabled)return false;
+            var witness=element.GetComponent<ViveRawPanelRenderWitness>();
+            if(witness==null)witness=element.gameObject.AddComponent<ViveRawPanelRenderWitness>();
+            witness.Bind(owner,bit);return true;
+        }
+        internal void ObserveViveRawPanelElement(Camera camera,int bit)
+        {
+            if(camera==presentationCamera&&rawPanelExpected!=null&&rawPanelCaptureFrame==Time.frameCount&&
+                rawPanelExpected.Frame==Time.frameCount)rawPanelObserved|=bit;
+        }
         public event Action<AvatarPresentationObservation> AvatarPresented;
         public Camera PresentationCamera { get { return presentationCamera; } }
         public Actor Role { get { return role; } }
@@ -196,6 +321,7 @@ namespace AvatarStroop.Unity
             Camera.onPostRender -= AfterCameraRender;
             Font.textureRebuilt -= RefreshOverlayFontTextures;
             ResetCapture();
+            CancelViveRawPanel();
             capturedAvatar = null; capturedAvatarFrame = -1;
         }
         void OnDestroy()
@@ -207,8 +333,19 @@ namespace AvatarStroop.Unity
         void LateUpdate() { LayoutHud(); }
 
         public void ApplyTaskView(TaskView view)
+        {ApplyTaskViewCore(view,true);}
+
+        // Raw preparation changes only the hidden mesh. A main-camera mask
+        // alone is not sufficient when other scene cameras are present.
+        internal void PrepareViveRawTaskView(TaskView view)
+        {
+            if(!viveTaskPreview||role!=Actor.Participant)throw new InvalidOperationException("VIVE participant view required.");
+            ApplyTaskViewCore(view,false);
+        }
+        void ApplyTaskViewCore(TaskView view,bool showTrialMesh)
         {
             RequireLayout();
+            if(viveUnconfiguredPreview)throw new InvalidOperationException("VIVE classroom input and task are not configured.");
             if(view == null) throw new ArgumentNullException("view");
             bool taskPhase = view.Phase == Phase.MainTask || (role == Actor.Participant && view.Phase == Phase.Practice);
             string nextTrial = taskPhase && view.Stimulus != null && !String.IsNullOrEmpty(view.TrialId) ? view.TrialId : null;
@@ -221,7 +358,7 @@ namespace AvatarStroop.Unity
             }
             currentView = view; displayedTrial = nextTrial;
             stimulusText.text = nextWord; stimulusText.color = nextInk;
-            stimulusText.gameObject.SetActive(nextTrial != null);
+            stimulusText.gameObject.SetActive(nextTrial != null&&showTrialMesh);
             phaseText.text = (role == Actor.Participant ? "PARTICIPANT" : "OPERATOR") + "  |  " + view.Phase;
             OperatorViewProvisional = role == Actor.Operator && view.OperatorViewProvisional;
             provisionalText.text = OperatorViewProvisional ? "PROVISIONAL OPERATOR VIEW\nD / non-main display policy awaits review" : "";
@@ -261,7 +398,7 @@ namespace AvatarStroop.Unity
         public void SetPresentationAvailable(bool available)
         {
             presentationAvailable = available;
-            if(!available) ResetCapture();
+            if(!available){ResetCapture();CancelViveRawPanel();}
         }
 
         public void SetPresentationAvailabilityCheck(Func<bool> check)
@@ -275,13 +412,174 @@ namespace AvatarStroop.Unity
 
         public void SetHeadsetPreview(string diagnostic, string controls)
         {
+            bool wasViveUnconfigured=viveUnconfiguredPreview;
+            viveUnconfiguredPreview=false;
+            viveTaskPreview=false;
+            if(viveControllerLegend!=null)viveControllerLegend.gameObject.SetActive(false);
+            if(wasViveUnconfigured&&avatarRoot!=null)RefreshAvatarVisibility();
+            SetHeadsetPreviewCore(diagnostic,controls);
+        }
+
+        public void SetViveUnconfiguredPreview(string diagnostic)
+        {
+#if STROOP_XR_PREVIEW
+            recordingChoiceRevision=-1;recordingChoiceExpected=null;recordingChoiceSeenRevision=-1;
+#endif
+            if(currentView!=null)throw new InvalidOperationException("Cannot switch an active task to the unconfigured VIVE classroom view.");
+            viveUnconfiguredPreview=true;
+            viveTaskPreview=false;
+            // A static placeholder is visible for spatial layout only. This is
+            // not a condition, source, live operator, or task presentation.
+            if(avatarRoot!=null)avatarRoot.gameObject.SetActive(true);
+            SetHeadsetPreviewCore(diagnostic,"VIVE input unavailable. No study or practice is running.");
+        }
+
+        // Development-only pre-session choice. Rendering this notice does not
+        // establish informed research consent or authorize a file operation.
+        public void SetVivePreSessionRecordingChoice(string diagnostic)
+        {
+            if(currentView!=null)throw new InvalidOperationException("A task is already active.");
+            viveUnconfiguredPreview=true;viveTaskPreview=false;
+            if(avatarRoot!=null)avatarRoot.gameObject.SetActive(false);
+            SetHeadsetPreviewCore(diagnostic,"Release controls; Trigger: rehearse choice | Menu: decline");
+            SetFaults(new string[0]);
+        }
+
+        // Separate from the input rehearsal. This is a software selection,
+        // not verification of wearer identity or informed study consent.
+        internal void SetViveParticipantRecordingChoice(string diagnostic,int revision)
+        {
+            if(currentView!=null)throw new InvalidOperationException("A task is already active.");
+            viveUnconfiguredPreview=true;viveTaskPreview=false;
+            if(avatarRoot!=null)avatarRoot.gameObject.SetActive(false);
+            SetHeadsetPreviewCore(diagnostic,"Release controls; Trigger: agree | Menu: decline");
+#if STROOP_XR_PREVIEW
+            if(recordingChoiceRevision!=revision||!String.Equals(recordingChoiceExpected,diagnostic,StringComparison.Ordinal))
+            {recordingChoiceRevision=revision;recordingChoiceExpected=diagnostic;recordingChoiceSeenRevision=-1;recordingChoiceSeenFrame=-1;}
+#endif
+            SetFaults(new string[0]);
+        }
+#if STROOP_XR_PREVIEW
+        internal bool WasViveRecordingChoiceRendered(int revision,int currentFrame)
+        {return recordingChoiceSeenRevision==revision&&recordingChoiceSeenFrame>=0&&recordingChoiceSeenFrame==currentFrame-1;}
+        internal void ObserveViveRecordingChoiceElement(Camera camera,int bit)
+        {if(camera==presentationCamera&&recordingChoiceCaptureFrame==Time.frameCount)recordingChoiceObserved|=bit;}
+        void PrepareViveRecordingChoiceRender(Camera camera)
+        {
+            recordingChoiceCaptureFrame=-1;recordingChoiceObserved=0;
+            if(recordingChoiceRevision<0||recordingChoiceExpected==null||!viveUnconfiguredPreview||role!=Actor.Participant||
+                GraphicsSettings.currentRenderPipeline!=null||!isActiveAndEnabled||camera==null||!camera.isActiveAndEnabled||
+                camera.targetTexture!=null||camera.cullingMask==0||camera.rect.width<=0||camera.rect.height<=0||previewStatusText==null||previewInputText==null||
+                !RecordingChoiceTextMatches(previewStatusText.text,recordingChoiceExpected)||
+                !RecordingChoiceTextMatches(previewInputText.text,RecordingChoiceControls))return;
+            if(!BindRecordingChoiceElement(previewStatusText,1)||!BindRecordingChoiceElement(previewInputText,2))return;
+            recordingChoiceStatusCaptured=previewStatusText.text;recordingChoiceControlsCaptured=previewInputText.text;
+            recordingChoiceCaptureFrame=Time.frameCount;
+        }
+        bool BindRecordingChoiceElement(TextMesh value,int bit)
+        {
+            if(value==null||!value.gameObject.activeInHierarchy)return false;
+            var renderer=value.GetComponent<Renderer>();if(renderer==null||!renderer.enabled)return false;
+            var witness=value.GetComponent<ViveRecordingChoiceRenderWitness>();
+            if(witness==null)witness=value.gameObject.AddComponent<ViveRecordingChoiceRenderWitness>();
+            witness.Bind(this,bit);return true;
+        }
+        void FinishViveRecordingChoiceRender(Camera camera)
+        {
+            if(camera!=presentationCamera||recordingChoiceCaptureFrame!=Time.frameCount||recordingChoiceObserved!=3||
+                recordingChoiceRevision<0||!viveUnconfiguredPreview||!isActiveAndEnabled||!camera.isActiveAndEnabled||camera.targetTexture!=null||camera.cullingMask==0||
+                camera.rect.width<=0||camera.rect.height<=0||!RecordingChoiceElementVisible(previewStatusText)||!RecordingChoiceElementVisible(previewInputText)||
+                !String.Equals(previewStatusText.text,recordingChoiceStatusCaptured,StringComparison.Ordinal)||
+                !String.Equals(previewInputText.text,recordingChoiceControlsCaptured,StringComparison.Ordinal)||
+                !RecordingChoiceTextMatches(previewStatusText.text,recordingChoiceExpected)||
+                !RecordingChoiceTextMatches(previewInputText.text,RecordingChoiceControls))return;
+            recordingChoiceSeenRevision=recordingChoiceRevision;recordingChoiceSeenFrame=Time.frameCount;
+        }
+        static bool RecordingChoiceTextMatches(string shown,string expected)
+        {
+            if(String.IsNullOrWhiteSpace(shown)||String.IsNullOrWhiteSpace(expected))return false;
+            return String.Equals(String.Join(" ",shown.Split((char[])null,StringSplitOptions.RemoveEmptyEntries)),
+                String.Join(" ",expected.Split((char[])null,StringSplitOptions.RemoveEmptyEntries)),StringComparison.Ordinal);
+        }
+        static bool RecordingChoiceElementVisible(TextMesh value)
+        {if(value==null||!value.gameObject.activeInHierarchy)return false;var renderer=value.GetComponent<Renderer>();return renderer!=null&&renderer.enabled;}
+#endif
+
+        // VIVE raw candidate has no trusted per-trial open receipt. A camera
+        // cull alone cannot protect another camera, so explicitly hide the
+        // stimulus mesh as well. This is never invoked by the Quest path.
+        internal void SuppressViveRawStimulus()
+        {
+            if(role==Actor.Participant&&stimulusText!=null)
+                stimulusText.gameObject.SetActive(false);
+        }
+        // Identity of the task mesh prepared while the camera is masked.
+        // This is a local view check, not permission to reveal the mesh.
+        internal bool TryGetViveRawTrialIdentity(string trialId,Colour word,Colour ink,out long revision)
+        {
+            revision=-1;
+            if(!viveTaskPreview||role!=Actor.Participant||currentView==null||currentView.Stimulus==null||
+                String.IsNullOrEmpty(trialId)||!String.Equals(displayedTrial,trialId,StringComparison.Ordinal)||
+                !String.Equals(currentView.TrialId,trialId,StringComparison.Ordinal)||currentView.Stimulus.Word!=word||currentView.Stimulus.Ink!=ink||
+                stimulusText==null||stimulusText.gameObject.activeSelf||contentRoot==null||!contentRoot.gameObject.activeInHierarchy||
+                !String.Equals(stimulusText.text,word.ToString().ToUpperInvariant(),StringComparison.Ordinal)||!stimulusText.color.Equals(Ink(ink)))return false;
+            revision=presentationRevision;return revision>=0;
+        }
+        internal bool TryRevealViveRawTrial(string trialId,Colour word,Colour ink,long expectedRevision)
+        {
+            long current;
+            if(!TryGetViveRawTrialIdentity(trialId,word,ink,out current)||current!=expectedRevision)return false;
+            stimulusText.gameObject.SetActive(true);
+            return stimulusText.gameObject.activeInHierarchy&&presentationRevision==expectedRevision&&
+                String.Equals(displayedTrial,trialId,StringComparison.Ordinal)&&
+                String.Equals(stimulusText.text,word.ToString().ToUpperInvariant(),StringComparison.Ordinal)&&stimulusText.color.Equals(Ink(ink));
+        }
+
+        // Only an explicitly configured, complete mapping may enter this
+        // developer-only presentation. It never enables the apparatus gate.
+        public void ConfigureViveDevelopmentPreview(IDictionary<ViveTrackpadDirection,Colour> mapping,double threshold)
+        {
+            if(currentView!=null)throw new InvalidOperationException("Configure VIVE before a task is created.");
+            var validation=new VivePreviewTrackpadInput(mapping,threshold);
+            if(validation==null)throw new InvalidOperationException("Invalid trackpad configuration.");
+            viveUnconfiguredPreview=false;viveTaskPreview=true;
+            EnsureViveControllerLegend(mapping);
+            RefreshAvatarVisibility();
+            SetHeadsetPreviewCore("VIVE development simulation; eye data is not recorded.","Trackpad: select | Trigger: confirm / continue");
+            SetFaults(new string[0]);
+        }
+
+        string vivePauseDiagnostic;
+        bool viveLegacyPreviewNotice;
+        // Presentation only. This cannot enable recording or alter task/input gates.
+        public void SetViveLegacyPreviewNotice(bool enabled){viveLegacyPreviewNotice=enabled;}
+        bool ShowViveLegacyPreviewNotice {get{return viveLegacyPreviewNotice&&(viveTaskPreview||viveUnconfiguredPreview);}}
+        public void SetVivePauseDiagnostic(string diagnostic){vivePauseDiagnostic=diagnostic;}
+        public void SetViveDevelopmentStatus(string diagnostic,string controls)
+        {
+            if(!viveTaskPreview)throw new InvalidOperationException("VIVE development presentation has not been configured.");
+            SetHeadsetPreviewCore(diagnostic,controls);
+        }
+
+        // Display-only mirror of the participant's candidate; it never selects
+        // or submits a rating. Bootstrap updates this before applying each view.
+        public void SetViveQuestionnaireRating(int selected)
+        {
+            if(!viveTaskPreview)throw new InvalidOperationException("VIVE development presentation has not been configured.");
+            if(selected<1||selected>5)throw new ArgumentOutOfRangeException("selected");
+            viveQuestionnaireRating=selected;
+        }
+
+        void SetHeadsetPreviewCore(string diagnostic, string controls)
+        {
             RequireLayout();
             string nextDiagnostic = diagnostic ?? "", nextControls = controls ?? "";
             // Called several times per frame by the Quest rig; only relayout when a
             // rendered string actually changes.
             bool changed = !headsetPreview || nextDiagnostic != previewDiagnostic || nextControls != previewControls;
             headsetPreview = true;
-            EnsureControllerLegend();RefreshLegendVisibility();
+            if(!viveUnconfiguredPreview&&!viveTaskPreview)EnsureControllerLegend();
+            RefreshLegendVisibility();
             EnsureHudLayout();
             previewDiagnostic = nextDiagnostic; previewControls = nextControls;
             if(previewStatusText == null)
@@ -399,6 +697,24 @@ namespace AvatarStroop.Unity
             // Invalid/degenerate layouts above keep the previous conservative
             // gate; only a completed layout may clear an obscuring fault.
             faultCoversStimulus=false;
+            if(viveUnconfiguredPreview)
+            {
+                // This stage provides a room view only. It cannot display task
+                // prompts or an unapproved controller mapping as usable controls.
+                if(phaseAnimationRoot!=null)phaseAnimationRoot.gameObject.SetActive(false);
+                PositionBacking(headerBacking,frustum,new Rect(),false);
+                PositionBacking(footerBacking,frustum,new Rect(),false);
+                PositionBacking(worldMenuBacking,frustum,new Rect(0,0,1,1),true);
+                FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,"VIVE CLASSROOM PREVIEW | NOT A STUDY RUN"),frustum,new Rect(.04f,.03f,.92f,.08f),.034f,2);
+                FitHud(phaseText,"Input not configured",frustum,new Rect(.04f,.17f,.92f,.08f),.04f,2);
+                FitHud(messageText,"Classroom view only. No task or practice is running.",frustum,new Rect(.04f,.30f,.92f,.16f),.04f,3);
+                FitHud(previewStatusText,previewDiagnostic,frustum,new Rect(.04f,.52f,.92f,.14f),.034f,4);
+                FitHud(previewInputText,ViveStroopRecordingScopePresentation.Controls(ShowViveLegacyPreviewNotice,previewControls),frustum,new Rect(.04f,.69f,.92f,.14f),.034f,ShowViveLegacyPreviewNotice?100:4);
+                FitHud(faultText,faultCaption,frustum,new Rect(.04f,.84f,.92f,.12f),.03f,4);
+                FitHud(provisionalText,"",frustum,new Rect(),.02f,1);
+                FitHud(avatarLabel,"",frustum,new Rect(),.02f,1);
+                return;
+            }
             bool trial=currentView!=null&&(currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask);
             if(phaseAnimationRoot!=null)phaseAnimationRoot.gameObject.SetActive(false);
             if(CleanTaskPresentation)
@@ -430,8 +746,8 @@ namespace AvatarStroop.Unity
                 LogHudProjection(frustum);
                 return;
             }
-            string heading=headsetPreview?"QUEST LINK PREVIEW | SIMULATED GAZE\nHEAD VIEW ONLY | NO EYE TRACKING | NOT A STUDY RUN":"DESKTOP SIMULATION | HARDWARE UNVERIFIED";
-            FitHud(developmentBanner,heading,frustum,new Rect(.02f,.02f,.96f,.09f),.034f,2);
+            string heading=viveTaskPreview?(ViveRawAttached()?"VIVE DEVELOPMENT TASK | RECORDING STATUS UNVERIFIED\nSIMULATION | NOT A STUDY RUN":"VIVE DEVELOPMENT TASK | NO DATA SAVED\nSIMULATION | NOT A STUDY RUN"):headsetPreview?"QUEST LINK PREVIEW | SIMULATED GAZE\nHEAD VIEW ONLY | NO EYE TRACKING | NOT A STUDY RUN":"DESKTOP SIMULATION | HARDWARE UNVERIFIED";
+            FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,heading),frustum,new Rect(.02f,.02f,.96f,.09f),.034f,2);
             // Always format from original state, never re-wrap an already fitted
             // TextMesh string. Resizing must recover the complete source text.
             string phase=(role==Actor.Participant?"PARTICIPANT":"OPERATOR")+" | "+(currentView==null?"Initializing":currentView.Phase.ToString());
@@ -447,7 +763,7 @@ namespace AvatarStroop.Unity
             {
                 FitHud(faultText,faultCaption,frustum,new Rect(.02f,.70f,.96f,.085f),.028f,3);
                 FitHud(previewStatusText,previewDiagnostic,frustum,new Rect(.02f,.79f,.96f,.08f),.031f,3);
-                FitHud(previewInputText,previewControls,frustum,new Rect(.02f,.885f,.96f,.095f),.031f,3);
+                FitHud(previewInputText,ViveStroopRecordingScopePresentation.Controls(ShowViveLegacyPreviewNotice,previewControls),frustum,new Rect(.02f,.885f,.96f,.095f),.031f,ShowViveLegacyPreviewNotice?100:3);
             }
             else FitHud(faultText,faultCaption,frustum,new Rect(.02f,.73f,.96f,.23f),.031f,7);
             // Opaque panels and centre instructions must not cover a live trial.
@@ -504,6 +820,30 @@ namespace AvatarStroop.Unity
                     burst==0?new Color(.61f,.77f,.79f):new Color(.84f,.73f,.51f));
             phaseAnimationRoot.gameObject.SetActive(false);
         }
+        void EnsureViveQuestionnaireVisuals()
+        {
+            if(!viveTaskPreview||viveInstructionDemo!=null)return;
+            // Created only for VIVE: Quest retains its original stick/A guide.
+            viveInstructionDemo=Child("ViveQuestionnaireControllerGuide",phaseAnimationRoot,Vector3.zero);
+            FlowShape("ViveWandHead",PrimitiveType.Sphere,viveInstructionDemo,new Vector3(-.20f,.06f,0),new Vector3(.23f,.28f,.02f),new Color(.36f,.42f,.45f));
+            FlowShape("ViveWandGrip",PrimitiveType.Capsule,viveInstructionDemo,new Vector3(-.20f,-.07f,0),new Vector3(.09f,.08f,.02f),new Color(.36f,.42f,.45f));
+            FlowShape("ViveTrackpad",PrimitiveType.Sphere,viveInstructionDemo,new Vector3(-.20f,.075f,-.015f),new Vector3(.16f,.16f,.015f),new Color(.18f,.24f,.26f));
+            viveDemoTouch=FlowShape("ViveAnimatedTrackpadPress",PrimitiveType.Sphere,viveInstructionDemo,new Vector3(-.20f,.115f,-.03f),new Vector3(.055f,.055f,.015f),new Color(.68f,.90f,.90f));
+            // A second, side-rear view links the highlighted control to the
+            // back of the same wand shape. The front trackpad remains on the
+            // left; no grip or other button is highlighted as a trigger.
+            FlowShape("ViveRearWandHead",PrimitiveType.Sphere,viveInstructionDemo,new Vector3(.21f,.095f,0),new Vector3(.15f,.22f,.02f),new Color(.36f,.42f,.45f));
+            viveDemoRearWand=FlowShape("ViveRearWandGrip",PrimitiveType.Capsule,viveInstructionDemo,new Vector3(.21f,-.045f,0),new Vector3(.075f,.095f,.02f),new Color(.36f,.42f,.45f));
+            viveDemoTrigger=FlowShape("ViveAnimatedTrigger",PrimitiveType.Capsule,viveInstructionDemo,new Vector3(.26f,.025f,-.02f),new Vector3(.042f,.035f,.02f),new Color(.68f,.90f,.90f));
+            viveDemoTrigger.localEulerAngles=new Vector3(0,0,-18);
+            viveDemoTriggerCallout=FlowShape("ViveRearTriggerCallout",PrimitiveType.Quad,viveInstructionDemo,new Vector3(.35f,.025f,-.015f),new Vector3(.13f,.004f,1),new Color(.68f,.90f,.90f));
+            // Keep the label independent of the animated trigger for contrast.
+            viveDemoTriggerLabel=Text("ViveTriggerLabel",viveInstructionDemo,Vector3.zero,.02f,48,Color.white);SetOverlay(viveDemoTriggerLabel);
+            viveDemoUp=Text("ViveTrackpadUp",viveInstructionDemo,Vector3.zero,.02f,48,Color.white);SetOverlay(viveDemoUp);
+            viveDemoDown=Text("ViveTrackpadDown",viveInstructionDemo,Vector3.zero,.02f,48,Color.white);SetOverlay(viveDemoDown);
+            viveSelectionText=Text("ViveQuestionnaireSelection",phaseAnimationRoot,Vector3.zero,.02f,64,new Color(.68f,.90f,.90f));SetOverlay(viveSelectionText);
+            viveInstructionDemo.gameObject.SetActive(false);viveSelectionText.gameObject.SetActive(false);
+        }
         void SetProgressRenderOrder()
         {
             // Transparent distance sorting is insufficient: as a left-anchored
@@ -531,12 +871,13 @@ namespace AvatarStroop.Unity
         {
             Phase phase=currentView.Phase;bool questionnaire=phase==Phase.Questionnaire;
             bool intro=questionnaire&&QuestionnaireIntro,rest=phase==Phase.Rest,countdown=phase==Phase.Countdown;
+            EnsureViveQuestionnaireVisuals();
             bool celebration=phase==Phase.Ended&&completed;
             foreach(var label in new[]{provisionalText,avatarLabel,previewStatusText})
                 if(label!=null){label.text="";label.GetComponent<MeshRenderer>().enabled=false;}
             PositionBacking(headerBacking,frustum,new Rect(),false);PositionBacking(footerBacking,frustum,new Rect(),false);
             PositionBacking(worldMenuBacking,frustum,new Rect(0,0,1,1),true);
-            FitHud(developmentBanner,"QUEST PREVIEW | SIMULATED GAZE | NOT A STUDY RUN",frustum,new Rect(.04f,.025f,.92f,.04f),.026f,2);
+            FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,viveTaskPreview?(ViveRawAttached()?"VIVE DEVELOPMENT TASK | RECORDING STATUS UNVERIFIED | NOT A STUDY RUN":"VIVE DEVELOPMENT TASK | NO DATA SAVED | NOT A STUDY RUN"):"QUEST PREVIEW | SIMULATED GAZE | NOT A STUDY RUN"),frustum,new Rect(.04f,.025f,.92f,.04f),.026f,2);
             if(!String.IsNullOrWhiteSpace(faultCaption))
             {
                 // Essential faults take precedence over progress decorations.
@@ -544,7 +885,7 @@ namespace AvatarStroop.Unity
                 FitCentered(phaseText,"Preview needs attention",frustum,new Rect(.04f,.08f,.92f,.08f),.050f);
                 FitHud(messageText,"",frustum,new Rect(.04f,.18f,.92f,.1f),.04f,100);
                 FitHud(faultText,faultCaption,frustum,new Rect(.04f,.22f,.92f,.48f),.043f,100);
-                FitHud(previewInputText,"Please wait. Use the owner controls for recovery.\nThe session does not resume automatically.",frustum,new Rect(.04f,.79f,.92f,.15f),.035f,100);
+                FitHud(previewInputText,ViveStroopRecordingScopePresentation.Controls(ShowViveLegacyPreviewNotice,"Please wait. Use the owner controls for recovery.\nThe session does not resume automatically."),frustum,new Rect(.04f,.79f,.92f,.15f),.035f,100);
                 phaseAnimationRoot.gameObject.SetActive(false);return;
             }
             string title=questionnaire?(intro?"How to answer":"About the last block"):rest?"Rest":countdown?"Get ready":"Thank you!";
@@ -552,24 +893,28 @@ namespace AvatarStroop.Unity
             string message=ParticipantMessage(currentView);
             if(questionnaire&&!intro)
             {
-                FitHud(messageText,message,frustum,new Rect(.04f,.185f,.92f,.54f),.045f,100);
+                FitHud(messageText,message,frustum,new Rect(.04f,.185f,.92f,viveTaskPreview?.49f:.54f),.045f,100);
                 questionnaireResponseVisible=true;
             }
             else if(intro)
             {
-                FitCentered(messageText,message,frustum,new Rect(.04f,.66f,.92f,.16f),.034f);
+                FitCentered(messageText,message,frustum,new Rect(.04f,.66f,.92f,viveTaskPreview?.14f:.16f),viveTaskPreview?.047f:.034f);
                 questionnaireInstructionVisible=true;
             }
             else
                 FitCentered(messageText,message,frustum,new Rect(.04f,.55f,.92f,.15f),.045f);
             restResponseVisible=rest;
-            string controls=intro?"Press A when ready to open the questions.\nThe guide repeats until you continue.":
+            string controls=viveTaskPreview?(intro?"Ask the operator if you need to stop":"Click trackpad TOP/BOTTOM | Trigger: confirm / continue"):intro?"Press A when ready to open the questions.\nThe guide repeats until you continue.":
                 questionnaire?previewControls:rest?(currentView.ReadyEnabled?"A: continue whenever you are ready. No minimum wait.":"Continue is not yet available."):
                 countdown?"Keep the controllers ready.":"The owner can export the records. You may remove the headset.";
-            FitHud(previewInputText,controls,frustum,new Rect(.04f,.81f,.92f,.105f),.032f,100);
+            FitHud(previewInputText,ViveStroopRecordingScopePresentation.Controls(ShowViveLegacyPreviewNotice,controls),frustum,new Rect(.04f,.81f,.92f,.105f),.032f,100);
             FitHud(faultText,faultCaption,frustum,new Rect(.04f,.925f,.92f,.065f),.026f,100);
             phaseAnimationRoot.gameObject.SetActive(true);
-            phaseNumber.gameObject.SetActive(countdown||rest);instructionDemo.gameObject.SetActive(intro);demoCaption.gameObject.SetActive(questionnaire);
+            phaseNumber.gameObject.SetActive(countdown||rest);instructionDemo.gameObject.SetActive(intro&&!viveTaskPreview);demoCaption.gameObject.SetActive(questionnaire);
+            if(viveInstructionDemo!=null)viveInstructionDemo.gameObject.SetActive(intro&&viveTaskPreview);
+            if(viveSelectionText!=null)viveSelectionText.gameObject.SetActive(questionnaire&&!intro&&viveTaskPreview);
+            if(questionnaire&&!intro&&viveTaskPreview)
+                FitCentered(viveSelectionText,ViveQuestionnairePresentation.Selection(viveQuestionnaireRating,questionnaireLanguage),frustum,new Rect(.05f,.70f,.90f,.045f),.032f);
             if(questionnaire&&!intro)
                 FitCentered(demoCaption,questionnaireAnsweredCount+" of "+Questionnaire.Count+" answers submitted",frustum,new Rect(.08f,.78f,.84f,.025f),.024f);
             if(countdown||rest)
@@ -585,10 +930,12 @@ namespace AvatarStroop.Unity
                 phaseNumber.transform.localScale*=pulse;
                 phaseNumber.transform.localPosition=anchor-centre*phaseNumber.transform.localScale.x;
             }
-            if(intro)
+            if(intro&&!viveTaskPreview)
             {
                 LayoutInstructionDemo(frustum,Time.realtimeSinceStartupAsDouble-instructionAnimationStartedAt);
             }
+            if(intro&&viveTaskPreview)
+                LayoutViveInstructionDemo(frustum,Time.realtimeSinceStartupAsDouble-instructionAnimationStartedAt);
             bool progress=countdown||rest||questionnaire;
             progressTrack.gameObject.SetActive(progress);progressFill.gameObject.SetActive(progress);
             if(progress)
@@ -617,6 +964,29 @@ namespace AvatarStroop.Unity
             FitCentered(demoDown,"DOWN / HIGHER",frustum,new Rect(.13f,.60f,.31f,.045f),.030f);
             FitCentered(demoCaption,step==0?"1  LEFT STICK UP: 3 to 2":step==1?"2  LEFT STICK DOWN: 2 to 3":"3  PRESS A TO CONFIRM",frustum,new Rect(.04f,.18f,.92f,.055f),.038f);
             demoUp.color=step==0?new Color(.68f,.90f,.90f):Color.white;demoDown.color=step==1?new Color(.68f,.90f,.90f):Color.white;
+        }
+        void LayoutViveInstructionDemo(Rect frustum,double elapsed)
+        {
+            double time=SafeSeconds(elapsed);int step=ViveQuestionnairePresentation.GuideStep(time);
+            float within=(float)((time%2)/2);float pulse=Mathf.Sin(within*Mathf.PI);
+            viveInstructionDemo.localPosition=new Vector3(0,.015f,-.004f);
+            viveDemoTouch.localPosition=new Vector3(-.20f,.075f+(step==0?.045f:step==1?-.045f:0),-.03f);
+            float dot=step<2?.055f*(1+.13f*pulse):.045f;
+            viveDemoTouch.localScale=new Vector3(dot,dot,.015f);
+            float triggerTravel=(float)ViveQuestionnairePresentation.GuideTriggerTravel(time);
+            viveDemoTrigger.localPosition=new Vector3(.26f-.025f*triggerTravel,.025f,-.02f);
+            viveDemoTrigger.localEulerAngles=new Vector3(0,0,-18-12*triggerTravel);
+            viveDemoTouch.GetComponent<Renderer>().sharedMaterial.color=step<2?new Color(.68f,.90f,.90f):new Color(.36f,.42f,.45f);
+            viveDemoTrigger.GetComponent<Renderer>().sharedMaterial.color=step==2?new Color(.68f,.90f,.90f):new Color(.36f,.42f,.45f);
+            viveDemoTriggerCallout.GetComponent<Renderer>().sharedMaterial.color=step==2?new Color(.68f,.90f,.90f):new Color(.36f,.42f,.45f);
+            // Labels occupy the clear left/right margins rather than drawing
+            // over the wand grip or relying on the tiny animated trigger icon.
+            FitCentered(viveDemoUp,"TOP: LOWER",frustum,new Rect(.035f,.27f,.22f,.065f),.040f);
+            FitCentered(viveDemoDown,"BOTTOM: RAISE",frustum,new Rect(.035f,.55f,.22f,.065f),.040f);
+            FitCentered(viveDemoTriggerLabel,"BACK TRIGGER\nPULL / RELEASE",frustum,new Rect(.64f,.50f,.32f,.10f),.035f);
+            FitCentered(demoCaption,ViveQuestionnairePresentation.GuideCaption(step),frustum,new Rect(.04f,.18f,.92f,.065f),.045f);
+            viveDemoUp.color=step==0?new Color(.68f,.90f,.90f):Color.white;
+            viveDemoDown.color=step==1?new Color(.68f,.90f,.90f):Color.white;
         }
         void LayoutCompletionFireworks(bool celebration,double elapsed)
         {
@@ -864,10 +1234,10 @@ namespace AvatarStroop.Unity
         }
         void RefreshLegendVisibility()
         {
-            if(controllerLegend==null)return;
-            bool useful=headsetPreview&&role==Actor.Participant&&currentView!=null&&
+            bool useful=!viveUnconfiguredPreview&&headsetPreview&&role==Actor.Participant&&currentView!=null&&
                 (currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask||currentView.Phase==Phase.PracticeCorrection);
-            controllerLegend.gameObject.SetActive(useful);
+            if(controllerLegend!=null)controllerLegend.gameObject.SetActive(useful&&!viveTaskPreview);
+            if(viveControllerLegend!=null)viveControllerLegend.gameObject.SetActive(useful&&viveTaskPreview);
         }
         void RefreshWarnings()
         {
@@ -893,10 +1263,73 @@ namespace AvatarStroop.Unity
             if(faultText.color != faultColour) faultText.color = faultColour;
         }
 
+        void PrepareViveRawPanelCull(Camera camera)
+        {
+            rawPanelCaptureFrame=-1;rawPanelObserved=rawPanelRequired=0;
+            var expected=rawPanelExpected;
+            if(expected==null||camera!=presentationCamera||expected.Frame!=Time.frameCount||!ViveRawAttached()||
+                !MatchesViveRawPanel(expected,currentView,questionnaireInstructionPending,viveQuestionnaireRating,questionnaireAnsweredCount)||
+                !PresentationIsAvailable()||hasPresentationFault||!isActiveAndEnabled||GraphicsSettings.currentRenderPipeline!=null||
+                !camera.isActiveAndEnabled||camera.targetTexture!=null||camera.cullingMask==0||camera.rect.width<=0||camera.rect.height<=0)return;
+            // The actual renderers, not a camera callback alone, must be
+            // admitted by this camera's culling pass. Mandatory visual pieces
+            // depend on phase; no UI event is accepted merely from SetActive.
+            int required=1|2;
+            bool ready=BindRawPanelElement(phaseText==null?null:phaseText.transform,this,1)&&
+                BindRawPanelElement(messageText==null?null:messageText.transform,this,2);
+            if(expected.Phase==Phase.Countdown)
+            {required|=4;ready=BindRawPanelElement(phaseNumber==null?null:phaseNumber.transform,this,4)&&ready&&
+                String.Equals(expected.CountdownText,phaseNumber==null?null:phaseNumber.text,StringComparison.Ordinal);}
+            if(expected.Phase==Phase.Questionnaire&&expected.Intro)
+            {
+                required|=8|16|32|64|128|256|1024|2048;
+                ready=BindRawPanelElement(viveDemoTouch,this,8)&&ready;
+                ready=BindRawPanelElement(viveDemoTrigger,this,16)&&ready;
+                ready=BindRawPanelElement(demoCaption==null?null:demoCaption.transform,this,32)&&ready;
+                ready=BindRawPanelElement(viveDemoUp==null?null:viveDemoUp.transform,this,64)&&ready;
+                ready=BindRawPanelElement(viveDemoDown==null?null:viveDemoDown.transform,this,128)&&ready;
+                ready=BindRawPanelElement(viveDemoTriggerLabel==null?null:viveDemoTriggerLabel.transform,this,256)&&ready;
+                ready=BindRawPanelElement(viveDemoRearWand,this,1024)&&ready;
+                ready=BindRawPanelElement(viveDemoTriggerCallout,this,2048)&&ready;
+            }
+            else if(expected.Phase==Phase.Questionnaire)
+            {required|=512;ready=BindRawPanelElement(viveSelectionText==null?null:viveSelectionText.transform,this,512)&&ready;}
+            if(!ready)return;
+            rawPanelRequired=required;rawPanelCaptureFrame=Time.frameCount;
+            rawPanelPhaseText=phaseText.text;rawPanelMessageText=messageText.text;
+            rawPanelSelectionText=expected.Phase==Phase.Questionnaire&&!expected.Intro?viveSelectionText.text:null;
+            rawPanelCountdownText=expected.Phase==Phase.Countdown?phaseNumber.text:null;
+        }
+        void FinishViveRawPanelRender(Camera camera)
+        {
+            var expected=rawPanelExpected;
+            if(expected==null||camera!=presentationCamera||rawPanelCaptureFrame!=Time.frameCount||
+                expected.Frame!=Time.frameCount||rawPanelRequired==0||(rawPanelObserved&rawPanelRequired)!=rawPanelRequired||
+                !ViveRawAttached()||!PresentationIsAvailable()||hasPresentationFault||!isActiveAndEnabled||
+                !camera.isActiveAndEnabled||camera.targetTexture!=null||camera.cullingMask==0||
+                !MatchesViveRawPanel(expected,currentView,questionnaireInstructionPending,viveQuestionnaireRating,questionnaireAnsweredCount)||
+                !String.Equals(rawPanelPhaseText,phaseText.text,StringComparison.Ordinal)||
+                !String.Equals(rawPanelMessageText,messageText.text,StringComparison.Ordinal)||
+                (rawPanelSelectionText!=null&&!String.Equals(rawPanelSelectionText,viveSelectionText.text,StringComparison.Ordinal))||
+                (expected.Phase==Phase.Countdown&&!ViveRawPanelPolicy.CountdownTextMatches(expected.CountdownText,rawPanelCountdownText,phaseNumber==null?null:phaseNumber.text)))return;
+            double at=Time.realtimeSinceStartupAsDouble;
+            if(Double.IsNaN(at)||Double.IsInfinity(at)||at<0)return;
+            var observed=new ViveRawPanelObservation(expected.Phase,expected.Block,expected.Frame,expected.Rating,expected.Answered,
+                expected.Intro,expected.Ready,expected.Item,expected.Correction,expected.CountdownText,expected.Revision,at);
+            rawPanelExpected=null;rawPanelCaptureFrame=-1;rawPanelObserved=rawPanelRequired=0;
+            var callback=ViveRawPanelRendered;bool accepted=false;
+            try{if(callback!=null)accepted=callback(observed);}catch(Exception){accepted=false;}
+            rawPanelSeen=accepted?observed:null;
+        }
+
         void BeforeCameraCull(Camera camera)
         {
             if(camera != presentationCamera) return;
             LayoutHud();
+#if STROOP_XR_PREVIEW
+            PrepareViveRecordingChoiceRender(camera);
+#endif
+            PrepareViveRawPanelCull(camera);
             ResetCapture();
             capturedAvatar = null; capturedAvatarFrame = -1; avatarObservedByCamera = false;
             if(PresentationIsAvailable() && isActiveAndEnabled && contentRoot != null && GraphicsSettings.currentRenderPipeline == null)
@@ -912,7 +1345,18 @@ namespace AvatarStroop.Unity
         internal void ObserveStimulusRender(Camera camera)
         {
             if(camera == presentationCamera && capturedFrame == Time.frameCount && capturedTrial == displayedTrial &&
-                capturedRevision == presentationRevision && CanAcknowledge()) stimulusObservedByCamera = true;
+                capturedRevision == presentationRevision && CanAcknowledge())
+            {
+                stimulusObservedByCamera = true;
+                // Optional raw-only capture. A failure here never enables a
+                // trial; the original callback still runs its fail-stop path.
+                try
+                {
+                    if(ViveRawObservationRequired!=null&&ViveRawObservationRequired())
+                    {capturedStimulusText=stimulusText.text;capturedStimulusColor=stimulusText.color;capturedStimulusContent=true;}
+                }
+                catch(Exception){capturedStimulusContent=false;capturedStimulusText=null;}
+            }
         }
         internal void ObserveAvatarRender(Camera camera)
         {
@@ -922,6 +1366,10 @@ namespace AvatarStroop.Unity
         void AfterCameraRender(Camera camera)
         {
             if(camera != presentationCamera) return;
+#if STROOP_XR_PREVIEW
+            FinishViveRecordingChoiceRender(camera);
+#endif
+            FinishViveRawPanelRender(camera);
             var avatarCallback = AvatarPresented;
             if(PresentationIsAvailable() && capturedAvatar != null && capturedAvatarFrame == Time.frameCount && capturedAvatarRevision == avatarRevision &&
                 capturedTaskRevision == presentationRevision && isActiveAndEnabled && camera.isActiveAndEnabled &&
@@ -935,10 +1383,26 @@ namespace AvatarStroop.Unity
             bool present = stimulusObservedByCamera && capturedFrame == Time.frameCount &&
                 capturedRevision == presentationRevision && capturedTrial == displayedTrial && CanAcknowledge();
             string trial = capturedTrial;
+            long revision = capturedRevision;
+            int frame = capturedFrame;
+            string rawText = capturedStimulusText;
+            Color rawColor = capturedStimulusColor;
+            bool rawStable = false;
+            try{rawStable=capturedStimulusContent&&String.Equals(rawText,stimulusText.text,StringComparison.Ordinal)&&rawColor.Equals(stimulusText.color);}
+            catch(Exception){rawStable=false;}
             ResetCapture();
             var callback = StimulusRendered;
+            var viveCallback = ViveRawStimulusRendered;
             if(!present || callback == null || !acknowledgedTrials.Add(trial)) return;
-            if(callback != null) callback(trial, Time.realtimeSinceStartupAsDouble);
+            double renderSeconds = Time.realtimeSinceStartupAsDouble;
+            // A detailed-observation failure must not suppress the original
+            // callback: the VIVE raw handler there still masks and fail-stops.
+            if(viveCallback != null&&rawStable)
+            {
+                try{viveCallback(new StimulusRenderObservation(trial,revision,frame,renderSeconds,rawText,rawColor));}
+                catch(Exception){}
+            }
+            if(callback != null) callback(trial, renderSeconds);
         }
         bool CanAcknowledge()
         {
@@ -952,7 +1416,7 @@ namespace AvatarStroop.Unity
                 stimulusText != null && stimulusText.gameObject.activeInHierarchy &&
                 stimulusText.GetComponent<MeshRenderer>().enabled;
         }
-        void ResetCapture() { capturedTrial = null; capturedFrame = -1; stimulusObservedByCamera = false; }
+        void ResetCapture() { capturedTrial = null; capturedFrame = -1; stimulusObservedByCamera = false; capturedStimulusContent=false; capturedStimulusText=null; }
         void RequireLayout() { if(contentRoot == null) throw new InvalidOperationException("Initialize the presentation with its camera first."); }
 
         void BuildLayout()
@@ -1053,7 +1517,7 @@ namespace AvatarStroop.Unity
                 if(witness==null)witness=renderer.gameObject.AddComponent<AvatarRenderWitness>();
                 witness.Bind(this);
             }
-            if(headsetPreview)EnsureControllerLegend();
+            if(headsetPreview&&!viveUnconfiguredPreview&&!viveTaskPreview)EnsureControllerLegend();
             RefreshLegendVisibility();
         }
         void EnsureControllerLegend()
@@ -1065,6 +1529,20 @@ namespace AvatarStroop.Unity
             Primitive("LegendFace",PrimitiveType.Cube,controllerLegend,new Vector3(0,0,-.022f),new Vector3(.525f,.795f,.014f),new Color(.12f,.15f,.16f));
             BuildControllerLegend("LeftController",-.135f,true);
             BuildControllerLegend("RightController",.135f,false);
+        }
+        void EnsureViveControllerLegend(IDictionary<ViveTrackpadDirection,Colour> mapping)
+        {
+            if(viveControllerLegend!=null)throw new InvalidOperationException("A VIVE mapping is already configured.");
+            viveControllerLegend=Child("ViveControllerLegend",contentRoot,new Vector3(-1.60f,1.55f,BoardPosition.z));
+            Primitive("LegendFrame",PrimitiveType.Cube,viveControllerLegend,Vector3.zero,new Vector3(.55f,.82f,.035f),new Color(.78f,.81f,.79f));
+            Primitive("LegendFace",PrimitiveType.Cube,viveControllerLegend,new Vector3(0,0,-.022f),new Vector3(.525f,.795f,.014f),new Color(.12f,.15f,.16f));
+            Primitive("Trackpad",PrimitiveType.Sphere,viveControllerLegend,new Vector3(0,.05f,-.04f),new Vector3(.43f,.43f,.025f),new Color(.55f,.60f,.60f));
+            LegendButton(viveControllerLegend,"U",mapping[ViveTrackpadDirection.Up],new Vector3(0,.19f,-.07f));
+            LegendButton(viveControllerLegend,"R",mapping[ViveTrackpadDirection.Right],new Vector3(.14f,.05f,-.07f));
+            LegendButton(viveControllerLegend,"D",mapping[ViveTrackpadDirection.Down],new Vector3(0,-.09f,-.07f));
+            LegendButton(viveControllerLegend,"L",mapping[ViveTrackpadDirection.Left],new Vector3(-.14f,.05f,-.07f));
+            var label=Text("TrackpadLabel",viveControllerLegend,new Vector3(0,.33f,-.045f),.0065f,64,Color.white);label.text="TRACKPAD";
+            viveControllerLegend.gameObject.SetActive(false);
         }
         void BuildControllerLegend(string name,float x,bool left)
         {
@@ -1153,6 +1631,17 @@ namespace AvatarStroop.Unity
         }
         string ParticipantMessage(TaskView view)
         {
+            if(viveTaskPreview)
+            {
+                if(view.Phase==Phase.Ended&&ShowViveLegacyPreviewNotice)return ViveStroopRecordingScopePresentation.LegacyEndMessage(completed);
+                if(view.Phase==Phase.Preparation||view.Phase==Phase.Familiarization)return ViveRawAttached()?"Waiting for the owner to start practice.\nRecording status and coverage are not confirmed.":"Waiting for the owner to start practice.\nDevelopment task only; no data is saved.";
+                if(view.Phase==Phase.PracticeCorrection)return view.PracticeCorrection+"\nPress the trigger to continue.";
+                if(view.Phase==Phase.Questionnaire&&QuestionnaireIntro)return "Click top or bottom, then release.\nPull the trigger when ready.";
+                if(view.Phase==Phase.Rest)return "Rest as long as you need.\nPress the trigger to continue.";
+                if(view.Phase==Phase.Paused)return "Paused.\n"+(String.IsNullOrEmpty(vivePauseDiagnostic)?"Cause unavailable; ask the operator.":vivePauseDiagnostic)+"\nRelease controls, then press Trigger to resume.";
+                if(view.Phase==Phase.NeedsProtocolDecision)return "A protocol decision is pending.\nAsk the owner; no automatic continuation.";
+                if(view.Phase==Phase.Ended&&!completed)return ViveRawAttached()?"Development task ended.\nAsk the owner to review recording status.\nThe remaining data may be unknown.":"Development task ended.\nNo task or eye session file was saved.\nYou may close the preview.";
+            }
             if(view.Phase == Phase.Preparation || view.Phase == Phase.Familiarization)
                 return headsetPreview ? "Use the owner controls to begin practice\nonce the headset and both Touch controllers are ready.\nNo practice or source starts automatically." :
                     "Use the separate owner controls to begin practice.\nNo practice or source starts automatically.";
@@ -1174,7 +1663,8 @@ namespace AvatarStroop.Unity
                     "Use keys 1 to 5 to select and submit a rating.\nRead at your own pace. Press Space when ready\nto open the questions. No answer is recorded here.";
                 var message = new StringBuilder(Wrap(Questionnaire.Instruction(questionnaireLanguage), 48, 2));
                 message.Append("\n\n").Append(Wrap(view.QuestionnaireItem ?? "", 48, 5)).AppendLine();
-                for(int score = 1; score <= 5; score++) message.Append("\n").Append(score).Append("  ").Append(Questionnaire.Anchor(score, questionnaireLanguage));
+                for(int score = 1; score <= 5; score++)
+                    message.Append("\n").Append(viveTaskPreview?ViveQuestionnairePresentation.Option(score,viveQuestionnaireRating,questionnaireLanguage):score+"  "+Questionnaire.Anchor(score,questionnaireLanguage));
                 return message.ToString();
             }
             if(view.Phase == Phase.Rest) return view.ReadyEnabled ? "Rest as long as you need.\n" +

@@ -52,21 +52,26 @@ namespace AvatarStroop.Tests
                 Check.True(!receiver.Observe(WirePacket.SafetyStopRequest(op,1,.1,"old"),.3).Accepted);
             });
             tests.Run("M3 paired apps pause resume next block and render transitions retain correct context",()=>{
-                int a=FreePort(),b=FreePort();while(a==b)b=FreePort();
-                using(var participant=new ParticipantSimulationApplication("runtime-pair",a,b))
-                using(var op=new OperatorSimulationApplication("runtime-pair",b,a,false))
+                // Keep both OS-assigned sockets bound while wiring the pair;
+                // closing probe sockets before rebinding leaves a port race.
+                using(var participantSocket=new UdpSocket(new IPEndPoint(IPAddress.Loopback,0)))
+                using(var operatorSocket=new UdpSocket(new IPEndPoint(IPAddress.Loopback,0)))
+                using(var participant=new ParticipantSimulationApplication("runtime-pair",participantSocket.LocalEndpoint.Port,operatorSocket.LocalEndpoint.Port,null,
+                    new UdpPeer(participantSocket.LocalEndpoint,operatorSocket.LocalEndpoint,false,participantSocket)))
+                using(var op=new OperatorSimulationApplication("runtime-pair",operatorSocket.LocalEndpoint.Port,participantSocket.LocalEndpoint.Port,false,false,
+                    new UdpPeer(operatorSocket.LocalEndpoint,participantSocket.LocalEndpoint,false,operatorSocket)))
                 {
                     var e=participant.Experiment;participant.OwnerBeginPractice();
                     for(int i=0;i<8;i++)Answer(e);
                     participant.OwnerLockNextBlock(ControlSelection.SimulatorRehearsal);
-                    Pump(participant,op,()=>participant.SourceReady(ControlSelection.SimulatorRehearsal));
-                    participant.OwnerBeginBlock();Pump(participant,op,()=>e.Phase==Phase.MainTask);
+                    Pump(participant,op,()=>participant.SourceReady(ControlSelection.SimulatorRehearsal),"initial source readiness");
+                    participant.OwnerBeginBlock();Pump(participant,op,()=>e.Phase==Phase.MainTask,"first countdown");
                     e.MarkPresented(e.CurrentTrial.TrialId);e.Pause(Actor.Participant);participant.RefreshPresentation();
                     Check.True(!participant.CurrentAvatar.AvatarVisible);Check.Equal(Phase.Paused,e.View(Actor.Participant).Phase);
                     Check.Equal(null,e.View(Actor.Participant).TrialId);Check.True(participant.SourceReady(ControlSelection.SimulatorRehearsal));
                     e.Resume(true);participant.RefreshPresentation();Check.True(!participant.SourceReady(ControlSelection.SimulatorRehearsal));
                     Check.True(!participant.CurrentAvatar.HasActualPose);Check.True(participant.ApplicationWarnings.Count>0);
-                    Pump(participant,op,()=>e.Phase==Phase.MainTask);Check.Equal(1,e.CurrentTrial.PlannedIndex);
+                    Pump(participant,op,()=>e.Phase==Phase.MainTask,"resume countdown");Check.Equal(1,e.CurrentTrial.PlannedIndex);
                     Check.Equal(1,participant.CurrentAvatar.InputSample.Segment);Check.True(participant.CurrentAvatar.HeadValid);
                     for(int i=1;i<24;i++)Answer(e);participant.RefreshPresentation();
                     var view=e.View(Actor.Participant);Check.Equal(Phase.Questionnaire,view.Phase);Check.Equal(null,view.TrialId);
@@ -74,14 +79,14 @@ namespace AvatarStroop.Tests
                     participant.Audit.RecordPresentation(new AvatarPresentationRecord(new AuditContext(view.BlockIndex,view.Segment,view.TrialId),"test-render",participant.Clock.Now,"runtime model only",view.Phase,participant.CurrentAvatar));
                     Check.Equal(1,participant.Audit.Presentations[0].Context.Segment);Check.True(!participant.Audit.Presentations[0].AvatarVisible);
                     for(int i=0;i<5;i++)e.Rate(3);
-                    Pump(participant,op,()=>e.ReadyEnabled,35);
+                    Pump(participant,op,()=>e.ReadyEnabled,"rest ready",35);
                     Check.True(e.Ready());participant.RefreshPresentation();
                     Check.Equal(Phase.BlockPreparation,e.Phase);Check.Equal(1,e.BlockIndex);Check.Equal(0,e.Segment);
                     Check.Equal(null,participant.CurrentAvatar);
                     participant.OwnerLockNextBlock(ControlSelection.SimulatorRehearsal);
                     Check.True(!participant.SourceReady(ControlSelection.SimulatorRehearsal));
-                    Pump(participant,op,()=>participant.SourceReady(ControlSelection.SimulatorRehearsal));
-                    participant.OwnerBeginBlock();Pump(participant,op,()=>e.Phase==Phase.MainTask);
+                    Pump(participant,op,()=>participant.SourceReady(ControlSelection.SimulatorRehearsal),"next block source readiness");
+                    participant.OwnerBeginBlock();Pump(participant,op,()=>e.Phase==Phase.MainTask,"next block countdown");
                     Check.Equal(1,participant.CurrentAvatar.InputSample.BlockIndex);Check.Equal(0,participant.CurrentAvatar.InputSample.Segment);
                     Check.True(participant.CurrentAvatar.HeadValid&&participant.CurrentAvatar.EyeValid);
                     Check.Equal(0,e.CurrentTrial.PlannedIndex);
@@ -89,13 +94,12 @@ namespace AvatarStroop.Tests
                 }
             });
         }
-        static int FreePort(){using(var socket=new UdpClient(new IPEndPoint(IPAddress.Loopback,0)))return ((IPEndPoint)socket.Client.LocalEndPoint).Port;}
         static void Answer(Experiment e){e.MarkPresented(e.CurrentTrial.TrialId);var colour=e.CurrentTrial.Stimulus.Ink;e.ButtonChanged(colour,true);e.ButtonChanged(colour,false);}
-        static void Pump(ParticipantSimulationApplication participant,OperatorSimulationApplication op,Func<bool> done,double timeout=4)
+        static void Pump(ParticipantSimulationApplication participant,OperatorSimulationApplication op,Func<bool> done,string stage,double timeout=4)
         {
             double deadline=participant.Clock.Now+timeout;
             while(!done()&&participant.Clock.Now<deadline){op.Tick();participant.Tick();Thread.Sleep(2);}
-            Check.True(done(),"Paired apps did not reach the expected state");
+            Check.True(done(),"Paired apps did not reach "+stage+"; phase="+participant.Experiment.Phase+", received="+participant.AcceptedPacketObservations+", samples="+op.SamplesSent);
         }
     }
 }

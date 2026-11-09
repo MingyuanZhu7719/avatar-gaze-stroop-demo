@@ -100,12 +100,15 @@ namespace AvatarStroop.Tests
         }
         static void ClosedPair(string directory,string session,string request=Request)
         {
-            using(var participant=Participant(session))using(var operatorApp=Operator(session))
+            ParticipantSimulationApplication participant;OperatorSimulationApplication operatorApp;
+            using(participant=Participant(session))using(operatorApp=Operator(session))
             {
                 participant.EnableRecording(Path.Combine(directory,"participant.journal"),Provenance(),10);
                 operatorApp.EnableRecording(Path.Combine(directory,"operator.journal"),Provenance(),10);
                 participant.OwnerEndForRestart(request);
             }
+            Check.True(String.IsNullOrEmpty(participant.RecordingWarning),participant.RecordingWarning);
+            Check.True(String.IsNullOrEmpty(operatorApp.RecordingWarning),operatorApp.RecordingWarning);
         }
         static Dictionary<string,byte[]> Snapshot(string directory)
         {return Directory.GetFiles(directory,"*",SearchOption.AllDirectories).ToDictionary(x=>x,File.ReadAllBytes,StringComparer.Ordinal);}
@@ -264,12 +267,15 @@ namespace AvatarStroop.Tests
             });
             tests.Run("Preview valid close receipts do not manufacture the requested technical end",()=>Temporary(directory=>{
                 string session=NewSession();
-                using(var participant=Participant(session))using(var operatorApp=Operator(session))
+                ParticipantSimulationApplication participant;OperatorSimulationApplication operatorApp;
+                using(participant=Participant(session))using(operatorApp=Operator(session))
                 {
                     participant.EnableRecording(Path.Combine(directory,"participant.journal"),Provenance(),10);
                     operatorApp.EnableRecording(Path.Combine(directory,"operator.journal"),Provenance(),10);
                     participant.Experiment.Withdraw();
                 }
+                Check.True(String.IsNullOrEmpty(participant.RecordingWarning),participant.RecordingWarning);
+                Check.True(String.IsNullOrEmpty(operatorApp.RecordingWarning),operatorApp.RecordingWarning);
                 Check.True(File.Exists(Path.Combine(directory,"participant.journal.closed"))&&File.Exists(Path.Combine(directory,"operator.journal.closed")));
                 RejectedWithoutMutation(directory,session,Request);
             }));

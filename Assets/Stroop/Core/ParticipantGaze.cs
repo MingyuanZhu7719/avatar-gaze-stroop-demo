@@ -22,6 +22,15 @@ namespace AvatarStroop.Core
         public Vec3 RawEyeDirection { get; private set; }
         public bool EyeReportedValid { get; private set; }
         public bool EyeValid { get { return EyeReportedValid && RawEyeDirection.IsUnit; } }
+        // Legacy EyeValid continues to describe the raw vector, as required by
+        // existing journal/CSV schemas. An explicitly supplied derived ray is a
+        // separate channel and must not be silently written into those schemas.
+        public Vec3? DerivedEyeDirection { get; private set; }
+        public string DerivedDirectionMappingVersion { get; private set; }
+        public string DerivedDirectionCoordinateSpace { get; private set; }
+        public bool DerivedEyeValid { get { return EyeReportedValid && RawEyeDirection.IsFinite &&
+            GazeNumbers.Finite(RawEyeDirection.LengthSquared) && RawEyeDirection.LengthSquared>0 &&
+            DerivedEyeDirection.HasValue && DerivedEyeDirection.Value.IsUnit; } }
         public ParticipantEyeSample(string sessionId,string streamId,string deviceId,string clockId,int blockIndex,int segment,
             long sequence,double captureLocalSeconds,ParticipantEyeSource source,StreamRole role,Vec3 rawEyeDirection,bool eyeReportedValid)
         {
@@ -35,6 +44,20 @@ namespace AvatarStroop.Core
                 throw new ArgumentException("Simulator stream identity must start with simulator/");
             SessionId=sessionId; StreamId=streamId; DeviceId=deviceId; ClockId=clockId; BlockIndex=blockIndex; Segment=segment;
             Sequence=sequence; CaptureLocalSeconds=captureLocalSeconds; Source=source; RawEyeDirection=rawEyeDirection; EyeReportedValid=eyeReportedValid;
+        }
+        // This overload declares a derived, not raw, direction. Coordinate space
+        // and mapping version are mandatory and do not imply apparatus validation.
+        public ParticipantEyeSample(string sessionId,string streamId,string deviceId,string clockId,int blockIndex,int segment,
+            long sequence,double captureLocalSeconds,ParticipantEyeSource source,StreamRole role,Vec3 rawEyeDirection,bool eyeReportedValid,
+            Vec3 derivedEyeDirection,string derivedDirectionMappingVersion,string derivedDirectionCoordinateSpace)
+            :this(sessionId,streamId,deviceId,clockId,blockIndex,segment,sequence,captureLocalSeconds,source,role,rawEyeDirection,eyeReportedValid)
+        {
+            if(source!=ParticipantEyeSource.RealDevice) throw new ArgumentException("Derived device direction requires a real-device source");
+            GazeNumbers.Identity(derivedDirectionMappingVersion,"derivedDirectionMappingVersion");
+            GazeNumbers.Identity(derivedDirectionCoordinateSpace,"derivedDirectionCoordinateSpace");
+            DerivedEyeDirection=derivedEyeDirection;
+            DerivedDirectionMappingVersion=derivedDirectionMappingVersion;
+            DerivedDirectionCoordinateSpace=derivedDirectionCoordinateSpace;
         }
     }
 
