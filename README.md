@@ -14,14 +14,16 @@ No participant records, private logs, executables, pairing credentials or vendor
 
 - [Current WoZ scope, public validation and limits](docs/woz-recording-public-evidence-20261110a.md)
 - [Participant-local recording and short-test precautions](docs/woz-participant-local-recording.md)
-- [Exact public production-source hashes](woz-recording-public-manifest-20261110a.json)
+- [Numeric codec repair, regression evidence and compatibility limits](docs/woz-numeric-codec-validation.md)
+- [Current repaired production-source hashes](docs/evidence/woz-numeric-codec-production-manifest.json)
+- [Initial public overlay manifest](woz-recording-public-manifest-20261110a.json)
 - [Bounded portable public checks](scripts/test-public-woz.py)
 
-**Review status: draft only.** One public unrecorded-scene initialization test failed with task_send_failed. Later bounded checks did not reproduce it, but the cause is unresolved; no clean aggregate regression pass or readiness to merge is claimed.
+**Investigation note:** One original memory test failed with task_send_failed without recording its inner cause. A separate deterministic check found a CLR4 numeric round-trip defect that can cause this rejection; the source now has a verified fallback and regression tests. The original event itself cannot be conclusively attributed. Existing private player packages predate this repair and have not been rebuilt. Build both roles from the same repaired revision before hardware acceptance.
 
 The sanitized public source passed managed API compilation in three configurations against 217 production-source hashes. This is separate from the earlier private package builds and synthetic native tests. See the current evidence note for exact checks and exclusions.
 
-Earlier dated validation notes and manifests describe their own source snapshots. The current WoZ validation note and manifest below take precedence for this revision.
+Earlier validation notes and manifests describe their own source snapshots. The numeric-codec repair note and repaired production manifest take precedence for the two updated production files; the original failed-run record is retained.
 
 <!-- BEGIN current-experiment-design -->
 ## Current experiment design

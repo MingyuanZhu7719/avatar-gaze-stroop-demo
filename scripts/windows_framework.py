@@ -13,6 +13,8 @@ import subprocess
 import sys
 import tempfile
 
+from test import regression_test_sources
+
 ROOT = Path(__file__).resolve().parents[1]
 ASSEMBLIES = ("mscorlib.dll", "System.dll", "System.Core.dll", "System.Windows.Forms.dll", "System.Drawing.dll")
 
@@ -43,7 +45,7 @@ def verify_preview_runtime(mono, csc, source, work_directory):
     work_directory.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="framework-check-", dir=work_directory) as temporary:
         binary = Path(temporary) / "AvatarStroop.FrameworkPreviewSmoke.exe"
-        sources = runtime_sources(source) + sorted((source / "Tests").glob("*.cs"))
+        sources = runtime_sources(source) + regression_test_sources(source)
         command = compiler_command(mono, csc) + ["-define:STROOP_TEST_BUILD", "-target:exe", "-main:AvatarStroop.Tests.FrameworkPreviewSmoke", "-out:" + str(binary)]
         # Resolve source files from cwd to stay below Windows' command-line limit.
         subprocess.run(command + [str(path.relative_to(source)) for path in sources], check=True, cwd=source)

@@ -96,10 +96,11 @@ namespace AvatarStroop.Core
         // Observation: task-receipt, head-observed, eye-observed IEEE754 LE doubles.
         // Payload: canonical existing typed WirePacket. Tag: full HMAC-SHA256
         // over EVERY preceding byte, including lengths, context and direction.
-        // WireCodec v2 uses Double.ToString("R"). Its spelling varies across
-        // .NET/Mono generations. Both peers require the SAME serialization
-        // runtime/build until cross-runtime vectors or a versioned portable
-        // number codec are supplied. A mismatch fails closed, not interoperably.
+        // WireCodec v2 preserves bit-safe R spellings and falls back to verified
+        // G17 for CLR round-trip defects. Spellings still vary across .NET/Mono
+        // generations and old/new builds. Both peers require the SAME
+        // serialization runtime/build until a versioned portable number codec
+        // is supplied. A mismatch fails closed, not interoperably.
         // A parser bound, NOT an MTU/UDP delivery guarantee. A future network
         // adapter needs a measured smaller datagram cap or explicit fragmentation.
         public const int MaximumEnvelopeBytes = 4352;

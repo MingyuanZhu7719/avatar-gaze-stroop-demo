@@ -17,6 +17,9 @@ namespace AvatarStroop.Tests
             }
             Console.WriteLine("Framework CLR "+Environment.Version+"; runtime "+RuntimeEnvironment.GetRuntimeDirectory());
             var suite=new TestSuite();
+            // Exercise authentication on CLR4 as well as the portable runtime.
+            suite.Run("WoZ authenticated LAN byte-array suite", () => Check.Equal(0, WozAuthenticatedLanTests.RunAll()));
+            suite.Run("WoZ authenticated control byte-array suite", () => Check.Equal(0, WozAuthenticatedControlTests.RunAll()));
             AppLanguageTests.Register(suite);
             DesktopPreviewTests.Register(suite);
             OwnerCommandTests.Register(suite);

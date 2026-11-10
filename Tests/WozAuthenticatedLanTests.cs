@@ -120,8 +120,70 @@ namespace AvatarStroop.Tests
                 foreach (long bits in new[] { 1L, 0x0010000000000000L, 0x3ff0000000000001L, 0x3fd3333333333333L, 0x44b52d02c7e14af6L, 0x4340000000000001L }) {
                     double value = BitConverter.Int64BitsToDouble(bits); var bytes = Protect(Sync(sent: value));
                     using (var receiver = End(PeerRole.Participant)) Eq(bits, BitConverter.DoubleToInt64Bits(Receive(receiver, bytes).Packet.SentLocalSeconds));
-                    Console.WriteLine("NUMBER bits=" + bits.ToString("x16") + "; canonical=" + value.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                    Console.WriteLine("NUMBER bits=" + bits.ToString("x16") + "; canonical=" + Payload(bytes).Split('|')[10]);
                 }
+            });
+            Run("CLR R regression task bytes preserve original numeric bits", () => {
+                foreach(long bits in new[] {0x3f354434e3369b9cL,0x3f354434e3369b9dL,0x3f354434e3369b9eL,0x3f454434e3369b9dL,0x3f5148924009048bL,
+                    0x3f5791819d2391d5L,0x3f6148924009048bL,0x3f6791819d2391d5L,
+                    0x3f6cb3ca9d47a403L,0x3f7148924009048bL,0x3fe5d54bf743fd1bL,0x3feb0e7009b61ce0L}) {
+                    double value=BitConverter.Int64BitsToDouble(bits);
+                    var task=Task(sequence:0,sent:value);var packet=WirePacket.Task(P(),0,value,task.Task);
+                    byte[] encoded=WireCodec.Encode(packet);WirePacket decoded;string error;
+                    Assert(WireCodec.TryDecode(encoded,out decoded,out error),error);
+                    Eq(bits,BitConverter.DoubleToInt64Bits(decoded.SentLocalSeconds));
+                    Eq(Convert.ToBase64String(encoded),Convert.ToBase64String(WireCodec.Encode(decoded)));
+                    var protectedBytes=Protect(packet,task);
+                    using(var receiver=End(PeerRole.Operator)) {
+                        var message=Receive(receiver,protectedBytes);
+                        Eq(bits,BitConverter.DoubleToInt64Bits(message.Packet.SentLocalSeconds));
+                        Eq(bits,BitConverter.DoubleToInt64Bits(message.TaskContext.ParticipantSentSeconds));
+                        Rejected(receiver,protectedBytes,"replay_or_remote_clock");
+                    }
+                    // This tests a synthetic numeric value, not a device reading.
+                }
+            });
+            Run("numeric fallback preserves fixed R bytes signed zero and finite limits", () => {
+                foreach(double value in new[]{0.0,0.5,12.5,1.0,1000000.0}) {
+                    var packet=WirePacket.TimeRequest(O(),0,value,"numeric-fixed");
+                    Eq(value.ToString("R",System.Globalization.CultureInfo.InvariantCulture),Encoding.ASCII.GetString(WireCodec.Encode(packet)).Split('|')[10]);
+                }
+                var negativeZero=BitConverter.Int64BitsToDouble(unchecked((long)0x8000000000000000UL));
+                Eq("0",Encoding.ASCII.GetString(WireCodec.Encode(WirePacket.TimeRequest(O(),0,negativeZero,"numeric-zero"))).Split('|')[10]);
+                foreach(double value in new[]{Double.Epsilon,Double.MaxValue,BitConverter.Int64BitsToDouble(0x0010000000000000L)}) {
+                    var packet=WirePacket.TimeRequest(O(),0,value,"numeric-limit");WirePacket decoded;string error;
+                    Assert(WireCodec.TryDecode(WireCodec.Encode(packet),out decoded,out error),error);
+                    Eq(BitConverter.DoubleToInt64Bits(value),BitConverter.DoubleToInt64Bits(decoded.SentLocalSeconds));
+                }
+                Throws<ArgumentException>(()=>WirePacket.TimeRequest(O(),0,Double.NaN,"numeric-invalid"));
+                Throws<ArgumentException>(()=>WirePacket.TimeRequest(O(),0,Double.PositiveInfinity,"numeric-invalid"));
+            });
+            Run("fixed synthetic tick grid and pose components round-trip exactly", () => {
+                for(long ticks=1;ticks<=65536;ticks++) {
+                    double value=(double)ticks/10000000;var packet=WirePacket.TimeRequest(O(),0,value,"numeric-grid");
+                    byte[] first=WireCodec.Encode(packet);WirePacket decoded;string error;
+                    Assert(WireCodec.TryDecode(first,out decoded,out error),error);
+                    Eq(BitConverter.DoubleToInt64Bits(value),BitConverter.DoubleToInt64Bits(decoded.SentLocalSeconds));
+                    Eq(Convert.ToBase64String(first),Convert.ToBase64String(WireCodec.Encode(decoded)));
+                }
+                double replySent=BitConverter.Int64BitsToDouble(0x3fe5d54bf743fd1bL);
+                double requestSent=BitConverter.Int64BitsToDouble(0x3f354434e3369b9dL);
+                double received=BitConverter.Int64BitsToDouble(0x3f454434e3369b9dL);
+                var reply=WirePacket.TimeReply(O(),0,replySent,"numeric-reply","p-clock",requestSent,received);
+                using(var receiver=End(PeerRole.Participant)) {
+                    var message=Receive(receiver,Protect(reply));
+                    Eq(BitConverter.DoubleToInt64Bits(replySent),BitConverter.DoubleToInt64Bits(message.Packet.SentLocalSeconds));
+                    Eq(BitConverter.DoubleToInt64Bits(requestSent),BitConverter.DoubleToInt64Bits(message.Packet.RequestSentSeconds));
+                    Eq(BitConverter.DoubleToInt64Bits(received),BitConverter.DoubleToInt64Bits(message.Packet.RemoteReceivedSeconds));
+                }
+                double edge=BitConverter.Int64BitsToDouble(0x3f354434e3369b9dL);
+                var sample=new HeadEyeSample("lan-test","operator-stream","operator-device","o-clock",0,0,0,
+                    edge,edge,ControlSource.LiveOperator,StreamRole.OperatorControl,new Rotation(-edge,edge,-edge,1),new Vec3(-edge,edge,1),true,true);
+                WirePacket pose;string issue;var b=WireCodec.Encode(WirePacket.Tracking(O(),0,sample));
+                Assert(WireCodec.TryDecode(b,out pose,out issue),issue);
+                Eq(BitConverter.DoubleToInt64Bits(-edge),BitConverter.DoubleToInt64Bits(pose.Sample.RawEyeDirection.X));
+                Eq(BitConverter.DoubleToInt64Bits(edge),BitConverter.DoubleToInt64Bits(pose.Sample.RawHeadRotation.Y));
+                Eq(Convert.ToBase64String(b),Convert.ToBase64String(WireCodec.Encode(pose)));
             });
             Run("null empty oversize truncated and appended buffers rejected", () => {
                 var bytes = Protect(Sync()); using (var receiver = End(PeerRole.Participant)) {

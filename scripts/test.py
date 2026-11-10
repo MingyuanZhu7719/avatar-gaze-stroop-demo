@@ -11,6 +11,13 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+def regression_test_sources(source):
+    """Shared suite; the WinForms/CLR4 fixture has a dedicated Windows project."""
+    ui_fixture = source / "Tests/WozLanPairingUiTests.cs"
+    return [path for path in sorted((source / "Tests").rglob("*.cs")) if path != ui_fixture]
+
+
 def unity_tools():
     explicit = os.environ.get("STROOP_UNITY_CONTENTS")
     if explicit is not None:
@@ -49,7 +56,7 @@ def main():
     base, mono, csc = tools
     output = ROOT / "build"
     output.mkdir(exist_ok=True)
-    sources = sorted((ROOT / "Assets/Stroop/Core").rglob("*.cs")) + sorted((ROOT / "Assets/Stroop/Runtime").rglob("*.cs")) + sorted((ROOT / "Tests").rglob("*.cs"))
+    sources = sorted((ROOT / "Assets/Stroop/Core").rglob("*.cs")) + sorted((ROOT / "Assets/Stroop/Runtime").rglob("*.cs")) + regression_test_sources(ROOT)
     binary = output / "AvatarStroop.Regression.exe"
     command = [str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-define:STROOP_TEST_BUILD", "-target:exe", "-main:AvatarStroop.Tests.Program", "-out:" + str(binary)]
     print("Compiler: " + str(csc), flush=True)

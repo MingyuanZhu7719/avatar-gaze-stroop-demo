@@ -72,6 +72,9 @@ namespace AvatarStroop.Tests
             AppLanguageTests.Register(suite);
             GazeControlTests.Register(suite);
             FaultTransportTests.Register(suite);
+            // Complete offline authentication suites, including MAC, canonical encoding and replay checks.
+            suite.Run("WoZ authenticated LAN byte-array suite", () => Check.Equal(0, WozAuthenticatedLanTests.RunAll()));
+            suite.Run("WoZ authenticated control byte-array suite", () => Check.Equal(0, WozAuthenticatedControlTests.RunAll()));
             ClockBoundaryTests.Register(suite);
             DataTests.Register(suite);
             RuntimeTests.Register(suite);

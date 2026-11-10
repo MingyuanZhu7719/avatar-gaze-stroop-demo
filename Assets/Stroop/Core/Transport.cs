@@ -130,7 +130,25 @@ namespace AvatarStroop.Core
             return decoded;
         }
         static string Number(double value)
-        { if(!Finite(value)) throw new ArgumentException("Wire numbers must be finite; retain raw invalid readings in local diagnostics"); return value.ToString("R",Invariant); }
+        {
+            if(!Finite(value)) throw new ArgumentException("Wire numbers must be finite; retain raw invalid readings in local diagnostics");
+            // Preserve the existing wire normalization of either signed zero.
+            if(value==0) return "0";
+            // .NET Framework x64 can parse an R spelling to a neighbouring
+            // double. Keep bit-safe R bytes; otherwise use verified G17.
+            // Both peers must still use the same serialization runtime/build.
+            string text=value.ToString("R",Invariant);
+            if(NumberRoundTrips(text,value)) return text;
+            text=value.ToString("G17",Invariant);
+            if(NumberRoundTrips(text,value)) return text;
+            throw new ArgumentException("Wire number cannot round-trip on this runtime");
+        }
+        static bool NumberRoundTrips(string text,double original)
+        {
+            double parsed;
+            return Double.TryParse(text,NumberStyles.Float,Invariant,out parsed) &&
+                BitConverter.DoubleToInt64Bits(parsed)==BitConverter.DoubleToInt64Bits(original);
+        }
         static double ReadNumber(string value)
         {
             if(value.Length==0 || value.Length>32) throw new FormatException("Invalid number length");

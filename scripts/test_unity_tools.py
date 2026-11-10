@@ -5,9 +5,11 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import xml.etree.ElementTree as ET
 
 import test as compiler
 import integration
+import windows_framework
 
 
 class UnityToolsTests(unittest.TestCase):
@@ -104,6 +106,57 @@ class UnityToolsTests(unittest.TestCase):
             discovery.assert_not_called()
             run.assert_called_once()
             self.assertEqual("dotnet", run.call_args.args[0][0])
+
+
+class TestSourcePartitionTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.names = ("Tests/TestRunner.cs", "Tests/WozLanPairingUiTests.cs",
+                      "Tests/Nested/PortableTests.cs", "Tests/Nested/WozLanPairingUiTests.cs")
+        for name in self.names:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+
+    def test_only_the_dedicated_fixture_is_excluded(self):
+        expected = sorted(self.root / name for name in self.names if name != "Tests/WozLanPairingUiTests.cs")
+        self.assertEqual(expected, compiler.regression_test_sources(self.root))
+
+    def test_installed_portable_runner_uses_the_partition(self):
+        toolset = (Path("compiler"), Path("mono"), Path("csc"))
+        with patch.object(compiler, "ROOT", self.root), patch.object(compiler, "unity_tools", return_value=toolset), patch.object(compiler.subprocess, "run") as build, patch.object(compiler.subprocess, "call", return_value=0), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, compiler.main())
+        actual = [value.replace("\\", "/") for value in build.call_args.args[0] if value.endswith(".cs")]
+        self.assertEqual([str(path.relative_to(self.root)).replace("\\", "/") for path in compiler.regression_test_sources(self.root)], actual)
+
+    def test_installed_framework_runner_uses_the_partition(self):
+        with patch.object(windows_framework, "compiler_command", return_value=["mock-compiler"]), patch.object(windows_framework.subprocess, "run") as run:
+            windows_framework.verify_preview_runtime(Path("mono"), Path("csc"), self.root, self.root / "build")
+        actual = [value.replace("\\", "/") for value in run.call_args_list[0].args[0] if value.endswith(".cs")]
+        self.assertEqual([str(path.relative_to(self.root)).replace("\\", "/") for path in compiler.regression_test_sources(self.root)], actual)
+        self.assertEqual(2, run.call_count)
+
+    def test_shared_projects_exclude_only_the_dedicated_fixture(self):
+        for name in ("AvatarStroop.Regression.csproj", "AvatarStroop.FrameworkPreviewSmoke.csproj"):
+            project = ET.parse(compiler.ROOT / name)
+            with self.subTest(project=name):
+                items = project.findall("./ItemGroup/Compile")
+                self.assertEqual(["Assets/Stroop/Core/**/*.cs", "Assets/Stroop/Runtime/**/*.cs", "Tests/**/*.cs"], [item.get("Include") for item in items])
+                self.assertEqual([None, None, "Tests/WozLanPairingUiTests.cs"], [item.get("Exclude") for item in items])
+
+    def test_ui_project_keeps_fixture_entrypoint_and_supported_runtime(self):
+        project = ET.parse(compiler.ROOT / "AvatarStroop.WozLanPairingUiTests.csproj")
+        self.assertIsNone(project.find("./PropertyGroup/DefineConstants"))
+        for name, expected in (("TargetFramework", "net48"), ("UseWindowsForms", "true"),
+                               ("StartupObject", "AvatarStroop.Tests.WozLanPairingUiTests"),
+                               ("TreatWarningsAsErrors", "true")):
+            self.assertEqual(expected, project.findtext("./PropertyGroup/" + name))
+        self.assertEqual(["Assets/Stroop/Core/**/*.cs", "Assets/Stroop/Runtime/**/*.cs",
+                          "Apps/WozLanDiagnosticLauncher.cs", "Apps/WozLanDiagnosticSession.cs",
+                          "Tests/WozLanPairingUiTests.cs"],
+                         [item.get("Include") for item in project.findall("./ItemGroup/Compile")])
 
 
 if __name__ == "__main__":

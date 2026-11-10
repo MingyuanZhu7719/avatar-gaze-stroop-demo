@@ -37,7 +37,14 @@ namespace AvatarStroop.Tests
             }
             internal void Fresh(){sequence++;Observations.Fresh(sequence,(int)sequence,(int)sequence);}
             internal void Deliver()
-            {O.Tick();Fresh();O.PollPhasePreflight();Fresh();O.PollObservation();P.Tick();Assert(!P.Terminal&&!O.Terminal,"role terminal: P="+P.LastIssue+", O="+O.LastIssue);}
+            {O.Tick();Fresh();O.PollPhasePreflight();Fresh();O.PollObservation();P.Tick();if(P.Terminal||O.Terminal) Assert(false,"role terminal: P="+P.LastIssue+", O="+O.LastIssue+", transport="+ParticipantTransportIssue(P));}
+            static string ParticipantTransportIssue(ViveLegacyWozParticipantProcess participant)
+            {
+                // Failure-only diagnostics avoid altering successful initialization timing.
+                // LastIssue is a fixed transport code; no packet, key or identity is logged.
+                var field=typeof(ViveLegacyWozParticipantProcess).GetField("transport",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
+                return ((ViveLegacyWozProcessTransport)field.GetValue(participant)).LastIssue;
+            }
             internal void Cycle()
             {Scene.PumpBeforeTask();Deliver();Assert(Scene.PumpBeforeTask(),"scene proof pending: "+P.LastIssue);}
             internal void Main()
