@@ -13,7 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from windows_framework import compiler_command, runtime_sources
+from windows_framework import compiler_command
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("quest_prepare", Path(__file__).with_name("prepare-quest-preview.py"))
@@ -51,6 +51,18 @@ def run_editor(editor, project, output, action, graphics=False):
         raise ValueError("Unity " + action + " failed or did not acknowledge completion; inspect " + str(log))
 
 
+def launcher_smoke_assertions(source):
+    """Reuse only the existing assertions, never fixtures or the global runner."""
+    text = (source / "Tests/TestRunner.cs").read_text(encoding="utf-8-sig")
+    start, end = "    public static class Check", "    public sealed class ManualClock"
+    if text.count(start) != 1 or text.count(end) != 1 or text.index(start) >= text.index(end):
+        raise ValueError("Launcher smoke assertion boundaries changed; review before compiling.")
+    assertions = text[text.index(start):text.index(end)]
+    if assertions.count("    public sealed class TestSuite") != 1:
+        raise ValueError("Launcher smoke TestSuite boundary changed; review before compiling.")
+    return "using System;\nnamespace AvatarStroop.Tests\n{\n" + assertions + "}\n"
+
+
 def compile_launcher(editor, source, output):
     data = editor.parent / "Data"
     mono, csc = data / "MonoBleedingEdge/bin/mono.exe", data / "MonoBleedingEdge/lib/mono/4.5/csc.exe"
@@ -64,11 +76,13 @@ def compile_launcher(editor, source, output):
         child, smoke = directory / "EnvironmentChild.exe", directory / "EnvironmentSmoke.exe"
         subprocess.run(compiler + ["-target:exe", "-define:VIVE_LAUNCH_ENV_CHILD",
                        "-main:AvatarStroop.Tests.VivePreviewEnvironmentChild", "-out:" + str(child), str(plan), str(tests)], check=True, cwd=source)
-        sources = runtime_sources(source) + sorted((source / "Tests").glob("*.cs"))
-        # Paths are resolved relative to cwd=source. Using absolute paths for
-        # every source exceeds Windows' command-line limit as the suite grows.
+        support = directory / "LauncherSmokeAssertions.cs"
+        support.write_text(launcher_smoke_assertions(source), encoding="utf-8")
+        # The launch smoke has exactly these three inputs. Unrelated suites may
+        # require Apps or native/raw fixtures and do not belong in packaging.
+        sources = (plan, tests, support)
         subprocess.run(compiler + ["-define:STROOP_TEST_BUILD", "-target:exe", "-main:AvatarStroop.Tests.VivePreviewLaunchEnvironmentSmoke", "-out:" + str(smoke)] +
-                       [str(path.relative_to(source)) for path in sources], check=True, cwd=source)
+                       [str(path) for path in sources], check=True, cwd=source)
         subprocess.run([str(smoke), str(child)], check=True, cwd=source, env=dict(os.environ, TEMP=temporary, TMP=temporary))
     launcher = output / "AvatarStroopViveEyePreview.exe"
     subprocess.run(compiler + ["-target:winexe", "-main:AvatarStroop.Apps.ViveEyePreviewLauncher", "-out:" + str(launcher),

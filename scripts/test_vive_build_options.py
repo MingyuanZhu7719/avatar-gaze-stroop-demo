@@ -180,10 +180,7 @@ class ViveBuildOptionsTests(unittest.TestCase):
         self.assertNotIn("Complete 24 Automatic", guide)
 
     def test_actual_csharp_request_helper_exhaustive_matrix(self):
-        windir = os.environ.get("WINDIR")
-        if not windir:
-            self.skipTest("Windows directory environment is unavailable; no compiler fallback")
-        csc = Path(windir) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
+        csc = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
         if os.name != "nt" or not csc.is_file():
             self.skipTest("Official installed Windows C# compiler unavailable; no Unity fallback")
         source = (ROOT / "Assets/Stroop/Unity/Editor/ViveStroopPreviewBuild.cs").read_text(encoding="utf-8-sig")

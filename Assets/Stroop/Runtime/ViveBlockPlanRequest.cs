@@ -11,11 +11,14 @@ namespace AvatarStroop.Runtime
         readonly ViveDevelopmentParticipant participant;readonly MonotonicClock clock;
         readonly ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp;
         readonly JournalEvent prepared;readonly ViveRawRevocation revocation;readonly Thread owner;
+        readonly ViveLegacyWozTaskOwner wozOwner;readonly ViveLegacyWozTaskOwner.Binding wozBinding;
         internal readonly long PlanEventSequence;
         internal readonly bool PracticeScope;
         ViveBlockPlanRequest(ViveDevelopmentParticipant p,MonotonicClock c,ViveDevelopmentParticipant.NamedRecordingTaskStamp s,JournalEvent e)
         {participant=p;clock=c;stamp=s;prepared=e;revocation=p.NamedRawRevocation;owner=Thread.CurrentThread;PlanEventSequence=e.Sequence;
-            PracticeScope=String.Equals(e.Fields["plan_scope"],"PRACTICE",StringComparison.Ordinal);}
+            PracticeScope=String.Equals(e.Fields["plan_scope"],"PRACTICE",StringComparison.Ordinal);
+            if(s.Context.IsLegacyWoz&&!PracticeScope&&p.LegacyWozRecording!=null)
+            {wozOwner=p.LegacyWozRecording.TaskOwner;if(!wozOwner.TryCapture(out wozBinding))throw new InvalidOperationException("Current WoZ plan owner required");}}
         static bool SameStamp(ViveDevelopmentParticipant.NamedRecordingTaskStamp a,ViveDevelopmentParticipant.NamedRecordingTaskStamp b)
         {return a!=null&&b!=null&&Object.ReferenceEquals(a.Owner,b.Owner)&&Object.ReferenceEquals(a.Clock,b.Clock)&&
             Object.ReferenceEquals(a.Context,b.Context)&&Object.ReferenceEquals(a.Configuration,b.Configuration)&&Object.ReferenceEquals(a.Plan,b.Plan)&&Object.ReferenceEquals(a.Intent,b.Intent)&&a.Generation==b.Generation&&a.EventCursor==b.EventCursor&&
@@ -33,6 +36,30 @@ namespace AvatarStroop.Runtime
                 !Object.ReferenceEquals(a.LegacyRecordingDesign,b.LegacyRecordingDesign)||!Object.ReferenceEquals(a.LegacyRecordingIntent,b.LegacyRecordingIntent)||!Object.ReferenceEquals(a.NamedPlan,b.NamedPlan)||!Object.ReferenceEquals(a.NamedBlock,b.NamedBlock)||
                 !Object.ReferenceEquals(a.NamedRecordingIntent,b.NamedRecordingIntent)||a.Fields.Count!=b.Fields.Count)return false;
             foreach(var pair in a.Fields){string value;if(!b.Fields.TryGetValue(pair.Key,out value)||!String.Equals(pair.Value,value,StringComparison.Ordinal))return false;}
+            return true;
+        }
+        bool MatchesCapturedOrEvidenceExtendedStamp(ViveDevelopmentParticipant.NamedRecordingTaskStamp value)
+        {
+            if(wozOwner==null)return SameStamp(stamp,value);
+            if(wozBinding==null||value==null||!stamp.Context.IsLegacyWoz||PracticeScope||
+                !Object.ReferenceEquals(stamp.Owner,value.Owner)||!Object.ReferenceEquals(stamp.Clock,value.Clock)||
+                !Object.ReferenceEquals(stamp.Context,value.Context)||!Object.ReferenceEquals(stamp.Configuration,value.Configuration)||
+                !Object.ReferenceEquals(stamp.Plan,value.Plan)||!Object.ReferenceEquals(stamp.Intent,value.Intent)||
+                stamp.Phase!=value.Phase||stamp.Block!=value.Block||stamp.Segment!=value.Segment||stamp.Session!=value.Session||stamp.TrialId!=value.TrialId||
+                value.Generation<stamp.Generation||value.EventCursor<stamp.EventCursor||value.EventCursor-stamp.EventCursor>256)return false;
+            ViveLegacyWozTaskOwner.Binding current;
+            if(!wozOwner.TryCapture(out current)||current.WireRevision!=wozBinding.WireRevision||current.SourceOwner!=wozBinding.SourceOwner||
+                current.SourceGeneration!=wozBinding.SourceGeneration||current.Selection!=wozBinding.Selection)return false;
+            var tail=participant.ReadEventsAfter(stamp.EventCursor,257);
+            if(tail.Count!=value.EventCursor-stamp.EventCursor)return false;
+            for(int i=0;i<tail.Count;i++)
+            {
+                var item=tail[i];string evidenceKind;
+                if(item.Sequence!=stamp.EventCursor+i+1||item.Kind!=ViveLegacyWozRecordingSchema.EventKind||
+                    !stamp.Context.MatchesEvent(item)||item.ClockId!=clock.ClockId||
+                    !item.Fields.TryGetValue("woz_event",out evidenceKind)||(evidenceKind!="TaskReceipt"&&evidenceKind!="Preflight"))return false;
+                ViveLegacyWozRecordingSchema.Validate(item.Kind,item.Fields,item.ClockId,item.Time,true);
+            }
             return true;
         }
         internal static bool TryCapture(ViveDevelopmentParticipant p,MonotonicClock c,JournalEvent plan,out ViveBlockPlanRequest request)
@@ -75,7 +102,7 @@ namespace AvatarStroop.Runtime
             try
             {
                 ViveDevelopmentParticipant.NamedRecordingTaskStamp before,after;
-                return participant.TryCaptureRawRecordingTaskStamp(clock,out before)&&SameStamp(stamp,before)&&
+                return participant.TryCaptureRawRecordingTaskStamp(clock,out before)&&MatchesCapturedOrEvidenceExtendedStamp(before)&&
                     participant.MatchesRawRecordingBlockPlan(prepared)&&participant.TryCaptureRawRecordingTaskStamp(clock,out after)&&
                     SameStamp(before,after)&&!revocation.IsRevoked;
             }

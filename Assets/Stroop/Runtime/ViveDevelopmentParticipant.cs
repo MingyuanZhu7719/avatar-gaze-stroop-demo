@@ -10,7 +10,7 @@ namespace AvatarStroop.Runtime
     // The Experiment remains Simulation and the only avatar source is Automatic.
     // Readiness is supplied by the host from current headset and device samples;
     // it is never a claim of physical calibration or apparatus validation.
-    public sealed class ViveDevelopmentParticipant
+    public sealed partial class ViveDevelopmentParticipant
     {
         readonly Experiment experiment;
         readonly ViveRawSessionContext rawContext;
@@ -728,6 +728,8 @@ namespace AvatarStroop.Runtime
         // on the owner thread at its next safe point; it is never reported by
         // this bookkeeping as already applied.
         void RunNamedRecordingMutation(Action action,int safety=0,string technicalReason=null,bool compoundInput=false)
+        {RunLegacyWozMutation(()=>RunNamedRecordingMutationCore(action,safety,technicalReason,compoundInput));}
+        void RunNamedRecordingMutationCore(Action action,int safety,string technicalReason,bool compoundInput)
         {
             if(!experiment.Configuration.HasRawRecordingIntent){action();return;}
             bool pendingFirst=false;
@@ -987,6 +989,8 @@ namespace AvatarStroop.Runtime
             {FaultObservation("observation_sync:"+error.GetType().Name);observationPending=true;return false;}
         }
         void Observed(Action action,bool safety)
+        {RunLegacyWozMutation(()=>ObservedLegacyWozCore(action,safety));}
+        void ObservedLegacyWozCore(Action action,bool safety)
         {
             if(observation==null){action();return;}
             EnterFenceAction();
@@ -1209,6 +1213,10 @@ namespace AvatarStroop.Runtime
                 if(experiment.Configuration.IsNamedDesign&&experiment.CurrentNamedSelection!=null&&experiment.CurrentNamedSelection.Option==ViveNamedOption.NoAvatar)
                     return null; // structurally absent, not a missing or invalid tracked sample
                 if(!experiment.LockedControl.HasValue||experiment.BlockIndex<0)return null;
+                // An explicit owned LiveWoz software choice is now representable,
+                // but no validated live renderer exists. Never fall back to
+                // Automatic or let the new BlockReady choice throw in the scene.
+                if(experiment.LockedControl==ControlSelection.LiveWoz&&legacyWozOwner!=null)return null;
                 if(experiment.LockedControl.Value!=ControlSelection.Automatic)throw new InvalidOperationException("Only the automatic development source is supported");
                 if(experiment.Configuration.IsNamedDesign)
                 {
@@ -1322,7 +1330,7 @@ namespace AvatarStroop.Runtime
             // withdraw signal before the normal owner-thread rejection.
             if(withdraw&&System.Threading.Thread.CurrentThread.ManagedThreadId!=observationOwnerThread)RevokePracticeConsent();
             EnterFenceAction();
-            try{UpdateAuxiliaryObserved(confirm,pause,withdraw,ratingDirection,phaseDisplayReady);}finally{ExitFenceAction();}
+            try{RunLegacyWozMutation(()=>UpdateAuxiliaryObserved(confirm,pause,withdraw,ratingDirection,phaseDisplayReady));}finally{ExitFenceAction();}
         }
         void UpdateAuxiliaryObserved(bool confirm,bool pause,bool withdraw,int ratingDirection,bool phaseDisplayReady)
         {
@@ -1433,10 +1441,11 @@ namespace AvatarStroop.Runtime
             var sharedClock=eventClock as MonotonicClock;
             if(sharedClock==null||rawContext==null||!rawContext.IsLegacy||admission==null||!admission.SyntheticOnly||!admission.IsLegacy||
                 !Object.ReferenceEquals(System.Threading.Volatile.Read(ref namedFrameAdmission),admission)||
-                request==null||request.PracticeScope||!admission.ConsumeSyntheticPlanProof(proof,request))return false;
+                request==null||request.PracticeScope||!RecordedWozBlockProofCurrent||!admission.ConsumeSyntheticPlanProof(proof,request))return false;
             bool started=false;
-            RunNamedRecordingMutation(()=>{if(namedRawRevocation.IsRevoked||!request.PlanMatchesInsideMutation(this,sharedClock))return;
+            Action begin=()=>RunNamedRecordingMutation(()=>{if(namedRawRevocation.IsRevoked||!request.PlanMatchesInsideMutation(this,sharedClock))return;
                 OwnerBeginBlockCore(Actor.Owner);started=true;});
+            if(rawContext.IsLegacyWoz){if(LegacyWozRecording==null||!LegacyWozRecording.RunMutation(begin))return false;}else begin();
             return started&&!namedRawRevocation.IsRevoked;
         }
         internal bool TryBeginSyntheticPracticeForFixture(ViveNamedSessionFrameAdmission admission,ViveBlockPlanRequest request,
@@ -1461,7 +1470,7 @@ namespace AvatarStroop.Runtime
             var sharedClock=eventClock as MonotonicClock;
             if(sharedClock==null||admission==null||!admission.SyntheticOnly||
                 !Object.ReferenceEquals(System.Threading.Volatile.Read(ref namedFrameAdmission),admission)||
-                sink==null||!sink.IsNativeFixture||!sink.BelongsTo(admission)||request==null||receipt==null||!receipt.FixtureOnly||
+                sink==null||!sink.IsNativeFixture||!sink.BelongsTo(admission)||request==null||receipt==null||!receipt.FixtureOnly||(!practiceScope&&!RecordedWozBlockProofCurrent)||
                 !receipt.BelongsToNativeFixtureForTest(sink)||request.PracticeScope!=practiceScope||
                 namedRawRevocation.IsRevoked||!request.TryValidateCurrentForReceipt(this,sharedClock)||
                 !receipt.TryConsumeSyntheticForTest(request)||!request.TryValidateCurrentForReceipt(this,sharedClock))return false;
@@ -1485,7 +1494,7 @@ namespace AvatarStroop.Runtime
             ViveRawSessionJournalSink.BlockPlanWriteReceipt receipt,bool practiceScope)
         {
             var sharedClock=eventClock as MonotonicClock;if(sharedClock==null)return false;
-            if(actor!=Actor.Owner||request==null||receipt==null||request.PracticeScope!=practiceScope||
+            if(actor!=Actor.Owner||request==null||receipt==null||request.PracticeScope!=practiceScope||(!practiceScope&&!RecordedWozBlockProofCurrent)||
                 System.Threading.Volatile.Read(ref namedFrameAdmission)==null||namedRawRevocation.IsRevoked||
                 !request.TryValidateCurrentForReceipt(this,sharedClock)||!receipt.TryConsume(request)||
                 !request.TryValidateCurrentForReceipt(this,sharedClock))return false;
@@ -1544,7 +1553,15 @@ namespace AvatarStroop.Runtime
             if(observation==null){RunNamedRecordingMutation(()=>OwnerBeginBlockCore(actor));return;}Observed(()=>OwnerBeginBlockCore(actor),false);
         }
         void OwnerBeginBlockCore(Actor actor)
-        {RequireOwner(actor);RequireReady();bool noAvatar=experiment.Configuration.IsNamedDesign&&experiment.CurrentNamedSelection!=null&&experiment.CurrentNamedSelection.Option==ViveNamedOption.NoAvatar;
+        {RequireOwner(actor);RequireReady();
+            if(rawContext!=null&&rawContext.IsLegacyWoz)
+            {
+                if(LegacyWozRecording==null||!LegacyWozRecording.MayBeginInsidePlanMutation)throw new InvalidOperationException("Owned recorded WoZ plan mutation required");
+                if(experiment.BlockIndex==0)experiment.BeginCountdown(actor,true);
+                else if(!experiment.TryBeginRetainedBlockCountdown(true))throw new InvalidOperationException("Retained recorded WoZ continuation unavailable");
+                return;
+            }
+            bool noAvatar=experiment.Configuration.IsNamedDesign&&experiment.CurrentNamedSelection!=null&&experiment.CurrentNamedSelection.Option==ViveNamedOption.NoAvatar;
             experiment.BeginCountdown(actor,noAvatar?experiment.NamedOptionConfirmed:experiment.LockedControl==ControlSelection.Automatic);}
         public void MarkPresented(string trialId)
         {if(observation==null){RunNamedRecordingMutation(()=>MarkPresentedCore(trialId));return;}Observed(()=>MarkPresentedCore(trialId),false);}

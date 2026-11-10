@@ -30,6 +30,10 @@ namespace AvatarStroop.Runtime
             "head_connected","head_valid","head_rotation_x","head_rotation_y","head_rotation_z","head_rotation_w",
             "ingest_phase","ingest_block","ingest_segment","ingest_trial_id","task_cursor"};
         static readonly HashSet<string> EyeFieldSet=new HashSet<string>(EyeFields,StringComparer.Ordinal);
+        static readonly HashSet<string> WozBitFields=new HashSet<string>(new[]{
+            "woz_task_issued_participant_time","woz_challenge_issued_participant_time","woz_receipt_participant_time",
+            "woz_send_operator_time","woz_head_operator_time","woz_eye_operator_time",
+            "woz_head_qx","woz_head_qy","woz_head_qz","woz_head_qw","woz_eye_dx","woz_eye_dy","woz_eye_dz"},StringComparer.Ordinal);
         internal static Outcome Write(Stream input,Stream privateOutput,long maximumInputBytes,int maximumRecords,
             long maximumOutputBytes,CancellationToken cancellation)
         {
@@ -74,7 +78,7 @@ namespace AvatarStroop.Runtime
         {return human.Length>32767||raw.Length>32767?"EXCEL_CELL_TOO_LONG_USE_FULL_CSV_OR_VRAW":String.Empty;}
         static string ConvertFrame(string frame)
         {
-            var result=new StringBuilder();int start=0;string ordinal=null,kind=null;
+            var result=new StringBuilder();int start=0;string ordinal=null,kind=null,payloadKey=null;bool woz=false;
             var eye=new Dictionary<string,string[]>(StringComparer.Ordinal);
             string padding=new string(',',EyeFields.Length*2);
             while(start<frame.Length)
@@ -90,6 +94,16 @@ namespace AvatarStroop.Runtime
                     eye.Add(columns[2],columns);continue;
                 }
                 string readable=Human(columns[3],columns[4]),raw="raw:"+columns[4];
+                if(kind=="manifest"&&columns[2]=="legacy_control_mode"&&readable=="OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING")woz=true;
+                // The verified V5 schema stores exact IEEE bits in task text.
+                // Decode only its whitelisted numeric fields for readability;
+                // keep the original UTF-8/base64 raw value byte-for-byte.
+                if(kind=="task"&&columns[2].StartsWith("field_",StringComparison.Ordinal))
+                {
+                    if(columns[2].EndsWith("_key",StringComparison.Ordinal))payloadKey=readable;
+                    else if(columns[2].EndsWith("_value",StringComparison.Ordinal)&&payloadKey!=null&&WozBitFields.Contains(payloadKey)&&readable.Length==16)
+                        readable=Human("f64_bits_hex",readable);
+                }
                 result.Append(Csv(columns[0])).Append(',').Append(Csv(columns[1])).Append(',').Append(Csv(columns[2])).Append(',')
                     .Append(Csv(columns[3])).Append(',').Append(Csv(readable)).Append(',').Append(Csv(raw)).Append(',')
                     .Append(Csv(ExcelWarning(readable,raw))).Append(padding).Append('\n');
@@ -110,6 +124,8 @@ namespace AvatarStroop.Runtime
                 }
                 result.Append(Csv(ordinal)).Append(",\"observation\",\"eye_frame\",\"wide\",\"\",\"\",").Append(Csv(warning)).Append(fields).Append('\n');
             }
+            if(woz){result.Append(Meta("remote_operator_cleanup","NOT_PROVEN_BY_PARTICIPANT_CAPTURE_TERMINAL"));
+                result.Append(Meta("network_time_alignment","INDEPENDENT_ROLE_CLOCKS_NO_SYNCHRONIZATION_OR_LATENCY_ESTIMATE"));}
             return result.ToString();
         }
         static Outcome WriteCore(Stream input,Stream privateOutput,long maximumInputBytes,int maximumRecords,

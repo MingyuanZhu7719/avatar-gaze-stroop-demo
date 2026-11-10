@@ -51,7 +51,7 @@ namespace AvatarStroop.Unity.Editor
             var result=BuildPipeline.BuildPlayer(new BuildPlayerOptions{scenes=new[]{ScenePath},locationPathName=executable,
                 target=BuildTarget.StandaloneWindows64,options=BuildOptions.None});
             Require(result.summary.result==BuildResult.Succeeded&&File.Exists(executable),"operator candidate build failed");
-            Debug.Log("VIVE_WOZ_OPERATOR_CANDIDATE: isolated unconfigured development process; task view and preflight are not connected; no headset validation.");
+            Debug.Log("VIVE_WOZ_OPERATOR_CANDIDATE: isolated dormant development process; explicit installed-source and authenticated task/preflight controls; recording off; no headset validation.");
         }
     }
 }

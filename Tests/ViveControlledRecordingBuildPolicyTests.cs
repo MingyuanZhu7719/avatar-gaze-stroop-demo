@@ -30,7 +30,7 @@ namespace AvatarStroop.Tests
             suite.Run("closed recording build rejects preparation before directory inspection",()=>{
                 bool inspected=false;string reason;
                 var setup=ViveNamedRecordingSetup.TryPrepare(ViveControlledRecordingBuildPolicy.Available,
-                    System.IO.Path.Combine(System.IO.Path.GetPathRoot(Environment.CurrentDirectory),"synthetic-policy-not-opened"),"128",_=>{inspected=true;return true;},out reason);
+                    @"C:\NeverOpenedPolicyFixture","128",_=>{inspected=true;return true;},out reason);
                 Check.True(setup==null&&!inspected&&!String.IsNullOrEmpty(reason));
             });
             suite.Run("recording development policy cannot create an unbound installed output",()=>{

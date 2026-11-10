@@ -8,7 +8,7 @@ namespace AvatarStroop.Runtime
     // events to the existing raw sink. No network transport is involved.
     // The installed factory is intentionally unreachable while the sink's
     // production gate is closed. This is not study or storage authorization.
-    internal sealed class ViveNamedRawRecordingPump
+    internal sealed partial class ViveNamedRawRecordingPump
     {
         // DEVELOPMENT ONLY: a close return is not proof of durability, worker
         // exit, or complete coverage. Withdrawal propagation and in-flight I/O
@@ -210,12 +210,29 @@ namespace AvatarStroop.Runtime
             try{return new ViveNamedRawRecordingPump(participant,worker,clock,admission,new RawWriter(sink),run);}
             catch{admission.Withdraw();worker.TryStopStatusEvidence(run);throw;}
         }
+        internal static ViveNamedRawRecordingPump StartWozNativeFixtureForTest(ViveDevelopmentParticipant participant,ViveProEyeWorker worker,
+            MonotonicClock clock,ViveNamedSessionFrameAdmission admission,ViveRawSessionJournalSink sink)
+        {
+            if(participant==null||worker==null||clock==null||admission==null||!admission.SyntheticOnly||!admission.IsLegacy||
+                admission.SessionContext==null||!admission.SessionContext.IsLegacyWoz||sink==null||
+                !admission.UsesExactSources(participant,worker,clock)||!sink.IsWozIntegrationFixture||!sink.BelongsTo(admission)||
+                worker.UsesInstalledSdkPath||!participant.UsesEventClock(clock)||!worker.UsesClock(clock)||
+                sink.ProductionGateOpen||sink.CompletionGateOpen||ViveLegacyWozRecordingBuildPolicy.Available)
+                throw new InvalidOperationException("WoZ native fixture requires exact synthetic sources and closed production gates.");
+            if(!admission.TryBindQueueBudget(sink.SelectedBudget))throw new InvalidOperationException("Fixture budget unavailable.");
+            object run;if(!admission.TryEnableWorkerStatus(128,out run))throw new InvalidOperationException("Synthetic status unavailable.");
+            try{return new ViveNamedRawRecordingPump(participant,worker,clock,admission,new RawWriter(sink),run);}
+            catch{admission.Withdraw();worker.TryStopStatusEvidence(run);throw;}
+        }
 #endif
         internal bool HasExited {get{return !thread.IsAlive;}}
         // A point-in-time check only. Withdrawal can occur immediately after
         // it returns; the scene must continue checking State on every frame.
         internal static bool IsAvailableForSceneInstall(ViveNamedRawRecordingPump pump)
         {return pump!=null&&!pump.WithdrawalRequested&&pump.State==Outcome.Running;}
+        internal bool UsesRecordingBinding(ViveDevelopmentParticipant task,ViveProEyeWorker source,MonotonicClock shared,ViveNamedSessionFrameAdmission candidate)
+        {return Object.ReferenceEquals(participant,task)&&Object.ReferenceEquals(worker,source)&&Object.ReferenceEquals(clock,shared)&&
+            Object.ReferenceEquals(admission,candidate)&&IsAvailableForSceneInstall(this);}
         internal bool HasReservedIo {get{return Volatile.Read(ref ioReserved)!=0;}}
         // 4 = file close API returned; 6 = directory/ancestor cleanup
         // pending; 7 = reviewed close APIs returned. None proves durability.

@@ -4,15 +4,24 @@ VR avatar gaze and Stroop demo planning.
 
 ## Current VIVE development source
 
-The current source includes fixed VIVE colours (up red, right green, down blue, left yellow), a fixed 0.5 trackpad threshold, headset startup alignment, clearer pause diagnostics without a participant manual-pause control, and a controlled Legacy/named recording candidate. Existing Quest preview behaviour remains supported.
+The current source adds a separate participant/operator WoZ workflow and explicit participant-local recording for the controlled Legacy task. It retains fixed VIVE colours (up red, right green, down blue, left yellow), the 0.5 trackpad threshold, headset startup alignment, pause diagnostics, and the existing single-PC/Quest paths.
 
-**Ordinary builds do not record.** Recording requires the explicit controlled Windows XR Development configuration; Legacy recording additionally requires its separate build option. Owner acknowledgement, headset choices and explicit start actions remain necessary. This is not a validated research release or a hardware-tested public player. No participant records, private logs, executables or vendor SDK binaries are distributed here.
+**Networking and recording are opt-in.** Ordinary builds do not record. Controlled WoZ recording requires its explicit Windows XR Development build options, local task/eye choices, an output request and separate source/start actions. The operator must accept both forwarding and participant-local storage of mapped operator poses. Participant eye data, answers, reaction times and ratings stay on the participant computer; only response-free task context goes to the operator. Pairing credentials are not written to the journal.
 
-- [Current recording scope, validation and limits](docs/legacy-recording-public-evidence-20261109b.md)
-- [Short local self-test guide](docs/controlled-recording-self-test-guide.txt)
-- [Exact public production-source hashes and build restrictions](legacy-recording-public-manifest-20261109b.json)
+This is a development candidate, not a validated research release. Private participant and operator packages compiled successfully, but neither two-physical-PC networking nor real SDK/HMD recording has been accepted. Software presentation evidence does not establish physical visibility, synchronized clocks, complete sampling, durable storage or remote operator cleanup. A withdrawal test produces an incomplete raw prefix, not normal completed-session CSV.
 
-The current public source was verified by managed compilation and metadata checks against 195 production input hashes. Historical private player and synthetic-test results are identified separately in the evidence note. Real-headset recording, physical gaze accuracy and complete/durable capture remain unaccepted.
+No participant records, private logs, executables, pairing credentials or vendor SDK binaries are distributed in this repository. Machine-specific synthetic fixture entrypoints remain disabled in the public source.
+
+- [Current WoZ scope, public validation and limits](docs/woz-recording-public-evidence-20261110a.md)
+- [Participant-local recording and short-test precautions](docs/woz-participant-local-recording.md)
+- [Exact public production-source hashes](woz-recording-public-manifest-20261110a.json)
+- [Bounded portable public checks](scripts/test-public-woz.py)
+
+**Review status: draft only.** One public unrecorded-scene initialization test failed with task_send_failed. Later bounded checks did not reproduce it, but the cause is unresolved; no clean aggregate regression pass or readiness to merge is claimed.
+
+The sanitized public source passed managed API compilation in three configurations against 217 production-source hashes. This is separate from the earlier private package builds and synthetic native tests. See the current evidence note for exact checks and exclusions.
+
+Earlier dated validation notes and manifests describe their own source snapshots. The current WoZ validation note and manifest below take precedence for this revision.
 
 <!-- BEGIN current-experiment-design -->
 ## Current experiment design

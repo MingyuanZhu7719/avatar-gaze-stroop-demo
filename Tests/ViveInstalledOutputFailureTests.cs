@@ -15,8 +15,6 @@ namespace AvatarStroop.Tests
     public static class ViveInstalledOutputFailureTests
     {
         const BindingFlags PrivateInstance=BindingFlags.Instance|BindingFlags.NonPublic;
-        // A metadata-only placeholder derived from the current volume; never opened.
-        static string UnusedSyntheticDirectory {get{return System.IO.Path.Combine(System.IO.Path.GetPathRoot(Environment.CurrentDirectory),"synthetic-unused-recording");}}
         sealed class WaitingClient:IViveProEyeClient
         {
             internal readonly ManualResetEvent Entered=new ManualResetEvent(false),Release=new ManualResetEvent(false);
@@ -48,14 +46,14 @@ namespace AvatarStroop.Tests
                     {ViveTrackpadDirection.Right,Colour.Green},{ViveTrackpadDirection.Down,Colour.Blue},{ViveTrackpadDirection.Left,Colour.Yellow}};
                 Task=new ViveDevelopmentParticipant(config,clock,geometry,map,.5,true);
                 Admission=ViveNamedSessionFrameAdmission.CreateSyntheticForTest(Task,worker,clock,32);
-                Sink=new ViveRawSessionJournalSink(Admission,UnusedSyntheticDirectory,
+                Sink=new ViveRawSessionJournalSink(Admission,@"C:\synthetic-unused-recording",
                     ViveRawByteBudget.SelectExplicit(1048576),true);
             }
             internal ViveRawExclusiveDestination AttachMetadata(bool csv,bool startFailed)
             {
                 var types=new List<Type>{typeof(ViveNamedSessionFrameAdmission),typeof(ViveRawSessionJournalSink),
                     typeof(ViveRawRevocation),typeof(long),typeof(int),typeof(string)};
-                var values=new List<object>{Admission,Sink,Task.NamedRawRevocation,1048576L,1000,UnusedSyntheticDirectory};
+                var values=new List<object>{Admission,Sink,Task.NamedRawRevocation,1048576L,1000,@"C:\synthetic-unused-recording"};
                 if(csv){types.Add(typeof(long));types.Add(typeof(int));values.Add(1048576L);values.Add(1000);}
                 var constructor=typeof(ViveRawExclusiveDestination).GetConstructor(PrivateInstance,null,types.ToArray(),null);
                 Check.True(constructor!=null);
