@@ -26,6 +26,7 @@ namespace AvatarStroop.Unity
         public string Status {get{return status;}}
         public IClock SharedClock {get{return clock;}}
         public ViveProEyeWorker Worker {get{return worker;}}
+        internal Action BeforeStopping;
         public bool HeadReady {get{return running&&headReady;}}
         public bool ViewActive {get{return starting||running||stopping;}}
         public void Configure(Camera camera)
@@ -70,7 +71,7 @@ namespace AvatarStroop.Unity
             if(!running||!headReady||worker!=null||stopping||cleanupUncertain||quitRequested)return;
             try
             {
-                worker=new ViveProEyeWorker(clock,ReadHead,()=>new SrAnipalViveProEyeProvider(clock,()=>null));
+                worker=ViveProEyeWorker.CreateInstalled(clock,ReadHead);
                 if(!worker.Start())throw new InvalidOperationException(worker.Diagnostic);
                 status="Eye worker starting; initialization alone does not prove valid tracking.";
             }
@@ -106,6 +107,7 @@ namespace AvatarStroop.Unity
         }
         public void StopView()
         {
+            NotifyBeforeStopping();
             if(starting){stopRequested=true;if(cameraView!=null)cameraView.cullingMask=0;status="Waiting for XR initialization to finish before cleanup.";return;}
             running=false;headReady=false;stopping=true;
             if(cameraView!=null)cameraView.cullingMask=0;
@@ -128,8 +130,11 @@ namespace AvatarStroop.Unity
         }
         void Fail(string message){starting=false;stopRequested=false;StopView();status=message;}
         bool WantsToQuit(){if(!starting&&!running&&!stopping&&worker==null)return true;quitRequested=true;StopView();return false;}
+        void NotifyBeforeStopping()
+        {try{if(BeforeStopping!=null)BeforeStopping();}catch{cleanupUncertain=true;status="Operator scene cleanup uncertain; stopping owned source.";}}
         void OnDestroy()
         {
+            NotifyBeforeStopping();
             Application.wantsToQuit-=WantsToQuit;
             if(worker!=null)worker.Stop();
             // Do not unload the native stack underneath a still-running worker.

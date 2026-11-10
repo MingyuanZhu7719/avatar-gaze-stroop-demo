@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="Assets/Stroop/Core/**/*.cs" />
     <Compile Include="Assets/Stroop/Runtime/**/*.cs" />
-    <Compile Include="Tests/**/*.cs" />
+    <!-- WinForms/CLR4 coverage has its own AvatarStroop.WozLanPairingUiTests project. -->
+    <Compile Include="Tests/**/*.cs" Exclude="Tests/WozLanPairingUiTests.cs" />
   </ItemGroup>
 </Project>

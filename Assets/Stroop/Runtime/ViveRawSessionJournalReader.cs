@@ -66,12 +66,13 @@ namespace AvatarStroop.Runtime
         static readonly byte[] Magic=Encoding.ASCII.GetBytes("VRAW0002");
         static readonly byte[] MagicV3=Encoding.ASCII.GetBytes("VRAW0003");
         static readonly byte[] MagicV4=Encoding.ASCII.GetBytes("VRAW0004");
+        static readonly byte[] MagicV5=Encoding.ASCII.GetBytes("VRAW0005");
         static readonly UTF8Encoding Utf8=new UTF8Encoding(false,true);
         sealed class Limit:Exception {}
         sealed class Invalid:Exception {}
         sealed class SourceFailure:Exception {}
         sealed class Context
-        {internal bool Manifest,V3,V4,Terminal,TaskEnded,TaskCompleted,EndedPhase,AfterEndedPhase;internal bool WithholdObservedWithdrawal=false;internal long LastTask,Tasks,Eyes;internal long Statuses=0;
+        {internal bool Manifest,V3,V4,V5,Terminal,TaskEnded,TaskCompleted,EndedPhase,AfterEndedPhase;internal bool WithholdObservedWithdrawal=false;internal long LastTask,Tasks,Eyes;internal long Statuses=0;
             internal string AllocationId;internal int BInitialTarget;internal double TaskChoiceObserved,EyeChoiceObserved;internal bool SoftwareChoicesSeen,LegacyPassedPreparation;
             internal int Blocks;internal string Session,Clock,Plan,Intent;internal double Choice,LatestLocal,LastStatusTime=-1;internal int[] Options,Lists;internal string[] Schedules,Geometries;
             internal ViveRawTrialAccumulator TrialAccumulator;internal readonly ViveRawPreparedPlanAudit PreparedPlans=new ViveRawPreparedPlanAudit();}
@@ -171,10 +172,15 @@ namespace AvatarStroop.Runtime
             for(int i=0;i<4;i++)
             {string p="block_"+i.ToString(CultureInfo.InvariantCulture)+"_";if(I32(r,rows,p+"index")!=i||I32(r,rows,p+"condition")!=(int)order[i]||I32(r,rows,p+"list_index")!=i)throw new Invalid();
                 c.Options[i]=(int)order[i];c.Lists[i]=i;c.Schedules[i]=mapping;c.Geometries[i]=geometry;}
-            if(c.TrialAccumulator!=null)c.TrialAccumulator.SetLegacyManifest(c.Session,c.Clock,c.Plan,c.Options,c.Lists,c.Schedules,c.Geometries);
+            if(c.V5&&(Text(r,rows,"legacy_control_mode",true)!="OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING"||
+                Text(r,rows,"network_clock_relation",true)!="INDEPENDENT_CLOCKS_NOT_SYNCHRONIZED"||
+                Text(r,rows,"network_authentication_scope",true)!="REMOTE_KEY_POSSESSION_NOT_HARDWARE_IDENTITY"))throw new Invalid();
+            if(c.TrialAccumulator!=null)c.TrialAccumulator.SetLegacyManifest(c.Session,c.Clock,c.Plan,c.Options,c.Lists,c.Schedules,c.Geometries,c.V5);
         }
         static void ValidateLegacyFields(Dictionary<string,string> f,Context c,int block)
         {
+            if(c.V5)Field(f,"legacy_control_mode","OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING");
+            else if(f.ContainsKey("legacy_control_mode"))throw new Invalid();
             Field(f,"legacy_schema",ViveLegacyRecordingIntent.EventSchemaVersion);Field(f,"legacy_design_schema",ViveLegacyRecordingDesign.SchemaVersion);
             Field(f,"legacy_design_id",c.Plan);Field(f,"legacy_recording_intent_id",c.Intent);Field(f,"legacy_task_recording_intent","REQUESTED");Field(f,"legacy_eye_recording_intent","REQUESTED");
             Field(f,"legacy_eye_sample_payload","NOT_INCLUDED_IN_TASK_EVENT");Field(f,"legacy_allocation_id",c.AllocationId);Field(f,"legacy_b_initial_target",((GazeTarget)c.BInitialTarget).ToString());
@@ -197,7 +203,7 @@ namespace AvatarStroop.Runtime
                 var rows=new Rows(ordinal,kind==0?"manifest":kind==1?"task":kind==2?"observation":kind==3?"eye_status":"capture_terminal");
                 if(kind==0)
                 {
-                    if(Text(r,rows,"schema",true)!=(context.V4?"VRAW0004":context.V3?"VRAW0003":"VRAW0002"))throw new Invalid();
+                    if(Text(r,rows,"schema",true)!=(context.V5?"VRAW0005":context.V4?"VRAW0004":context.V3?"VRAW0003":"VRAW0002"))throw new Invalid();
                     string source=Text(r,rows,"source",true);if(source!="SYNTHETIC_ONLY"&&source!="INSTALLED_SDK_CODE_PATH_ONLY")throw new Invalid();
                     if(Text(r,rows,"run_kind",true)!="SIMULATION_DEVELOPMENT_NOT_RESEARCH")throw new Invalid();
                     if(Text(r,rows,"native_time",true)!="NATIVE_TIME_OPAQUE"||Text(r,rows,"eye_coverage",true)!="EYE_COVERAGE_UNKNOWN"||
@@ -242,7 +248,8 @@ namespace AvatarStroop.Runtime
                     for(int i=0;i<count;i++)
                     {string p="field_"+i.ToString(CultureInfo.InvariantCulture)+"_";string key=Text(r,rows,p+"key",true);if(previous!=null&&StringComparer.Ordinal.Compare(previous,key)>=0)throw new Invalid();previous=key;fields.Add(key,Text(r,rows,p+"value"));}
                     try{ViveRawSessionJournalCodec.ValidatePresentationDeclaration(eventKind,fields,context.Clock,eventTime);
-                        ViveRawSessionJournalCodec.ValidateSoftwareChoices(eventKind,fields,context.Clock,eventTime);}
+                        ViveRawSessionJournalCodec.ValidateSoftwareChoices(eventKind,fields,context.Clock,eventTime);
+                        ViveLegacyWozRecordingSchema.Validate(eventKind,fields,context.Clock,eventTime,context.V5);}
                     catch(InvalidOperationException){throw new Invalid();}
                     foreach(string key in fields.Keys)if(key.StartsWith(context.V4?"named_":"legacy_",StringComparison.OrdinalIgnoreCase))throw new Invalid();
                     if(context.V4)
@@ -445,9 +452,9 @@ namespace AvatarStroop.Runtime
                 cancellation.ThrowIfCancellationRequested();
                 if(input==null||!input.CanRead||input.CanWrite){result.Status=ViveRawSessionReadStatus.ReadFailure;return result;}
                 var source=new Bounded(input,maximumBytes,cancellation);byte[] magic=new byte[8];if(source.Fill(magic)!=8)throw new Invalid();
-                bool version4=ContinuousJournal.Equal(magic,MagicV4);bool version3=version4||ContinuousJournal.Equal(magic,MagicV3);if(!version3&&!ContinuousJournal.Equal(magic,Magic))throw new Invalid();
+                bool version5=ContinuousJournal.Equal(magic,MagicV5);bool version4=version5||ContinuousJournal.Equal(magic,MagicV4);bool version3=version4||ContinuousJournal.Equal(magic,MagicV3);if(!version3&&!ContinuousJournal.Equal(magic,Magic))throw new Invalid();
                 if(privateStage!=null)privateStage.OfferMagic(magic);
-                byte[] prior=new byte[32];bool truncated=false;long ordinal=0;var context=new Context{V3=version3,V4=version4,TrialAccumulator=projectTrials?new ViveRawTrialAccumulator():null,WithholdObservedWithdrawal=withholdObservedWithdrawal};
+                byte[] prior=new byte[32];bool truncated=false;long ordinal=0;var context=new Context{V3=version3,V4=version4,V5=version5,TrialAccumulator=projectTrials?new ViveRawTrialAccumulator():null,WithholdObservedWithdrawal=withholdObservedWithdrawal};
                 long verifiedBytes=0,taskCount=0,observationCount=0;int pageCount=0;
                 var text=includeRows?new StringBuilder("ordinal,record_kind,field,type,value\n"):null;
                 while(true)

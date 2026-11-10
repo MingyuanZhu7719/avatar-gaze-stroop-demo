@@ -136,11 +136,13 @@ namespace AvatarStroop.Runtime
             internal readonly int Frame;
             internal readonly Colour Word,Ink;
             internal readonly double MaximumAge;
+            internal readonly ViveLegacyWozRecordingBinding.PresentationEvidence WozEvidence;
             internal int Consumed;
             internal PresentationReservation(ViveNamedSessionFrameAdmission owner,ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp,
-                TrialRecord trial,ViveProEyeWorker.RecordingFrameTicket ticket,long ordinal,long revision,int frame,double maximumAge)
+                TrialRecord trial,ViveProEyeWorker.RecordingFrameTicket ticket,long ordinal,long revision,int frame,double maximumAge,
+                ViveLegacyWozRecordingBinding.PresentationEvidence wozEvidence=null)
             {Owner=owner;Stamp=stamp;Trial=trial;Ticket=ticket;Ordinal=ordinal;Revision=revision;Frame=frame;
-                Word=trial.Stimulus.Word;Ink=trial.Stimulus.Ink;MaximumAge=maximumAge;}
+                Word=trial.Stimulus.Word;Ink=trial.Stimulus.Ink;MaximumAge=maximumAge;WozEvidence=wozEvidence;}
         }
         // This fixture never accepts an installed source or authorizes task
         // mutations. It exercises only queue reservation/publication mechanics.
@@ -213,7 +215,9 @@ namespace AvatarStroop.Runtime
             MonotonicClock clock,int capacity,ViveNamedRecordingSetup choices)
         {
             double taskObserved,eyeObserved;
-            if(!ViveLegacyRawRecordingBuildPolicy.Available||choices==null||!choices.TryConsumeObservedTimes(clock,out taskObserved,out eyeObserved))
+            if(!ViveLegacyRawRecordingBuildPolicy.Available||task==null||
+                (task.RawContext!=null&&task.RawContext.IsLegacyWoz&&!ViveLegacyWozRecordingBuildPolicy.Available)||
+                choices==null||!choices.TryConsumeObservedTimes(clock,out taskObserved,out eyeObserved))
                 throw new InvalidOperationException("Legacy raw recording is unavailable.");
             return new ViveNamedSessionFrameAdmission(task,worker,clock,capacity,false,true,taskObserved,eyeObserved);
         }
@@ -620,7 +624,14 @@ namespace AvatarStroop.Runtime
                 if(trial==null||trial.Stimulus==null||trial.Outcome!=TrialOutcome.Pending||trial.Onset.HasValue||
                     !String.Equals(stamp.TrialId,trial.TrialId,StringComparison.Ordinal)||!String.Equals(planned.Trial,trial.TrialId,StringComparison.Ordinal))
                 {Fail();return false;}
-                var candidate=new PresentationReservation(this,stamp,trial,ticket,last,revision,unityFrame,maximumAge);
+                ViveLegacyWozRecordingBinding.PresentationEvidence woz=null;
+                if(context.IsLegacyWoz&&stamp.Phase==Phase.MainTask)
+                {
+                    if(task.LegacyWozRecording==null||!task.LegacyWozRecording.TryCapturePresentation(out woz)||
+                        last>Int64.MaxValue-2||capacity-(last-first)<2||Volatile.Read(ref target[(int)((last+1)%capacity)])!=null||
+                        !ledger.CanReserveUpper(last,checked(2*MaximumTaskFrameBytes))){Fail();return false;}
+                }
+                var candidate=new PresentationReservation(this,stamp,trial,ticket,last,revision,unityFrame,maximumAge,woz);
                 if(Interlocked.CompareExchange(ref presentationSlot,candidate,null)!=null||!ProducerLive()||
                     !Object.ReferenceEquals(target,Volatile.Read(ref ring))||!PresentationEpochFresh(ticket,maximumAge))
                 {Fail();return false;}
@@ -652,18 +663,20 @@ namespace AvatarStroop.Runtime
                             lastTaskSequence!=token.Stamp.EventCursor||!Object.ReferenceEquals(task.CurrentTrial,token.Trial)||
                             token.Trial.Outcome!=TrialOutcome.Pending||token.Trial.Onset.HasValue||token.Trial.Stimulus==null||
                             token.Trial.Stimulus.Word!=token.Word||token.Trial.Stimulus.Ink!=token.Ink){Fail();return false;}
-                        task.MarkPresentedWithSoftwareProxy(trialId,unityRenderSeconds,unityFrame,revision);
+                        int expectedEvents=token.WozEvidence!=null&&token.WozEvidence.Fields!=null?2:1;
+                        if(token.WozEvidence!=null)task.MarkWozPresentedWithSoftwareProxy(trialId,unityRenderSeconds,unityFrame,revision,token.WozEvidence);
+                        else task.MarkPresentedWithSoftwareProxy(trialId,unityRenderSeconds,unityFrame,revision);
                         ViveDevelopmentParticipant.NamedRecordingTaskStamp after;
                         if(!task.TryCaptureRawRecordingTaskStamp(clock,out after)||after==null||token.Stamp.Generation>Int64.MaxValue-2||
                             after.Generation!=token.Stamp.Generation+2||token.Stamp.EventCursor==Int64.MaxValue||
-                            after.EventCursor!=token.Stamp.EventCursor+1||after.Phase!=token.Stamp.Phase||after.Block!=token.Stamp.Block||
+                            after.EventCursor!=token.Stamp.EventCursor+expectedEvents||after.Phase!=token.Stamp.Phase||after.Block!=token.Stamp.Block||
                             after.Segment!=token.Stamp.Segment||!String.Equals(after.TrialId,trialId,StringComparison.Ordinal)||
                             !Object.ReferenceEquals(after.Context,context)||!Object.ReferenceEquals(after.Plan,plan)||!Object.ReferenceEquals(after.Intent,intent)||
                             !Object.ReferenceEquals(task.CurrentTrial,token.Trial)||!token.Trial.Onset.HasValue||
                             !PresentationEpochFresh(token.Ticket,token.MaximumAge)){Fail();return false;}
-                        var items=task.ReadEventsAfter(token.Stamp.EventCursor,2);string eventWord,eventInk,onset,onsetClock,onsetBasis,proxy,proxyClock,proxyFrame,proxyRevision,proxyBasis,proxySchema;
-                        if(items.Count!=1){Fail();return false;}var item=items[0];
-                        if(item.Sequence!=after.EventCursor||item.Kind!="stimulus_presented"||item.TrialId!=trialId||
+                        var items=task.ReadEventsAfter(token.Stamp.EventCursor,3);string eventWord,eventInk,onset,onsetClock,onsetBasis,proxy,proxyClock,proxyFrame,proxyRevision,proxyBasis,proxySchema;
+                        if(items.Count!=expectedEvents){Fail();return false;}var item=items[0];
+                        if(item.Sequence!=token.Stamp.EventCursor+1||item.Kind!="stimulus_presented"||item.TrialId!=trialId||
                             item.ClockId!=clock.ClockId||item.SessionId!=token.Stamp.Session||item.BlockIndex!=after.Block||item.Segment!=after.Segment||
                             !context.MatchesEvent(item)||
                             !item.Fields.TryGetValue("word",out eventWord)||eventWord!=word.ToString()||
@@ -679,10 +692,26 @@ namespace AvatarStroop.Runtime
                             !item.Fields.TryGetValue("unity_render_proxy_basis",out proxyBasis)||proxyBasis!="caller_declared_unity_render_proxy_not_photon_onset"||
                             !task.NamedRecordingStampCurrentUnderLock(after)||!PresentationEpochFresh(token.Ticket,token.MaximumAge))
                         {Fail();return false;}
-                        if(!Publish(target,item)){Fail();return false;}
+                        if(token.WozEvidence!=null&&!token.WozEvidence.Owner.PresentationCurrent(token.WozEvidence,true)){Fail();return false;}
+                        if(expectedEvents==2)
+                        {
+                            var used=items[1];string usedKind;
+                            if(used.Kind!=ViveLegacyWozRecordingSchema.EventKind||used.Sequence!=after.EventCursor||used.TrialId!=trialId||
+                                !used.Fields.TryGetValue("woz_event",out usedKind)||usedKind!="PoseUsed"||!context.MatchesEvent(used))
+                            {Fail();return false;}
+                            var ledger=Volatile.Read(ref queueLedger);
+                            for(int i=0;i<2;i++)
+                                if(!ProducerLive()||ledger==null||!ledger.TryCharge(token.Ordinal+i,items[i])||
+                                    Interlocked.CompareExchange(ref target[(int)((token.Ordinal+i)%capacity)],items[i],null)!=null)
+                                {Fail();return false;}
+                            Interlocked.Exchange(ref nextOrdinal,token.Ordinal+2);
+                            if(!ClearBitIfLive(P)){Fail();return false;}
+                        }
+                        else if(!Publish(target,item)){Fail();return false;}
                         lastTaskSequence=after.EventCursor;
                         if(!Object.ReferenceEquals(Interlocked.CompareExchange(ref presentationSlot,null,token),token)||ioFence.IsRevoked)
                         {Fail();return false;}
+                        if(token.WozEvidence!=null)token.WozEvidence.Owner.PresentationFinished(token.WozEvidence);
                         return true;
                     }
                 }

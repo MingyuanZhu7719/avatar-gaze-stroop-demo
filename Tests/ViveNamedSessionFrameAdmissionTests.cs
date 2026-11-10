@@ -480,10 +480,11 @@ namespace AvatarStroop.Tests
                     Check.True(admission.ConfirmTask()&&admission.ConfirmEye());BeginPractice(task);bool staged;
                     Check.True(admission.TryStageNextTaskEvent(out staged)&&staged);
                     ViveNamedSessionFrameAdmission.ConsumerReceipt receipt;Check.True(admission.TryReserveConsumer(out receipt)&&receipt!=null);
-                    string unused=System.IO.Path.GetFullPath(System.IO.Path.Combine("build","synthetic-never-opened.vraw"));
+                    string unused=Fixtures.ClosedRawSinkPath();Fixtures.AssertClosedRawSinkPathAbsent(unused);
                     var sink=new ViveRawSessionJournalSink(admission,unused);
                     var forged=new ViveRawSessionJournalSink.WriteProof(sink,receipt,receipt.Record,receipt.Ordinal);
                     Check.True(!admission.TryAcknowledgeConsumer(receipt,forged));Check.Equal(3,admission.State);
+                    Fixtures.AssertClosedRawSinkPathAbsent(unused);
                 }
                 finally{client.Release.Set();worker.Stop(1000);worker.Dispose();}
             });
@@ -497,9 +498,11 @@ namespace AvatarStroop.Tests
                     Check.True(admission.ConfirmTask()&&admission.ConfirmEye());BeginPractice(task);bool staged;
                     Check.True(admission.TryStageNextTaskEvent(out staged)&&staged);
                     ViveNamedSessionFrameAdmission.ConsumerReceipt receipt;Check.True(admission.TryReserveConsumer(out receipt)&&receipt!=null);
-                    var sink=new ViveRawSessionJournalSink(admission,@"C:\synthetic-not-opened\raw.vraw");bool result=true;
+                    string unused=Fixtures.ClosedRawSinkPath();Fixtures.AssertClosedRawSinkPathAbsent(unused);
+                    var sink=new ViveRawSessionJournalSink(admission,unused);bool result=true;
                     var thread=new Thread(()=>result=sink.AppendOne(receipt));thread.Start();Check.True(thread.Join(3000));
                     Check.True(!result&&!sink.ProductionGateOpen);Check.Equal(3,admission.State);
+                    Fixtures.AssertClosedRawSinkPathAbsent(unused);
                 }
                 finally{client.Release.Set();worker.Stop(1000);worker.Dispose();}
             });
@@ -513,10 +516,11 @@ namespace AvatarStroop.Tests
                     Check.True(admission.ConfirmTask()&&admission.ConfirmEye());BeginPractice(task);bool staged;
                     Check.True(admission.TryStageNextTaskEvent(out staged)&&staged);
                     ViveNamedSessionFrameAdmission.ConsumerReceipt receipt;Check.True(admission.TryReserveConsumer(out receipt)&&receipt!=null);
-                    string unused=System.IO.Path.GetFullPath(System.IO.Path.Combine("build","closed-"+Guid.NewGuid().ToString("N")+".vraw"));
+                    string unused=Fixtures.ClosedRawSinkPath();Fixtures.AssertClosedRawSinkPathAbsent(unused);
                     Check.True(!System.IO.File.Exists(unused));var sink=new ViveRawSessionJournalSink(admission,unused);bool result=true;
                     var thread=new Thread(()=>result=sink.AppendOne(receipt));thread.Start();Check.True(thread.Join(3000));
                     Check.True(!result&&!sink.ProductionGateOpen&&!System.IO.File.Exists(unused));Check.Equal(3,admission.State);
+                    Fixtures.AssertClosedRawSinkPathAbsent(unused);
                 }
                 finally{client.Release.Set();worker.Stop(1000);worker.Dispose();}
             });

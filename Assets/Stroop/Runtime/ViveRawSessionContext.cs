@@ -14,6 +14,7 @@ namespace AvatarStroop.Runtime
         internal readonly ViveLegacyRecordingDesign LegacyDesign;
         internal readonly ViveLegacyRecordingIntent LegacyIntent;
         internal bool IsLegacy {get{return LegacyDesign!=null;}}
+        internal bool IsLegacyWoz {get{return IsLegacy&&LegacyDesign.OperatorWozRequested;}}
         internal bool TaskRequested {get{return IsLegacy?LegacyIntent.TaskRequested:Intent.TaskRequested;}}
         internal bool EyeRequested {get{return IsLegacy?LegacyIntent.EyeRequested:Intent.EyeRequested;}}
         internal string DesignId {get{return IsLegacy?LegacyDesign.DesignId:Plan.PlanId;}}

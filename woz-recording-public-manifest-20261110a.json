@@ -1,0 +1,2515 @@
+{
+  "schema": "current-woz-public-overlay-v1",
+  "created_utc": "2026-11-10T12:21:18.161559+00:00",
+  "base_commit": "b4839b138bb5534c6513aa328cd51c403d9fa447",
+  "base_tree": "e1c415393b7d0a7b8e8236e5f19b554847a193b4",
+  "scope": "Cumulative minimally sanitized current source overlay; no separate historical release stack; not a standalone repository or player package",
+  "publication_performed": false,
+  "removed_files": [],
+  "overlay_files_excluding_manifest": 81,
+  "production_sources": 217,
+  "production_files_changed_from_base": 41,
+  "source_checkpoint_sha256": "B9EEA87F2F47B9A23E9AC26EB9094C14977C9E502152F3D6663ACB1ECFD9CFE2",
+  "verified_checkpoint_files": 522,
+  "prior_safe_overlay_manifest_sha256": "93C58BB5618D9A20C43DFCF88C2EE6105C80D84E97BC4C1130DCF53AA6B8E895",
+  "prior_safe_overlay_files_verified": 64,
+  "sanitization": {
+    "production_files": 2,
+    "machine_fixture_values_disabled": 5,
+    "behavior": "Empty allowlists fail closed, and Named/Legacy/WoZ fixture roots reject before Path.Combine or filesystem access. No generalized path authorization.",
+    "line_endings": "Where an LF or CRLF representation exactly matched the remote Git blob, that byte representation was retained."
+  },
+  "public_validation": {
+    "managed_production_api": {
+      "scope": "Sanitized public production managed API compilation only; existing local Unity and XR reference assemblies; no Unity/player execution; not a private binary reproduction",
+      "results": [
+        {
+          "mode": "ordinary-preview",
+          "production_sources": 217,
+          "exit_code": 0,
+          "assembly_sha256": "3813B47C9A4D26945F43A5159B0F30B653537B7E98C5CD235EDC2C1FDD86DDB9"
+        },
+        {
+          "mode": "legacy-controlled-api",
+          "production_sources": 217,
+          "exit_code": 0,
+          "assembly_sha256": "8AE33292A6F43F480B9B8940F07737404552EDA34B59A662B14FCE4AF4EE2881"
+        },
+        {
+          "mode": "legacy-woz-controlled-api",
+          "production_sources": 217,
+          "exit_code": 0,
+          "assembly_sha256": "EA1DA367246CDCBBDA1C8B3E3D89C843AB5FBB755B4C557F5D1316B1725A747A"
+        }
+      ]
+    },
+    "static_mock_tests": {
+      "participant": 12,
+      "operator": 11,
+      "build_options": 12,
+      "package_guides": 5
+    },
+    "memory": {
+      "recording_memory": {
+        "passed": 41,
+        "failed": 0
+      },
+      "recorded_acquisition": {
+        "passed": 3,
+        "failed": 0
+      },
+      "original_local_raw": {
+        "passed": 26,
+        "failed": 0
+      },
+      "initial_combined_unrecorded": {
+        "passed": 120,
+        "failed": 1,
+        "test": "uncertain clear suppresses safety ack and replacement owner",
+        "failure": "role terminal: P=task_send_failed, O=",
+        "phase": "first fixture Cycle before FailClear injection and safety assertions",
+        "cause": "unknown"
+      },
+      "unchanged_scene_only_rerun": {
+        "passed": 11,
+        "failed": 0
+      },
+      "fresh_fixture_diagnostic": {
+        "cycles": 200,
+        "failed": 0,
+        "scope": "private reflection harness against unchanged original binary"
+      },
+      "final_combined_test_only_diagnostic": {
+        "passed": 121,
+        "failed": 0,
+        "exit_code": 0,
+        "scope": "original suite order, copied scene test adds inner transport error logging; original tests and production unchanged"
+      },
+      "overall": "not a completely green combined regression; original initialization failure remains unexplained"
+    },
+    "public_entrypoint": "scripts/test-public-woz.py",
+    "attempt_history": "Two public-runner compiler setup failures were corrected before the memory run (missing standard references, then older reference API incompatibility). The initial unrecorded memory failure is preserved independently from later passing checks."
+  },
+  "private_historical_evidence": {
+    "production_sources": 217,
+    "managed_api_modes": 3,
+    "recording_memory": 41,
+    "recorded_acquisition": 3,
+    "unrecorded_regression": 121,
+    "original_local_raw": 26,
+    "fixed_native_synthetic_scenarios": 4,
+    "participant_operator_packages_compiled": true,
+    "later_editor_reflection_assertions": 35,
+    "not_public_player_reproduction": true
+  },
+  "excluded_categories": [
+    "All build outputs, logs, raw/test data and binaries",
+    "Vendor SDK/runtime files and secrets",
+    "Machine-specific native fixture entry points and execution scripts",
+    "Private provenance/package scripts and superseded historical package tests",
+    "Private/historical documentation; concise current public guides supplied instead"
+  ],
+  "not_performed": [
+    "Unity Editor or player launch",
+    "SDK initialization or real-user capture",
+    "Native recording fixture execution",
+    "Socket, LAN, HMD or hardware validation",
+    "General full repository regression suite",
+    "GitHub publication by this preparation worker"
+  ],
+  "limitations": [
+    "Original public combined unrecorded initialization failure remains unexplained despite later non-reproduction.",
+    "Public managed API compile is not a private player binary reproduction.",
+    "Physical timing/alignment, tracking accuracy, complete sampling, clock synchronization, scientific validity and durable storage are unaccepted.",
+    "No remote cleanup acknowledgment claim; stopped prefixes do not authorize normal completed CSV export.",
+    "Publisher-owned README and remote CI status are outside this overlay inventory."
+  ],
+  "files": [
+    {
+      "path": "Apps/WozLanDiagnosticAssemblyInfo.cs",
+      "sha256": "C23FF4B6B012DDA51FF8B11854FCE9C6D4AE5772155401B687A99A1847041528",
+      "git_blob_sha1": "aef8eff827e2ea48b859c4e8be1d919dfbb597ad",
+      "bytes": 387,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Apps/WozLanDiagnosticLauncher.cs",
+      "sha256": "7CFF9524F44B38020EC394A725C7D9BE074E02ED3F11F9C94E85E30719DA7888",
+      "git_blob_sha1": "265c09948487db469b7a974e3af59d0f3aa62919",
+      "bytes": 12908,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Apps/WozLanDiagnosticSession.cs",
+      "sha256": "C66DF5A677839B9FA2447B954FBE95D457335A39F0CA4265F60C445709C08BBB",
+      "git_blob_sha1": "1bd13dd5dd0cf2be536d97a05290c98eeacc7ea0",
+      "bytes": 13581,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Core/Experiment.cs",
+      "sha256": "4477C893998CA82D3D86850BCC98E2E5675104ABA16C9881411F07A959E00673",
+      "git_blob_sha1": "880e6d61fdd0266f06b5366d9b349b93bd70a511",
+      "bytes": 67161,
+      "change": "modify",
+      "base_blob_sha1": "600db842218317bd2cbaba871a751f5107508cf5"
+    },
+    {
+      "path": "Assets/Stroop/Core/Experiment.LegacyWozRecording.cs",
+      "sha256": "6B9C8F79B1F297ED358B72370D27703E85849D489B933135134AD43A8FF177F0",
+      "git_blob_sha1": "ce098752e648b52e9bc82e9763c08598413650b9",
+      "bytes": 1015,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Core/ViveLegacyRecordingDesign.cs",
+      "sha256": "1C48AA2303AC697AF43FD81096E948F420FB497953E617F6FD6CB99E6CD4929F",
+      "git_blob_sha1": "dce1594352306ef475370add62d24f4b3122b41f",
+      "bytes": 3197,
+      "change": "modify",
+      "base_blob_sha1": "3d108cf32cd017e19c6a7b77e7332b2ba98c0d1b"
+    },
+    {
+      "path": "Assets/Stroop/Core/ViveLegacyWozRecordingSchema.cs",
+      "sha256": "9AC5E082EC6761AF14DF01F82E96E779426BB22086A09D6A849A3D27E57AF135",
+      "git_blob_sha1": "828ace2fa8874f90ac5350d1f4cbcce488c50a31",
+      "bytes": 13071,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Core/WozAuthenticatedControl.cs",
+      "sha256": "4F4875CC5A5208AA29B6C1C63744B1F75B984791BD56B4C035A2FA2710BD1C35",
+      "git_blob_sha1": "a36be0acdb36602673b697e86ba32fa805a6173a",
+      "bytes": 16552,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Core/WozAuthenticatedLan.cs",
+      "sha256": "6C731CDA9609603FE6C11163EC0395733A7C6344E88086A3DAEDAFCFA93BD975",
+      "git_blob_sha1": "c534ba80e7efed85ea39ee5678a685c57112d553",
+      "bytes": 25550,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Core/WozLanPairing.cs",
+      "sha256": "1AD210EFED07321682FCC66CA649F9140A85A2A5F0D0FB32EA557249673675BB",
+      "git_blob_sha1": "dedb290d8128465624d034c8925e5ee7c5b6e706",
+      "bytes": 4626,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveBlockPlanRequest.cs",
+      "sha256": "100DE31466FDE4A58AEB696B8CC4C08531DFE50FBBDF5E634E8F51C585D68D0F",
+      "git_blob_sha1": "d5b525ea3db42a10a9e5cd5ed45093c6ab984ae1",
+      "bytes": 9602,
+      "change": "modify",
+      "base_blob_sha1": "aeda32490620cef75ef6f4248f18e50ff165a6a4"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentParticipant.cs",
+      "sha256": "28256999C4E7F956F22C7999417D907F2B358114BACD0EBA2477517C8506B520",
+      "git_blob_sha1": "a2b2415c767b0c53f8f059c54d96ad41f67692c4",
+      "bytes": 118509,
+      "change": "modify",
+      "base_blob_sha1": "2408d164eae5badef3898ed0f8fb616d1154a09f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentParticipant.LegacyWoz.cs",
+      "sha256": "75A0DF821836EA0FFE6BB500BE98A3AF2F2267F875086BA9CD5AE93095D74A15",
+      "git_blob_sha1": "be20c4065eb4cb8afd672a581485d25b9ecf8f90",
+      "bytes": 8894,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozBridge.cs",
+      "sha256": "A5D75E8D6C1FC943AF4D04C514ECCA2BB212C75F28A8A731B8EE49AECB36CAE8",
+      "git_blob_sha1": "3b58746ea9d4c449362950c23d716c6d023d94e4",
+      "bytes": 17397,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozControlledScene.cs",
+      "sha256": "0F0114780D5CE26B6901A4C3070A20F5749CE99FF05EC44D1396A700A13D9717",
+      "git_blob_sha1": "2f3d57743a707a54e0c9105f0047422cf427663c",
+      "bytes": 11733,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozMemoryJournalFixture.cs",
+      "sha256": "B67991E7C19BC03E5373BA53C937C1676D566CD199AF640491EBE415A5E7BB43",
+      "git_blob_sha1": "da6d09fd01f2a21f3f81611919cadb5c151a69ee",
+      "bytes": 4656,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozObservationOwner.cs",
+      "sha256": "82E59EE8E6BDDCC38723E841ED34A03DBE3E9D99C2134956FE5DBE1E95FAFEC8",
+      "git_blob_sha1": "8965bfa43d09ecae90914c6f6ebbfed79181cc3f",
+      "bytes": 9900,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozOperatorProcess.cs",
+      "sha256": "887D98B8A5D31F0FFC6F6096A95EF931F9EE650CE77E32A80FB81C668E831089",
+      "git_blob_sha1": "b8dd5a0730a2c937b838de159b1a3c99167f793d",
+      "bytes": 14057,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozParticipantProcess.cs",
+      "sha256": "9AE8C62187434168C30A4D1AD852234B6B98FC80D37374EE8107110EDEA8E65D",
+      "git_blob_sha1": "0458b68c7d940de97f2f2f60d2f10b0e9f2d24c6",
+      "bytes": 29069,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozProcessPairing.cs",
+      "sha256": "4A4400B88D1141AE6BAE341D2224E566CBC596C875B8073888C8A91AFEE239F0",
+      "git_blob_sha1": "fb37af62acefd150273cca1dab9105eca54b93a1",
+      "bytes": 10867,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozProcessTransport.cs",
+      "sha256": "5EAEE38E926CA1FD30A91D941620BB583FF383C985559AD4F4368CA87C3F1A34",
+      "git_blob_sha1": "c33d640421b9abfb7b8d192dbc3e615edbe79c20",
+      "bytes": 16015,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozRecordingBinding.cs",
+      "sha256": "E2BE2A426551E1B4E859C6FC87AC1FF6C27DFF1B3B4AF719B24C36313D67B354",
+      "git_blob_sha1": "02c97566470ad6d5b8352e2ce978731fd6d5ba41",
+      "bytes": 8363,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozRecordingPresentation.cs",
+      "sha256": "249918506E246E289F9201ADF03A3F3C5284C2804BA2DB7243922135FF457634",
+      "git_blob_sha1": "c1b9f86371f89aa7b7c9691e5be5277611878334",
+      "bytes": 4899,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozSourceChoice.cs",
+      "sha256": "F8A59DD0EE6784883047A16CEE13BA78A746F543CBEDEFC8C5622F9371F7A3FF",
+      "git_blob_sha1": "2e31ee4ae650d8afaff6601f5384b63375c2102d",
+      "bytes": 5741,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozSourceLifecycle.cs",
+      "sha256": "B261F18CD9D06E73D4BF92D6CA61365FAEC19DB44E2CF7CFA6ABAF1C6DECD522",
+      "git_blob_sha1": "9929208ebc35a73aa7c2ed5d4c320f577fe92c8e",
+      "bytes": 16861,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedRawRecordingPump.cs",
+      "sha256": "746430BF5AF12000CD23DE3F98B320968DC7C1E380F8B67A9A174C16435EAC7D",
+      "git_blob_sha1": "56f4fe46147749ef0063b1d9e4a746f9ea1cbc41",
+      "bytes": 46271,
+      "change": "modify",
+      "base_blob_sha1": "78b7769850ed6f602ac15f372d46f728de7e3448"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedSessionFrameAdmission.cs",
+      "sha256": "B7318A4B75F119869F729CFAE29465293F44A66268046BB834E5F8AB53BB8507",
+      "git_blob_sha1": "f5dad30e672481323d67861dead0b78abb17da0f",
+      "bytes": 89989,
+      "change": "modify",
+      "base_blob_sha1": "89933398edf91361d13238661abbaf93a723c5f1"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawByteBudget.cs",
+      "sha256": "C70DCB00974B9E96389B9D9544ECC9DE3C6DAA6AC71AAE21FFBAE9CCF43A880F",
+      "git_blob_sha1": "fd06deb5a5718ffe5b36bcffcfd4fb86a0dde8fa",
+      "bytes": 7223,
+      "change": "modify",
+      "base_blob_sha1": "7e5e7dbde2cf7691b32dab74e6f2b36b30a7a297"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawReadableAnalysisCsv.cs",
+      "sha256": "E16511F745E2CFF7F4A580C935484022C0B63D7858D0ECEC4661D6C77361BC86",
+      "git_blob_sha1": "57a6ea4b8cc2403718162fbfb14969e22f2481df",
+      "bytes": 12996,
+      "change": "modify",
+      "base_blob_sha1": "fbdf094ea82353b0efa3e1e2aa08d931fa2717a0"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionContext.cs",
+      "sha256": "DD7FDDA7BBCE6B5C06D99C36DB1C4843839DE1787B4FD0F09EACB3A9E6C2CAA1",
+      "git_blob_sha1": "caff7767297701a48d13e1dde8bb50100d7f53a7",
+      "bytes": 3816,
+      "change": "modify",
+      "base_blob_sha1": "5feaa9d24bd5e0d4ca4d491e711b235cff90f55d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionJournalCodec.cs",
+      "sha256": "BBE5821DC46839704520E1E208EA19EFFBE83C9719C256D756C31F4798EDD495",
+      "git_blob_sha1": "e6163eb6b5ac6082bde18ab35d10974eb607095d",
+      "bytes": 27624,
+      "change": "modify",
+      "base_blob_sha1": "a47310520de7e026e42b15ed01e71d949474c411"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionJournalReader.cs",
+      "sha256": "E26B0A16555E40D860656E70A1BCCFDD811638034687AEC6AA0043CB99ED85AF",
+      "git_blob_sha1": "63e241823a3cab72cffca6f0f0e6e2de336e68b0",
+      "bytes": 43837,
+      "change": "modify",
+      "base_blob_sha1": "aba0cc99878742dd05b54e2db08fa75fae6b70c5"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionJournalSink.cs",
+      "sha256": "5B889DEAEFE3AEAF08D14BD7B9F800292747591C79D6B8425D4C25774F3BB056",
+      "git_blob_sha1": "28399d173029ad0c8f699263d1191eeb5437caa4",
+      "bytes": 76957,
+      "change": "modify",
+      "base_blob_sha1": "b9eaee37d408dd4d4361b52398e1497ab495e719"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawTrialProjection.cs",
+      "sha256": "51259A2510EEBC9D5023888FC8BF6012C668A93836BC493F7A9FE4B28CFF2A9E",
+      "git_blob_sha1": "4fa77af6d981a3745d46983a9dbceae5d7e861a3",
+      "bytes": 23370,
+      "change": "modify",
+      "base_blob_sha1": "54aa8bcf71dbad47e1391f7a629a6018fab3a997"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawTrialReport.cs",
+      "sha256": "DCA5965009002FE5F09F072203E80A7EDA34D7F04ECBFCB25F2FF522B7C49128",
+      "git_blob_sha1": "2de7ac9674c716dc78660de5071590831178a844",
+      "bytes": 13746,
+      "change": "modify",
+      "base_blob_sha1": "ba664b7fea71a60a8b5bc69b7db101d5f1763efc"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveTlsSimulationCandidate.cs",
+      "sha256": "84845420285156CE94EA001BF6C05E9D8CBA834CD50339F6FD22BA3A65298F21",
+      "git_blob_sha1": "78c537e1f2a93831d1214e2e8f96ac27b07b16ef",
+      "bytes": 28987,
+      "change": "modify",
+      "base_blob_sha1": "a7d9d41770c2ec5164458ef903d52720deb45786"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/WozAuthenticatedDiagnosticTransport.cs",
+      "sha256": "8F4F61DF9BDA535AD163F8F4B5AF32176EE30FD772C388526B625E5A4CC337E0",
+      "git_blob_sha1": "dc479f789d55e67720a94b9f2c523dca0f057dff",
+      "bytes": 26903,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Runtime/WozSyntheticLanDiagnosticSession.cs",
+      "sha256": "83F7D815866833352EDD4D9893E640C96700CD5EC03C36BADC23119F1C79AA2C",
+      "git_blob_sha1": "1cce5b4cd21d61cead281fa7b3a83e064d08a821",
+      "bytes": 17020,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveLegacyRecordingPresentationFixture.cs",
+      "sha256": "EAE7084D24E81D862EB98A167566B83078DEADCC047EF5715D5BA3E546D338F0",
+      "git_blob_sha1": "1e51a17d9c0e182095b7d40bb7e58c6c7df0575f",
+      "bytes": 8561,
+      "change": "modify",
+      "base_blob_sha1": "d436f1691f6781995bf3e56f9e8af97c8e74c75d"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveLegacySceneConfigurationFixture.cs",
+      "sha256": "03679F9758B6C73760D38C17B1E31841E6411A1443D5A1B4BDFD090679F7CC8D",
+      "git_blob_sha1": "7a1fbe0e1d378cd460b7adcf0eb6f61394c9d603",
+      "bytes": 6784,
+      "change": "modify",
+      "base_blob_sha1": "ec855c730bfad8ad45d664f5fe90cf790c9d2dfb"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/VivePreSessionChoiceFixture.cs",
+      "sha256": "6AD1A248935181C031AD58D26C6075728F1F67A7458BF87A723D98C191466878",
+      "git_blob_sha1": "e57093ae5f3dc80854ab51b95580598cb1c8092f",
+      "bytes": 12447,
+      "change": "modify",
+      "base_blob_sha1": "d7a1d5a958bee305e93064eaccc8f23904d6a1e2"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveStroopPreviewBuild.cs",
+      "sha256": "B996169071156A74FE42F8D7F73C72411DF16D71058023A1CE97B620256EDB4C",
+      "git_blob_sha1": "da49507b8525e2bbdf09621660ebdfb721b37121",
+      "bytes": 43540,
+      "change": "modify",
+      "base_blob_sha1": "24ff08774de00dbd807745872a257fb8cdbf6627"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveWozOperatorDevelopmentBuild.cs",
+      "sha256": "6E486EFDF7B219AFEB9C40E068011C52732032468E3572119E5DEE0DE6E93A5A",
+      "git_blob_sha1": "faeb8199884782e321b882e457226c2edf1d1219",
+      "bytes": 4246,
+      "change": "modify",
+      "base_blob_sha1": "fe42c65f1f01557a1241d985df354a4f86f8e0d1"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveLegacyWozRawSceneAcquisition.cs",
+      "sha256": "15DE623EE3E2AD1B61C22E0C4C69844D0520E9E4CFE79DB58335903391C617BF",
+      "git_blob_sha1": "f20782c18210a58056adb5325ba9e4f1ebdfc194",
+      "bytes": 1408,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.cs",
+      "sha256": "295673B44C05D6A484B936C90C1092CD3BB06239AC5D1A7C626982B966A89B8B",
+      "git_blob_sha1": "2d2b01f8a3ac1bf3c9fdb9ce55d3740389d01649",
+      "bytes": 166738,
+      "change": "modify",
+      "base_blob_sha1": "f8c8104ede11807e842d967e665d6399e181e281"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.LegacyWozScene.cs",
+      "sha256": "9B90D7E89E68BC822255FD4A9C4AB3D4EA87275668119017987BED2AABCE7F33",
+      "git_blob_sha1": "09d625030d4d19c9bf87c9ad6035affe67454dd1",
+      "bytes": 12316,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopPreviewRig.cs",
+      "sha256": "B435C9F3AC84B4520017C338DC338340150E207B183236F3F39816888E964E8A",
+      "git_blob_sha1": "7c4543f4faa18d709a78986bdf45d2ceaeba1856",
+      "bytes": 51442,
+      "change": "modify",
+      "base_blob_sha1": "01dc502ed2ce6e0b6adb6f8a009775f96f30d316"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozOperatorDevelopmentBootstrap.cs",
+      "sha256": "FFC5EB63DA59AE0C446BF693A4EE223B30EA1FBE865E8C7EB828028ED69EFAB0",
+      "git_blob_sha1": "f5587629cb765d9b8d4af1c974e11e75bb926745",
+      "bytes": 10757,
+      "change": "modify",
+      "base_blob_sha1": "1cc769629d1d31402bbe0abd4d4a1aee2d024820"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozOperatorDevelopmentRig.cs",
+      "sha256": "E3234F91AFD7F5AE4E2F2AB88062451D7B5ECEBD41F382B143500934C27C13B8",
+      "git_blob_sha1": "dffa1caaa426855c757eca32335c8a5f8803594d",
+      "bytes": 8362,
+      "change": "modify",
+      "base_blob_sha1": "620b5d5673aac87e93932f684183d2f6c9f587c5"
+    },
+    {
+      "path": "docs/woz-participant-local-recording.md",
+      "sha256": "439C40E1356631897734752DEBA5D3C4DFF31F44A34DCB5774A87778F368E605",
+      "git_blob_sha1": "fa1d3e66ee71daefe3340cfe93a70f01f32a1ed7",
+      "bytes": 4371,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "docs/woz-recording-public-evidence-20261110a.md",
+      "sha256": "F8F7AB1E6E62008F35993E080E5C899979DF8DC87B2840AAEB97EE7E16A415C3",
+      "git_blob_sha1": "e42b00ead615eddc2240d63fb6f0f7a27d4e112f",
+      "bytes": 4671,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/build-vive-eye-preview.py",
+      "sha256": "B9D24B30444B482CC0DA329432908B4E23CC9E4D5FE2C3B083A2D852906E2E9F",
+      "git_blob_sha1": "af9eb3d89790adad5cfbad76107fddbbd915f64c",
+      "bytes": 11427,
+      "change": "modify",
+      "base_blob_sha1": "4645077a378e727fb3f97d02f6d9b1df936e2301"
+    },
+    {
+      "path": "scripts/build-vive-stroop-preview.py",
+      "sha256": "BE455EB5FF94D73BFD8290F48E8C18D711BC93B34C2B0CC011627D5EEE6C7827",
+      "git_blob_sha1": "8df0d27c217b7d21d5914174ae6b838e0bd0303f",
+      "bytes": 16222,
+      "change": "modify",
+      "base_blob_sha1": "c57e9bcb141dedfff6e3e36579e7c7555286dbb0"
+    },
+    {
+      "path": "scripts/build-vive-woz-engineering-operator.py",
+      "sha256": "EDCDAA2B1C361F0B79AC82661A25C1E3AD4FF1ABEFF5DC58216EAD5067015023",
+      "git_blob_sha1": "ee3403508a07c80093a2b187663f512702b757bd",
+      "bytes": 8631,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/build-vive-woz-engineering-participant.py",
+      "sha256": "F199A0C457B9C2C9012D1065CF65957D580D0075F1F705204BF1077873CC4F6E",
+      "git_blob_sha1": "1c95cc3a7e6c32ac53289464ebf6b14f2d26e248",
+      "bytes": 8977,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/build-vive-woz-operator-preview.py",
+      "sha256": "2DE099D53F7AEBB844F21C16C58AB964E5DA704255BCA71CDD3046E4FCE61392",
+      "git_blob_sha1": "f2df08dcacaa2a2e3028cecddfa8d33f68f79f0b",
+      "bytes": 12587,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/public-woz-fixture-warning-declarations.json",
+      "sha256": "7F584642D5556F7B902745F9B6C871956CBE8DBE6409C6443EEA06BF7B5AC923",
+      "git_blob_sha1": "e728c106036a546c4603965f281dfac374168ede",
+      "bytes": 2042,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/test-public-woz.py",
+      "sha256": "7D33904CB953A773051408E474BC19CA82DE9382FBCF24C2F636FCC9E7803F1F",
+      "git_blob_sha1": "30ad59c3fa3e861cbf3d68253c70bd851d65e5f2",
+      "bytes": 7910,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/test_vive_build_options.py",
+      "sha256": "B2E3C1D5DA74C25EE4DF874BE19F9E63CBF4535958736897C57B3F3F54DD2078",
+      "git_blob_sha1": "11477917fb5dce86fc13dbf001725b5977f77656",
+      "bytes": 16661,
+      "change": "modify",
+      "base_blob_sha1": "e7b10f6fbd82bc432baca7473599672597598cd6"
+    },
+    {
+      "path": "scripts/test_vive_launcher_sources.py",
+      "sha256": "EF471C60CAABBA84D7C612969BD96820896231C1222D7FA24B1E20471D88F431",
+      "git_blob_sha1": "b44854171280e202448207e905ce188e5c829520",
+      "bytes": 3505,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/test_woz_recording_build_options.py",
+      "sha256": "12681347F2939FD5C08CC7485D1332E1EC33754DAF2F47E0BBE3C928DAC13788",
+      "git_blob_sha1": "ece6ee368a5a1f5bc3545836b97cb75bfff043f3",
+      "bytes": 20086,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/test_woz_recording_operator_notice.py",
+      "sha256": "208459771F640302415C5441034A9979027EA69E1004F6DC27FC7DEC455E9017",
+      "git_blob_sha1": "8a1503cf5b7a07bd93d7c6191c8efebde78fd491",
+      "bytes": 8745,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/test_woz_recording_package_guides.py",
+      "sha256": "592B324D8E353EAD2D33DE8175CF64096B11412A75A3BEBD0783C49C6BC410A0",
+      "git_blob_sha1": "3ec441310eaf8fe23914714de8d36251c5483078",
+      "bytes": 2713,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "scripts/test_woz_recording_participant_join.py",
+      "sha256": "F0F4C067116DB4F8249541C2013412FD687CB69D00B7519EB1F92229ECA32A28",
+      "git_blob_sha1": "31903c9dc3b7203438d3151c2c32f2fd7fe3c851",
+      "bytes": 4971,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/ViveControlledRecordingBuildPolicyTests.cs",
+      "sha256": "540E74A7165AB477634364C242857865D21C8A5EE061775930E4F9EBA5FE0D50",
+      "git_blob_sha1": "1a1a5b70851befdbd42a488be50ca050fc3f5925",
+      "bytes": 2580,
+      "change": "modify",
+      "base_blob_sha1": "26b7eaa823cb4bee05ac965edf2389a52297bc0a"
+    },
+    {
+      "path": "Tests/ViveInstalledOutputFailureTests.cs",
+      "sha256": "8BF98CE7A946555F60D1ED822B6DCD5744E2453229864A38F386A22DF5C0EC97",
+      "git_blob_sha1": "09fd0b0715d65d28fd5c9e5f8e82f45aa8908e7e",
+      "bytes": 8252,
+      "change": "modify",
+      "base_blob_sha1": "7667d475b47ac6de037ba58834742e684859550d"
+    },
+    {
+      "path": "Tests/ViveLegacyWozBridgeMemoryTests.cs",
+      "sha256": "7337BB860A7CD8B50B24168900975D1291F376BB231F0C8FDC20C1C112804407",
+      "git_blob_sha1": "ca187af681d2285787d10f56d00671a42823e725",
+      "bytes": 15811,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/ViveLegacyWozProcessMemoryTests.cs",
+      "sha256": "AF599BED375F3AA0EE1B25AEFD5362128E760D1F15E409F8B40377A26B5B351A",
+      "git_blob_sha1": "9b18e394950d7922b0c0b64ef4c6ee60beedd834",
+      "bytes": 19620,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/ViveLegacyWozRawSchemaTests.cs",
+      "sha256": "01120DEC84DE83F3095C1D51563D69BBC7FA9651CA09461037775736065D1A50",
+      "git_blob_sha1": "dc7cb5caa6e80bbf303f0a01c236577303e12574",
+      "bytes": 29753,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/ViveLegacyWozRecordingPumpTests.cs",
+      "sha256": "88FCA8D1DF95B886178539808CE880818710EB0CEFF1BA14C98E03E648DAF545",
+      "git_blob_sha1": "fcb979b8c6356a63c0c2d5d81aea9ac0cf775f47",
+      "bytes": 27893,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/ViveLegacyWozRecordingSceneAcquisitionTests.cs",
+      "sha256": "4C9C387329A39446EF64B6863A1E9361D002D18E54F08B8AA2AB22393E3F8A5B",
+      "git_blob_sha1": "32dab6d87a797446ad6e2f2b601b54a47738f90e",
+      "bytes": 3128,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/ViveLegacyWozSceneTests.cs",
+      "sha256": "E1558364F37862DEEE7B465AEBCEED17BDD31C4680897DAD99D960FED42401DA",
+      "git_blob_sha1": "5f9f28728b1678a7d1563c80828f9dcf94e4ecfa",
+      "bytes": 13985,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/ViveLegacyWozSourceLifecycleTests.cs",
+      "sha256": "7456F453AA3EBB7920FD0383259B0C439FD77BCA02BBDF0AED411B3763AAB8DA",
+      "git_blob_sha1": "ff686759ee4cd880975758b768df20a4d86e4d69",
+      "bytes": 17669,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/ViveLegacyWozTwoProcessLoopback.cs",
+      "sha256": "02934EEA02359360BFE07E6CE699BC4418EA0C957174B55CEA030F4EAEB5FB8B",
+      "git_blob_sha1": "4d0a211baaabf8e2704bc917ae4348c51ed3e0f9",
+      "bytes": 12439,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/ViveTlsSimulationCandidateTests.cs",
+      "sha256": "02D989AEF669B164C366564DA0EDCF980A47D9F370E0A6EF2B6DD2253C0C3B78",
+      "git_blob_sha1": "4f9c2785ebe65091041b14b2c7b3914fc583f993",
+      "bytes": 17935,
+      "change": "modify",
+      "base_blob_sha1": "7cc5c554003c5685bbc839218e521de5341ac3f3"
+    },
+    {
+      "path": "Tests/ViveWozOfflineLifecycleTests.cs",
+      "sha256": "AB03EE94F412AD4C594AD1D39735C2782AB131D55878BD4494A746601C982530",
+      "git_blob_sha1": "e4d9e3a5172f7918f65c1ab664141382ec031d65",
+      "bytes": 18222,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/WozAuthenticatedControlTests.cs",
+      "sha256": "28867BFBFED9FF9E49727F13ECFA1AF2CB4D4E6C76DC2E8D133AD86004BF62AD",
+      "git_blob_sha1": "fa265ef150f6f5d6f8239ec58f3995ede11a7522",
+      "bytes": 12308,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/WozAuthenticatedDiagnosticTransportTests.cs",
+      "sha256": "FF51842C472DCEE2A6D4FC5F4EB709336B6DA2D0E0416131C15BF0537B2F53F6",
+      "git_blob_sha1": "902ba5b63caf4121147c30164d9f80e2d691e17f",
+      "bytes": 24314,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/WozAuthenticatedLanTests.cs",
+      "sha256": "42DA2278DB67A8076EBD3B2BA882769371B1FA443336218937B752375B18CCCE",
+      "git_blob_sha1": "668afd1822338658b256af45a8db1df96739ef86",
+      "bytes": 29732,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/WozLanPairingUiTests.cs",
+      "sha256": "48081D85CAC83E72EEC060FC873FB7BBA37BC2F1A849017599370539A55C97D1",
+      "git_blob_sha1": "306ce4c2c4a076278dca8d3a0ecb2e8e7f6128fe",
+      "bytes": 18429,
+      "change": "add",
+      "base_blob_sha1": null
+    },
+    {
+      "path": "Tests/WozSyntheticLanDiagnosticTests.cs",
+      "sha256": "0B5B6CF017E4927D0E4F10648A70C1E7C29E2ED3EDE7DBBA0864A9288772D27A",
+      "git_blob_sha1": "585b43aa8b011fa7c6f80d45fe9e90ba410b47af",
+      "bytes": 20711,
+      "change": "add",
+      "base_blob_sha1": null
+    }
+  ],
+  "production_inventory": [
+    {
+      "path": "Assets/Stroop/Core/AppLanguage.cs",
+      "sha256": "F3B3A532DECFB2D2AE30EA964CC3F7E4C1540C8D1DF5D8FB895AB61BFABFB096",
+      "git_blob_sha1": "dd082a644c4087b209bf247d98ebbbef29adaaea",
+      "frozen_source_sha256": "F3B3A532DECFB2D2AE30EA964CC3F7E4C1540C8D1DF5D8FB895AB61BFABFB096",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/AuditExport.cs",
+      "sha256": "C1D669F5269BB76E49AA8DF2A5BCB48BF1211243D3E892F1C382FDD8577AF398",
+      "git_blob_sha1": "22d846b4e7cb25463ff20d55d219624ccb9c8008",
+      "frozen_source_sha256": "C1D669F5269BB76E49AA8DF2A5BCB48BF1211243D3E892F1C382FDD8577AF398",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ClockFault.cs",
+      "sha256": "74E5AF70C4214D43BE4E7E5F60A8DB8166AF7958910543B55B12219DE170CCDF",
+      "git_blob_sha1": "d9d14fe6332f788a4dd1e4ceb5401dcc8a79eae7",
+      "frozen_source_sha256": "74E5AF70C4214D43BE4E7E5F60A8DB8166AF7958910543B55B12219DE170CCDF",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ContinuousJournal.cs",
+      "sha256": "4B06EC7B077682A2DCC7210DB27CE62FB2B52BB190530E03AA45627DD4C1EF4B",
+      "git_blob_sha1": "8d9c10b6e290391decb1e190a5973380c25cc630",
+      "frozen_source_sha256": "4B06EC7B077682A2DCC7210DB27CE62FB2B52BB190530E03AA45627DD4C1EF4B",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/DevelopmentGeometry.cs",
+      "sha256": "E1290A7C05D8B02E64025681F3A0996F7AEBEF510251F4F9A5211050EAB88717",
+      "git_blob_sha1": "0efcf09b18282e2bab50ecfb6d3affad0c8c7823",
+      "frozen_source_sha256": "E1290A7C05D8B02E64025681F3A0996F7AEBEF510251F4F9A5211050EAB88717",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/Experiment.cs",
+      "sha256": "4477C893998CA82D3D86850BCC98E2E5675104ABA16C9881411F07A959E00673",
+      "git_blob_sha1": "880e6d61fdd0266f06b5366d9b349b93bd70a511",
+      "frozen_source_sha256": "4477C893998CA82D3D86850BCC98E2E5675104ABA16C9881411F07A959E00673",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Core/Experiment.LegacyWozRecording.cs",
+      "sha256": "6B9C8F79B1F297ED358B72370D27703E85849D489B933135134AD43A8FF177F0",
+      "git_blob_sha1": "ce098752e648b52e9bc82e9763c08598413650b9",
+      "frozen_source_sha256": "6B9C8F79B1F297ED358B72370D27703E85849D489B933135134AD43A8FF177F0",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentIncrementalBinding.cs",
+      "sha256": "67DE79120339B9111128764FEB1D036EC28B3C390972C4ECEE9BD0E62EB00F19",
+      "git_blob_sha1": "c76193093bb9457a0678f012c3026f957ac5df98",
+      "frozen_source_sha256": "67DE79120339B9111128764FEB1D036EC28B3C390972C4ECEE9BD0E62EB00F19",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentIncrementalObservation.cs",
+      "sha256": "BDAE93B94EEDA7EC10A029F520233F416E10602B220563F83BF4593BC59B605E",
+      "git_blob_sha1": "dc368d21f0206cd485516d513157147a57e03119",
+      "frozen_source_sha256": "BDAE93B94EEDA7EC10A029F520233F416E10602B220563F83BF4593BC59B605E",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentIncrementalSnapshot.cs",
+      "sha256": "B440A46EC4D1E28DCBA57212390F43FF28728A21333BC15B4D34E6167A62101A",
+      "git_blob_sha1": "54ee22ac7d376f83f3a12b0841e03aaec96c1e80",
+      "frozen_source_sha256": "B440A46EC4D1E28DCBA57212390F43FF28728A21333BC15B4D34E6167A62101A",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentMutationJournal.cs",
+      "sha256": "BA5F4DCD16D9CD8BC3FB2DF30869CC69CE82B21F023EC3F954117905D0334244",
+      "git_blob_sha1": "48c3b047bffe5aef1a5a108fd2065ff5bd31accf",
+      "frozen_source_sha256": "BA5F4DCD16D9CD8BC3FB2DF30869CC69CE82B21F023EC3F954117905D0334244",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentMutationObservation.cs",
+      "sha256": "989C6CBE861481E44C3E788D4763D594DE8F0F80EFBC29C1D8315BB5A888B59F",
+      "git_blob_sha1": "c216df7a7e76cc37e66f54bebb757fb8e61a9254",
+      "frozen_source_sha256": "989C6CBE861481E44C3E788D4763D594DE8F0F80EFBC29C1D8315BB5A888B59F",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentMutationTrialSnapshot.cs",
+      "sha256": "0DDE4950AD21F9A8D1EC2E732C213EC8E1A2D35851369A88479ACC1D812725AF",
+      "git_blob_sha1": "0426398fad67803d5bc99ac0dfa436336bf70b5c",
+      "frozen_source_sha256": "0DDE4950AD21F9A8D1EC2E732C213EC8E1A2D35851369A88479ACC1D812725AF",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentPersistentTrials.cs",
+      "sha256": "45EBD1155B42EB9891EC5922609300900D2FF1181EE68AFD4F92FAB146AA2221",
+      "git_blob_sha1": "2d344a96642301bd3afb8d0bbf29d4e156660e59",
+      "frozen_source_sha256": "45EBD1155B42EB9891EC5922609300900D2FF1181EE68AFD4F92FAB146AA2221",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/GazeControl.cs",
+      "sha256": "EAC9E5F65FC8FA9FE7CF33709B3B6E0323C4A02774D122BC7A000C8C07F435E5",
+      "git_blob_sha1": "b15287fee9c4e7d709d4716f6ee806bb82d70595",
+      "frozen_source_sha256": "EAC9E5F65FC8FA9FE7CF33709B3B6E0323C4A02774D122BC7A000C8C07F435E5",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/JournalEvidenceExporter.cs",
+      "sha256": "9A04122FABEA5037279A851F8E9A7F4B14931ABA24E8F23FAF4567E9998A05C4",
+      "git_blob_sha1": "c7fb896bd61dac22e6ed0d3bdc7a887178833ca5",
+      "frozen_source_sha256": "9A04122FABEA5037279A851F8E9A7F4B14931ABA24E8F23FAF4567E9998A05C4",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ParticipantGaze.cs",
+      "sha256": "302B0BC263F526BA39267A4863E373988C21202ABB9C497624DAAC92001B40EC",
+      "git_blob_sha1": "e1ebc58372786bfbdef0df4d41b5523a6af91cc9",
+      "frozen_source_sha256": "302B0BC263F526BA39267A4863E373988C21202ABB9C497624DAAC92001B40EC",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/Protocol.cs",
+      "sha256": "FAD99C5BF56225DB06DDCBB1F7B9FA0D29DE25A1CEBE8D1A4803C0C14B485D14",
+      "git_blob_sha1": "e77a4e308393b2b0ff91735ee36ba0313f7b1fd8",
+      "frozen_source_sha256": "FAD99C5BF56225DB06DDCBB1F7B9FA0D29DE25A1CEBE8D1A4803C0C14B485D14",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/Questionnaire.cs",
+      "sha256": "BBA62407BF49F02AE6DAA0E499CB0937A15AE429BEBB79638345FA50A147DFA5",
+      "git_blob_sha1": "91f50db8e50ac0c09bb998067fb0ec71b0e13cf3",
+      "frozen_source_sha256": "BBA62407BF49F02AE6DAA0E499CB0937A15AE429BEBB79638345FA50A147DFA5",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/SafetyStop.cs",
+      "sha256": "5F711E9953DF3A94B6CC1B27EF23FAAC817B9CC8DB39470C688BF75EA1FAA0D4",
+      "git_blob_sha1": "8c530483f9d1cd40914e71a41eb6367ddec54814",
+      "frozen_source_sha256": "5F711E9953DF3A94B6CC1B27EF23FAAC817B9CC8DB39470C688BF75EA1FAA0D4",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/SimulationJournalCapture.cs",
+      "sha256": "59A7AD917F4B6B5E514CBE588D4F13780408CA7C25C6CAB4601C4CEC24C28F50",
+      "git_blob_sha1": "9b3fc63dc35934b9bfd5ecf14b20a197823b3a22",
+      "frozen_source_sha256": "59A7AD917F4B6B5E514CBE588D4F13780408CA7C25C6CAB4601C4CEC24C28F50",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/Transport.cs",
+      "sha256": "FE995D09D9156281CAF834B3E71312671B1813FB8837B959DC31FFA7D2EF51DA",
+      "git_blob_sha1": "4f3346486301b6d29c7bbce1dd924a02a281ab45",
+      "frozen_source_sha256": "FE995D09D9156281CAF834B3E71312671B1813FB8837B959DC31FFA7D2EF51DA",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/TrialPlans.cs",
+      "sha256": "FDE5DC0E616A49030788BD4F4D57FDD6747494F344A846D6A8B2C38240D339FF",
+      "git_blob_sha1": "68eddc37282fefcd2e653d0c4f8ee7d3a6f6e8aa",
+      "frozen_source_sha256": "FDE5DC0E616A49030788BD4F4D57FDD6747494F344A846D6A8B2C38240D339FF",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/ViveLegacyRecordingDesign.cs",
+      "sha256": "1C48AA2303AC697AF43FD81096E948F420FB497953E617F6FD6CB99E6CD4929F",
+      "git_blob_sha1": "dce1594352306ef475370add62d24f4b3122b41f",
+      "frozen_source_sha256": "1C48AA2303AC697AF43FD81096E948F420FB497953E617F6FD6CB99E6CD4929F",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Core/ViveLegacyWozRecordingSchema.cs",
+      "sha256": "9AC5E082EC6761AF14DF01F82E96E779426BB22086A09D6A849A3D27E57AF135",
+      "git_blob_sha1": "828ace2fa8874f90ac5350d1f4cbcce488c50a31",
+      "frozen_source_sha256": "9AC5E082EC6761AF14DF01F82E96E779426BB22086A09D6A849A3D27E57AF135",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Core/ViveNamedSimulationPlan.cs",
+      "sha256": "81E4F91FCFAEB8916463E4A3406A1E83646E767713B577FEFCF95381BB97182B",
+      "git_blob_sha1": "5fb06da66a2cda00f3280e9208197ad796e24da8",
+      "frozen_source_sha256": "81E4F91FCFAEB8916463E4A3406A1E83646E767713B577FEFCF95381BB97182B",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Core/WozAuthenticatedControl.cs",
+      "sha256": "4F4875CC5A5208AA29B6C1C63744B1F75B984791BD56B4C035A2FA2710BD1C35",
+      "git_blob_sha1": "a36be0acdb36602673b697e86ba32fa805a6173a",
+      "frozen_source_sha256": "4F4875CC5A5208AA29B6C1C63744B1F75B984791BD56B4C035A2FA2710BD1C35",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Core/WozAuthenticatedLan.cs",
+      "sha256": "6C731CDA9609603FE6C11163EC0395733A7C6344E88086A3DAEDAFCFA93BD975",
+      "git_blob_sha1": "c534ba80e7efed85ea39ee5678a685c57112d553",
+      "frozen_source_sha256": "6C731CDA9609603FE6C11163EC0395733A7C6344E88086A3DAEDAFCFA93BD975",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Core/WozLanPairing.cs",
+      "sha256": "1AD210EFED07321682FCC66CA649F9140A85A2A5F0D0FB32EA557249673675BB",
+      "git_blob_sha1": "dedb290d8128465624d034c8925e5ee7c5b6e706",
+      "frozen_source_sha256": "1AD210EFED07321682FCC66CA649F9140A85A2A5F0D0FB32EA557249673675BB",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/DesktopPreview.cs",
+      "sha256": "39E52306697E3734819311284E189702877AF9F3DC7E29C4C485BC3A9258BE2F",
+      "git_blob_sha1": "0892744583ecb8c93997ebf22772582fed14639e",
+      "frozen_source_sha256": "39E52306697E3734819311284E189702877AF9F3DC7E29C4C485BC3A9258BE2F",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/OwnerCommands.cs",
+      "sha256": "2820E0B3C9842FEDE5921891DF80C0A04052607E80C81D6F931B97C5E0F3F54C",
+      "git_blob_sha1": "346ee23bef908be548bbac2cfd45f96544c605d6",
+      "frozen_source_sha256": "2820E0B3C9842FEDE5921891DF80C0A04052607E80C81D6F931B97C5E0F3F54C",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/PresentationAuditSampler.cs",
+      "sha256": "BFDABD366232566B805D5D1A68D84C616D6DF7E778C804D1C8FA45D5CA2D36DC",
+      "git_blob_sha1": "687f70fe9ca77c6077a4488952196424de082ee0",
+      "frozen_source_sha256": "BFDABD366232566B805D5D1A68D84C616D6DF7E778C804D1C8FA45D5CA2D36DC",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/PreviewExportReceipt.cs",
+      "sha256": "3BDDF97EB8A492414CAB156FCD32D25ADAA83A0C733E2A93376C6055AAD3B6AD",
+      "git_blob_sha1": "2bf1b3e891dd6061ceced73ea80227a4b549c55a",
+      "frozen_source_sha256": "3BDDF97EB8A492414CAB156FCD32D25ADAA83A0C733E2A93376C6055AAD3B6AD",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/PreviewRecovery.cs",
+      "sha256": "313363B47C48B798CCD1DE2D72C2D29C0350B0A5B5E1CDD82BADE7EBFBA75761",
+      "git_blob_sha1": "1cb9f917fe5705a9dddbb598046dac8023e20d57",
+      "frozen_source_sha256": "313363B47C48B798CCD1DE2D72C2D29C0350B0A5B5E1CDD82BADE7EBFBA75761",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/PreviewRestartWorkflow.cs",
+      "sha256": "9094F8012C1669E7F760AF339C88FAE8598008277C7CA4AE76DAB030B4EF3A73",
+      "git_blob_sha1": "3acfdf7a18d69f96fd7e64cd7a7822c32ddcb328",
+      "frozen_source_sha256": "9094F8012C1669E7F760AF339C88FAE8598008277C7CA4AE76DAB030B4EF3A73",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/QuestPreviewInput.cs",
+      "sha256": "8448CB9FE9A9DDDF06CF85D13079BB7B96A3B17652CA49D378442CD145F395AE",
+      "git_blob_sha1": "407e24303dc4ba4a4f9315ff6283db3de24ad61b",
+      "frozen_source_sha256": "8448CB9FE9A9DDDF06CF85D13079BB7B96A3B17652CA49D378442CD145F395AE",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/SimulationApplications.cs",
+      "sha256": "D4B5ECDB5A38D946240AC42E1BA2F4940283B79E55802A99FBBE75D7BE270E2D",
+      "git_blob_sha1": "d0aff8cc78fddb8bfd3d8840c83b4129d04f7eec",
+      "frozen_source_sha256": "D4B5ECDB5A38D946240AC42E1BA2F4940283B79E55802A99FBBE75D7BE270E2D",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/SimulationLifecycleFiles.cs",
+      "sha256": "5E819289515D39AC2F8186AFA7A390A9BAA2B4D47F7E43FFBF78A350C88B74CE",
+      "git_blob_sha1": "8dd095812c2b3879af84a6ea379f96baa718bcd2",
+      "frozen_source_sha256": "5E819289515D39AC2F8186AFA7A390A9BAA2B4D47F7E43FFBF78A350C88B74CE",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/SrAnipalViveProEyeProvider.cs",
+      "sha256": "004E2511B0E42183154D680EE9BFE4B7D314C0682D1D52AA3670CCAFA9059FD1",
+      "git_blob_sha1": "207d426f1ac9f64c113a1182d5c9eada0e2f65d7",
+      "frozen_source_sha256": "004E2511B0E42183154D680EE9BFE4B7D314C0682D1D52AA3670CCAFA9059FD1",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveActualExperimentTrialBinding.cs",
+      "sha256": "F4E64C7FEB5965A3C96D6C3C4244C8CB0120D0103B0B5756DB2A837506A1A66D",
+      "git_blob_sha1": "32b50a8a805d7da29d65d3f2b9abf1f7039c278f",
+      "frozen_source_sha256": "F4E64C7FEB5965A3C96D6C3C4244C8CB0120D0103B0B5756DB2A837506A1A66D",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveAuthoritativeIntentCandidate.cs",
+      "sha256": "13B1DE37E6EE52B747A84CEE23006CF69E723BAABC81B05B12C3AE0DCB483123",
+      "git_blob_sha1": "096d9c1c5e0a5a723f884604f2d48f7803bac4db",
+      "frozen_source_sha256": "13B1DE37E6EE52B747A84CEE23006CF69E723BAABC81B05B12C3AE0DCB483123",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveAutomaticCondition.cs",
+      "sha256": "0490CFC153E3F1B01BF3681B0EC8133F4A81059534C7E0FD1A1295FC2C3CA1F9",
+      "git_blob_sha1": "d85b893bf475034eada37d95c1e69373d3adbed5",
+      "frozen_source_sha256": "0490CFC153E3F1B01BF3681B0EC8133F4A81059534C7E0FD1A1295FC2C3CA1F9",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveBlockPlanRequest.cs",
+      "sha256": "100DE31466FDE4A58AEB696B8CC4C08531DFE50FBBDF5E634E8F51C585D68D0F",
+      "git_blob_sha1": "d5b525ea3db42a10a9e5cd5ed45093c6ab984ae1",
+      "frozen_source_sha256": "100DE31466FDE4A58AEB696B8CC4C08531DFE50FBBDF5E634E8F51C585D68D0F",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveControlledRecordingBuildPolicy.cs",
+      "sha256": "231EACCAEB5B6F8D0A61E52EF414B84888BAB121B73E8B44C57E18204BEDDC37",
+      "git_blob_sha1": "e6afececd5744abb0dd58d5d214e9eaef739ea14",
+      "frozen_source_sha256": "231EACCAEB5B6F8D0A61E52EF414B84888BAB121B73E8B44C57E18204BEDDC37",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveControllerReadinessDiagnostic.cs",
+      "sha256": "24E31B7D162BFA211E54BD09F16E77A0A94552F4776EF5B7BF9E1300515BADBC",
+      "git_blob_sha1": "51c81cabb2858ffc7c5d83fe998783885f13a123",
+      "frozen_source_sha256": "24E31B7D162BFA211E54BD09F16E77A0A94552F4776EF5B7BF9E1300515BADBC",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveCountdownIntentCandidate.cs",
+      "sha256": "B68BB5CB82CACCE84F4C39A0A0182117E8DBEC9468491FF44FFA4C4EC4384639",
+      "git_blob_sha1": "b21a509cbc5edc2590caaed1380e5b432a082c01",
+      "frozen_source_sha256": "B68BB5CB82CACCE84F4C39A0A0182117E8DBEC9468491FF44FFA4C4EC4384639",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentAnalysisEntry.cs",
+      "sha256": "81D820D5C382EAC6CE3E29BFEE07130A5D4CA6B7F99D4BD7E350DEDD3F76A118",
+      "git_blob_sha1": "a46cb92c2b73e5e1b50acf71ada0e7232dc83bbd",
+      "frozen_source_sha256": "81D820D5C382EAC6CE3E29BFEE07130A5D4CA6B7F99D4BD7E350DEDD3F76A118",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentAppAdapter.cs",
+      "sha256": "A7CA90500702699F6BF72BF774A13107636A570A38584667062093BEBA365C94",
+      "git_blob_sha1": "c7cbd3d3cd7c45a584cb83226ac5fe4f0e63aeb3",
+      "frozen_source_sha256": "A7CA90500702699F6BF72BF774A13107636A570A38584667062093BEBA365C94",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentExport.cs",
+      "sha256": "6561671A22F750CDAF58F1F6D3046C6BC611F50D6B3B5BBD93DC97DB52AFB49E",
+      "git_blob_sha1": "89becca35e6c9e71ede34c3abc5f0de121d2e7ab",
+      "frozen_source_sha256": "6561671A22F750CDAF58F1F6D3046C6BC611F50D6B3B5BBD93DC97DB52AFB49E",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentJournal.cs",
+      "sha256": "ACF4C4C19F9A927BE58E7DB4EBDDF8C178868D80A3A4648B574422048D069DB0",
+      "git_blob_sha1": "2832550b7c40b765f3a8737084236604c679d18a",
+      "frozen_source_sha256": "ACF4C4C19F9A927BE58E7DB4EBDDF8C178868D80A3A4648B574422048D069DB0",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentJournalExtraction.cs",
+      "sha256": "F7661168D46A6C4BEC95B523E0C9E290D9A8591DF5EFE139F86E5FEA6894A07B",
+      "git_blob_sha1": "1ed21f4e614e2c49e0f885a47f35a2894b22d72b",
+      "frozen_source_sha256": "F7661168D46A6C4BEC95B523E0C9E290D9A8591DF5EFE139F86E5FEA6894A07B",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentJournalSink.cs",
+      "sha256": "90B79BC5492A8D72B725C6AEC7189C98E6D7AD650F0660A97B4F0E455744987B",
+      "git_blob_sha1": "2a183eef2c7c2893176639e52cae1ff4989d2a66",
+      "frozen_source_sha256": "90B79BC5492A8D72B725C6AEC7189C98E6D7AD650F0660A97B4F0E455744987B",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentParticipant.cs",
+      "sha256": "28256999C4E7F956F22C7999417D907F2B358114BACD0EBA2477517C8506B520",
+      "git_blob_sha1": "a2b2415c767b0c53f8f059c54d96ad41f67692c4",
+      "frozen_source_sha256": "28256999C4E7F956F22C7999417D907F2B358114BACD0EBA2477517C8506B520",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentParticipant.LegacyWoz.cs",
+      "sha256": "75A0DF821836EA0FFE6BB500BE98A3AF2F2267F875086BA9CD5AE93095D74A15",
+      "git_blob_sha1": "be20c4065eb4cb8afd672a581485d25b9ecf8f90",
+      "frozen_source_sha256": "75A0DF821836EA0FFE6BB500BE98A3AF2F2267F875086BA9CD5AE93095D74A15",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPeerController.cs",
+      "sha256": "2457FDD1FFAD14842979473DF31EF658B973089E7F502B82D3F86F211CEC769F",
+      "git_blob_sha1": "7bb4b530c764e12029dd472aa9119be053033f4a",
+      "frozen_source_sha256": "2457FDD1FFAD14842979473DF31EF658B973089E7F502B82D3F86F211CEC769F",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflight.cs",
+      "sha256": "50AE4E5CC7BAECEFC45516B2D7FC109882E9203E1E5468C92115DE332B32D020",
+      "git_blob_sha1": "fe68b7cb9da496cb524b28aeb21c7f160cfc95ed",
+      "frozen_source_sha256": "50AE4E5CC7BAECEFC45516B2D7FC109882E9203E1E5468C92115DE332B32D020",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflightChannel.cs",
+      "sha256": "4E4243EB3674A94B8D50DE4974C93E75C0DA33C8ABDD491D6C0A7836BCC9B478",
+      "git_blob_sha1": "567846cec000832baff3592f9ac7d42c20e7a093",
+      "frozen_source_sha256": "4E4243EB3674A94B8D50DE4974C93E75C0DA33C8ABDD491D6C0A7836BCC9B478",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflightCoordinator.cs",
+      "sha256": "26E111B9F80CD83A5D0670862CC7CFA6A4BFFF93CD3A7015F15A41BFC2105C33",
+      "git_blob_sha1": "fed7ec65433dae288d66316ae2869c72edabf37a",
+      "frozen_source_sha256": "26E111B9F80CD83A5D0670862CC7CFA6A4BFFF93CD3A7015F15A41BFC2105C33",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflightOrchestration.cs",
+      "sha256": "1DF6BDF160EFC35849F6AE45B104679CD611A5E25E81CA84AA2F7FEFC0405956",
+      "git_blob_sha1": "742217ebc77de0cec2702cc0f043a19e48e5743c",
+      "frozen_source_sha256": "1DF6BDF160EFC35849F6AE45B104679CD611A5E25E81CA84AA2F7FEFC0405956",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflightWire.cs",
+      "sha256": "0B51AD87C7E0EC580D002807505AD17936F0F4E18CC2E2611A6265ED36B352FE",
+      "git_blob_sha1": "04745f609910f05f14b2a7324777f56cd466256d",
+      "frozen_source_sha256": "0B51AD87C7E0EC580D002807505AD17936F0F4E18CC2E2611A6265ED36B352FE",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentProvenance.cs",
+      "sha256": "444988BEED24ECD70DF3C049DD19F79DC41EEC425C7BECEFB133CA10774EC0B1",
+      "git_blob_sha1": "16b02439e0e697645a870e1e294f9d9a62842e12",
+      "frozen_source_sha256": "444988BEED24ECD70DF3C049DD19F79DC41EEC425C7BECEFB133CA10774EC0B1",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentReadOnlyAnalysisController.cs",
+      "sha256": "8038E7ECF11AFD3ECF8D65AE9EFA4FB491575F1360859D774C20F1FDF3F44581",
+      "git_blob_sha1": "05408bc3f01c7530e65531a281d7e0e39357ae6d",
+      "frozen_source_sha256": "8038E7ECF11AFD3ECF8D65AE9EFA4FB491575F1360859D774C20F1FDF3F44581",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentStreamIdentity.cs",
+      "sha256": "BE31D17D7DD5B31BFD036F41CB6D4842E5F7D382024CB2BE1E5246DB4ED46274",
+      "git_blob_sha1": "409e85e2e36ec654c0d5d3cc1680e2c1e9001d5c",
+      "frozen_source_sha256": "BE31D17D7DD5B31BFD036F41CB6D4842E5F7D382024CB2BE1E5246DB4ED46274",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentTransport.cs",
+      "sha256": "46A1B6E953B0977BE3F8554C5717D6DD4729114983577B211B03C34808497AB6",
+      "git_blob_sha1": "d578c5f6f2b78389af4bec5fc59ac3daa099e383",
+      "frozen_source_sha256": "46A1B6E953B0977BE3F8554C5717D6DD4729114983577B211B03C34808497AB6",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveExclusiveMemoryStore.cs",
+      "sha256": "18C375F28AE395E2E7C328083884A189AC8FEA849BEB7F4627A840D342873572",
+      "git_blob_sha1": "bb42dfbb68262d2bfba588a3a18e6c980ccc8893",
+      "frozen_source_sha256": "18C375F28AE395E2E7C328083884A189AC8FEA849BEB7F4627A840D342873572",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveExperimentMutationCursor.cs",
+      "sha256": "0150ADBFBF287EB5C0570DE19FBBD084A77CB1FFF686C720351D52912E835513",
+      "git_blob_sha1": "d5ceb415af56adc00a92b2502d02025253470a06",
+      "frozen_source_sha256": "0150ADBFBF287EB5C0570DE19FBBD084A77CB1FFF686C720351D52912E835513",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveFixedTrackpadMapping.cs",
+      "sha256": "F82C6887A63E794C93E5876F190938F902EB7150D9067CC92FADCD4091A2FA96",
+      "git_blob_sha1": "00d5631df83e27880027660fa4c7100052b0059f",
+      "frozen_source_sha256": "F82C6887A63E794C93E5876F190938F902EB7150D9067CC92FADCD4091A2FA96",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveInMemoryDatagramSocket.cs",
+      "sha256": "FA8A3FDC9E42620B4EE66FCBDBD728B1B642D880D5899DCD5AF30066ABAD707E",
+      "git_blob_sha1": "33f1aaa72f74cf50d3edc29125094d566911a034",
+      "frozen_source_sha256": "FA8A3FDC9E42620B4EE66FCBDBD728B1B642D880D5899DCD5AF30066ABAD707E",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveIsolatedCommitCapture.cs",
+      "sha256": "354A3E2AD60F5E6E538F29677CE8038336516F205C4ED862E46C3038438539BC",
+      "git_blob_sha1": "b050ffd30fd8c5d426aeb115537d06d58d16d5aa",
+      "frozen_source_sha256": "354A3E2AD60F5E6E538F29677CE8038336516F205C4ED862E46C3038438539BC",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveJournalCoverageReconciliation.cs",
+      "sha256": "F9325A02D898357BB2E5670BD3A574B68FE2B8492A031FB2651B5D5F35876E40",
+      "git_blob_sha1": "45ec25bdee9253168cd9ad29a94ef30b62740915",
+      "frozen_source_sha256": "F9325A02D898357BB2E5670BD3A574B68FE2B8492A031FB2651B5D5F35876E40",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveJournalMemoryPreview.cs",
+      "sha256": "D67203D823BE02F8B01A19C3CF8AC2082D8160E17450FBDA66888AF321D89262",
+      "git_blob_sha1": "41954b6feac3d750c75120c7ec5ee6cd5aa284f2",
+      "frozen_source_sha256": "D67203D823BE02F8B01A19C3CF8AC2082D8160E17450FBDA66888AF321D89262",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozBridge.cs",
+      "sha256": "A5D75E8D6C1FC943AF4D04C514ECCA2BB212C75F28A8A731B8EE49AECB36CAE8",
+      "git_blob_sha1": "3b58746ea9d4c449362950c23d716c6d023d94e4",
+      "frozen_source_sha256": "A5D75E8D6C1FC943AF4D04C514ECCA2BB212C75F28A8A731B8EE49AECB36CAE8",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozControlledScene.cs",
+      "sha256": "0F0114780D5CE26B6901A4C3070A20F5749CE99FF05EC44D1396A700A13D9717",
+      "git_blob_sha1": "2f3d57743a707a54e0c9105f0047422cf427663c",
+      "frozen_source_sha256": "0F0114780D5CE26B6901A4C3070A20F5749CE99FF05EC44D1396A700A13D9717",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozMemoryJournalFixture.cs",
+      "sha256": "B67991E7C19BC03E5373BA53C937C1676D566CD199AF640491EBE415A5E7BB43",
+      "git_blob_sha1": "da6d09fd01f2a21f3f81611919cadb5c151a69ee",
+      "frozen_source_sha256": "B67991E7C19BC03E5373BA53C937C1676D566CD199AF640491EBE415A5E7BB43",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozObservationOwner.cs",
+      "sha256": "82E59EE8E6BDDCC38723E841ED34A03DBE3E9D99C2134956FE5DBE1E95FAFEC8",
+      "git_blob_sha1": "8965bfa43d09ecae90914c6f6ebbfed79181cc3f",
+      "frozen_source_sha256": "82E59EE8E6BDDCC38723E841ED34A03DBE3E9D99C2134956FE5DBE1E95FAFEC8",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozOperatorProcess.cs",
+      "sha256": "887D98B8A5D31F0FFC6F6096A95EF931F9EE650CE77E32A80FB81C668E831089",
+      "git_blob_sha1": "b8dd5a0730a2c937b838de159b1a3c99167f793d",
+      "frozen_source_sha256": "887D98B8A5D31F0FFC6F6096A95EF931F9EE650CE77E32A80FB81C668E831089",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozParticipantProcess.cs",
+      "sha256": "9AE8C62187434168C30A4D1AD852234B6B98FC80D37374EE8107110EDEA8E65D",
+      "git_blob_sha1": "0458b68c7d940de97f2f2f60d2f10b0e9f2d24c6",
+      "frozen_source_sha256": "9AE8C62187434168C30A4D1AD852234B6B98FC80D37374EE8107110EDEA8E65D",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozProcessPairing.cs",
+      "sha256": "4A4400B88D1141AE6BAE341D2224E566CBC596C875B8073888C8A91AFEE239F0",
+      "git_blob_sha1": "fb37af62acefd150273cca1dab9105eca54b93a1",
+      "frozen_source_sha256": "4A4400B88D1141AE6BAE341D2224E566CBC596C875B8073888C8A91AFEE239F0",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozProcessTransport.cs",
+      "sha256": "5EAEE38E926CA1FD30A91D941620BB583FF383C985559AD4F4368CA87C3F1A34",
+      "git_blob_sha1": "c33d640421b9abfb7b8d192dbc3e615edbe79c20",
+      "frozen_source_sha256": "5EAEE38E926CA1FD30A91D941620BB583FF383C985559AD4F4368CA87C3F1A34",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozRecordingBinding.cs",
+      "sha256": "E2BE2A426551E1B4E859C6FC87AC1FF6C27DFF1B3B4AF719B24C36313D67B354",
+      "git_blob_sha1": "02c97566470ad6d5b8352e2ce978731fd6d5ba41",
+      "frozen_source_sha256": "E2BE2A426551E1B4E859C6FC87AC1FF6C27DFF1B3B4AF719B24C36313D67B354",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozRecordingPresentation.cs",
+      "sha256": "249918506E246E289F9201ADF03A3F3C5284C2804BA2DB7243922135FF457634",
+      "git_blob_sha1": "c1b9f86371f89aa7b7c9691e5be5277611878334",
+      "frozen_source_sha256": "249918506E246E289F9201ADF03A3F3C5284C2804BA2DB7243922135FF457634",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozSourceChoice.cs",
+      "sha256": "F8A59DD0EE6784883047A16CEE13BA78A746F543CBEDEFC8C5622F9371F7A3FF",
+      "git_blob_sha1": "2e31ee4ae650d8afaff6601f5384b63375c2102d",
+      "frozen_source_sha256": "F8A59DD0EE6784883047A16CEE13BA78A746F543CBEDEFC8C5622F9371F7A3FF",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozSourceLifecycle.cs",
+      "sha256": "B261F18CD9D06E73D4BF92D6CA61365FAEC19DB44E2CF7CFA6ABAF1C6DECD522",
+      "git_blob_sha1": "9929208ebc35a73aa7c2ed5d4c320f577fe92c8e",
+      "frozen_source_sha256": "B261F18CD9D06E73D4BF92D6CA61365FAEC19DB44E2CF7CFA6ABAF1C6DECD522",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLivePresentationAdapter.cs",
+      "sha256": "27B8AD97A337AE5562E7BFBC00A1DC11F8D2EFCF0E2F0F048E80F567F3A36CF7",
+      "git_blob_sha1": "c905233edf1f1583058db56ca86933330bc3f3f3",
+      "frozen_source_sha256": "27B8AD97A337AE5562E7BFBC00A1DC11F8D2EFCF0E2F0F048E80F567F3A36CF7",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveMutationCursorCandidate.cs",
+      "sha256": "1B26F28A28A20D692CB3A40A9038FAC886C46F24DAE99FEC0782148DABFA0070",
+      "git_blob_sha1": "95d740c0a4017518d91015bbf73219fd3aae7882",
+      "frozen_source_sha256": "1B26F28A28A20D692CB3A40A9038FAC886C46F24DAE99FEC0782148DABFA0070",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedOrdinaryInputBudgetCandidate.cs",
+      "sha256": "B047EB3FCA21496153B4CC4F5C22CA2A3B719FF768CBFF6D16FF46CB823FF1D7",
+      "git_blob_sha1": "3afa5e2cebf1c1da1f64dc6c1cb5f6a281b6165a",
+      "frozen_source_sha256": "B047EB3FCA21496153B4CC4F5C22CA2A3B719FF768CBFF6D16FF46CB823FF1D7",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedPlanTaskMemoryProjection.cs",
+      "sha256": "B39CA6A0041F66A93D0793A1C8E2123D4D83AF17B55238A8D439904903E0B663",
+      "git_blob_sha1": "c6bd1ffbb52bbff917ffec3026c56b37061895da",
+      "frozen_source_sha256": "B39CA6A0041F66A93D0793A1C8E2123D4D83AF17B55238A8D439904903E0B663",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedRawRecordingPump.cs",
+      "sha256": "746430BF5AF12000CD23DE3F98B320968DC7C1E380F8B67A9A174C16435EAC7D",
+      "git_blob_sha1": "56f4fe46147749ef0063b1d9e4a746f9ea1cbc41",
+      "frozen_source_sha256": "746430BF5AF12000CD23DE3F98B320968DC7C1E380F8B67A9A174C16435EAC7D",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedRecordingSetup.cs",
+      "sha256": "E4F8C30F9997C9519E3BD4CEA0108BA212F2BDEE9E8D9D5B8153376AC963BDF6",
+      "git_blob_sha1": "05abeaf42c0f73ec6f7344cb34b231ebee32870b",
+      "frozen_source_sha256": "E4F8C30F9997C9519E3BD4CEA0108BA212F2BDEE9E8D9D5B8153376AC963BDF6",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedRecordingUiAdmission.cs",
+      "sha256": "3C3AF07ADDC16905381FAB2A2AC1AFC01B1573A0A3D5BEBE3C7E3D0C84747131",
+      "git_blob_sha1": "fba3e8d326d6fbddd27edeb34b02851baf08e802",
+      "frozen_source_sha256": "3C3AF07ADDC16905381FAB2A2AC1AFC01B1573A0A3D5BEBE3C7E3D0C84747131",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedSessionFrameAdmission.cs",
+      "sha256": "B7318A4B75F119869F729CFAE29465293F44A66268046BB834E5F8AB53BB8507",
+      "git_blob_sha1": "f5dad30e672481323d67861dead0b78abb17da0f",
+      "frozen_source_sha256": "B7318A4B75F119869F729CFAE29465293F44A66268046BB834E5F8AB53BB8507",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedTaskMemoryView.cs",
+      "sha256": "8D800D88554BFCC917DA18F3FE1FD00FF8BFB2AA061C0D99ABD4ED8168CDEFF9",
+      "git_blob_sha1": "f5b3bed5dd403ef398e6d26f047248ecd60de67a",
+      "frozen_source_sha256": "8D800D88554BFCC917DA18F3FE1FD00FF8BFB2AA061C0D99ABD4ED8168CDEFF9",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedTaskRecordSnapshot.cs",
+      "sha256": "B3AF5AAA0E897095C75CED4B211E9CA7633FE06D7F376E37E30DB65115363F00",
+      "git_blob_sha1": "273fc5781dc5166f82456509077c9380fac7e221",
+      "frozen_source_sha256": "B3AF5AAA0E897095C75CED4B211E9CA7633FE06D7F376E37E30DB65115363F00",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveParticipantEyeSource.cs",
+      "sha256": "93468E8E2EBBCAA2E22C41A39E994E46BA8F795389941050AB39E6678E529BB3",
+      "git_blob_sha1": "b390a3da99b4298399aa0c1d91cc556f2b1cd830",
+      "frozen_source_sha256": "93468E8E2EBBCAA2E22C41A39E994E46BA8F795389941050AB39E6678E529BB3",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveParticipantRecordingBridge.cs",
+      "sha256": "26193FBAC784596B9B05FEE2F421AD05780C640BD470B04FB05454A3FA471B01",
+      "git_blob_sha1": "8b8922db960099cff632124b04e7589e16afdce7",
+      "frozen_source_sha256": "26193FBAC784596B9B05FEE2F421AD05780C640BD470B04FB05454A3FA471B01",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePersistentTrialMirrorCandidate.cs",
+      "sha256": "939CDA4440ABD5A89AA201C41589FB0FBC80D31FD694048DDA6803D6A6AEC2D1",
+      "git_blob_sha1": "04ba21db12c4e03e568ebbb6775781bda695bb21",
+      "frozen_source_sha256": "939CDA4440ABD5A89AA201C41589FB0FBC80D31FD694048DDA6803D6A6AEC2D1",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePersistentTrialTransactionCandidate.cs",
+      "sha256": "26F6F0B944C1A3F1B6CBBF2FEDC5CB6D902BE59FB2FC7F6000BEC26604745DD8",
+      "git_blob_sha1": "ee65a2f293bc0228ef1eafc83ee4bbab1c419e62",
+      "frozen_source_sha256": "26F6F0B944C1A3F1B6CBBF2FEDC5CB6D902BE59FB2FC7F6000BEC26604745DD8",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePersistentTrialVectorCandidate.cs",
+      "sha256": "6B3562C2383B8BFF829DE98D90CAE967D655090BCAD679F63C463452EDCB36D3",
+      "git_blob_sha1": "f84315601bb30abfe492dff8176bfb0cc2fa844f",
+      "frozen_source_sha256": "6B3562C2383B8BFF829DE98D90CAE967D655090BCAD679F63C463452EDCB36D3",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeConsentAuthority.cs",
+      "sha256": "AC8502164E954190AAFE3D29014FEA1399F33082F96F0A0F82EAC6CAF8BE21F5",
+      "git_blob_sha1": "f4a42af383e7026688d12f571a13d4c8aa8c9be0",
+      "frozen_source_sha256": "AC8502164E954190AAFE3D29014FEA1399F33082F96F0A0F82EAC6CAF8BE21F5",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeCreateNewFixture.cs",
+      "sha256": "B3D246ADE3BC209CC18B8E808ADD5A4514BEE76809A87F5AB3284ABF5A11A433",
+      "git_blob_sha1": "a40631914622e364050d717416a26ef7bf648e51",
+      "frozen_source_sha256": "B3D246ADE3BC209CC18B8E808ADD5A4514BEE76809A87F5AB3284ABF5A11A433",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeEyeFencedSource.cs",
+      "sha256": "7387FD83D0E4C0E93E539ED062DEAB2FED68702215C323F629E74D5F67E677FA",
+      "git_blob_sha1": "f9a72403cfd24f322290466ee6828bcbe93fd510",
+      "frozen_source_sha256": "7387FD83D0E4C0E93E539ED062DEAB2FED68702215C323F629E74D5F67E677FA",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeEyeSource.cs",
+      "sha256": "FCB61A3CB3B91B3606267C339379A7B62EB2ACF36207D1108AD74B6B4E25AE86",
+      "git_blob_sha1": "d125d591ad4328bcf384498687ced240a41a01aa",
+      "frozen_source_sha256": "FCB61A3CB3B91B3606267C339379A7B62EB2ACF36207D1108AD74B6B4E25AE86",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeJournalV3.cs",
+      "sha256": "03AFF78F9D9BC9FB17A792E701D25C71183359A7F11C97FDFD6E5E61ED46EE1A",
+      "git_blob_sha1": "0ef6203b04c70d8d2b1a1d5b1c79458a33de9513",
+      "frozen_source_sha256": "03AFF78F9D9BC9FB17A792E701D25C71183359A7F11C97FDFD6E5E61ED46EE1A",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeJournalV3Reader.cs",
+      "sha256": "00734642FF7AA671BF665DA341168240921BED8A134332803FCF4B39ACD7F1F0",
+      "git_blob_sha1": "ccc638d79604218339d8f08e4e08614ad6606086",
+      "frozen_source_sha256": "00734642FF7AA671BF665DA341168240921BED8A134332803FCF4B39ACD7F1F0",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeMultiBatch.cs",
+      "sha256": "CF8B1640A4A3582CB7EA960FCE3DB2B19B1046EB13C60F71257B67B8FC242C79",
+      "git_blob_sha1": "07eca67a59ec9dc8cd2a82f50bd76b84c75855d3",
+      "frozen_source_sha256": "CF8B1640A4A3582CB7EA960FCE3DB2B19B1046EB13C60F71257B67B8FC242C79",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeNativeTarget.cs",
+      "sha256": "ACCA1EBB01EDEB9D803542DCF4AFF346993F1526F63197C7D84F0E302C60DD82",
+      "git_blob_sha1": "5301fe8d216bd51f978d8b975ec5286ca1b46919",
+      "frozen_source_sha256": "ACCA1EBB01EDEB9D803542DCF4AFF346993F1526F63197C7D84F0E302C60DD82",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeOwnedMemoryStart.cs",
+      "sha256": "F8326EE1A4584779FCA533A4F4F242A9AC0941893AD412E8DFDA208A503E9A0D",
+      "git_blob_sha1": "0b96cbe337202c06393df3b86bf70a4d6729baa4",
+      "frozen_source_sha256": "F8326EE1A4584779FCA533A4F4F242A9AC0941893AD412E8DFDA208A503E9A0D",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeOwnedStartReceipt.cs",
+      "sha256": "E5C4ABB3EC60B3A5FA6026498BD4B7FF42275DC1D0574DE52340E1E1685B07D1",
+      "git_blob_sha1": "03296588b365cbe65c9dacd43b6dc0293ba7db0e",
+      "frozen_source_sha256": "E5C4ABB3EC60B3A5FA6026498BD4B7FF42275DC1D0574DE52340E1E1685B07D1",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticePreviewCoordinator.cs",
+      "sha256": "9DEE10A1F96B3BA74E25631EB924D8DD8A668107EB6D64C8656573EC2F439287",
+      "git_blob_sha1": "3ec6bd9f47722ae52fa4e4925807685b845f4018",
+      "frozen_source_sha256": "9DEE10A1F96B3BA74E25631EB924D8DD8A668107EB6D64C8656573EC2F439287",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeRetryContinuation.cs",
+      "sha256": "88CF2C8534F28AE0B59B98A556B12D02B446AFB82F4D0DDE6E4F13F4AEE83A53",
+      "git_blob_sha1": "d346d8585841125ed956bae1419498a11100d110",
+      "frozen_source_sha256": "88CF2C8534F28AE0B59B98A556B12D02B446AFB82F4D0DDE6E4F13F4AEE83A53",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeRetryReleaseValidator.cs",
+      "sha256": "355D45F3BA4950E20F6F23FF7F6F698532E16FDDCCC6AC7CF255664689750A88",
+      "git_blob_sha1": "0ce00dcda78b66e604a204d322c3b0544330d3b0",
+      "frozen_source_sha256": "355D45F3BA4950E20F6F23FF7F6F698532E16FDDCCC6AC7CF255664689750A88",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartBatch.cs",
+      "sha256": "82DE50D754DC31D536DDD861505DF170CB33872EAC24C04133589D50AF4325F2",
+      "git_blob_sha1": "77e52d5c3df87b80af87ac6d4f8e969f108794ac",
+      "frozen_source_sha256": "82DE50D754DC31D536DDD861505DF170CB33872EAC24C04133589D50AF4325F2",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartBinding.cs",
+      "sha256": "F9EC220278610F5070FCE2567A6F1B735662946E45D38F4511B84B4727FA3ED6",
+      "git_blob_sha1": "5fe0b7a41c6b58c4076ef48640d124aa86e616a5",
+      "frozen_source_sha256": "F9EC220278610F5070FCE2567A6F1B735662946E45D38F4511B84B4727FA3ED6",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartEnvelopeCodec.cs",
+      "sha256": "3A78F48B1A62B95C282DEE97280F18A2B43268CDB0F096C482D813974F3FB816",
+      "git_blob_sha1": "46f57da8efcc7ca8578202b75506af791de29f48",
+      "frozen_source_sha256": "3A78F48B1A62B95C282DEE97280F18A2B43268CDB0F096C482D813974F3FB816",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartMemoryStage.cs",
+      "sha256": "E5D867DFA71D8B893ECD7A9F5399C79C5C61F0D4D3D8DB389491041C98C524E6",
+      "git_blob_sha1": "1e931eff487c5ead64e546160ae073daa5f0fb1e",
+      "frozen_source_sha256": "E5D867DFA71D8B893ECD7A9F5399C79C5C61F0D4D3D8DB389491041C98C524E6",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartReservation.cs",
+      "sha256": "5EBE060B2B98CC07FDD7428D109834255638A16F796367533E1E73170C3C124D",
+      "git_blob_sha1": "de621edb4e122a0413e1dbf0919fe13f9d8d2390",
+      "frozen_source_sha256": "5EBE060B2B98CC07FDD7428D109834255638A16F796367533E1E73170C3C124D",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeSyntheticEyeJoin.cs",
+      "sha256": "6E471A9B4BCAB77C5E83347D4C16DBE4E38F5EE24142D85230090444A73010B9",
+      "git_blob_sha1": "d3b63f97aa639167f29937f90da5ac42cb221c58",
+      "frozen_source_sha256": "6E471A9B4BCAB77C5E83347D4C16DBE4E38F5EE24142D85230090444A73010B9",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeTaskEventCursor.cs",
+      "sha256": "DA2D6521F5552E724C937819CA97C29FBC40608286BDFBC90E1AE1091112D363",
+      "git_blob_sha1": "8487d4625f1c585aa547416ca4d05e7d2f7f4304",
+      "frozen_source_sha256": "DA2D6521F5552E724C937819CA97C29FBC40608286BDFBC90E1AE1091112D363",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeTerminalValidator.cs",
+      "sha256": "3CFC11FDC53584B8053C2C6BB5A89F7B7A3D5542E2857536FF1E9D57C67FBB95",
+      "git_blob_sha1": "5743d965737c5b64b277646d6047a3c11425b745",
+      "frozen_source_sha256": "3CFC11FDC53584B8053C2C6BB5A89F7B7A3D5542E2857536FF1E9D57C67FBB95",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeWriteTicketFixture.cs",
+      "sha256": "F73634DF6E5558570D8B8B542269818CAB1E116C35DB0CFE6873E0445C0B7D7B",
+      "git_blob_sha1": "fccd7f31e5c96368284ec725be6ac98ef5a8078b",
+      "frozen_source_sha256": "F73634DF6E5558570D8B8B542269818CAB1E116C35DB0CFE6873E0445C0B7D7B",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreSessionRecordingChoice.cs",
+      "sha256": "8E7CE53D899FFCEB5F8704D6744F27D6CEFDE0ED314DD3D0189686060801346D",
+      "git_blob_sha1": "b3ec7219fa3b06892c87d14d5cbfd0ee330976e7",
+      "frozen_source_sha256": "8E7CE53D899FFCEB5F8704D6744F27D6CEFDE0ED314DD3D0189686060801346D",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreviewDiagnostics.cs",
+      "sha256": "ED85C8A8104D4CD449E304DAC89725F56338A404C7C6928C3C4B7CC79D61F3A6",
+      "git_blob_sha1": "10b3b8acc5eda4417f9fdf57a31265aa48b8ee72",
+      "frozen_source_sha256": "ED85C8A8104D4CD449E304DAC89725F56338A404C7C6928C3C4B7CC79D61F3A6",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreviewLaunchPlan.cs",
+      "sha256": "E9FA90F591A055EE9561B8BC0335DA670478A2B9874FA3DEE80638E48E05B367",
+      "git_blob_sha1": "5450d72fa62288ff43435dc9355a41990f34ba36",
+      "frozen_source_sha256": "E9FA90F591A055EE9561B8BC0335DA670478A2B9874FA3DEE80638E48E05B367",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreviewMarkerContinuity.cs",
+      "sha256": "6DEE97A7924940AD748FE462ACB2D928DF7A624EA05CCB75733E07B945EE0A5E",
+      "git_blob_sha1": "0195daa344f671438b3ae074b3a9399737b0ce67",
+      "frozen_source_sha256": "6DEE97A7924940AD748FE462ACB2D928DF7A624EA05CCB75733E07B945EE0A5E",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreviewTrackpadInput.cs",
+      "sha256": "4AA63C8F67877D12F1A19F1A0A732D127233DBD450222CD9380A651BFD4255EB",
+      "git_blob_sha1": "1100df86ab916b0b42a41d67ea1fe7fdcc15ac09",
+      "frozen_source_sha256": "4AA63C8F67877D12F1A19F1A0A732D127233DBD450222CD9380A651BFD4255EB",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveProEyeCapture.cs",
+      "sha256": "FC220F27168A11944176F65F1C71D051F084EA73A3314BB0ECAD2CDC03C09338",
+      "git_blob_sha1": "db6ea3095ca2c28106052bb35befcd2ddab51531",
+      "frozen_source_sha256": "FC220F27168A11944176F65F1C71D051F084EA73A3314BB0ECAD2CDC03C09338",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveProEyeSdkDirection.cs",
+      "sha256": "9BECE411D9CB56A7DA3F2BC67319BDB0EA8C72E2EED2D1068AD848BF796EE059",
+      "git_blob_sha1": "4b60c2310c924c595e5b23a6a9b86f5ed2bdd7ea",
+      "frozen_source_sha256": "9BECE411D9CB56A7DA3F2BC67319BDB0EA8C72E2EED2D1068AD848BF796EE059",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveProEyeWorker.cs",
+      "sha256": "80DBEFC954FB7C3A78D99FCCF43358FEB6CB39F08C21D18BFD0D9D737D9F7854",
+      "git_blob_sha1": "3c1de25e608f073573ca3fa6591694757ef39a50",
+      "frozen_source_sha256": "80DBEFC954FB7C3A78D99FCCF43358FEB6CB39F08C21D18BFD0D9D737D9F7854",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveQuestionnairePresentation.cs",
+      "sha256": "4C04D675975EDA8EB04460117B7294DDCFA27784151C2A4FF67D03435967D720",
+      "git_blob_sha1": "8a781f5ba06e729e444ce9a3868bd56e10e0964c",
+      "frozen_source_sha256": "4C04D675975EDA8EB04460117B7294DDCFA27784151C2A4FF67D03435967D720",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawByteBudget.cs",
+      "sha256": "C70DCB00974B9E96389B9D9544ECC9DE3C6DAA6AC71AAE21FFBAE9CCF43A880F",
+      "git_blob_sha1": "fd06deb5a5718ffe5b36bcffcfd4fb86a0dde8fa",
+      "frozen_source_sha256": "C70DCB00974B9E96389B9D9544ECC9DE3C6DAA6AC71AAE21FFBAE9CCF43A880F",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawDirectoryLease.cs",
+      "sha256": "78702912042F2696F621C5821D3E5726CBF145859FF401AC8EB84D93CE12CDE9",
+      "git_blob_sha1": "c17de8d38c3d691cd0888a14893ae6bf5d7284ff",
+      "frozen_source_sha256": "78702912042F2696F621C5821D3E5726CBF145859FF401AC8EB84D93CE12CDE9",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawExclusiveDestination.cs",
+      "sha256": "BBCAF4FC7C0B7222F0D2A2D50E547F6A3F9A574BEFF89FDB549A0A6B7C283938",
+      "git_blob_sha1": "c6432040a6b38c2a4826df96a6cfae09374f55e5",
+      "frozen_source_sha256": "DB478E00D0027735E54ABE8EB3562386A360FFE489076D7106943A0B56704F2B",
+      "sanitized": true,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawFileId.cs",
+      "sha256": "F470C3D717DB70E3A2D17C125AAF4DE14DC679B2B0149D6A3FDA78CCB0992A83",
+      "git_blob_sha1": "0d057e6fcf826f37f21d476314782e2f16541f2d",
+      "frozen_source_sha256": "F470C3D717DB70E3A2D17C125AAF4DE14DC679B2B0149D6A3FDA78CCB0992A83",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawIoFence.cs",
+      "sha256": "5104782A761FC6D25D67161D9B5F8DEE223C3FB37D52C57D93BCBB36703B0666",
+      "git_blob_sha1": "8f7f54aa6ce9e2647721bb06887927cfda4ce638",
+      "frozen_source_sha256": "5104782A761FC6D25D67161D9B5F8DEE223C3FB37D52C57D93BCBB36703B0666",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawNativeOutputStorage.cs",
+      "sha256": "B3BD3F02D58E036E47CDC787A1E7E1B63BF4E10A8867AF7029C988D19E09E108",
+      "git_blob_sha1": "9da59ab8719960b15e61e8aa08c9243e3c9eca62",
+      "frozen_source_sha256": "B3BD3F02D58E036E47CDC787A1E7E1B63BF4E10A8867AF7029C988D19E09E108",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawPanelPolicy.cs",
+      "sha256": "B414D676E96F4BCB2600396EAF3496C5B861D1C5318D31A5850DEDD88C93A753",
+      "git_blob_sha1": "b93134548f5fb4ddf657367315513f4b95894577",
+      "frozen_source_sha256": "B414D676E96F4BCB2600396EAF3496C5B861D1C5318D31A5850DEDD88C93A753",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawPostCloseIdentity.cs",
+      "sha256": "00351D1078DFD61B677B2621655FA474F33906B44D69170382D1FC62AD6D0CBF",
+      "git_blob_sha1": "c4d655bfb4557f5f15d510e1c735ee77b2b98517",
+      "frozen_source_sha256": "00351D1078DFD61B677B2621655FA474F33906B44D69170382D1FC62AD6D0CBF",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawPreparedPlan.cs",
+      "sha256": "0D969FBF3A2F84252280323E351E2D877519582EFBDAB5CAF3CC519BE2122501",
+      "git_blob_sha1": "0fecce8a33f8a9b060b338a8877023512c150bf1",
+      "frozen_source_sha256": "0D969FBF3A2F84252280323E351E2D877519582EFBDAB5CAF3CC519BE2122501",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawPrivateStage.cs",
+      "sha256": "C627F8B4BB91E8E9F2EA0BBC729DEA641CDE40608ED130C4BB6A310C17F5B660",
+      "git_blob_sha1": "b6dcfeb6dffdda1f8579877bfd87f561ac79c1f7",
+      "frozen_source_sha256": "C627F8B4BB91E8E9F2EA0BBC729DEA641CDE40608ED130C4BB6A310C17F5B660",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawReadableAnalysisCsv.cs",
+      "sha256": "E16511F745E2CFF7F4A580C935484022C0B63D7858D0ECEC4661D6C77361BC86",
+      "git_blob_sha1": "57a6ea4b8cc2403718162fbfb14969e22f2481df",
+      "frozen_source_sha256": "E16511F745E2CFF7F4A580C935484022C0B63D7858D0ECEC4661D6C77361BC86",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawRecordingPresentation.cs",
+      "sha256": "BF16120C22B740BB4646CA339A34E88F8CEC6DC82DBACF49CDA21DABB595EDCD",
+      "git_blob_sha1": "77c9e03e3e98189b5cd0ef3f994d6d4059821c80",
+      "frozen_source_sha256": "BF16120C22B740BB4646CA339A34E88F8CEC6DC82DBACF49CDA21DABB595EDCD",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawRelativeFileCapability.cs",
+      "sha256": "36AAD7315B14D4C30C351B4B9F197AFC5E71853D749E86BF1078005D3176A02E",
+      "git_blob_sha1": "aa6fddae6353a7ed23cce4877ccd6cd74c44fddc",
+      "frozen_source_sha256": "36AAD7315B14D4C30C351B4B9F197AFC5E71853D749E86BF1078005D3176A02E",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionContext.cs",
+      "sha256": "DD7FDDA7BBCE6B5C06D99C36DB1C4843839DE1787B4FD0F09EACB3A9E6C2CAA1",
+      "git_blob_sha1": "caff7767297701a48d13e1dde8bb50100d7f53a7",
+      "frozen_source_sha256": "DD7FDDA7BBCE6B5C06D99C36DB1C4843839DE1787B4FD0F09EACB3A9E6C2CAA1",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionEvidenceController.cs",
+      "sha256": "3992A3B5DD9865D3F56914F29C7ECFC789B5C349149C77E469080B6939A97898",
+      "git_blob_sha1": "1c1f774b1028c0ae9e35f632d16d189867d95d1d",
+      "frozen_source_sha256": "3992A3B5DD9865D3F56914F29C7ECFC789B5C349149C77E469080B6939A97898",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionJournalCodec.cs",
+      "sha256": "BBE5821DC46839704520E1E208EA19EFFBE83C9719C256D756C31F4798EDD495",
+      "git_blob_sha1": "e6163eb6b5ac6082bde18ab35d10974eb607095d",
+      "frozen_source_sha256": "BBE5821DC46839704520E1E208EA19EFFBE83C9719C256D756C31F4798EDD495",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionJournalReader.cs",
+      "sha256": "E26B0A16555E40D860656E70A1BCCFDD811638034687AEC6AA0043CB99ED85AF",
+      "git_blob_sha1": "63e241823a3cab72cffca6f0f0e6e2de336e68b0",
+      "frozen_source_sha256": "E26B0A16555E40D860656E70A1BCCFDD811638034687AEC6AA0043CB99ED85AF",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionJournalSink.cs",
+      "sha256": "5B889DEAEFE3AEAF08D14BD7B9F800292747591C79D6B8425D4C25774F3BB056",
+      "git_blob_sha1": "28399d173029ad0c8f699263d1191eeb5437caa4",
+      "frozen_source_sha256": "334816DDE490FFAF3C7AB18DA1E78F95069C76F0554ED2D61F18FD1B9ED69462",
+      "sanitized": true,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionStreamExport.cs",
+      "sha256": "02581321F5B52CBED21BFBF566CCB5C6C45995087EC447092174F8172137C765",
+      "git_blob_sha1": "e959c8e69aefad3c401f963cf12beaeb2b9ed9af",
+      "frozen_source_sha256": "02581321F5B52CBED21BFBF566CCB5C6C45995087EC447092174F8172137C765",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSiblingStream.cs",
+      "sha256": "61CCDF05EDCB214296041866ECB39F7420DB9815B493ECB27D37652469CE0BB8",
+      "git_blob_sha1": "95cbf6c7b4f901b38fede69350023f6ec227fa00",
+      "frozen_source_sha256": "61CCDF05EDCB214296041866ECB39F7420DB9815B493ECB27D37652469CE0BB8",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawTaskFrameMeasurement.cs",
+      "sha256": "4FC22A0DA29C533A9F2926E6D6D7D6D592D9C324797CF854A06E4D464B41811B",
+      "git_blob_sha1": "507fd520a2c8b8bce49329782540725a99aad92f",
+      "frozen_source_sha256": "4FC22A0DA29C533A9F2926E6D6D7D6D592D9C324797CF854A06E4D464B41811B",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawTrialProjection.cs",
+      "sha256": "51259A2510EEBC9D5023888FC8BF6012C668A93836BC493F7A9FE4B28CFF2A9E",
+      "git_blob_sha1": "4fa77af6d981a3745d46983a9dbceae5d7e861a3",
+      "frozen_source_sha256": "51259A2510EEBC9D5023888FC8BF6012C668A93836BC493F7A9FE4B28CFF2A9E",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawTrialReport.cs",
+      "sha256": "DCA5965009002FE5F09F072203E80A7EDA34D7F04ECBFCB25F2FF522B7C49128",
+      "git_blob_sha1": "2de7ac9674c716dc78660de5071590831178a844",
+      "frozen_source_sha256": "DCA5965009002FE5F09F072203E80A7EDA34D7F04ECBFCB25F2FF522B7C49128",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRecordingSessionCoordinator.cs",
+      "sha256": "9CAD189B28D9B2FC633E1FF52BC31DD1E22C9FB9AC98A92A806982D7E744C0A8",
+      "git_blob_sha1": "26751d9e331fea0575db4826c6c32712642f3d28",
+      "frozen_source_sha256": "9CAD189B28D9B2FC633E1FF52BC31DD1E22C9FB9AC98A92A806982D7E744C0A8",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRecordingSinkPort.cs",
+      "sha256": "F2F609FC9181EF13F54BB44889A2592AC4717383FFB377284824BC93E78A5828",
+      "git_blob_sha1": "5522d03839383c9671e9496629a8b09920092bb7",
+      "frozen_source_sha256": "F2F609FC9181EF13F54BB44889A2592AC4717383FFB377284824BC93E78A5828",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRenderProxyObservation.cs",
+      "sha256": "0D92E16F0E68012BDDAAA0F10F8F99BD05815E689C5947C043674F056AA10AC5",
+      "git_blob_sha1": "933a46acb0502a5df201e83dcf047bab73172acd",
+      "frozen_source_sha256": "0D92E16F0E68012BDDAAA0F10F8F99BD05815E689C5947C043674F056AA10AC5",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSelectedJournalEventCsv.cs",
+      "sha256": "30460DE33DB3A7F25088A479BF303E9E75617CC4111813FC1B653E1961A05D12",
+      "git_blob_sha1": "19f88ff07e2d31b158a970277af0b033532f2f84",
+      "frozen_source_sha256": "30460DE33DB3A7F25088A479BF303E9E75617CC4111813FC1B653E1961A05D12",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSelectedSessionIntegrity.cs",
+      "sha256": "AC2A8E8C42066364DA99DD096FB84151F80BB3E0A6BFAA8CC228AC575ED0B0A2",
+      "git_blob_sha1": "b3542024504a78ba5bba11ceca99f67ce950cb4f",
+      "frozen_source_sha256": "AC2A8E8C42066364DA99DD096FB84151F80BB3E0A6BFAA8CC228AC575ED0B0A2",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSessionEvidenceAnalyzer.cs",
+      "sha256": "A73B0D519E4EA16C8320A1F3D2B7688EC2968579E637686A39F268D2F3C16BB4",
+      "git_blob_sha1": "7c7a1047210d627730e55508650b5ccbe3e0f374",
+      "frozen_source_sha256": "A73B0D519E4EA16C8320A1F3D2B7688EC2968579E637686A39F268D2F3C16BB4",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSessionEvidenceController.cs",
+      "sha256": "2F32820FA5955710234DC12F49DCAA0BF95DDFB247714A72FEE626E52BB0CB9D",
+      "git_blob_sha1": "50fdbe8db9c63d953a7b9b83038c13394c3ad250",
+      "frozen_source_sha256": "2F32820FA5955710234DC12F49DCAA0BF95DDFB247714A72FEE626E52BB0CB9D",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSessionFrameScanner.cs",
+      "sha256": "9448802261818EC5590F1B6394C0AD9C24F7F3D20C6799EE1D81483D6DE5ACCB",
+      "git_blob_sha1": "0c0b40bfcbf0313c8dc221cebdbf2783a9e61220",
+      "frozen_source_sha256": "9448802261818EC5590F1B6394C0AD9C24F7F3D20C6799EE1D81483D6DE5ACCB",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSessionJournalAsyncWriter.cs",
+      "sha256": "991F49928B8CFAFA41AAFEC719D512A66092E8C72361550D0451410254E41F20",
+      "git_blob_sha1": "8e3490ae16695323e828dce994b3e12a046d1aa9",
+      "frozen_source_sha256": "991F49928B8CFAFA41AAFEC719D512A66092E8C72361550D0451410254E41F20",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSimulationTrialPose.cs",
+      "sha256": "98E52526D85C6265644A5A701DB2976B992017DB5EAED00ABE68B6812A913960",
+      "git_blob_sha1": "97a2d18c5a5739a4756f4e0993f972a938125eaf",
+      "frozen_source_sha256": "98E52526D85C6265644A5A701DB2976B992017DB5EAED00ABE68B6812A913960",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveStartPoseStability.cs",
+      "sha256": "6781E91F38A11706DDD0968D463C00E9268337B022E2434AB244C54E43DE322F",
+      "git_blob_sha1": "03686891f3c98a6363dda6e319a27201bc9c7c97",
+      "frozen_source_sha256": "6781E91F38A11706DDD0968D463C00E9268337B022E2434AB244C54E43DE322F",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveStartupAlignmentGate.cs",
+      "sha256": "AB4CC5C22AC19B372B4745A287081CFFC11396968C1B3ADF47F34CBF05D4E237",
+      "git_blob_sha1": "01e3e3ce755336b03387e76f9bc86d5d2079e033",
+      "frozen_source_sha256": "AB4CC5C22AC19B372B4745A287081CFFC11396968C1B3ADF47F34CBF05D4E237",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveStroopSafetyMenuGate.cs",
+      "sha256": "D2FD41A0A97D0B873B417C91138E932D8CA0E15ECEA5F197AB38C1C93FFCC8BE",
+      "git_blob_sha1": "aea0dd1f01835e0e864e1bb1d1e0f6c8df605ca4",
+      "frozen_source_sha256": "D2FD41A0A97D0B873B417C91138E932D8CA0E15ECEA5F197AB38C1C93FFCC8BE",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticAggregatePump.cs",
+      "sha256": "866DACD18A72CC551DD8888623E8BA2C2E1C327E5773BAAC8376E53A43616BEB",
+      "git_blob_sha1": "e0ba31045ce620212934b34ccade1b517ef9e070",
+      "frozen_source_sha256": "866DACD18A72CC551DD8888623E8BA2C2E1C327E5773BAAC8376E53A43616BEB",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticAsyncReadableCsv.cs",
+      "sha256": "9F82E48258EC79B5FA299F6BEDE985EECAD7B0531D785824F3EBCA09603D1464",
+      "git_blob_sha1": "3d8772c24c5cd5d9a9b70349d449d2bfeb9e6979",
+      "frozen_source_sha256": "9F82E48258EC79B5FA299F6BEDE985EECAD7B0531D785824F3EBCA09603D1464",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticBlockTransaction.cs",
+      "sha256": "D5C0687B1D451F48272486F267F9B4E33F7FD3512AAFB0F7C525E43CF1C0A698",
+      "git_blob_sha1": "135300c544c4064b51a407bd8c642f4820f49f4c",
+      "frozen_source_sha256": "D5C0687B1D451F48272486F267F9B4E33F7FD3512AAFB0F7C525E43CF1C0A698",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticCommitWorker.cs",
+      "sha256": "AA93AF1E9C4F5EC0E5AAE23D4C6E87CCD5AC902FDA6703536828D43FDB366F75",
+      "git_blob_sha1": "b210c4eeaff9c335c8eff682a15d556bae237dab",
+      "frozen_source_sha256": "AA93AF1E9C4F5EC0E5AAE23D4C6E87CCD5AC902FDA6703536828D43FDB366F75",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticMarkPresentedBudget.cs",
+      "sha256": "3182448F411642E102C96A4E5BCFC408D663387517696206690786B80F090742",
+      "git_blob_sha1": "b68cea570694f31e8c43bdbfb95b3937757bb785",
+      "frozen_source_sha256": "3182448F411642E102C96A4E5BCFC408D663387517696206690786B80F090742",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticReadbackTee.cs",
+      "sha256": "ACE4B93D908C0E039E77C3F288ECE544AC327E62AF08BC62EFA535C21B9DF73F",
+      "git_blob_sha1": "efd5857aae32eb24839964214c963b513dc430ea",
+      "frozen_source_sha256": "ACE4B93D908C0E039E77C3F288ECE544AC327E62AF08BC62EFA535C21B9DF73F",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticSafetyLatch.cs",
+      "sha256": "F1F3221EB409880218F63A65A35CB12CD6718FB32CCE77FDA9B2C240EFECEA0F",
+      "git_blob_sha1": "706e841bc672263fcb815d15c666b71d6a549dc6",
+      "frozen_source_sha256": "F1F3221EB409880218F63A65A35CB12CD6718FB32CCE77FDA9B2C240EFECEA0F",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticSessionJournalReader.cs",
+      "sha256": "FE2FCDF4C15FDB71CD29A3156EBE47AB80289C59253615FB945297DED4DB976A",
+      "git_blob_sha1": "b9e98609b21b8de8295f9387ea69dee796cbdb53",
+      "frozen_source_sha256": "FE2FCDF4C15FDB71CD29A3156EBE47AB80289C59253615FB945297DED4DB976A",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticStreamExport.cs",
+      "sha256": "A9B29160CF926508E05952AC2E859A7BC2360012ED28AE8A475F1A497851C6BF",
+      "git_blob_sha1": "c855f9e16de739bfa86dedd0ef33f63f0c77e268",
+      "frozen_source_sha256": "A9B29160CF926508E05952AC2E859A7BC2360012ED28AE8A475F1A497851C6BF",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveTaskEventWindowCandidate.cs",
+      "sha256": "ABE7FE378DBF7B23CE2C0735B472494E2296B070598C55B9CC94970644408512",
+      "git_blob_sha1": "154a3589ed0cb5845c6cf82e6a74550dcc4d53a1",
+      "frozen_source_sha256": "ABE7FE378DBF7B23CE2C0735B472494E2296B070598C55B9CC94970644408512",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveTlsSimulationCandidate.cs",
+      "sha256": "84845420285156CE94EA001BF6C05E9D8CBA834CD50339F6FD22BA3A65298F21",
+      "git_blob_sha1": "78c537e1f2a93831d1214e2e8f96ac27b07b16ef",
+      "frozen_source_sha256": "84845420285156CE94EA001BF6C05E9D8CBA834CD50339F6FD22BA3A65298F21",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveTrialOpenRequest.cs",
+      "sha256": "6CDB0DD9CE0DAB3E81C77007B90A0B467B50A7D4FDA24469EF3E3AB3D2FEF59E",
+      "git_blob_sha1": "f9d78d613ab6d2d5d7ae151ee27ccc9aadb5252d",
+      "frozen_source_sha256": "6CDB0DD9CE0DAB3E81C77007B90A0B467B50A7D4FDA24469EF3E3AB3D2FEF59E",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveTrialTransactionCandidate.cs",
+      "sha256": "46B8AE56E48AA7D4FFBB7FC4F26D29F5D8D991DBB9874FF3CE88B13581C87DDC",
+      "git_blob_sha1": "9fa9ae423f57b951951ea756e0065f197a0a0177",
+      "frozen_source_sha256": "46B8AE56E48AA7D4FFBB7FC4F26D29F5D8D991DBB9874FF3CE88B13581C87DDC",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozAuthoritySeamCandidate.cs",
+      "sha256": "E98EA040995110D9BF709477053E3B389F841371DACB8F40330BC9A553E5779C",
+      "git_blob_sha1": "918df7c5151a3b8d3a372a38e354b65aea7b50a1",
+      "frozen_source_sha256": "E98EA040995110D9BF709477053E3B389F841371DACB8F40330BC9A553E5779C",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozEngineeringPeer.cs",
+      "sha256": "92A8AF7EE864AA8DCE32EAEBB7AAFE21B345EC8C1D87BE4FABBB3BCDEAF03CFA",
+      "git_blob_sha1": "1ae42a4477d4fa87a771b4487f2f0acceb3246d5",
+      "frozen_source_sha256": "92A8AF7EE864AA8DCE32EAEBB7AAFE21B345EC8C1D87BE4FABBB3BCDEAF03CFA",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozFrameMapper.cs",
+      "sha256": "EC6B08F200671336AB69E10AE1C6A7662F73706CF7882B10CBD111A310660CCC",
+      "git_blob_sha1": "706439d6308b55c7d126fe1909e0f8ba7229d4e3",
+      "frozen_source_sha256": "EC6B08F200671336AB69E10AE1C6A7662F73706CF7882B10CBD111A310660CCC",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozOperatorSourceFactory.cs",
+      "sha256": "305DE8B3F14D976A40FB1AC149CEC7C778197CBED8D68C707D6640F6F74ADFC1",
+      "git_blob_sha1": "2aae6c83f0051d6e24d42d356fb424b952e99c15",
+      "frozen_source_sha256": "305DE8B3F14D976A40FB1AC149CEC7C778197CBED8D68C707D6640F6F74ADFC1",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozOperatorTaskView.cs",
+      "sha256": "829F2679D639B4C033A9BF970D1BC3F8A1A921C1DF26C5D13A769CD55A2B5795",
+      "git_blob_sha1": "9ff0e0663e64118a7d7d2fa0550f0c8eda7cd81f",
+      "frozen_source_sha256": "829F2679D639B4C033A9BF970D1BC3F8A1A921C1DF26C5D13A769CD55A2B5795",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozParticipantHost.cs",
+      "sha256": "492166E73DE036C1046EB1ADB83FE8BB7200FF3D8E738910A5CDE13BF43A9052",
+      "git_blob_sha1": "cfd7bd74a77eac6e3f8c7c6218487f6f64d54dbb",
+      "frozen_source_sha256": "492166E73DE036C1046EB1ADB83FE8BB7200FF3D8E738910A5CDE13BF43A9052",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozPreflightSamplePump.cs",
+      "sha256": "2E60EC6029F73EDA9EB9350C49F09A4680409F588443F5A4399D7A639F956D5F",
+      "git_blob_sha1": "42bab9953b63ee83ae97f441d3858d3581cb1bfe",
+      "frozen_source_sha256": "2E60EC6029F73EDA9EB9350C49F09A4680409F588443F5A4399D7A639F956D5F",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozPresentationPolicy.cs",
+      "sha256": "AEA877849DB89CED2A43D030E8F30DD98AC2444518CE1B7489DF0C4528305E6D",
+      "git_blob_sha1": "d7a1a93b7631c4b11f65a4fbea039a8aca175e0f",
+      "frozen_source_sha256": "AEA877849DB89CED2A43D030E8F30DD98AC2444518CE1B7489DF0C4528305E6D",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozReferenceAlignment.cs",
+      "sha256": "B49B0565256631B438697F6F94085142E0CCCAB3DE4A246330E71146D8C00E57",
+      "git_blob_sha1": "b8a794c69c17a4020c9d5a9cd909071ebad63817",
+      "frozen_source_sha256": "B49B0565256631B438697F6F94085142E0CCCAB3DE4A246330E71146D8C00E57",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozSourceConfirmation.cs",
+      "sha256": "CDE4148DB2539B79E5969A471A053C24A6A053547BF10EEE472875228B55A605",
+      "git_blob_sha1": "5efdb62778741230c544b929a4939fc0583e9e54",
+      "frozen_source_sha256": "CDE4148DB2539B79E5969A471A053C24A6A053547BF10EEE472875228B55A605",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Runtime/WozAuthenticatedDiagnosticTransport.cs",
+      "sha256": "8F4F61DF9BDA535AD163F8F4B5AF32176EE30FD772C388526B625E5A4CC337E0",
+      "git_blob_sha1": "dc479f789d55e67720a94b9f2c523dca0f057dff",
+      "frozen_source_sha256": "8F4F61DF9BDA535AD163F8F4B5AF32176EE30FD772C388526B625E5A4CC337E0",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Runtime/WozSyntheticLanDiagnosticSession.cs",
+      "sha256": "83F7D815866833352EDD4D9893E640C96700CD5EC03C36BADC23119F1C79AA2C",
+      "git_blob_sha1": "1cce5b4cd21d61cead281fa7b3a83e064d08a821",
+      "frozen_source_sha256": "83F7D815866833352EDD4D9893E640C96700CD5EC03C36BADC23119F1C79AA2C",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Unity/AvatarPresentationObservation.cs",
+      "sha256": "CBB83C8D0AB43D8DB9B0521C25C313074C6DC5F99E2881ABCF30C315E8AFDD99",
+      "git_blob_sha1": "7932da5f447c91d57a4e1496c7620e2ed2ee4800",
+      "frozen_source_sha256": "CBB83C8D0AB43D8DB9B0521C25C313074C6DC5F99E2881ABCF30C315E8AFDD99",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/AvatarRenderWitness.cs",
+      "sha256": "1503EBDA785F5E01BADA338D5B42657266B5725E56D13C159DFF1F0F10010F32",
+      "git_blob_sha1": "65c638126e53a2a933f8ca77915e3ff720e06837",
+      "frozen_source_sha256": "1503EBDA785F5E01BADA338D5B42657266B5725E56D13C159DFF1F0F10010F32",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/DevelopmentApplicationBootstrap.cs",
+      "sha256": "4D90BF494789E450E6486E74ECB90B10CAB9BF8CA3D0D8A09AA57887D5ACC671",
+      "git_blob_sha1": "b98344cdab90274cc8d263a7c340f25a9894b625",
+      "frozen_source_sha256": "4D90BF494789E450E6486E74ECB90B10CAB9BF8CA3D0D8A09AA57887D5ACC671",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/QuestLinkPreviewRig.cs",
+      "sha256": "2778E84583E1AB955D04119ED991378F636119B99A77C937690334AB194AA755",
+      "git_blob_sha1": "7bbf778dd8d4174312e7095bbd526299dce9aae0",
+      "frozen_source_sha256": "2778E84583E1AB955D04119ED991378F636119B99A77C937690334AB194AA755",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/QuestPreviewStartAlignment.cs",
+      "sha256": "ADCBFB656539B7292D8899D66BE4721D621EDF53CD48DCE7056A4FBBEABEC5FF",
+      "git_blob_sha1": "a4c5800fd779345005b7a713a43836ce380bae60",
+      "frozen_source_sha256": "ADCBFB656539B7292D8899D66BE4721D621EDF53CD48DCE7056A4FBBEABEC5FF",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/QuestPreviewStartupView.cs",
+      "sha256": "DCAE057516E929CD7BE7812A09CBBDE70C969339FEF24ECF59900BEFBD17C713",
+      "git_blob_sha1": "ea554cab3b2bdc8e217dce03106866b13474ec6e",
+      "frozen_source_sha256": "DCAE057516E929CD7BE7812A09CBBDE70C969339FEF24ECF59900BEFBD17C713",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/StimulusRenderWitness.cs",
+      "sha256": "3FE3824F7BFD5D4C2AFA0BCBFFFC169CD22BF00954619066D08A4D224C61EB6D",
+      "git_blob_sha1": "c245e4b02b9c0d53a89882ffd605f36e47369ca6",
+      "frozen_source_sha256": "3FE3824F7BFD5D4C2AFA0BCBFFFC169CD22BF00954619066D08A4D224C61EB6D",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveLegacyWozRawSceneAcquisition.cs",
+      "sha256": "15DE623EE3E2AD1B61C22E0C4C69844D0520E9E4CFE79DB58335903391C617BF",
+      "git_blob_sha1": "f20782c18210a58056adb5325ba9e4f1ebdfc194",
+      "frozen_source_sha256": "15DE623EE3E2AD1B61C22E0C4C69844D0520E9E4CFE79DB58335903391C617BF",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Unity/VivePreviewStartAlignment.cs",
+      "sha256": "325FBFCB34C0FE3919D5656730E81EA3DB3CE4397C210851328D94F041856CAC",
+      "git_blob_sha1": "b28460b439a37353ae12be4b41de6c34e6a4fca3",
+      "frozen_source_sha256": "325FBFCB34C0FE3919D5656730E81EA3DB3CE4397C210851328D94F041856CAC",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveProEyePreview.cs",
+      "sha256": "BA80992DC217D91741F395D37F88AAA4A9731517CA9A507B54FE98AEA1AA645A",
+      "git_blob_sha1": "645f4474bfc3b9833cf8ff2709c22de91160d04e",
+      "frozen_source_sha256": "BA80992DC217D91741F395D37F88AAA4A9731517CA9A507B54FE98AEA1AA645A",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveRawPanelRenderWitness.cs",
+      "sha256": "2CFFD57F1EF244EFA16702DA7C18D2A65147AE632E2C52AEE5F0EE3BD6055D73",
+      "git_blob_sha1": "d675f740c0afc1866778b12564d041231bc83689",
+      "frozen_source_sha256": "2CFFD57F1EF244EFA16702DA7C18D2A65147AE632E2C52AEE5F0EE3BD6055D73",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveRawSessionEvidencePanel.cs",
+      "sha256": "3465E7090CAC4A7535C15804AF9B50638358CB8C346970CB899565A4B4449C60",
+      "git_blob_sha1": "d64f6374306643a901c61ba75930eaa83b56e84d",
+      "frozen_source_sha256": "3465E7090CAC4A7535C15804AF9B50638358CB8C346970CB899565A4B4449C60",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveRecordingChoiceRenderWitness.cs",
+      "sha256": "727D743777D77E85D364CB6E921EFD594830EA034FF84926FA99953E5818945F",
+      "git_blob_sha1": "cc415221783e5e9076a36a4e796c27c91e8fd19d",
+      "frozen_source_sha256": "727D743777D77E85D364CB6E921EFD594830EA034FF84926FA99953E5818945F",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveSessionEvidencePanel.cs",
+      "sha256": "0CC51DB498B9C635EF27CA3573C8B261ED1E08B51AAFEE41D8EF2EFF98D11425",
+      "git_blob_sha1": "96493e8017e12264d07bed1a4bdc5f0aba17b4e5",
+      "frozen_source_sha256": "0CC51DB498B9C635EF27CA3573C8B261ED1E08B51AAFEE41D8EF2EFF98D11425",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStartupView.cs",
+      "sha256": "94D499382E48DB7F0D4C672A41D3435CC6A9535E10F58B0A180265F26F5BAA73",
+      "git_blob_sha1": "9d8e72f5a8511b77fc9715a9731b2d08d20169b3",
+      "frozen_source_sha256": "94D499382E48DB7F0D4C672A41D3435CC6A9535E10F58B0A180265F26F5BAA73",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.cs",
+      "sha256": "295673B44C05D6A484B936C90C1092CD3BB06239AC5D1A7C626982B966A89B8B",
+      "git_blob_sha1": "2d2b01f8a3ac1bf3c9fdb9ce55d3740389d01649",
+      "frozen_source_sha256": "295673B44C05D6A484B936C90C1092CD3BB06239AC5D1A7C626982B966A89B8B",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.LegacyWozScene.cs",
+      "sha256": "9B90D7E89E68BC822255FD4A9C4AB3D4EA87275668119017987BED2AABCE7F33",
+      "git_blob_sha1": "09d625030d4d19c9bf87c9ad6035affe67454dd1",
+      "frozen_source_sha256": "9B90D7E89E68BC822255FD4A9C4AB3D4EA87275668119017987BED2AABCE7F33",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopDeviceInput.cs",
+      "sha256": "88EF65C98C23B7AA51D015322BF4C1B82FA1AB4E65BEE958C2D112731B53D747",
+      "git_blob_sha1": "b3f9d605dcb4b6283cfcf0df22a039c951442dc6",
+      "frozen_source_sha256": "88EF65C98C23B7AA51D015322BF4C1B82FA1AB4E65BEE958C2D112731B53D747",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopPreviewRig.cs",
+      "sha256": "B435C9F3AC84B4520017C338DC338340150E207B183236F3F39816888E964E8A",
+      "git_blob_sha1": "7c4543f4faa18d709a78986bdf45d2ceaeba1856",
+      "frozen_source_sha256": "B435C9F3AC84B4520017C338DC338340150E207B183236F3F39816888E964E8A",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopRecordingController.cs",
+      "sha256": "8A312810264461AFF70C2D5B3DD0A41CFCF0CA8E558B849B7596F19122830948",
+      "git_blob_sha1": "23787a7d0ec0e86ea72bd3438d242541255ed737",
+      "frozen_source_sha256": "8A312810264461AFF70C2D5B3DD0A41CFCF0CA8E558B849B7596F19122830948",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveVerifiedPresenceFeature.cs",
+      "sha256": "24A28CF8069EDDBCE93276D6DAF2F4A220A5422699E79202F4FBC95AE3524E54",
+      "git_blob_sha1": "d55f32b7f3aef6a7a7f6dbbea9a471257e2ba01f",
+      "frozen_source_sha256": "24A28CF8069EDDBCE93276D6DAF2F4A220A5422699E79202F4FBC95AE3524E54",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozEngineeringOperatorBootstrap.cs",
+      "sha256": "495AFC5B4482B142B7D24F93AB4A884650FE985B59219D12478FF548864F5EF8",
+      "git_blob_sha1": "f23332a950ae7e487ae158034fd0caba430bdf1a",
+      "frozen_source_sha256": "495AFC5B4482B142B7D24F93AB4A884650FE985B59219D12478FF548864F5EF8",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozEngineeringParticipantBootstrap.cs",
+      "sha256": "0E97A5DEB280C93B072DBA7BCB00E78BA9D6C5FECCC81C39B6EC1521FBE59F17",
+      "git_blob_sha1": "f47ed49c19b5e4af6a2fecdd72f33e80a3a0b88d",
+      "frozen_source_sha256": "0E97A5DEB280C93B072DBA7BCB00E78BA9D6C5FECCC81C39B6EC1521FBE59F17",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozEngineeringXrLease.cs",
+      "sha256": "BB597B56803BBF30371F1E58AADC9157EB83603EB8D9F9CAC300C4FB4992231A",
+      "git_blob_sha1": "c69fa47a04adc9b9dffb4e68b8d522c38ca85419",
+      "frozen_source_sha256": "BB597B56803BBF30371F1E58AADC9157EB83603EB8D9F9CAC300C4FB4992231A",
+      "sanitized": false,
+      "changed_from_public_base": false
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozOperatorDevelopmentBootstrap.cs",
+      "sha256": "FFC5EB63DA59AE0C446BF693A4EE223B30EA1FBE865E8C7EB828028ED69EFAB0",
+      "git_blob_sha1": "f5587629cb765d9b8d4af1c974e11e75bb926745",
+      "frozen_source_sha256": "FFC5EB63DA59AE0C446BF693A4EE223B30EA1FBE865E8C7EB828028ED69EFAB0",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozOperatorDevelopmentRig.cs",
+      "sha256": "E3234F91AFD7F5AE4E2F2AB88062451D7B5ECEBD41F382B143500934C27C13B8",
+      "git_blob_sha1": "dffa1caaa426855c757eca32335c8a5f8803594d",
+      "frozen_source_sha256": "E3234F91AFD7F5AE4E2F2AB88062451D7B5ECEBD41F382B143500934C27C13B8",
+      "sanitized": false,
+      "changed_from_public_base": true
+    },
+    {
+      "path": "Assets/Stroop/Unity/WorldSpaceExperimentView.cs",
+      "sha256": "DB6BB6743AA186F3E396FC2B4C5961B25A2C51903D9B744C88E34C842753139F",
+      "git_blob_sha1": "3bb819dba90a905e99b0a3c46edfbfc482a75759",
+      "frozen_source_sha256": "DB6BB6743AA186F3E396FC2B4C5961B25A2C51903D9B744C88E34C842753139F",
+      "sanitized": false,
+      "changed_from_public_base": false
+    }
+  ]
+}

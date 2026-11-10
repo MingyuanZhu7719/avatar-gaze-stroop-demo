@@ -425,7 +425,8 @@ namespace AvatarStroop.Tests
                 Check.Equal(Phase.Preparation,task.Phase);Check.Equal(0,task.TrialCount);
                 var planned=task.PrepareNamedRecordingBlockPlan(Actor.Owner,true);
                 ViveBlockPlanRequest request;Check.True(ViveBlockPlanRequest.TryCapture(task,clock,planned,out request));
-                var sink=new ViveRawSessionJournalSink(admission,@"C:\synthetic-not-opened\raw.vraw");
+                string unused=Fixtures.ClosedRawSinkPath();Fixtures.AssertClosedRawSinkPathAbsent(unused);
+                var sink=new ViveRawSessionJournalSink(admission,unused);
                 ViveRawSessionJournalSink.BlockPlanWriteReceipt receipt;
                 Check.Equal(ViveRawSessionJournalSink.BlockPlanReceiptPoll.Pending,sink.TryGetSyntheticBlockPlanReceiptForTest(request,out receipt));
                 Check.True(receipt==null&&!task.TryBeginNamedRecordingWithPlan(Actor.Owner,request,null,true));
@@ -441,6 +442,7 @@ namespace AvatarStroop.Tests
                 if(withdrawAfterClaim)receipt.AfterSyntheticClaimForTest=()=>task.NamedRawRevocation.Revoke();
                 Check.Equal(!withdrawAfterClaim,receipt.TryConsumeSyntheticForTest(request));
                 Check.True(!receipt.TryConsumeSyntheticForTest(request));
+                Fixtures.AssertClosedRawSinkPathAbsent(unused);
             }
             finally{client.Release.Set();worker.Stop(1000);worker.Dispose();}
         }
@@ -455,13 +457,15 @@ namespace AvatarStroop.Tests
                 Check.True(admission.ConfirmTask()&&admission.ConfirmEye());
                 var planned=task.PrepareNamedRecordingBlockPlan(Actor.Owner,true);
                 ViveBlockPlanRequest request;Check.True(ViveBlockPlanRequest.TryCapture(task,clock,planned,out request));
-                var sink=new ViveRawSessionJournalSink(admission,@"C:\synthetic-not-opened\raw.vraw");
+                string unused=Fixtures.ClosedRawSinkPath();Fixtures.AssertClosedRawSinkPathAbsent(unused);
+                var sink=new ViveRawSessionJournalSink(admission,unused);
                 Action interleave=()=>{if(fault)throw new InvalidOperationException("synthetic publication fault");task.NamedRawRevocation.Revoke();};
                 if(after)sink.AfterSyntheticReceiptPublishForTest=interleave;else sink.BeforeSyntheticReceiptPublishForTest=interleave;
                 Check.True(!sink.TryIssueSyntheticBlockPlanReceiptForTest(planned,0,2,3));
                 ViveRawSessionJournalSink.BlockPlanWriteReceipt receipt;
                 Check.Equal(ViveRawSessionJournalSink.BlockPlanReceiptPoll.Faulted,sink.TryGetSyntheticBlockPlanReceiptForTest(request,out receipt));
                 Check.True(receipt==null&&!sink.TryIssueSyntheticBlockPlanReceiptForTest(planned,0,4,5));
+                Fixtures.AssertClosedRawSinkPathAbsent(unused);
             }
             finally{client.Release.Set();worker.Stop(1000);worker.Dispose();}
         }
@@ -744,7 +748,8 @@ namespace AvatarStroop.Tests
                 {
                     Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
                     var admission=ViveNamedSessionFrameAdmission.CreateSyntheticForTest(task,worker,clock,16);
-                    var sink=new ViveRawSessionJournalSink(admission,@"C:\synthetic-not-opened\raw.vraw");
+                    string unused=Fixtures.ClosedRawSinkPath();Fixtures.AssertClosedRawSinkPathAbsent(unused);
+                    var sink=new ViveRawSessionJournalSink(admission,unused);
                     ViveNamedRawRecordingPump pump;
                     Check.True(sink.BelongsTo(admission)&&!sink.HasNativeConfiguration&&!sink.ProductionGateOpen&&!sink.CompletionGateOpen);
                     Check.True(!sink.CompleteSealed()&&sink.CompletionState==0&&!sink.CleanupAfterTerminal());
@@ -761,6 +766,7 @@ namespace AvatarStroop.Tests
                     var rightWriter=new ViveNamedRawRecordingPump.SyntheticWriter(admission);
                     Check.Throws<InvalidOperationException>(()=>ViveNamedRawRecordingPump.StartSyntheticForTest(otherTask,worker,clock,admission,rightWriter));
                     Check.True(admission.State==0);
+                    Fixtures.AssertClosedRawSinkPathAbsent(unused);
                 }
                 finally{client.Release.Set();worker.Stop(1000);worker.Dispose();}
             });

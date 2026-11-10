@@ -42,8 +42,10 @@ namespace AvatarStroop.Unity.Editor
             Require(preview.ParticipantPacedRest&&preview.RetainControlAcrossBlocks,"participant-paced rest and retained source");
             Require(!preview.IsNamedDesign&&preview.NamedPlan==null&&preview.NamedOption==null&&preview.NamedRecordingIntent==null,"preview is not a named alias");
             Require(preview.LegacyRecordingDesign==null&&preview.LegacyRecordingIntent==null,"preview has no recording intent");
-            var recorded=Call("SelectRecording",preview,"synthetic-geometry","synthetic-mapping","synthetic-design","synthetic-intent");
+            var recorded=Call("SelectRecording",preview,"synthetic-geometry","synthetic-mapping","synthetic-design","synthetic-intent",false);
             Require(!Object.ReferenceEquals(preview,recorded),"recording configuration is a copy");
+            Require(!recorded.LegacyRecordingDesign.OperatorWozRequested,"original local mode remains Automatic");
+            Reject(()=>Call("SelectRecording",preview,"synthetic-geometry","synthetic-mapping","synthetic-design","synthetic-intent",true),"WoZ recording gate remains closed in Editor");
             Require(Object.ReferenceEquals(preview.Allocation,recorded.Allocation),"same original immutable Allocation object");
             Require(Object.ReferenceEquals(recorded.Allocation,recorded.LegacyRecordingDesign.Allocation),"design binds that exact Allocation object");
             Require(recorded.LegacyRecordingDesign.DesignId=="synthetic-design"&&recorded.LegacyRecordingDesign.GeometryVersion=="synthetic-geometry"&&recorded.LegacyRecordingDesign.MappingVersion=="synthetic-mapping","explicit design identity and version binding");
@@ -56,11 +58,11 @@ namespace AvatarStroop.Unity.Editor
             Require(preview.LegacyRecordingDesign==null&&preview.LegacyRecordingIntent==null,"original preview remains non-recording");
             order[0]=Condition.A;lists[0]=3;
             Require(recorded.Allocation.Order[0]==Condition.B&&recorded.Allocation.ListByBlock[0]==0,"public array copies cannot mutate bound allocation");
-            Reject(()=>Call("SelectRecording",preview,"synthetic-geometry","synthetic-mapping","","intent"),"missing design identity");
-            Reject(()=>Call("SelectRecording",preview,"synthetic-geometry","synthetic-mapping","design",""),"missing intent identity");
-            Reject(()=>Call("SelectRecording",recorded,"synthetic-geometry","synthetic-mapping","design-2","intent-2"),"already-recording configuration");
+            Reject(()=>Call("SelectRecording",preview,"synthetic-geometry","synthetic-mapping","","intent",false),"missing design identity");
+            Reject(()=>Call("SelectRecording",preview,"synthetic-geometry","synthetic-mapping","design","",false),"missing intent identity");
+            Reject(()=>Call("SelectRecording",recorded,"synthetic-geometry","synthetic-mapping","design-2","intent-2",false),"already-recording configuration");
             var named=SessionConfiguration.NamedNoAvatarDevelopment("synthetic-named",1,ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.NoAvatar,0,null));
-            Reject(()=>Call("SelectRecording",named,"synthetic-geometry","synthetic-mapping","design","intent"),"named configuration alias");
+            Reject(()=>Call("SelectRecording",named,"synthetic-geometry","synthetic-mapping","design","intent",false),"named configuration alias");
             Console.WriteLine("PASS "+assertions+" pure legacy scene configuration assertions. No task/device/recording or native execution.");
         }
     }

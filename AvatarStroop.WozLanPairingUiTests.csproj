@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Windows Microsoft CLR4 only: do not run this fixture via dotnet or Mono.
+       Build with: dotnet build AvatarStroop.WozLanPairingUiTests.csproj -c Release
+       Run: build/dotnet/AvatarStroop.WozLanPairingUiTests/Release/net48/AvatarStroop.WozLanPairingUiTests.exe
+       The unchanged fixture uses fake sessions and a blank offscreen render only.
+       It does not need STROOP_TEST_BUILD or unrelated injection-only test seams.
+       It saves launcher-blank.png beside the executable, not participant data. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <StartupObject>AvatarStroop.Tests.WozLanPairingUiTests</StartupObject>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>7.3</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Assets/Stroop/Core/**/*.cs" />
+    <Compile Include="Assets/Stroop/Runtime/**/*.cs" />
+    <Compile Include="Apps/WozLanDiagnosticLauncher.cs" />
+    <Compile Include="Apps/WozLanDiagnosticSession.cs" />
+    <Compile Include="Tests/WozLanPairingUiTests.cs" />
+  </ItemGroup>
+</Project>

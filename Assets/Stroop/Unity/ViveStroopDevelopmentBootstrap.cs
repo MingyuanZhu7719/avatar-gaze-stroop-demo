@@ -9,7 +9,7 @@ namespace AvatarStroop.Unity
 {
     // Local, owner-operated development task. Recording is separately opt-in,
     // single-segment development evidence only; no study or live WoZ admission.
-    public sealed class ViveStroopDevelopmentBootstrap : MonoBehaviour
+    public sealed partial class ViveStroopDevelopmentBootstrap : MonoBehaviour
     {
         [SerializeField] ViveStroopPreviewRig rig;
         [SerializeField] WorldSpaceExperimentView view;
@@ -19,6 +19,9 @@ namespace AvatarStroop.Unity
         readonly int[] namedPlanOptions={-1,-1,-1,-1},namedPlanLists={-1,-1,-1,-1};
         bool namedIntentV3,namedTaskRecordingChoice,namedEyeRecordingChoice;
         bool controlledRecordingNoticeAccepted;
+        bool legacyWozRecordingSelected;
+        ViveNamedSessionFrameAdmission legacyWozInstalledAdmission;
+        ViveProEyeWorker legacyWozInstalledWorker;
         internal static bool ControlledRecordingRequestAllowed(bool controlledBuild,bool noticeAccepted)
         {return !controlledBuild||noticeAccepted;}
         bool ControlledRecordingNoticeCurrent {get{return ControlledRecordingRequestAllowed(ViveControlledRecordingBuildPolicy.Available,controlledRecordingNoticeAccepted);}}
@@ -43,6 +46,7 @@ namespace AvatarStroop.Unity
         ViveStroopDeviceInput device;
         ViveQuestionnaireTrackpadGate questionnaireGate;
         ViveDevelopmentParticipant participant;
+        ViveLegacyWozTaskOwner legacyWozTaskOwner;
         ViveDevelopmentParticipant pauseDiagnosticParticipant;
         long shownPauseRevision;
         string pauseDiagnostic;
@@ -170,6 +174,7 @@ namespace AvatarStroop.Unity
         internal bool RawRecordingDesignAvailable
         {get{return participant==null?SelectedRecordingAvailable:
             participant.RawRecordingRequested&&RecordingKindAvailable(participant.LegacyRecordingRequested)&&
+            (!participant.LegacyWozRecordingDeclared||ViveLegacyWozRecordingBuildPolicy.Available)&&
             MatchesRawRecordingKind(participant.LegacyRecordingRequested);}}
         static bool RecordingKindAvailable(bool legacy)
         {return legacy?LegacyRecordingAvailable:ViveNamedRecordingUiAdmission.RecordingAvailable;}
@@ -216,7 +221,7 @@ namespace AvatarStroop.Unity
         internal bool CanWaitForNamedRawBaseline
         {get{return namedRawPump!=null&&participant!=null&&participant.Phase==Phase.Preparation;}}
         public bool ObservationBlocked {get{return observationFaultLatched||(participant!=null&&participant.ObservationBlocked);}}
-        public bool PresentationBlocked {get{return faultLatched||RecordingBlocked||ObservationBlocked;}}
+        public bool PresentationBlocked {get{return faultLatched||RecordingBlocked||ObservationBlocked||legacyWozMaskLatched;}}
         public bool RecordingUsable {get{return recording!=null&&recording.LastEyeUsable;}}
         public string RecordingStatus
         {get{var pump=namedRawPump;return pump!=null?ViveRawRecordingPresentation.Describe(rawInstallFailed,pump.WithdrawalRequested,rawSafetyLatched,pump.State):
@@ -230,6 +235,22 @@ namespace AvatarStroop.Unity
         // Shared instance, not merely the same label: task and eye observations
         // must use the same monotonic time base before they can be correlated.
         public MonotonicClock SharedClock {get{return sharedClock;}}
+        // Explicit local task-binding only. Does not start a source, socket,
+        // countdown, presentation or recorder. Named LiveWoz stays unavailable.
+        public ViveLegacyWozTaskOwner CreateLegacyWozTaskBinding()
+        {
+            if(!isActiveAndEnabled||!configured||PresentationBlocked||participant==null||sharedClock==null||participant.HasNamedOption)
+                throw new InvalidOperationException("Current active Legacy participant required.");
+            if(legacyWozTaskOwner!=null&&!legacyWozTaskOwner.Terminal)
+                throw new InvalidOperationException("An explicit Legacy binding is already owned.");
+            legacyWozTaskOwner=participant.CreateLegacyWozTaskOwner(sharedClock);return legacyWozTaskOwner;
+        }
+        void CloseLegacyWozTaskBinding()
+        {
+            CloseLegacyWozScene();
+            if(legacyWozTaskOwner==null)return;
+            if(!legacyWozTaskOwner.PauseAuthoritativeTask())legacyWozTaskOwner.MarkCleanupUncertain();legacyWozTaskOwner.Dispose();legacyWozTaskOwner=null;
+        }
         public string ControlsHint
         {
             get
@@ -415,7 +436,9 @@ namespace AvatarStroop.Unity
                 return false;
             }
             rawTaskChoicePollSeconds=taskPoll;rawEyeChoicePollSeconds=eyePoll;
-            rawSelectionProvenancePending=true;namedRawPump=pump;return true;
+            rawSelectionProvenancePending=true;namedRawPump=pump;
+            if(participant.LegacyWozRecordingDeclared){legacyWozInstalledAdmission=admission;legacyWozInstalledWorker=installed;}
+            return true;
         }
         bool IsViveRawObservationRequired(){return namedRawPump!=null;}
         public void DrawOwnerControls()
@@ -490,6 +513,12 @@ namespace AvatarStroop.Unity
                 if(selectedDesign==0||selectedDesign==3)
                 {
                     GUILayout.Space(6);
+                    if(selectedDesign==0&&ViveLegacyWozRecordingBuildPolicy.Available)
+                    {
+                        bool next=GUILayout.Toggle(legacyWozRecordingSelected,"Record a LiveWoZ session locally (instead of Automatic).");
+                        if(next!=legacyWozRecordingSelected){legacyWozRecordingSelected=next;controlledRecordingNoticeAccepted=false;}
+                        if(next)GUILayout.Label("Local files include mapped operator head/eye poses. Participant eyes, answers and ratings never go to the operator.",recordingWrap);
+                    }
                     if(SelectedRecordingAvailable)
                     {
                         GUILayout.Label("Development self-test only. Task, questionnaire and real eye/head observations stay in the selected local folder; this app does not upload them. Eye data may identify you.",recordingWrap);
@@ -509,7 +538,7 @@ namespace AvatarStroop.Unity
                         GUILayout.Label(selectedDesign==0?"Legacy raw recording is unavailable in this build. You can configure the memory-only preview.":"Recording unavailable: recording and storage checks are incomplete.");
                 }
                 selectedHand=GUILayout.SelectionGrid(selectedHand,new[]{"Left wand","Right wand"},2);
-                observationOptIn=GUILayout.Toggle(observationOptIn,"Enable bounded in-memory development observation (legacy A/B/C/D only; no study, live WoZ or durable log).");
+                observationOptIn=GUILayout.Toggle(observationOptIn,"Enable bounded in-memory task observation (Legacy only; no files).");
                 if(selectedDesign>0&&observationOptIn)
                     GUILayout.Label("Clear observation for named previews.");
                 GUI.enabled=!rig.ViewRunning;
@@ -583,11 +612,11 @@ namespace AvatarStroop.Unity
                 GUI.enabled=(!participant.RawRecordingRequested||namedRawPump!=null)&&!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&(participant.Phase==Phase.Preparation||participant.Phase==Phase.PracticeRetry);
                 if(GUILayout.Button("Owner: begin practice"))
                 {if(namedRawPump!=null)RequestNamedBlockPlanStart(true);else Run(()=>{participant.OwnerBeginPractice(Actor.Owner);if(practicePreview!=null)practicePreview.OnPracticeStarted();});}
-                GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockPreparation&&pendingRawOwnerAction==null;
+                GUI.enabled=!participant.LegacyWozRecordingDeclared&&!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockPreparation&&pendingRawOwnerAction==null;
                 bool noAvatar=participant.HasNamedOption&&participant.NamedPlan==null&&participant.NamedOption.Option==ViveNamedOption.NoAvatar;
                 if(GUILayout.Button(participant.NamedPlan!=null?"Owner: confirm complete plan":noAvatar?"Owner: confirm No Avatar":"Owner: confirm Automatic"))
                     Run(()=>{if(participant.NamedPlan!=null)participant.OwnerConfirmNamedPlan(Actor.Owner,"local-development-owner");else if(noAvatar)participant.OwnerConfirmNamedNoAvatar(Actor.Owner,"local-development-owner");else participant.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"local-development-owner");});
-                GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0;
+                GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz;
                 if(GUILayout.Button("Owner: begin first block"))
                 {if(namedRawPump!=null)RequestNamedBlockPlanStart(false);else Run(()=>participant.OwnerBeginBlock(Actor.Owner));}
                 GUI.enabled=participant.Phase!=Phase.Ended;
@@ -595,6 +624,7 @@ namespace AvatarStroop.Unity
                 GUI.enabled=participant.Phase!=Phase.Ended||rawCompletionRequested;
                 if(GUILayout.Button("Withdraw task"))WithdrawTask();
                 GUI.enabled=true;GUILayout.EndHorizontal();
+                DrawLegacyWozControls();
                 if(participant.ObservationEnabled)
                     GUILayout.Label(observationFaultLatched?"Development observation failed. Presentation is blocked; review or withdraw the task.":
                         participant.ObservationPending?"Development observation is catching up. Presentation is paused until current.":
@@ -725,6 +755,7 @@ namespace AvatarStroop.Unity
         void OnApplicationFocus(bool focused)
         {
             if(focused)return;
+            if(legacyWozStarted)CloseLegacyWozScene();else legacyWozOffer="";
             // Only a safely closed output session survives focus loss. Review
             // still requires an explicit one-time owner request after focus returns.
             bool retain=NamedRawCandidateContextIsSafe();
@@ -735,7 +766,7 @@ namespace AvatarStroop.Unity
             if(preSessionChoice!=null)preSessionChoice.Cancel();
             if(recordingSetup!=null)recordingSetup.Cancel();
         }
-        void OnDisable(){if(namedRawPump!=null)AbortRawScenePresentation();ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)recordingSetup.Cancel();}
+        void OnDisable(){CloseLegacyWozTaskBinding();if(namedRawPump!=null)AbortRawScenePresentation();ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)recordingSetup.Cancel();}
         void DrawRecordingControls()
         {
             if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
@@ -1084,7 +1115,7 @@ namespace AvatarStroop.Unity
                     config=ViveLegacySceneConfiguration.CreatePreview(session);
                     if(selected)
                         config=ViveLegacySceneConfiguration.SelectRecording(config,geometry.Version,ViveFixedTrackpadMapping.Version,
-                            "legacy-design-"+Guid.NewGuid().ToString("N"),"legacy-intent-"+Guid.NewGuid().ToString("N"));
+                            "legacy-design-"+Guid.NewGuid().ToString("N"),"legacy-intent-"+Guid.NewGuid().ToString("N"),legacyWozRecordingSelected);
                 }
                 var taskClock=selected?rig.ActiveViewClock:new MonotonicClock("vive-development-task-"+session);
                 if(taskClock==null)throw new InvalidOperationException("The active headset clock is unavailable.");
@@ -1092,10 +1123,11 @@ namespace AvatarStroop.Unity
                 var candidate=new ViveDevelopmentParticipant(config,taskClock,geometry,map,entered,true,options,4096);
                 view.SetViveLegacyPreviewNotice(selectedDesign==0&&!selected);
                 view.ConfigureViveDevelopmentPreview(map,entered);
-                participant=candidate;sharedClock=taskClock;hand=selectedHand==0?VivePreviewControllerHand.Left:VivePreviewControllerHand.Right;
+                CloseLegacyWozTaskBinding();participant=candidate;sharedClock=taskClock;hand=selectedHand==0?VivePreviewControllerHand.Left:VivePreviewControllerHand.Right;
                 questionnaireGate=new ViveQuestionnaireTrackpadGate(entered);
                 view.SetQuestionnaireLanguage("en");view.SetPresentationAvailable(false);
                 view.SetPresentationAvailabilityCheck(()=>rig.HeadReady&&participant!=null&&participant.InputReady&&!PresentationBlocked&&
+                    (legacyWozScene==null||legacyWozScene.MayShowTask)&&
                     (!participant.RawRecordingRequested||namedRawPump!=null)&&
                     (namedRawPump==null||rig.RawSceneTrackingCurrent())&&
                     (recording==null||(!recording.WaitingForFreshEye&&!recording.RecoveryPending)));
@@ -1145,6 +1177,8 @@ namespace AvatarStroop.Unity
                     default:recordingText="Recording choices cancelled. No recording has started.";break;
                 }
                 recordingText=(recordingSetupDesign==0?"Legacy A/B/C/D self-test. ":"Named multi-block self-test. ")+recordingText;
+                if(recordingSetupDesign==0&&legacyWozRecordingSelected)
+                    recordingText="LiveWoZ local recording: files also store mapped operator head/eye poses and source times. "+recordingText;
                 view.SetViveParticipantRecordingChoice(recordingText,recordingSetup.Revision);return;
             }
             if(preSessionChoice==null)return;
@@ -1261,6 +1295,21 @@ namespace AvatarStroop.Unity
             try
             {
                 if(Input.GetKeyDown(KeyCode.Escape)){if(recordingSetup!=null&&namedRawPump==null)recordingSetup.Cancel();WithdrawTask();return;}
+                ViveStroopDeviceFrame recordedWozFrame=null;
+                if(RecordedLegacyWoz&&namedRawPump!=null)
+                {
+                    // Pairing/acquisition waits still poll the exact controller
+                    // for loss/replacement before network or owner actions.
+                    // This safety check takes no ordinary mutation capacity.
+                    if(faultLatched||!headReady||device==null){FailNamedRawBeforeFrame();return;}
+                    recordedWozFrame=device.Read(participant.Phase,headReady);inputDiagnostic=recordedWozFrame.Diagnostic;
+                    if(!recordedWozFrame.DeviceReady||!recordedWozFrame.Trackpad.Usable||recordedWozFrame.DeviceChanged)
+                    {questionnaireGate.Reset();FailNamedRawBeforeFrame();return;}
+                }
+                if(pendingLegacyWozOffer!=null){var create=pendingLegacyWozOffer;pendingLegacyWozOffer=null;create();suppressInputUntilReleased=true;Render();return;}
+                if(RecordedLegacyWoz&&legacyWozScene!=null&&!legacyWozStarted)
+                {suppressInputUntilReleased=true;Render();return;}
+                if(legacyWozStarted&&!PollLegacyWozBeforeTask()){questionnaireGate.Reset();suppressInputUntilReleased=true;Render();return;}
                 if(!CheckObservation(true))
                 {
                     questionnaireGate.Reset();
@@ -1277,7 +1326,7 @@ namespace AvatarStroop.Unity
                 if(device!=null&&device.ReadSafetyMenu(headReady)&&HandleParticipantMenu())
                 {questionnaireGate.Reset();return;}
                 if(namedRawPump!=null&&(rawPlanStartRequested!=0||rawPendingBlockPlan!=null))
-                {ProcessNamedBlockPlanStart(headReady);return;}
+                {ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;}
                 if(recording!=null&&(recording.WaitingForFreshEye||recording.RecoveryPending))
                 {
                     questionnaireGate.Reset();
@@ -1292,7 +1341,7 @@ namespace AvatarStroop.Unity
                 {questionnaireGate.Reset();FailNamedRawBeforeFrame();message+=" Recording stopped; its unconfirmed tail is unknown and this recording cannot resume.";return;}
                 if(faultLatched){questionnaireGate.Reset();Mutate(()=>ApplyInputUnavailable("Automatic safety: development input fault remains latched."));Render();return;}
                 if(device==null){questionnaireGate.Reset();Mutate(()=>ApplyInputUnavailable("Automatic safety: selected controller input adapter unavailable."));Render();return;}
-                var frame=device.Read(participant.Phase,headReady);
+                var frame=recordedWozFrame??device.Read(participant.Phase,headReady);
                 // Update even when the neutral/observation safety path returns
                 // early. This is the last observed poll, not a live inventory.
                 inputDiagnostic=frame.Diagnostic;
@@ -1376,7 +1425,7 @@ namespace AvatarStroop.Unity
                 // Rest confirmation can enter BlockReady in this same Poll.
                 // Prepare before Tick's retained-source auto-countdown.
                 if(namedRawPump!=null&&participant.Phase==Phase.BlockReady&&participant.BlockIndex>0)
-                {RequestNamedBlockPlanStart(false);ProcessNamedBlockPlanStart(headReady);return;}
+                {RequestNamedBlockPlanStart(false);ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;}
                 if(!Mutate(()=>participant.Tick())){Render();return;}message=frame.Diagnostic;Render();
             }
             catch(Exception error)
@@ -1412,7 +1461,7 @@ namespace AvatarStroop.Unity
         // Owner-thread polling only: writer/flush remains on the writer thread.
         // A late receipt is unusable after phase, generation, device or revoke
         // changes. Any failure latches the existing stop path and stays UNKNOWN.
-        void ProcessNamedBlockPlanStart(bool headReady)
+        void ProcessNamedBlockPlanStart(bool headReady,ViveStroopDeviceFrame recordedWozFrame=null)
         {
             if(namedRawPump==null||participant==null||sharedClock==null||rawPlanStartRequested==0||RecordingBlocked)
             {FailNamedRawBeforeFrame();return;}
@@ -1422,7 +1471,7 @@ namespace AvatarStroop.Unity
                 {FailNamedRawBeforeFrame();message+=" Block plan confirmation timed out or its clock failed; in-flight I/O is unknown.";return;}
             }
             if(!headReady||device==null){FailNamedRawBeforeFrame();return;}
-            var input=device.Read(participant.Phase,headReady);
+            var input=recordedWozFrame??device.Read(participant.Phase,headReady);
             if(!input.DeviceReady||!input.Trackpad.Usable||input.DeviceChanged)
             {FailNamedRawBeforeFrame();message+=" Input device readiness or identity changed while preparing the block plan.";return;}
             if(rawPendingBlockPlan==null)
@@ -1507,6 +1556,15 @@ namespace AvatarStroop.Unity
             // A reserved I/O call remains uncertain even after this request.
             try{if(rig!=null)rig.BlockTaskPresentation();}catch(Exception){rawMaskUncertain=true;}
             try{if(view!=null)view.SetPresentationAvailable(false);}catch(Exception){rawMaskUncertain=true;}
+            if(legacyWozScene!=null)try
+            {
+                // Raw authority is already revoked. Tick can only finish a
+                // pending negative acknowledgment, or fail closed on lost
+                // recording authority. It never renews a source/task here.
+                legacyWozProcess.Tick();
+                if(legacyWozProcess.Terminal)CloseLegacyWozScene();
+            }
+            catch(Exception){rawMaskUncertain=true;try{CloseLegacyWozScene();}catch(Exception){}}
             if(!rawStatusStopAttempted)
             {rawStatusStopAttempted=true;try{pump.TryStopStatusOnOwner();}catch(Exception){rawStatusStopUncertain=true;}}
             if(!rawEyeStopRequested&&rig!=null)
@@ -1594,6 +1652,7 @@ namespace AvatarStroop.Unity
         void AbortRawScenePresentation()
         {
             var token=pendingRawPresentation;pendingRawPresentation=null;
+            if(participant!=null&&participant.LegacyWozRecording!=null)participant.LegacyWozRecording.InvalidateAppliedPresentation();
             pendingRawPanelFrame=-1;pendingRawPanelRevision=-1;
             committedRawTrial=null;committedRawRevision=-1;rawGenericCallbackTrial=null;rawGenericCallbackFrame=-1;
             try{if(rig!=null)rig.BlockTaskPresentation();}catch(Exception){rawMaskUncertain=true;}
@@ -1611,6 +1670,7 @@ namespace AvatarStroop.Unity
             if(!RawRecordingDesignAvailable||namedRawPump==null||participant==null||view==null||rig==null||
                 pendingRawPresentation!=null||pendingRawPanelFrame>=0||PresentationBlocked||participant.Completed||!rig.RawSceneTrackingCurrent())return false;
             if(!WorldSpaceExperimentView.ViveRawPanelPhase(participant.Phase))return false;
+            if(legacyWozScene!=null&&!legacyWozScene.MayShowTask)return false;
             if(!participant.InputReady||rawPlanStartRequested!=0||rawPendingBlockPlan!=null)
                 return namedRawPump.DrainTaskEvents();
             if(!namedRawPump.PrepareNonTrialPanelRender())return false;
@@ -1630,6 +1690,7 @@ namespace AvatarStroop.Unity
                 if(!RawRecordingDesignAvailable||participant==null||view==null||rig==null||rendered==null||
                     pendingRawPanelFrame!=Time.frameCount||rendered.Frame!=pendingRawPanelFrame||rendered.Revision!=pendingRawPanelRevision||
                     !participant.InputReady||PresentationBlocked||!rig.RawSceneTrackingCurrent()||!namedRawPump.VerifyStagedEpoch()||
+                    (legacyWozScene!=null&&!legacyWozScene.MayShowTask)||
                     !view.MatchesViveRawPanel(rendered,participant.ParticipantView,participant.QuestionnaireInstructionPending,participant.CandidateRating,answered))
                 {AbortRawScenePresentation();return false;}
                 // Start the existing 3-second countdown only after its first
@@ -1655,6 +1716,8 @@ namespace AvatarStroop.Unity
                 pendingRawPresentation!=null||PresentationBlocked||!participant.InputReady||!rig.RawSceneTrackingCurrent())return false;
             var trial=participant.CurrentTrial;
             if(trial==null||trial.Stimulus==null||(participant.Phase!=Phase.Practice&&participant.Phase!=Phase.MainTask))return false;
+            if(participant.LegacyWozRecordingDeclared&&participant.Phase==Phase.MainTask&&
+                (legacyWozScene==null||!legacyWozScene.MayShowTask))return false;
             long revision;
             if(!view.TryGetViveRawTrialIdentity(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,out revision))return false;
             if(trial.Onset.HasValue)
@@ -1667,6 +1730,13 @@ namespace AvatarStroop.Unity
                 ViveNamedSessionFrameAdmission.PresentationReservation token;
                 if(!namedRawPump.TryPreparePresentation(Time.frameCount,revision,out token)||token==null)return false;
                 pendingRawPresentation=token;
+            }
+            if(legacyWozScene!=null&&participant.Phase==Phase.MainTask)
+            {
+                legacyWozScene.Present();
+                if(!legacyWozScene.MayShowTask||PresentationBlocked||
+                    (pendingRawPresentation!=null&&(pendingRawPresentation.WozEvidence==null||!pendingRawPresentation.WozEvidence.Applied)))
+                {AbortRawScenePresentation();return false;}
             }
             if(!view.TryRevealViveRawTrial(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,revision))
             {AbortRawScenePresentation();return false;}
@@ -1682,7 +1752,9 @@ namespace AvatarStroop.Unity
             var pump=namedRawPump;if(pump==null||participant==null)return false;
             if(!participant.Completed)return true;
             if(rawCompletionRequested)return !rawSafetyLatched&&!pump.WithdrawalRequested;
-            if(rawSafetyLatched||pump.WithdrawalRequested||RecordingBlocked||!pump.RequestCompletedDrain())
+            bool requested=!rawSafetyLatched&&!pump.WithdrawalRequested&&!RecordingBlocked&&
+                (participant.LegacyWozRecordingDeclared?participant.LegacyWozRecording!=null&&participant.LegacyWozRecording.RequestCompletedDrain():pump.RequestCompletedDrain());
+            if(!requested)
             {FailNamedRawAfterTask();return false;}
             rawCompletionRequested=true;
             message="Task ended; recording drain requested. API completion, coverage and durability are not yet established.";
@@ -1808,6 +1880,8 @@ namespace AvatarStroop.Unity
                     " Trial-open context or receipt unavailable. Stimulus remains blocked and validity is unknown.";
                 return;
             }
+            if(legacyWozScene!=null&&!legacyWozScene.MayShowTask)
+            {legacyWozScene.Present();view.SetPresentationAvailable(false);view.SuppressViveRawStimulus();return;}
             view.SetPresentationAvailable(participant.InputReady&&rig.HeadReady&&!PresentationBlocked&&
                 (!participant.RawRecordingRequested||namedRawPump!=null)&&
                 (recording==null||(!recording.WaitingForFreshEye&&!recording.RecoveryPending)));
@@ -1816,10 +1890,17 @@ namespace AvatarStroop.Unity
                 participant.RestRemainingSeconds,participant.RestDurationSeconds,0,0,participant.Completed,participant.QuestionnaireInstructionPending,answered);
             view.SetViveQuestionnaireRating(participant.CandidateRating);
             view.ApplyTaskView(participant.ParticipantView);
+            if(legacyWozScene!=null)
+            {
+                legacyWozScene.Present();
+                if(!legacyWozScene.MayShowTask){view.SetPresentationAvailable(false);view.SuppressViveRawStimulus();}
+                view.SetViveDevelopmentStatus((RecordedLegacyWoz?"CONTROLLED LEGACY WOZ: local recording requested; coverage/durability unverified. ":
+                    "CONTROLLED LEGACY WOZ: no recording; mapping/hardware unvalidated. ")+legacyWozStatus,ControlsHint);
+                return;
+            }
             AvatarOutput avatar=participant.CurrentAvatar;
-            // The live WoZ path has no authenticated, phase-bound transport.
-            // Clear any external output rather than letting the shared view
-            // retain a previous pose on a missing or invalid axis.
+            // Outside the separately owned controlled scene, no external pose
+            // is admitted. Preserve the ordinary Automatic-only path.
             if(!ViveWozPresentationPolicy.IsAutomaticOnly(avatar))
             {
                 view.ClearAvatarOutput();
@@ -1841,7 +1922,8 @@ namespace AvatarStroop.Unity
             }
             if(participant==null||participant.CurrentTrial==null||participant.CurrentTrial.TrialId!=trialId||!participant.InputReady||!rig.HeadReady)return;
             if(!CheckObservation(true)||RecordingBlocked||(recording!=null&&(recording.WaitingForFreshEye||recording.RecoveryPending)))return;
-            if(participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask)Mutate(()=>participant.MarkPresented(trialId));
+            if(participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask)
+            {if(Mutate(()=>participant.MarkPresented(trialId))&&legacyWozScene!=null)legacyWozScene.NotePresented(trialId);}
         }
         void OnViveRawStimulusRendered(WorldSpaceExperimentView.StimulusRenderObservation render)
         {
@@ -1858,6 +1940,7 @@ namespace AvatarStroop.Unity
                         !namedRawPump.CommitPresentation(token,render.Frame,render.Revision,render.TrialId,token.Word,token.Ink,render.UnityRenderSeconds))
                     {AbortRawScenePresentation();return;}
                     committedRawTrial=render.TrialId;committedRawRevision=render.Revision;
+                    if(legacyWozScene!=null)legacyWozScene.NotePresented(render.TrialId);
                     rawGenericCallbackTrial=render.TrialId;rawGenericCallbackFrame=render.Frame;
                     return;
                 }
@@ -1878,6 +1961,7 @@ namespace AvatarStroop.Unity
         }
         public void BeforeXrStop()
         {
+            CloseLegacyWozScene();
             if(namedRawPump!=null){RequestNamedRawStopForViewClose();return;}
             if(questionnaireGate!=null)questionnaireGate.Reset();
             long before=participant==null?0:participant.PauseDiagnosticRevision;
@@ -1910,6 +1994,7 @@ namespace AvatarStroop.Unity
         {if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)recordingSetup.Cancel();if(device!=null){device.Dispose();device=null;}}
         void OnDestroy()
         {
+            CloseLegacyWozTaskBinding();
             if(namedRawPump!=null)AbortRawScenePresentation();
             ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();
             if(view!=null){view.StimulusRendered-=OnStimulusRendered;view.ViveRawStimulusRendered-=OnViveRawStimulusRendered;view.ViveRawPanelRendered-=OnViveRawPanelRendered;view.ViveRawObservationRequired=null;}
@@ -1935,11 +2020,12 @@ namespace AvatarStroop.Unity
                     if(!ok)message="Task action blocked or already applied; not retried. "+recording.Status;
                 }
             }
-            finally{current=CheckObservation(true);}
+            finally{current=CheckObservation(true);if(legacyWozScene!=null)legacyWozScene.AfterTaskMutation();}
             return ok&&current;
         }
         void PauseTask()
         {
+            if(legacyWozProcess!=null&&!legacyWozProcess.Terminal){RevokeLegacyWoz();return;}
             long beforePause=participant==null?0:participant.PauseDiagnosticRevision;
             if(namedRawPump!=null&&(rawPlanStartRequested!=0||rawPendingBlockPlan!=null))
             {RequestExplicitRawPause(ViveDevelopmentParticipant.NamedRawSafetyCause.OwnerPause);
@@ -2004,6 +2090,7 @@ namespace AvatarStroop.Unity
                 try{if(rig!=null)rig.StopEyeAfterWithdrawal();}
                 catch(Exception e){faultLatched=true;view.SetPresentationAvailable(false);rig.BlockTaskPresentation();message="Eye stop after withdrawal is unconfirmed: "+e.GetType().Name;}
                 FinishSafetyAction();
+                CloseLegacyWozScene();
             }
         }
         void FinishSafetyAction()
@@ -2100,7 +2187,7 @@ namespace AvatarStroop.Unity
         internal static string BuildScope(bool controlled)
         {return controlled?
             "Controlled recording support is limited to Named explicit multi-block simulations, after separate task/eye choices and an explicit start. Legacy A/B/C/D has no recording or export. No two-PC task or study validation.":
-            "Simulated development task. Local VIVE recording is unavailable. No two-PC network, formal study or complete-session validation. Legacy A/B/C/D has no recording or export.";}
+            "Simulated development task. Local VIVE recording is unavailable. Unrecorded Legacy WoZ requires explicit pairing. Hardware, LAN and study validation pending. Legacy A/B/C/D has no recording or export.";}
         internal static string OwnerHeading(bool legacy,bool controlled)
         {return legacy?"VIVE - LEGACY PREVIEW - NO RECORDING / EXPORT":controlled?
             "VIVE - NAMED RECORDING / PREVIEW OPTIONS":"VIVE CLASSROOM - DEVELOPMENT VIEW ONLY";}
@@ -2125,10 +2212,12 @@ namespace AvatarStroop.Unity
             var allocation=new Allocation("development-fixture-BCAD",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
             return new SessionConfiguration(session,20261028,allocation,RunKind.Simulation,"en",3,30,true,0,true,true,true);
         }
-        internal static SessionConfiguration SelectRecording(SessionConfiguration preview,string geometryVersion,string mappingVersion,string designId,string intentId)
+        internal static SessionConfiguration SelectRecording(SessionConfiguration preview,string geometryVersion,string mappingVersion,string designId,string intentId,bool operatorWoz=false)
         {
             if(preview==null)throw new System.ArgumentNullException("preview");
-            var design=ViveLegacyRecordingDesign.Select(Actor.Owner,designId,preview.Allocation,geometryVersion,mappingVersion);
+            if(operatorWoz&&!ViveLegacyWozRecordingBuildPolicy.Available)throw new InvalidOperationException("Controlled WoZ recording build required.");
+            var design=operatorWoz?ViveLegacyRecordingDesign.SelectOperatorWoz(Actor.Owner,designId,preview.Allocation,geometryVersion,mappingVersion):
+                ViveLegacyRecordingDesign.Select(Actor.Owner,designId,preview.Allocation,geometryVersion,mappingVersion);
             var intent=ViveLegacyRecordingIntent.Select(Actor.Owner,intentId,true,true);
             return SessionConfiguration.LegacyRecordingDevelopment(preview,design,intent);
         }

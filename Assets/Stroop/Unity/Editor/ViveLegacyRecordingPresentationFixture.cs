@@ -79,7 +79,7 @@ namespace AvatarStroop.Unity.Editor
             string capability=Text("BuildScope",true);
             Require(capability.Contains("limited to Named explicit multi-block simulations")&&capability.Contains("separate task/eye choices and an explicit start"),"controlled scope is named and conditional");
             string unavailable=Text("BuildScope",false);
-            Require(unavailable.Contains("Simulated development task")&&unavailable.Contains("Local VIVE recording is unavailable")&&unavailable.Contains("No two-PC network, formal study"),"ordinary build limitations retained");
+            Require(unavailable.Contains("Simulated development task")&&unavailable.Contains("Local VIVE recording is unavailable")&&unavailable.Contains("Unrecorded Legacy WoZ requires explicit pairing")&&unavailable.Contains("Hardware, LAN and study validation pending"),"ordinary build limits and explicit unrecorded WoZ scope retained");
             foreach(string phase in new[]{"Preparation","PracticeRetry","PracticeCorrection","Countdown","Questionnaire","Rest","Paused","NeedsProtocolDecision","Ended"})
             {
                 string original="Safety and controls for "+phase;

@@ -95,7 +95,7 @@ namespace AvatarStroop.Runtime
                     if(!initialized)
                     {
                         if(ordinal!=0)return false;
-                        int manifestBytes=checked((manifest.Context!=null&&manifest.Context.IsLegacy?ViveRawSessionJournalCodec.ManifestPayloadV4(manifest):ViveRawSessionJournalCodec.ManifestPayloadV3(manifest)).Length+48);
+                        int manifestBytes=checked(ViveRawSessionJournalCodec.CurrentManifestPayload(manifest).Length+48);
                         if(!budget.FitsData(0,manifestBytes)||!budget.FitsData(manifestBytes,bound))return false;
                         headerBytes=manifestBytes;reserved=checked((long)manifestBytes+bound);initialized=true;Interlocked.Exchange(ref nextOrdinal,1);return true;
                     }

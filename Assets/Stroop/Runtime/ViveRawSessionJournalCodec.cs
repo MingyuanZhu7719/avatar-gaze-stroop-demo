@@ -18,18 +18,24 @@ namespace AvatarStroop.Runtime
         {return ManifestPayloadFor(manifest,true);}
         internal static byte[] ManifestPayloadV4(ViveNamedSessionFrameAdmission.Manifest manifest)
         {return ManifestPayloadFor(manifest,true,true);}
-        static byte[] ManifestPayloadFor(ViveNamedSessionFrameAdmission.Manifest manifest,bool version3,bool legacy=false)
+        internal static byte[] ManifestPayloadV5(ViveNamedSessionFrameAdmission.Manifest manifest)
+        {return ManifestPayloadFor(manifest,true,true,true);}
+        internal static byte[] CurrentManifestPayload(ViveNamedSessionFrameAdmission.Manifest manifest)
+        {return manifest.Context!=null&&manifest.Context.IsLegacyWoz?ManifestPayloadV5(manifest):
+            manifest.Context!=null&&manifest.Context.IsLegacy?ManifestPayloadV4(manifest):ManifestPayloadV3(manifest);}
+        static byte[] ManifestPayloadFor(ViveNamedSessionFrameAdmission.Manifest manifest,bool version3,bool legacy=false,bool woz=false)
         {
             if(manifest==null||manifest.ChoiceTime<0||!Finite(manifest.ChoiceTime)||manifest.SoftwareRunId==Guid.Empty)throw new InvalidOperationException("Manifest unavailable.");
             if(legacy!=(manifest.Context!=null&&manifest.Context.IsLegacy))throw new InvalidOperationException("Manifest design does not match format.");
+            if(woz!=(manifest.Context!=null&&manifest.Context.IsLegacyWoz))throw new InvalidOperationException("WoZ recording mode requires its own manifest format.");
             return Build(w=>{
-                w.Write(0L);w.Write((byte)0);Text(w,legacy?"VRAW0004":version3?"VRAW0003":"VRAW0002");Text(w,manifest.Synthetic?"SYNTHETIC_ONLY":"INSTALLED_SDK_CODE_PATH_ONLY");
+                w.Write(0L);w.Write((byte)0);Text(w,woz?"VRAW0005":legacy?"VRAW0004":version3?"VRAW0003":"VRAW0002");Text(w,manifest.Synthetic?"SYNTHETIC_ONLY":"INSTALLED_SDK_CODE_PATH_ONLY");
                 Text(w,"SIMULATION_DEVELOPMENT_NOT_RESEARCH");Text(w,"NATIVE_TIME_OPAQUE");Text(w,"EYE_COVERAGE_UNKNOWN");
                 Text(w,"INGEST_CONTEXT_NOT_SAMPLE_ALIGNMENT");Text(w,"SRANIPAL_SDK_VERSION_UNKNOWN");Text(w,"RAW_EYE_SPACE_UNVERIFIED");
                 Text(w,"MAPPING_NOT_APPLIED;REHEARSAL="+ViveProEyeRehearsalCoordinates.MappingVersion);
                 Text(w,"EYE_ORIGIN_MILLIMETERS");Text(w,"HEAD_TRACKING_LOCAL_ROTATION");Text(w,"DEVICE_IDENTITY_UNKNOWN");
                 Text(w,"PARTICIPANT_IDENTITY_NOT_AUTHENTICATED");RequiredText(w,manifest.Session);RequiredText(w,manifest.ClockId);
-                if(legacy){WriteLegacyManifest(w,manifest);return;}
+                if(legacy){WriteLegacyManifest(w,manifest);if(woz){Text(w,"OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING");Text(w,"INDEPENDENT_CLOCKS_NOT_SYNCHRONIZED");Text(w,"REMOTE_KEY_POSSESSION_NOT_HARDWARE_IDENTITY");}return;}
                 Text(w,ViveNamedSimulationPlan.SchemaVersion);RequiredText(w,manifest.Plan.PlanId);Text(w,ViveNamedRecordingIntent.EventSchemaVersion);RequiredText(w,manifest.Intent.IntentId);
                 Bool(w,manifest.Intent.TaskRequested);Bool(w,manifest.Intent.EyeRequested);Bool(w,true);w.Write(manifest.ChoiceTime);w.Write(manifest.TaskBaseline);
                 byte[] id=manifest.SoftwareRunId.ToByteArray();w.Write(id);w.Write(manifest.Plan.Blocks.Count);
@@ -87,6 +93,8 @@ namespace AvatarStroop.Runtime
         {return FrameFor(payload,previous,magic,true,out digest);}
         internal static byte[] FrameV4(byte[] payload,byte[] previous,bool magic,out byte[] digest)
         {var result=FrameFor(payload,previous,magic,true,out digest);if(magic)Buffer.BlockCopy(Encoding.ASCII.GetBytes("VRAW0004"),0,result,0,8);return result;}
+        internal static byte[] FrameV5(byte[] payload,byte[] previous,bool magic,out byte[] digest)
+        {var result=FrameFor(payload,previous,magic,true,out digest);if(magic)Buffer.BlockCopy(Encoding.ASCII.GetBytes("VRAW0005"),0,result,0,8);return result;}
         static byte[] FrameFor(byte[] payload,byte[] previous,bool magic,bool version3,out byte[] digest)
         {
             if(payload==null||payload.Length==0||payload.Length>1048576||previous==null||previous.Length!=32)throw new InvalidOperationException("Frame limit.");
@@ -159,6 +167,9 @@ namespace AvatarStroop.Runtime
         // string, field-count and payload limits remain at their old positions.
         internal static void ValidateTaskRecord(JournalEvent item,ViveNamedSessionFrameAdmission.Manifest manifest)
         {
+            if(item==null)throw new InvalidOperationException("Task unavailable.");
+            ViveLegacyWozRecordingSchema.Validate(item.Kind,item.Fields,item.ClockId,item.Time,
+                manifest!=null&&manifest.Context!=null&&manifest.Context.IsLegacyWoz);
             if(manifest!=null&&manifest.Context!=null&&manifest.Context.IsLegacy)
             {ValidateLegacyTask(item,manifest);ValidatePresentationDeclaration(item.Kind,item.Fields,item.ClockId,item.Time);ValidateSoftwareChoices(item.Kind,item.Fields,item.ClockId,item.Time);return;}
             if(item==null||manifest==null||!Finite(item.Time)||item.Time<0||!Object.ReferenceEquals(item.NamedPlan,manifest.Plan)||
@@ -231,6 +242,8 @@ namespace AvatarStroop.Runtime
             foreach(string key in item.Fields.Keys)if(key.StartsWith("named_",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Mixed design fields.");
             Field(item,"legacy_schema",ViveLegacyRecordingIntent.EventSchemaVersion);Field(item,"legacy_design_schema",ViveLegacyRecordingDesign.SchemaVersion);
             Field(item,"legacy_design_id",d.DesignId);Field(item,"legacy_recording_intent_id",intent.IntentId);
+            if(d.OperatorWozRequested)Field(item,"legacy_control_mode","OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING");
+            else if(item.Fields.ContainsKey("legacy_control_mode"))throw new InvalidOperationException("Unexpected WoZ recording mode.");
             Field(item,"legacy_task_recording_intent",intent.TaskRequested?"REQUESTED":"OFF");Field(item,"legacy_eye_recording_intent",intent.EyeRequested?"REQUESTED":"OFF");
             Field(item,"legacy_eye_sample_payload","NOT_INCLUDED_IN_TASK_EVENT");Field(item,"legacy_allocation_id",d.Allocation.AllocationId);Field(item,"legacy_b_initial_target",d.Allocation.BInitialTarget.ToString());
             if(item.Kind=="participant_recording_software_choices")

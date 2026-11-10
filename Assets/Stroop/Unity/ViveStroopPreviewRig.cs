@@ -507,6 +507,11 @@ namespace AvatarStroop.Unity
                     {if(development!=null&&development.NamedRawPumpAttached){previewCamera.cullingMask=0;development.FailNamedRawAfterTask();}SetStatus("Eye stop requested; native cleanup may still be pending.");return;}
                     if(development!=null&&development.NamedRawPumpAttached&&development.PresentationBlocked)
                     {previewCamera.cullingMask=0;development.FailNamedRawAfterTask();SetStatus("Task input interval is unknown; presentation remains blocked.");return;}
+                    if(development!=null&&development.WaitForLegacyWozRawAcquisition())
+                    {
+                        if(!development.PresentationBlocked&&!development.DrainNamedRawTaskEvents())development.FailNamedRawAfterTask();
+                        previewCamera.cullingMask=0;return;
+                    }
                     if(development!=null&&development.NamedRawInputBoundaryPending)
                     {
                         // A plan receipt may start a phase during this Poll.

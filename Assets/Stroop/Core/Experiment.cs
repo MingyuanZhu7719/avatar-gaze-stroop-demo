@@ -29,6 +29,9 @@ namespace AvatarStroop.Core
         TrialRecord current;
         string sourceConfirmationOwner;
         long sourceConfirmationSequence;
+        // Local-only Legacy binding metadata. No responses or journal contents.
+        internal string LegacyWozSourceOwner {get{return sourceConfirmationOwner;}}
+        internal long LegacyWozSourceGeneration {get{return sourceConfirmationSequence;}}
 
         public SessionConfiguration Configuration { get; private set; }
         public Phase Phase { get; private set; }
@@ -286,6 +289,8 @@ namespace AvatarStroop.Core
                 throw new InvalidOperationException("Simulator data cannot enter apparatus sessions");
             if(Configuration.RetainControlAcrossBlocks&&(BlockIndex!=0||LockedControl.HasValue))
                 throw new InvalidOperationException("The session source is confirmed once after practice and retained for all four blocks");
+            if(Configuration.LegacyRecordingDesign!=null&&Configuration.LegacyRecordingDesign.OperatorWozRequested&&selection!=ControlSelection.LiveWoz)
+                throw new InvalidOperationException("Explicit WoZ recording design cannot fall back to Automatic or Simulator.");
             LockedControl=selection;TraceMutation();
             if(Configuration.NamedOption!=null)namedOptionConfirmed=true;
             sourceConfirmationOwner=ownerId;TraceMutation();
@@ -872,6 +877,7 @@ namespace AvatarStroop.Core
                 var design=Configuration.LegacyRecordingDesign;var intent=Configuration.LegacyRecordingIntent;
                 data.Add("legacy_schema",ViveLegacyRecordingIntent.EventSchemaVersion);
                 data.Add("legacy_design_id",design.DesignId);data.Add("legacy_design_schema",ViveLegacyRecordingDesign.SchemaVersion);
+                if(design.OperatorWozRequested)data.Add("legacy_control_mode","OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING");
                 data.Add("legacy_recording_intent_id",intent.IntentId);
                 data.Add("legacy_task_recording_intent",intent.TaskRequested?"REQUESTED":"OFF");
                 data.Add("legacy_eye_recording_intent",intent.EyeRequested?"REQUESTED":"OFF");

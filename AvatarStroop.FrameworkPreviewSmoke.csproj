@@ -13,6 +13,7 @@
   <ItemGroup>
     <Compile Include="Assets/Stroop/Core/**/*.cs" />
     <Compile Include="Assets/Stroop/Runtime/**/*.cs" />
-    <Compile Include="Tests/**/*.cs" />
+    <!-- The WoZ launcher fixture runs in AvatarStroop.WozLanPairingUiTests instead. -->
+    <Compile Include="Tests/**/*.cs" Exclude="Tests/WozLanPairingUiTests.cs" />
   </ItemGroup>
 </Project>

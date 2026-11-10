@@ -1,0 +1,43 @@
+{
+  "Assets/Stroop/Runtime/ViveDevelopmentParticipant.cs": [
+    "internal Action BeforeNamedAdmissionWitnessForTest;"
+  ],
+  "Assets/Stroop/Runtime/ViveLegacyWozBridge.cs": [
+    "internal bool FailCloseForTest;"
+  ],
+  "Assets/Stroop/Runtime/ViveNamedSessionFrameAdmission.cs": [
+    "internal Action AfterCountdownReservationForTest;",
+    "internal Action BeforeStatusProofPublishForTest,BeforeConsumerReceiptPublishForTest;",
+    "internal Action<int> AfterTerminalReasonForTest;"
+  ],
+  "Assets/Stroop/Runtime/ViveRawIoFence.cs": [
+    "BeforeNativeBeginCasForTest,BeforeNativeVerifyCasForTest;",
+    "internal Action AfterPrivateStageStopForTest,AfterPrivateStageBindForTest;",
+    "internal Action AfterWithdrawalSignalForTest,BeforeClaimCasForTest,BeforeCompleteCasForTest,",
+    "internal Action BeforeReservationFinalCheckForTest;"
+  ],
+  "Assets/Stroop/Runtime/ViveRawPrivateStage.cs": [
+    "internal Action BeforeEnqueueForTest;",
+    "internal Action BeforeIoClaimForTest,AfterIoClaimForTest;",
+    "internal Func<ThreadStart,Thread> SyntheticCsvCloseThreadFactoryForTest;",
+    "internal Func<int,byte[]> AllocatorForTest;"
+  ],
+  "Assets/Stroop/Runtime/ViveRawRelativeFileCapability.cs": [
+    "internal Action<IdentityStep> BeforeNativeForTest;"
+  ],
+  "Assets/Stroop/Runtime/ViveRawSessionJournalSink.cs": [
+    "internal Action BeforeSyntheticRelativeStageConstructionForTest;",
+    "internal Action BeforeSyntheticRelativeTargetCreateForTest;",
+    "internal Action<ViveRawSiblingStream> AfterSyntheticRelativeTargetUseForTest;",
+    "internal Action<string> AfterSyntheticRelativeTargetOpenForTest;"
+  ],
+  "Assets/Stroop/Runtime/ViveRawSiblingStream.cs": [
+    "internal Action BeforeCloseForTest;",
+    "internal Action BeforeVerifyFileTypeForTest;",
+    "internal Action BeforeWriteForTest;"
+  ],
+  "Assets/Stroop/Runtime/ViveSyntheticAsyncReadableCsv.cs": [
+    "internal Action AfterFinishClaimForTest;",
+    "internal Action<byte[]> AfterCopyBeforeEnqueueForTest;"
+  ]
+}

@@ -56,7 +56,10 @@ namespace AvatarStroop.Runtime
                 manifest.Line("clock",TextCell(p.DeclaredClockId));manifest.Line(p.DesignVariant=="LEGACY_ABCD"?"legacy_design":"plan",TextCell(p.DesignVariant=="LEGACY_ABCD"?p.DeclaredLegacyDesignId:p.DeclaredPlanId));
                 manifest.Line("design_variant",TextCell(p.DesignVariant));
                 if(p.DesignVariant!="LEGACY_ABCD")manifest.Line("legacy_second_choice_local_observed_semantics","state:recorder_admission_enabled_at_owner_start_not_participant_input");
-                else manifest.Line("choice_times","state:separate_task_poll_eye_poll_and_owner_admission_in_VRAW4_manifest");
+                else manifest.Line("choice_times",p.OperatorWozRecordingDeclared?"state:separate_task_poll_eye_poll_and_owner_admission_in_VRAW5_manifest":"state:separate_task_poll_eye_poll_and_owner_admission_in_VRAW4_manifest");
+                if(p.OperatorWozRecordingDeclared){manifest.Line("control_mode","state:operator_woz_participant_local_recording");
+                    manifest.Line("network_times","state:independent_clocks_not_synchronized");manifest.Line("network_authentication","state:key_possession_not_hardware_identity");
+                    manifest.Line("remote_operator_cleanup","state:not_proven_by_participant_capture_terminal");}
                 manifest.Line("participant_choice_poll_times","state:see_participant_recording_software_choices_task_event_if_present_else_unknown");
                 manifest.Line("capture_terminal_declared",Bool(source.CaptureTerminalObserved));manifest.Line("trailing_frame_truncated",Bool(source.TrailingFrameTruncated));
                 manifest.Line("verified_bytes",I64(source.VerifiedBytes));manifest.Line("task_records",I64(source.VerifiedTaskRecords));

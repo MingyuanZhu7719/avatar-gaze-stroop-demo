@@ -11,6 +11,9 @@ namespace AvatarStroop.Core
         public Allocation Allocation {get;private set;}
         public string GeometryVersion {get;private set;}
         public string MappingVersion {get;private set;}
+        // Explicit before participant recording choices. The ordinary local
+        // recording design cannot be silently converted by a network packet.
+        public bool OperatorWozRequested {get;private set;}
         ViveLegacyRecordingDesign(string id,Allocation allocation,string geometry,string mapping)
         {DesignId=id;Allocation=allocation;GeometryVersion=geometry;MappingVersion=mapping;}
         public static ViveLegacyRecordingDesign Select(Actor actor,string id,Allocation allocation,string geometryVersion,string mappingVersion)
@@ -24,6 +27,8 @@ namespace AvatarStroop.Core
                 throw new ArgumentException("This recording version requires explicit BCAD, lists 0,1,2,3 and B initially Participant.");
             return new ViveLegacyRecordingDesign(id,allocation,geometryVersion,mappingVersion);
         }
+        public static ViveLegacyRecordingDesign SelectOperatorWoz(Actor actor,string id,Allocation allocation,string geometryVersion,string mappingVersion)
+        {var result=Select(actor,id,allocation,geometryVersion,mappingVersion);result.OperatorWozRequested=true;return result;}
     }
     public sealed class ViveLegacyRecordingIntent
     {

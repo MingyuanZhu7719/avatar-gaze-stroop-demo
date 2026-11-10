@@ -104,7 +104,7 @@ namespace AvatarStroop.Unity.Editor
                 var setupType=runtimeAssembly.GetType("AvatarStroop.Runtime.ViveNamedRecordingSetup",true);
                 var prepare=setupType.GetMethod("TryPrepare",BindingFlags.Static|BindingFlags.NonPublic);
                 Require(prepare!=null,"pure synthetic setup entry unavailable");
-                object[] setupArgs={true,System.IO.Path.Combine(System.IO.Path.GetPathRoot(Environment.CurrentDirectory),"synthetic-not-opened"),"32",new Func<string,bool>(path=>true),null};
+                object[] setupArgs={true,@"C:\synthetic-not-opened","32",new Func<string,bool>(path=>true),null};
                 var localChoice=prepare.Invoke(null,setupArgs);
                 Require(localChoice!=null,"pure synthetic choice setup unavailable");
                 Set(bootstrap,"recordingSetup",localChoice);Call(bootstrap,"RenderPreSessionChoice");

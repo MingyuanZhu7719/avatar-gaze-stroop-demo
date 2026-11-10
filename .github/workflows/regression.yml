@@ -42,3 +42,21 @@ jobs:
           exit $LASTEXITCODE
       - name: Run independent participant and operator simulators
         run: python scripts/integration.py --dotnet
+  woz-pairing-ui:
+    name: WoZ pairing UI (Windows CLR4)
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile and run isolated WoZ pairing UI fixture
+        shell: pwsh
+        run: |
+          dotnet build AvatarStroop.WozLanPairingUiTests.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./build/dotnet/AvatarStroop.WozLanPairingUiTests/Release/net48/AvatarStroop.WozLanPairingUiTests.exe
+          exit $LASTEXITCODE

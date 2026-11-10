@@ -59,22 +59,26 @@ namespace AvatarStroop.Runtime
         byte[] previous=new byte[32];
         // Build availability only. Exact directory authority, cleanup and
         // independent readback remain mandatory at their operation boundaries.
-        internal bool ProductionGateOpen {get{return ViveControlledRecordingBuildPolicy.Available&&(!admission.IsLegacy||ViveLegacyRawRecordingBuildPolicy.Available);}}
+        internal bool ProductionGateOpen {get{return ViveControlledRecordingBuildPolicy.Available&&(!admission.IsLegacy||ViveLegacyRawRecordingBuildPolicy.Available)&&
+            (!admission.SessionContext.IsLegacyWoz||ViveLegacyWozRecordingBuildPolicy.Available);}}
         // Completion retains a separate gate and still requires each OS
         // operation's own revocable reservation and truthful receipt.
-        internal bool CompletionGateOpen {get{return ViveControlledRecordingBuildPolicy.Available&&(!admission.IsLegacy||ViveLegacyRawRecordingBuildPolicy.Available);}}
+        internal bool CompletionGateOpen {get{return ProductionGateOpen;}}
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
         internal enum IntegrationFixtureScenario { Success, ParticipantWithdrawalBeforeRawIdentity, CsvBudgetFailure, WithdrawBeforeReport }
         const string IntegrationFixtureRoot=""; // Public source: no native fixture directory is authorized.
         const string LegacyIntegrationFixtureRoot=""; // Public source: no native fixture directory is authorized.
-        enum IntegrationFixtureKind { None, Named, Legacy }
+        const string WozIntegrationFixtureRoot=""; // Public source: no native fixture directory is authorized.
+        enum IntegrationFixtureKind { None, Named, Legacy, LegacyWoz }
         readonly IntegrationFixtureKind integrationFixtureKind;
         readonly IntegrationFixtureScenario integrationScenario;
         static int integrationFixtureCreated;
         internal IntegrationFixtureScenario IntegrationScenario {get{return integrationScenario;}}
         internal bool IsLegacyIntegrationFixture {get{return integrationFixtureKind==IntegrationFixtureKind.Legacy&&IsNativeFixture;}}
+        internal bool IsWozIntegrationFixture {get{return integrationFixtureKind==IntegrationFixtureKind.LegacyWoz&&IsNativeFixture;}}
         internal string ExactIntegrationFixtureDirectory
-        {get{return integrationFixtureKind==IntegrationFixtureKind.Legacy?LegacyIntegrationFixtureDirectory(integrationScenario):
+        {get{return integrationFixtureKind==IntegrationFixtureKind.LegacyWoz?WozIntegrationFixtureDirectory(integrationScenario):
+            integrationFixtureKind==IntegrationFixtureKind.Legacy?LegacyIntegrationFixtureDirectory(integrationScenario):
             integrationFixtureKind==IntegrationFixtureKind.Named?IntegrationFixtureDirectory(integrationScenario):null;}}
         ViveRawSessionJournalSink(ViveNamedSessionFrameAdmission admission,string directory,ViveRawByteBudget budget,
             IntegrationFixtureKind kind,IntegrationFixtureScenario scenario):this(admission,directory,budget,true)
@@ -108,7 +112,7 @@ namespace AvatarStroop.Runtime
         {
             // Validate the sealed source/design before even inspecting a path.
             if(admission==null||!admission.SyntheticOnly||!admission.IsLegacy||admission.SessionContext==null||
-                !admission.SessionContext.IsLegacy||budget==null)
+                !admission.SessionContext.IsLegacy||admission.SessionContext.IsLegacyWoz||budget==null)
                 throw new InvalidOperationException("An explicit synthetic legacy context is required.");
             string directory=LegacyIntegrationFixtureDirectory(scenario);
             if(!Directory.Exists(directory))
@@ -121,11 +125,33 @@ namespace AvatarStroop.Runtime
                 throw new InvalidOperationException("Only one integration fixture may be created per process.");
             return new ViveRawSessionJournalSink(admission,directory,budget,IntegrationFixtureKind.Legacy,scenario);
         }
+        internal static string WozIntegrationFixtureDirectory(IntegrationFixtureScenario scenario)
+        {
+            if(String.IsNullOrEmpty(WozIntegrationFixtureRoot))throw new InvalidOperationException("Native integration fixtures are disabled in the public source.");
+            if(!Enum.IsDefined(typeof(IntegrationFixtureScenario),scenario))throw new ArgumentOutOfRangeException("scenario");
+            return Path.Combine(WozIntegrationFixtureRoot,scenario.ToString());
+        }
+        internal static ViveRawSessionJournalSink CreateWozIntegrationFixtureForTest(ViveNamedSessionFrameAdmission admission,
+            ViveRawByteBudget budget,IntegrationFixtureScenario scenario)
+        {
+            if(admission==null||!admission.SyntheticOnly||!admission.IsLegacy||admission.SessionContext==null||
+                !admission.SessionContext.IsLegacyWoz||budget==null)
+                throw new InvalidOperationException("An explicit synthetic WoZ recording context is required.");
+            string directory=WozIntegrationFixtureDirectory(scenario);
+            if(!Directory.Exists(directory))throw new InvalidOperationException("A fresh fixed WoZ fixture directory is required.");
+            for(var ancestor=new DirectoryInfo(directory);ancestor!=null;ancestor=ancestor.Parent)
+                if((ancestor.Attributes&FileAttributes.ReparsePoint)!=0)throw new InvalidOperationException("Synthetic directory ancestry is unavailable.");
+            if(Directory.GetFileSystemEntries(directory).Length!=0)
+                throw new InvalidOperationException("A fresh fixed WoZ fixture directory is required.");
+            if(Interlocked.CompareExchange(ref integrationFixtureCreated,1,0)!=0)
+                throw new InvalidOperationException("Only one integration fixture may be created per process.");
+            return new ViveRawSessionJournalSink(admission,directory,budget,IntegrationFixtureKind.LegacyWoz,scenario);
+        }
         internal bool IsIntegrationFixtureFor(ViveNamedSessionFrameAdmission expected,ViveRawRevocation shared,string directory)
         {
             // The factory's immutable kind chooses the root. The supplied
             // path only compares against it and never selects an authority.
-            bool legacy=integrationFixtureKind==IntegrationFixtureKind.Legacy;
+            bool legacy=integrationFixtureKind==IntegrationFixtureKind.Legacy||integrationFixtureKind==IntegrationFixtureKind.LegacyWoz;
             if(integrationFixtureKind==IntegrationFixtureKind.None)return false;
             string expectedDirectory=ExactIntegrationFixtureDirectory;
             return IsNativeFixture&&expected!=null&&expected.SyntheticOnly&&expected.IsLegacy==legacy&&
@@ -491,7 +517,7 @@ namespace AvatarStroop.Runtime
                     ViveRawSessionJournalCodec.StatusPayloadV3(checked(expectedOrdinal+1),statusRecord);
                 if(first)
                 {
-                    byte[] headDigest;byte[] head=FrameForDesign(admission.IsLegacy?ViveRawSessionJournalCodec.ManifestPayloadV4(manifest):ViveRawSessionJournalCodec.ManifestPayloadV3(manifest),previous,true,out headDigest);
+                    byte[] headDigest;byte[] head=FrameForDesign(ViveRawSessionJournalCodec.CurrentManifestPayload(manifest),previous,true,out headDigest);
                     actualHeaderBytes=head.Length;
                     byte[] body=FrameForDesign(payload,headDigest,false,out digest);
                     frame=new byte[head.Length+body.Length];Buffer.BlockCopy(head,0,frame,0,head.Length);Buffer.BlockCopy(body,0,frame,head.Length,body.Length);
@@ -572,7 +598,8 @@ namespace AvatarStroop.Runtime
             }
         }
         byte[] FrameForDesign(byte[] payload,byte[] previousDigest,bool first,out byte[] digest)
-        {return admission.IsLegacy?ViveRawSessionJournalCodec.FrameV4(payload,previousDigest,first,out digest):ViveRawSessionJournalCodec.FrameV3(payload,previousDigest,first,out digest);}
+        {return admission.SessionContext.IsLegacyWoz?ViveRawSessionJournalCodec.FrameV5(payload,previousDigest,first,out digest):
+            admission.IsLegacy?ViveRawSessionJournalCodec.FrameV4(payload,previousDigest,first,out digest):ViveRawSessionJournalCodec.FrameV3(payload,previousDigest,first,out digest);}
         void Fail(ViveNamedSessionFrameAdmission.ConsumerReceipt receipt)
         {
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
