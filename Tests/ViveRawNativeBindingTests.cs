@@ -71,8 +71,10 @@ namespace AvatarStroop.Tests
             suite.Run("native identity fence rejects a capability or sink from a different binding",()=>{
                 using(var f=new Fixture())
                 {
-                    var sink=new ViveRawSessionJournalSink(f.Admission,@"C:\synthetic\first.vraw");
-                    var otherSink=new ViveRawSessionJournalSink(f.Admission,@"C:\synthetic\second.vraw");
+                    string first=Fixtures.ClosedRawSinkPath(),second=Fixtures.ClosedRawSinkPath();
+                    Fixtures.AssertClosedRawSinkPathAbsent(first);Fixtures.AssertClosedRawSinkPathAbsent(second);
+                    var sink=new ViveRawSessionJournalSink(f.Admission,first);
+                    var otherSink=new ViveRawSessionJournalSink(f.Admission,second);
                     var otherFence=new ViveRawIoFence(f.Admission,f.Revocation);
                     var ctor=typeof(ViveRawRelativeFileCapability).GetConstructor(BindingFlags.Instance|BindingFlags.NonPublic,null,
                         new[]{typeof(ViveRawIoFence),typeof(ViveRawDirectoryLease),typeof(ViveRawSessionJournalSink)},null);
@@ -91,6 +93,7 @@ namespace AvatarStroop.Tests
                     Check.True(f.Fence.BindWriter(writer));writer.Start();Check.True(writer.Join(3000));if(error!=null)throw error;
                     Check.True(!wrongSink&&!wrongFence&&correct&&verified&&current);
                     f.Revocation.Revoke();
+                    Fixtures.AssertClosedRawSinkPathAbsent(first);Fixtures.AssertClosedRawSinkPathAbsent(second);
                 }
             });
             suite.Run("verified native binding permits ordinary completion but not future operations",()=>{

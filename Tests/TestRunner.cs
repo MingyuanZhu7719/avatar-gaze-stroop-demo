@@ -30,6 +30,21 @@ namespace AvatarStroop.Tests
     }
     public static class Fixtures
     {
+        // The closed-gate compatibility constructor requires both a host-rooted
+        // canonical path and a colon at index 1. Unix /:/ is only an unopened
+        // test placeholder satisfying those predicates, not Linux recording
+        // support or a valid Windows file target. Never create its directory.
+        public static string ClosedRawSinkPath()
+        {
+            string root=System.IO.Path.DirectorySeparatorChar=='\\'?@"C:\":"/:/";
+            return System.IO.Path.GetFullPath(System.IO.Path.Combine(root,
+                "stroop-closed-sink-"+Guid.NewGuid().ToString("N"),"never-opened.vraw"));
+        }
+        public static void AssertClosedRawSinkPathAbsent(string path)
+        {
+            Check.True(!System.IO.File.Exists(path),"Closed sink created a journal file.");
+            Check.True(!System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(path)),"Closed sink created its parent directory.");
+        }
         public static Experiment New(ManualClock clock,Condition first=Condition.A, RunKind runKind=RunKind.Simulation)
         {
             string order=first==Condition.A?"ABDC":first==Condition.B?"BCAD":first==Condition.C?"CDBA":"DACB";
