@@ -61,6 +61,8 @@ namespace AvatarStroop.Unity
                 "Task ended. Review recording status and output paths below; faults or incomplete output remain unconfirmed.":
                 "Preview ended. No files were saved. Reopen the application to start again.";
             if(RecordingBlocked||ObservationBlocked)return "Task blocked. Review the fault below or withdraw the task.";
+            if(recordingSetup!=null&&namedRawPump==null&&recordingSetup.Current==ViveNamedRecordingSetup.Step.Cancelled)
+                return "Recording setup expired. No recording was started. Close this preview and configure a new session.";
             if(participant.RawRecordingRequested&&namedRawPump==null)return "Next: complete source checks, then start local recording below.";
             if(!rig.ViewRunning)return "Next: start the classroom view.";
             if(!ControllerUiReady||!participant.InputReady)return "Next: keep one wand connected, release the trackpad and trigger, and restore headset tracking.";

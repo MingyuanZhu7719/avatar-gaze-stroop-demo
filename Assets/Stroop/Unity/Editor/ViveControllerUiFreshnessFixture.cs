@@ -86,6 +86,7 @@ namespace AvatarStroop.Unity.Editor
                 HeadFlags(rig,false);owner.Poll(false);
                 Require(participant.InputReady,"display invalidation must not rewrite task/model input state");
                 Require(Property(setup,"Current").ToString()=="Cancelled","existing head-loss cancellation must remain effective");
+                Require(((string)Call(owner,"NextOwnerAction")).Contains("Recording setup expired"),"cancelled setup must explain its actual gate instead of asking for a replacement controller");
                 Require(!(bool)Property(owner,"ControllerUiReady")&&(string)Property(owner,"ControllerUiState")=="not checked","head-loss early return must not display cached ready");
                 string diagnostic=(string)Property(owner,"ControllerUiDiagnostic");
                 Require(diagnostic.Contains("headset tracking or focus is unavailable")&&!diagnostic.Contains("Right"),"head-loss early return leaked a prior controller diagnostic");

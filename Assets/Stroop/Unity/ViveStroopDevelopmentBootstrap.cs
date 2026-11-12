@@ -584,6 +584,12 @@ namespace AvatarStroop.Unity
             {
                 GUILayout.Label(rig.Status,recordingWrap);
                 GUILayout.Label(rig.CurrentHeadDiagnostic,recordingWrap);
+                if(device!=null&&device.DiagnosticSnapshotFrame>=0)
+                {
+                    GUILayout.Label("Controller routing check: frame "+device.DiagnosticSnapshotFrame+
+                        (device.DiagnosticSnapshotFrame==Time.frameCount?" (current).":" (previous; not a live connection check)."),recordingWrap);
+                    GUILayout.Label(device.LogicalDeviceDiagnostic,recordingWrap);
+                }
             }
             if(canReview&&ownerDiagnostics)
             {
