@@ -32,7 +32,24 @@ namespace AvatarStroop.Unity.Editor
         }
         static object Call(object target,string name,params object[] arguments)
         {
-            var method=target.GetType().GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic);
+            MethodInfo method=null;
+            foreach(var candidate in target.GetType().GetMethods(BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public))
+            {
+                if(candidate.Name!=name||candidate.IsGenericMethodDefinition)continue;
+                var parameters=candidate.GetParameters();
+                if(parameters.Length!=arguments.Length)continue;
+                bool matches=true;
+                for(int i=0;i<parameters.Length;i++)
+                {
+                    var type=parameters[i].ParameterType;
+                    if(arguments[i]==null?type.IsValueType&&Nullable.GetUnderlyingType(type)==null:
+                        !type.IsInstanceOfType(arguments[i]))
+                    {matches=false;break;}
+                }
+                if(!matches)continue;
+                if(method!=null)throw new InvalidOperationException("Ambiguous fixture method for supplied arguments: "+name);
+                method=candidate;
+            }
             if(method==null)throw new InvalidOperationException("Missing fixture method: "+name);
             return method.Invoke(target,arguments);
         }
@@ -56,6 +73,41 @@ namespace AvatarStroop.Unity.Editor
             Require(Get(owner,"device")==null,"UI freshness must not create or poll a device adapter");
             Require(Get(rig,"worker")==null&&Get(rig,"eyePump")==null&&Get(rig,"source")==null,"UI freshness must not create an eye source");
             Require(Get(owner,"namedRawPump")==null&&Get(owner,"namedRawDestination")==null&&!owner.RecordingEnabled,"UI freshness must not start recording or output");
+        }
+        static void UnconfiguredCancelledChoice(Scene scene,string stale)
+        {
+            GameObject cameraObject=null,originObject=null,viewObject=null,rigObject=null,ownerObject=null;
+            ViveStroopPreviewRig rig=null;
+            try
+            {
+                // A pre-configuration choice owns a fresh view with no task.
+                // Flipping configured=false on an already-rendered preview is
+                // not a real lifecycle and must not bypass the active-task guard.
+                cameraObject=Root("SyntheticUnconfiguredChoiceCamera",scene);var camera=cameraObject.AddComponent<Camera>();
+                originObject=Root("SyntheticUnconfiguredChoiceOrigin",scene);var offset=new GameObject("SyntheticOffset");offset.transform.SetParent(originObject.transform,false);
+                viewObject=Root("SyntheticUnconfiguredChoiceView",scene);var view=viewObject.AddComponent<WorldSpaceExperimentView>();view.Initialize(camera,AvatarStroop.Core.Actor.Participant);
+                rigObject=Root("SyntheticUnconfiguredChoiceRig",scene);rig=rigObject.AddComponent<ViveStroopPreviewRig>();rig.Configure(camera,originObject.transform,offset.transform,view);
+                ownerObject=Root("SyntheticUnconfiguredChoiceOwner",scene);var owner=ownerObject.AddComponent<ViveStroopDevelopmentBootstrap>();owner.Configure(rig,view);rig.ConfigureDevelopment(owner);
+                var setup=Setup();Call(setup,"Cancel");
+                Set(owner,"selectedDesign",3);Set(owner,"recordingSetup",setup);Set(owner,"recordingSetupDesign",3);
+                Require(!owner.Configured&&Get(owner,"participant")==null&&Get(view,"currentView")==null,
+                    "pre-configuration choices must not contain an active participant view");
+                HeadFlags(rig,true);Call(owner,"RecordControllerUiPoll",true,true,stale);owner.Poll(true);
+                Require((string)Property(owner,"ControllerUiState")=="not checked"&&!((string)Property(owner,"ControllerUiDiagnostic")).Contains("Right"),
+                    "unconfigured terminal choice bypassed invalidation");
+                Require(Property(setup,"Current").ToString()=="Cancelled"&&!owner.Configured&&Get(owner,"participant")==null&&Get(view,"currentView")==null,
+                    "cancelled pre-configuration choices created or replaced a participant view");
+                NoSources(owner,rig);
+            }
+            finally
+            {
+                if(rig!=null){Set(rig,"running",false);Set(rig,"headReady",false);}
+                if(ownerObject!=null)UnityEngine.Object.DestroyImmediate(ownerObject);
+                if(rigObject!=null)UnityEngine.Object.DestroyImmediate(rigObject);
+                if(viewObject!=null)UnityEngine.Object.DestroyImmediate(viewObject);
+                if(cameraObject!=null)UnityEngine.Object.DestroyImmediate(cameraObject);
+                if(originObject!=null)UnityEngine.Object.DestroyImmediate(originObject);
+            }
         }
         public static void Validate()
         {
@@ -98,11 +150,11 @@ namespace AvatarStroop.Unity.Editor
                 Require(!(bool)Property(owner,"ControllerUiReady")&&(string)Property(owner,"ControllerUiState")=="not checked","cancelled choice must not reuse readiness when head flags recover");
                 Require((string)Property(owner,"ControllerUiDiagnostic")=="Controller not checked in this update.","cancelled-choice early return retained an old diagnostic");
                 Require(Property(setup,"Current").ToString()=="Cancelled"&&participant.InputReady,"cancelled choice/model state unexpectedly changed");
-                Set(owner,"configured",false);Call(owner,"RecordControllerUiPoll",true,true,stale);owner.Poll(true);
-                Require((string)Property(owner,"ControllerUiState")=="not checked"&&!((string)Property(owner,"ControllerUiDiagnostic")).Contains("Right"),"unconfigured terminal choice bypassed invalidation");
+                UnconfiguredCancelledChoice(scene,stale);
+                Require(owner.Configured&&participant.InputReady,"separate pre-configuration fixture changed stale participant model readiness");
                 NoSources(owner,rig);
 
-                Set(owner,"recordingSetup",null);Set(owner,"configured",true);
+                Set(owner,"recordingSetup",null);
                 Call(owner,"RecordControllerUiPoll",true,true,"Synthetic current result");
                 Set(owner,"inputDiagnosticFrame",Time.frameCount-1);
                 Require(!(bool)Property(owner,"ControllerUiReady")&&(string)Property(owner,"ControllerUiState")=="not checked","cross-frame result was displayed as current");
