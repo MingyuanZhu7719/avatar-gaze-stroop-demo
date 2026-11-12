@@ -168,7 +168,7 @@ namespace AvatarStroop.Unity
             }
             Section("3  Review and connect");
             if(!offerReviewed){GUILayout.Label("A valid offer is required before permissions can be confirmed.",mutedStyle);return;}
-            GUILayout.Label(participantLocalRecording?"Saving on participant computer":"Recording off",sectionStyle);
+            GUILayout.Label(participantLocalRecording?"Participant-local storage requested":"Recording off",sectionStyle);
             if(participantLocalRecording)
                 GUILayout.Label("The participant computer may save mapped operator head/eye poses, source, time and status.",textStyle);
             GUILayout.Label("Participant answers, response times, ratings and raw eye data stay on the participant computer.",mutedStyle);

@@ -49,7 +49,7 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
     def test_unrecorded_notices_and_forwarding_action_remain(self):
         for text in (
             "DEVELOPMENT | Recording off | Alignment unvalidated",
-            'participantLocalRecording?"Participant-local storage permitted":"Recording off"',
+            'participantLocalRecording?"Participant-local storage requested":"Recording off"',
             "Hardware and alignment require validation. Authentication does not encrypt LAN messages.",
             'scope=GUILayout.Toggle(scope,participantLocalRecording?"Run a participant-local recording development test.":"Run an unrecorded development test.",toggleStyle);',
             'networkNotice=GUILayout.Toggle(networkNotice,"Allow authenticated, unencrypted messages on this isolated laboratory LAN.",toggleStyle);',
