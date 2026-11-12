@@ -56,6 +56,8 @@ namespace AvatarStroop.Unity
         Vector3 rawPosition;
         Quaternion rawRotation;
         string status=StoppedNotice;
+        string lastViewFailure;
+        internal string LastViewFailure {get{return lastViewFailure;}}
         GUIStyle label,button,panel;
         GUISkin ownerSkin;
         Vector2 ownerScroll;
@@ -238,7 +240,8 @@ namespace AvatarStroop.Unity
             GUI.enabled=previousEnabled&&worker!=null&&!stopping&&(development==null||!development.NamedRawCompletionActive);
             if(GUILayout.Button("Stop eye tracking",button,GUILayout.Height(45)))StopEye();
             GUILayout.EndHorizontal();GUI.enabled=previousEnabled;
-            if(xrCleanupUncertain||restartBlocked||RawInstallFailure||(!ViewRunning&&status!=StoppedNotice))GUILayout.Label(status,label);
+            if(!String.IsNullOrEmpty(lastViewFailure))GUILayout.Label(lastViewFailure,label);
+            if((xrCleanupUncertain||restartBlocked||RawInstallFailure||(!ViewRunning&&status!=StoppedNotice))&&status!=lastViewFailure)GUILayout.Label(status,label);
             GUILayout.Space(8);
         }
         public void BeginView()
@@ -249,9 +252,14 @@ namespace AvatarStroop.Unity
             {SetStatus("SteamVR was not prepared for this process. Open the outer VIVE preview launcher.");return;}
             if(previewCamera==null||trackingOrigin==null||cameraOffset==null||view==null)
             {SetStatus("Classroom scene references are incomplete. XR was not started.");return;}
-            if(development!=null)development.BeforeViewStart();
-            try{if(development!=null)development.PrepareInputBeforeXr();}
-            catch(Exception error){SetStatus("VIVE input setup failed: "+error.Message);return;}
+            // A new explicit start is the only point that clears the prior
+            // failure. Ordinary stop/cleanup must keep the first cause visible.
+            lastViewFailure=null;
+            try
+            {
+                if(development!=null){development.BeforeViewStart();development.PrepareInputBeforeXr();}
+            }
+            catch(Exception error){RememberViewFailure("VIVE input setup failed: "+error.GetType().Name,error);SetStatus(lastViewFailure);return;}
             starting=true;visibleMask=previewCamera.cullingMask;previewCamera.cullingMask=0;
             SetStatus("Starting the configured SteamVR OpenXR view. Eye capture has not started.");
             StartCoroutine(InitializeView());
@@ -262,11 +270,11 @@ namespace AvatarStroop.Unity
             if(manager==null||manager.activeLoader!=null){Fail("Expected an uninitialized OpenXR loader.");yield break;}
             ownsLoader=true;
             IEnumerator operation;
-            try{operation=manager.InitializeLoader();}catch(Exception e){Fail("OpenXR startup failed: "+e.GetType().Name);yield break;}
+            try{operation=manager.InitializeLoader();}catch(Exception e){Fail("OpenXR startup failed: "+e.GetType().Name,e);yield break;}
             while(true)
             {
                 bool more;object current=null;
-                try{more=operation.MoveNext();if(more)current=operation.Current;}catch(Exception e){Fail("OpenXR startup failed: "+e.GetType().Name);yield break;}
+                try{more=operation.MoveNext();if(more)current=operation.Current;}catch(Exception e){Fail("OpenXR startup failed: "+e.GetType().Name,e);yield break;}
                 if(!more)break;yield return current;
             }
             try
@@ -288,7 +296,7 @@ namespace AvatarStroop.Unity
                 headSequence=0;
                 starting=false;running=true;SetStatus("Put on the headset and follow the startup prompt. Eye capture is off.");
             }
-            catch(Exception e){Fail("Classroom view unavailable: "+e.Message);}
+            catch(Exception e){Fail("Classroom view unavailable: "+e.GetType().Name,e);}
         }
         void BeginEye()
         {
@@ -305,7 +313,7 @@ namespace AvatarStroop.Unity
                     clock,eyePump,new ViveProEyeRehearsalCoordinates());
                 SetStatus("Eye diagnostic starting. This does not start task or eye recording.");
             }
-            catch(Exception e){SetStatus("Eye diagnostic unavailable: "+e.Message);StopEye();}
+            catch(Exception e){RememberViewFailure("Eye diagnostic unavailable: "+e.GetType().Name,e);StopEye();SetStatus(lastViewFailure);}
         }
         ViveHeadFrame ReadHead()
         {
@@ -595,7 +603,7 @@ namespace AvatarStroop.Unity
                 }
                 finally{currentPump.EndFrame();}
             }
-            catch(Exception e){SetStatus("View error: "+e.GetType().Name);StopView();}
+            catch(Exception e){Fail("View error: "+e.GetType().Name,e);}
         }
         void StopEye()
         {
@@ -673,21 +681,29 @@ namespace AvatarStroop.Unity
             {development.RequestNamedRawStopForViewClose();SetStatus("Stop requested; task, eye or recording cleanup may remain pending. Presentation is blocked.");return;}
             StopAllCoroutines();starting=false;running=false;headReady=false;
             if(startupView!=null){startupView.Dispose();startupView=null;}
-            try{if(development!=null)development.BeforeXrStop();}catch(Exception error){Debug.LogWarning("Development task stop: "+error.GetType().Name);}
+            try{if(development!=null)development.BeforeXrStop();}catch(Exception error){RememberViewFailure("Task cleanup failed: "+error.GetType().Name,error);}
             StopEye();
             if(input!=null)input.trackingOriginUpdated-=OnTrackingOriginUpdated;
             try{if(ownsLoader&&manager!=null){manager.StopSubsystems();manager.DeinitializeLoader();}}
-            catch(Exception error){xrCleanupUncertain=true;Debug.LogWarning("XR cleanup uncertain: "+error.GetType().Name);}
+            catch(Exception error){xrCleanupUncertain=true;RememberViewFailure("XR cleanup uncertain: "+error.GetType().Name,error);}
             finally
             {
                 ownsLoader=false;manager=null;display=null;input=null;
-                try{if(development!=null)development.AfterXrStop();}catch(Exception error){Debug.LogWarning("Development input cleanup: "+error.GetType().Name);}
+                try{if(development!=null)development.AfterXrStop();}catch(Exception error){RememberViewFailure("Input cleanup failed: "+error.GetType().Name,error);}
                 if(previewCamera!=null)previewCamera.cullingMask=development!=null&&development.PresentationBlocked?0:visibleMask;
             }
             SetStatus(xrCleanupUncertain?"XR cleanup is unconfirmed. Close this preview; restart is blocked.":stopping?"STOPPING - waiting for native eye-client cleanup. No new samples are accepted.":
                 StoppedNotice);
         }
-        void Fail(string message){StopView();SetStatus(message);}
+        void RememberViewFailure(string summary,Exception error)
+        {
+            if(String.IsNullOrEmpty(lastViewFailure))lastViewFailure=summary;
+            // Exception messages may contain task payloads or local paths.
+            // Preserve the exception type and development call stack only.
+            Debug.LogError("VIVE view failure: "+summary+(error==null?String.Empty:"\n"+error.StackTrace));
+        }
+        void Fail(string message,Exception error=null)
+        {RememberViewFailure(message,error);StopView();SetStatus(lastViewFailure);}
         void RequestQuit()
         {
             quitRequested=true;
