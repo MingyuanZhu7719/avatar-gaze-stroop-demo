@@ -11,6 +11,27 @@ namespace AvatarStroop.Unity
     public sealed partial class ViveStroopDevelopmentBootstrap
     {
         GUIStyle ownerHeading,ownerNotice;
+        const string ControllerHeadUnavailable="Controller not checked for task input while headset tracking or focus is unavailable.";
+        const string ControllerNotChecked="Controller not checked in this update.";
+        // Display bookkeeping only. Do not poll physical input, mutate task
+        // readiness, grant recording authority or change confirmation edges.
+        void BeginControllerUiPoll(bool headReady)
+        {
+            inputDiagnosticFrame=-1;inputDiagnosticReady=false;inputDiagnosticHeadReady=headReady;
+            inputDiagnostic=headReady?ControllerNotChecked:ControllerHeadUnavailable;
+        }
+        void RecordControllerUiPoll(bool headReady,bool ready,string diagnostic)
+        {
+            inputDiagnosticFrame=Time.frameCount;inputDiagnosticHeadReady=headReady;inputDiagnosticReady=ready;
+            inputDiagnostic=String.IsNullOrEmpty(diagnostic)?"Controller input result is unavailable.":diagnostic;
+        }
+        bool ControllerUiChecked
+        {get{return rig!=null&&rig.HeadReady&&inputDiagnosticHeadReady&&inputDiagnosticFrame==Time.frameCount;}}
+        bool ControllerUiReady {get{return ControllerUiChecked&&inputDiagnosticReady;}}
+        string ControllerUiState {get{return !ControllerUiChecked?"not checked":inputDiagnosticReady?"ready":"not ready";}}
+        string ControllerUiDiagnostic
+        {get{return rig==null||!rig.HeadReady?ControllerHeadUnavailable:
+            !inputDiagnosticHeadReady||inputDiagnosticFrame!=Time.frameCount?ControllerNotChecked:inputDiagnostic;}}
         // Kept outside the scrollable setup/status body by the desktop rig.
         // These call the same authoritative safety actions as before.
         public void DrawOwnerSafetyControls()
@@ -42,7 +63,7 @@ namespace AvatarStroop.Unity
             if(RecordingBlocked||ObservationBlocked)return "Task blocked. Review the fault below or withdraw the task.";
             if(participant.RawRecordingRequested&&namedRawPump==null)return "Next: complete source checks, then start local recording below.";
             if(!rig.ViewRunning)return "Next: start the classroom view.";
-            if(!participant.InputReady)return "Next: keep one wand connected, release the trackpad and trigger, and restore headset tracking.";
+            if(!ControllerUiReady||!participant.InputReady)return "Next: keep one wand connected, release the trackpad and trigger, and restore headset tracking.";
             switch(participant.Phase)
             {
                 case Phase.Preparation:case Phase.PracticeRetry:return "Next: select Begin practice.";

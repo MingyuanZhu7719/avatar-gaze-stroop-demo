@@ -58,6 +58,8 @@ namespace AvatarStroop.Unity
         string status=StoppedNotice;
         string lastViewFailure;
         internal string LastViewFailure {get{return lastViewFailure;}}
+        string lastEyeClientFailure;
+        internal string LastEyeClientFailure {get{return lastEyeClientFailure;}}
         GUIStyle label,button,panel;
         GUISkin ownerSkin;
         Vector2 ownerScroll;
@@ -227,6 +229,8 @@ namespace AvatarStroop.Unity
             GUILayout.Label(stopping?"Stopping headset view...":starting?"Starting headset view...":
                 !running?"Headset view is off.":!headReady?"Put on the headset and follow its prompt.":
                 worker==null?"Headset ready. Eye tracking is off.":"Headset ready. Eye tracking client is on.");
+            if(running&&!headReady)GUILayout.Label(CurrentHeadDiagnostic,label);
+            if(!String.IsNullOrEmpty(lastEyeClientFailure))GUILayout.Label("Last eye-client failure: "+lastEyeClientFailure,label);
             bool previousEnabled=GUI.enabled;
             GUILayout.BeginHorizontal();
             GUI.enabled=previousEnabled&&!starting&&!running&&!stopping&&!xrCleanupUncertain&&!quitRequested&&(development==null||!development.RecordingBlocked);
@@ -301,13 +305,14 @@ namespace AvatarStroop.Unity
         void BeginEye()
         {
             if(!running||!headReady||worker!=null||stopping||restartBlocked||(development!=null&&(development.RecordingBlocked||development.PreSessionChoiceActive)))return;
+            lastEyeClientFailure=null;
             try
             {
                 string epoch=Guid.NewGuid().ToString("N");
                 hasSeenUsableEye=false;
                 HideGazeMarker();gazeContinuity.Reset();
                 worker=ViveProEyeWorker.CreateInstalled(clock,ReadHead);
-                if(!worker.Start())throw new InvalidOperationException(worker.Diagnostic);
+                if(!worker.Start()){RetainEyeClientFailure(worker.Diagnostic);throw new InvalidOperationException("Eye worker could not start.");}
                 eyePump=new ViveStroopEyePump(worker);
                 source=new ViveProEyeHeadEyeSource("vive-classroom-preview-"+epoch,0,0,"vive-pro-eye/operator/classroom-diagnostic-"+epoch,
                     clock,eyePump,new ViveProEyeRehearsalCoordinates());
@@ -508,7 +513,7 @@ namespace AvatarStroop.Unity
                 // Native cleanup may outlive the Stop action. Keep head view
                 // responsive and never dereference the now-cleared eye source.
                 if(stopping){ReadHead();if(development!=null)development.Poll(headReady);SetStatus("Stopping eye preview; waiting for native cleanup. No new samples are accepted.");return;}
-                if((development==null||!development.NamedRawPumpAttached)&&!worker.Starting&&!worker.Started&&!worker.Stopping){SetStatus("Eye client unavailable: "+worker.Diagnostic);StopEye();return;}
+                if((development==null||!development.NamedRawPumpAttached)&&!worker.Starting&&!worker.Started&&!worker.Stopping){HandleUnavailableEyeClient();return;}
                 if(eyePump==null)throw new InvalidOperationException("Eye pump unavailable.");
                 var currentPump=eyePump;
                 if(development!=null&&development.NamedRawPumpAttached)
@@ -604,6 +609,23 @@ namespace AvatarStroop.Unity
                 finally{currentPump.EndFrame();}
             }
             catch(Exception e){Fail("View error: "+e.GetType().Name,e);}
+        }
+        void RetainEyeClientFailure(string diagnostic)
+        {
+            if(!String.IsNullOrEmpty(lastEyeClientFailure))return;
+            lastEyeClientFailure=String.IsNullOrWhiteSpace(diagnostic)?"The eye client stopped without a diagnostic.":diagnostic;
+            // Provider exception text can include arbitrary messages or paths.
+            // Keep its complete native result report in memory for the owner;
+            // never copy that text, eye samples or identifiers into this log.
+            Debug.LogWarning("VIVE_EYE_CLIENT_FAILURE_RETAINED: review the owner panel for the first client report.");
+        }
+        void HandleUnavailableEyeClient()
+        {
+            if(worker==null)return;
+            // The asynchronous initialization failure must be copied before
+            // StopAndCaptureDiagnostics or a later head-only update replaces it.
+            RetainEyeClientFailure(worker.Diagnostic);
+            StopEye();SetStatus(lastEyeClientFailure);
         }
         void StopEye()
         {
