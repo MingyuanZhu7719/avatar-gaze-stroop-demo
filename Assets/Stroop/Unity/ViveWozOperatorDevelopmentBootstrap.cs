@@ -193,7 +193,7 @@ namespace AvatarStroop.Unity
             var oldColour=GUI.color;GUI.color=new Color(.055f,.075f,.10f,1f);GUI.DrawTexture(panel,Texture2D.whiteTexture);GUI.color=oldColour;
             GUILayout.BeginArea(new Rect(panel.x+16,panel.y+12,Mathf.Max(1,panel.width-32),Mathf.Max(1,panel.height-24)));
             GUILayout.Label("WoZ Operator",titleStyle);
-            GUILayout.Label(NetworkOpen?"CONNECTED  |  "+(ParticipantStorageDeclared?"Saving on participant computer":"Recording off"):"NOT CONNECTED",sectionStyle);
+            GUILayout.Label(NetworkOpen?"CONNECTED  |  "+(ParticipantStorageDeclared?"Participant-local storage permitted":"Recording off"):"NOT CONNECTED",sectionStyle);
             GUILayout.Label("Next: "+NextOwnerAction(),textStyle);
             if(closed||status.StartsWith("Connection rejected:",StringComparison.Ordinal)||status.StartsWith("Operator failure:",StringComparison.Ordinal))
                 GUILayout.Label(status,textStyle);

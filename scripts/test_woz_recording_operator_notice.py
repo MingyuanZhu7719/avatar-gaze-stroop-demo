@@ -49,7 +49,7 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
     def test_unrecorded_notices_and_forwarding_action_remain(self):
         for text in (
             "DEVELOPMENT | Recording off | Alignment unvalidated",
-            'participantLocalRecording?"Saving on participant computer":"Recording off"',
+            'participantLocalRecording?"Participant-local storage permitted":"Recording off"',
             "Hardware and alignment require validation. Authentication does not encrypt LAN messages.",
             'scope=GUILayout.Toggle(scope,participantLocalRecording?"Run a participant-local recording development test.":"Run an unrecorded development test.",toggleStyle);',
             'networkNotice=GUILayout.Toggle(networkNotice,"Allow authenticated, unencrypted messages on this isolated laboratory LAN.",toggleStyle);',
@@ -105,14 +105,14 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
         self.assertIn("process!=null?process.ParticipantLocalRecordingDeclared:offerReviewed&&participantLocalRecording", SOURCE)
         self.assertIn('view.SetFaults(new[]{ParticipantStorageDeclared?', SOURCE)
         gui = section("void OnGUI()", "void Close()")
-        self.assertIn('NetworkOpen?"CONNECTED  |  "+(ParticipantStorageDeclared?"Saving on participant computer":"Recording off"):"NOT CONNECTED"', gui)
+        self.assertIn('NetworkOpen?"CONNECTED  |  "+(ParticipantStorageDeclared?"Participant-local storage permitted":"Recording off"):"NOT CONNECTED"', gui)
         self.assertIn("Hardware and alignment require validation.", gui)
         for text in (
             "DEVELOPMENT | Participant-local recording declared | Alignment unvalidated",
             "The participant computer may save mapped operator head/eye poses, source, time and status.",
         ):
             self.assertIn(text, SOURCE)
-        for claim in ("Recording active", "Recording saved", "Recording complete", "Hardware verified", "Identity verified"):
+        for claim in ("Recording active", "Recording saved", "Recording complete", "Saving on participant computer", "Hardware verified", "Identity verified"):
             self.assertNotIn(claim, SOURCE)
 
     def test_existing_local_start_and_stop_controls_remain_explicit(self):
