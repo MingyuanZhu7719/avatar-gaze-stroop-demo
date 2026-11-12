@@ -19,7 +19,7 @@ The admission CAS operations cannot replace the revoked lifecycle state. No runt
 
 ## Repair
 
-Only `Tests/ViveSyntheticCommitWorkerTests.cs` changes executable test code:
+The worker-contract repair changes executable test code only in `Tests/ViveSyntheticCommitWorkerTests.cs`:
 
 - Terminal-result helpers retry **only `Busy`**, within an existing bounded wait. An unexpected `Queued` or acknowledgment still fails immediately.
 - Empty-ack assertions similarly distinguish contention from an actual unexpected acknowledgment.
@@ -39,9 +39,23 @@ Local verification before publication:
 
 The initial sandbox run failed only its two loopback-delivery cases; the log was retained and inspected before the authorized normal-environment full run. Instrumented copies and probe artifacts remain local and are not substituted for production source.
 
+## Separate simulator completion-handshake finding
+
+Subsequent PR validation passed all worker regressions but exposed a separate `fault-script` completion timeout. The operator had observed all 24 trials, then its current-task view became unavailable while the participant reached Rest. Its recovery latch remained set even though packet receipt and clock mapping continued. A 426 ms gap between operator journal acknowledgments is consistent with an owner-loop stall; the log does not identify whether scheduling or synchronous journal flushing caused it.
+
+This is an engineering completion-handshake problem: current live-control readiness is not the same as historical terminal evidence. The simulator previously required a currently usable Rest snapshot even after its receiver had correctly failed closed. Such a receiver is deliberately not revived by later packets.
+
+The simulator-only completion check now recognizes a terminal Rest snapshot accepted by the existing session/source/sequence validators, bound to the same scenario/session and first block, together with the full exact observed-trial correspondence and participant goal. This evidence is explicitly historical when the current task is unavailable. It is never used to restore avatar control, sample acquisition or source readiness. Safety-stop retains its current Paused-task and stop-ack requirements.
+
+The completion reports distinguish evidence kind and receiver state; timeout diagnostics retain goal-file presence and first-fault milestones. Missing task correspondence, required fault events or clock evidence still fails the integration check. This does not increase freshness thresholds or introduce automatic recovery.
+
+The engineering CLI's `completion-self-test` passed 29 assertions, including wrong-context rejection, unchanged safety-stop requirements, a real receiver latch and source suppression. All 84 Python tests and the ordinary two-process fault-script, safety-stop and killed-journal integration checks passed.
+
+A separate temporary host copy injected a 350 ms operator stall after all 24 trials were observed. All original scenario, export and journal checks passed through the historical-evidence path: recovery remained required, the final journal task was unavailable and acquisition stayed at 248, exactly its pre-stall count. The copy's separate source digest and compile inputs were recorded locally. It is not shipped. Initial probe-placement/MAX_PATH and post-verifier errors were retained; the successful network run's artifacts were verified without rerunning that successful scenario.
+
 ## Build and acceptance scope
 
-The runtime worker is included in normal source compilation, but it is a simulation-only component. This repair leaves it and all application files byte-for-byte unchanged. Its SHA256 remains `aa93af1e9c4f5ec0e5aae23d4c6e87ccd5ac902fda6703536828d43fdb366f75`.
+The runtime worker is included in normal source compilation, but it is a simulation-only component. It and all VIVE participant/operator application sources remain byte-for-byte unchanged. Its SHA256 remains `aa93af1e9c4f5ec0e5aae23d4c6e87ccd5ac902fda6703536828d43fdb366f75`. The separate engineering simulator host and Python integration driver change only completion evidence, diagnostics and self-tests.
 
 The existing reviewed participant and operator packages therefore require **no rebuild**. Their application source inventories and DLL hashes remain valid. This follow-up does not establish real VIVE, two-PC LAN, eye-tracking or completed-recording acceptance.
 

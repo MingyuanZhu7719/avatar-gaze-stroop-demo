@@ -1,6 +1,6 @@
 # VIVE interface validation - 12 November 2026
 
-**Post-merge CI correction:** the first `main` run at `2971d0e` failed two Ubuntu synthetic-worker assertions despite successful PR checks. See the [root cause and test-contract repair](synthetic-worker-ci-followup.md). Earlier pass counts below describe their stated local/PR runs, not that failed main run. Application source and reviewed player packages are unchanged by this test-only follow-up.
+**Post-merge CI correction:** the first `main` run at `2971d0e` failed two Ubuntu synthetic-worker assertions despite successful PR checks. Follow-up validation also exposed a separate simulator completion-handshake assumption. See the [root causes and engineering-test repairs](synthetic-worker-ci-followup.md). Earlier pass counts below describe their stated local/PR runs, not that failed main run. VIVE application source and reviewed player packages are unchanged; the standalone engineering simulator host and integration driver do change.
 
 This update starts from `c7cf1cc38b52bf21bfe1f4b311cf8e34ac752ea2`. It preserves the experiment protocol, fixed mapping, separate task/eye choices, explicit recording start, fault handling and existing Quest path. Published source excludes real records, private logs, vendor SDK binaries and player executables.
 

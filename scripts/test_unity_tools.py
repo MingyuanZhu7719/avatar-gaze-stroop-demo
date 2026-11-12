@@ -104,8 +104,12 @@ class UnityToolsTests(unittest.TestCase):
         with patch.object(integration.sys, "argv", ["integration.py", "--dotnet"]), patch.dict(compiler.os.environ, {"STROOP_UNITY_CONTENTS": str(self.root / "missing")}), patch.object(integration, "ROOT", self.root), patch.object(integration, "unity_tools") as discovery, patch.object(integration.shutil, "which", return_value="dotnet"), patch.object(integration.subprocess, "run") as run, patch.object(integration, "run_scenario"), patch.object(integration, "run_killed_recording"), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(0, integration.main())
             discovery.assert_not_called()
-            run.assert_called_once()
-            self.assertEqual("dotnet", run.call_args.args[0][0])
+            self.assertEqual(2, run.call_count)
+            self.assertEqual(["dotnet", "build", str(self.root / "AvatarStroop.Simulator.csproj"),
+                              "--configuration", "Release"], run.call_args_list[0].args[0])
+            self.assertEqual(["dotnet", str(self.root / "build/dotnet/AvatarStroop.Simulator/Release/net8.0/AvatarStroop.Simulator.dll"),
+                              "completion-self-test"], run.call_args_list[1].args[0])
+            self.assertEqual({"check": True, "timeout": 20}, run.call_args_list[1].kwargs)
 
 
 class TestSourcePartitionTests(unittest.TestCase):
