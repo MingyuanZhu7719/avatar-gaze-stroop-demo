@@ -233,6 +233,53 @@ def _acknowledgments(path, role):
     return result
 
 
+def _qualifies_for_kill(role, record):
+    assert role in ("participant", "operator") and record["role"] == role
+    return record["phase"] == "MainTask" if role == "participant" else record["acquired_count"] >= 20
+
+
+def _latch_qualifying_acknowledgment(role, records, previous=None):
+    """Retain witnessed progress even if an observer next sees a later phase.
+
+    Records must come from the role/sequence-validated stdout parser above.
+    This establishes an earlier durable context, not the phase at kill time.
+    """
+    if previous is not None:
+        assert _qualifies_for_kill(role, previous)
+        return previous
+    return next((record for record in records if _qualifies_for_kill(role, record)), None)
+
+
+def _acknowledgment_history(role, records):
+    phases = {}
+    for record in records:
+        phases[record["phase"]] = phases.get(record["phase"], 0) + 1
+    return {"count": len(records), "phase_counts": phases,
+            "qualifying_count": sum(_qualifies_for_kill(role, record) for record in records),
+            "maximum_acquired_count": max((record["acquired_count"] for record in records), default=0),
+            "latest": records[-1] if records else None}
+
+
+def _print_killed_failure_diagnostics(output):
+    """Bounded synthetic-process evidence, also useful for real acquisition stalls."""
+    for role in ("participant", "operator"):
+        path = output / (role + "-stdout.txt")
+        try:
+            records = _acknowledgments(path, role)
+            print("Killed-journal ACK history: " + role + " " +
+                  json.dumps(_acknowledgment_history(role, records), sort_keys=True), flush=True)
+        except (OSError, ValueError, AssertionError) as error:
+            print("Killed-journal ACK history unavailable: " + role + " " + type(error).__name__, flush=True)
+        try:
+            with path.open("rb") as stream:
+                stream.seek(0, 2)
+                stream.seek(max(0, stream.tell() - 4096))
+                tail = stream.read(4096).decode("utf-8", errors="replace")
+            print("Killed-journal stdout tail (at most 4096 bytes): " + role + "\n" + tail, flush=True)
+        except OSError as error:
+            print("Killed-journal stdout unavailable: " + role + " " + type(error).__name__, flush=True)
+
+
 def _sample_map(evidence, kind):
     result = {}
     for row in _kind(evidence, kind):
@@ -243,7 +290,7 @@ def _sample_map(evidence, kind):
 
 
 def run_killed_recording(launch, build, source_digest, release_startup):
-    """Kill two independent processes after observed durable acknowledgments."""
+    """Kill after durable progress acknowledgments; no active-at-kill trial claim."""
     output = Path(build) / ("integration-journal-killed-" + str(time.time_ns()))
     output.mkdir()
     barrier = output / "startup"
@@ -253,7 +300,7 @@ def run_killed_recording(launch, build, source_digest, release_startup):
         operator_port = _free_port()
     session = "synthetic-journal-kill-" + str(time.time_ns())
     environment = dict(os.environ, STROOP_BUILD_SOURCE_DIGEST=source_digest)
-    processes, handles, observed, kill_elapsed = {}, [], {}, {}
+    processes, handles, observed, kill_elapsed, histories = {}, [], {}, {}, {}
     endpoints = {"participant": (participant_port, operator_port), "operator": (operator_port, participant_port)}
     started = time.monotonic()
     try:
@@ -272,10 +319,14 @@ def run_killed_recording(launch, build, source_digest, release_startup):
             for role, process in processes.items():
                 assert process.poll() is None, (role, "exited before forced termination", (output / (role + "-stdout.txt")).read_text(errors="replace"))
                 acks = _acknowledgments(output / (role + "-stdout.txt"), role)
-                if acks:
-                    observed[role] = acks[-1]
-            if (observed.get("participant", {}).get("phase") == "MainTask" and
-                    observed.get("operator", {}).get("acquired_count", 0) >= 20):
+                histories[role] = _acknowledgment_history(role, acks)
+                # MainTask is transient. A delayed observer may read MainTask
+                # and Rest in one batch; the later ACK cannot erase proof of
+                # the earlier flushed context. No process/source gate is waived.
+                qualifying = _latch_qualifying_acknowledgment(role, acks, observed.get(role))
+                if qualifying is not None:
+                    observed[role] = qualifying
+            if set(observed) == {"participant", "operator"}:
                 break
             time.sleep(0.02)
         else:
@@ -286,6 +337,9 @@ def run_killed_recording(launch, build, source_digest, release_startup):
             process.kill()
         for role, process in processes.items():
             assert process.wait(timeout=5) != 0, (role, "unexpected normal completion")
+    except Exception:
+        _print_killed_failure_diagnostics(output)
+        raise
     finally:
         for process in processes.values():
             if process.poll() is None:
@@ -296,6 +350,8 @@ def run_killed_recording(launch, build, source_digest, release_startup):
         evidence_path = output / "observed-acknowledgments.json"
         evidence_path.write_text(json.dumps({"session_id": session, "source_digest": source_digest,
                                             "acknowledgments": observed, "kill_elapsed_seconds": kill_elapsed,
+                                            "acknowledgment_histories": histories,
+                                            "kill_timing_scope": "after_observed_durable_progress;active_trial_at_kill_not_established",
                                             "pids": {role: process.pid for role, process in processes.items()}}, indent=2) + "\n", encoding="utf-8")
         print("Killed-journal evidence: " + str(output), flush=True)
     recovered = {}

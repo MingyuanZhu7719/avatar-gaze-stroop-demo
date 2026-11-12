@@ -26,8 +26,15 @@ class PackageGuides(unittest.TestCase):
     def test_operator_discloses_mode_before_storage_acceptance(self):
         text=operator.start_here_text()
         self.assertIn('This operator does not record files',text)
-        self.assertIn('Import and review',text)
-        self.assertIn('separately accept participant-local storage',text)
+        offer='Paste the private temporary offer into Participant pairing offer'
+        review='Review and confirm the three permissions'
+        storage='For a recorded offer, explicitly accept participant-local storage'
+        connect='Click Connect to participant first'
+        for instruction in (offer,review,storage,connect):
+            self.assertIn(instruction,text)
+        self.assertLess(text.index(offer),text.index(review))
+        self.assertLess(text.index(review),text.index(storage))
+        self.assertLess(text.index(storage),text.index(connect))
         self.assertNotIn('Network WoZ recording/export is unavailable',text)
         self.assertIn('No participant answers, RT, ratings, raw eyes or files are sent',text)
 

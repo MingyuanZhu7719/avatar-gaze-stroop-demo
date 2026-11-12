@@ -184,6 +184,7 @@ namespace AvatarStroop.Unity.Editor
                 viewObject=new GameObject("SyntheticNamedPlanView");SceneManager.MoveGameObjectToScene(viewObject,fixture);
                 Require(viewObject.scene==fixture,"multi-block view not in fixture scene");viewObject.hideFlags=HideFlags.HideAndDontSave;
                 var view=viewObject.AddComponent<WorldSpaceExperimentView>();view.Initialize(camera,Actor.Participant);
+                view.SetQuestionnaireLanguage("en");
                 var mapping=Mapping();view.ConfigureViveDevelopmentPreview(mapping,.5);view.SetPresentationAvailable(true);
                 view.SetViveDevelopmentStatus("Synthetic named plan test; no research data or durable recording.","Synthetic controls only");
                 var avatarRoot=view.AvatarRoot;var head=view.AvatarHead.position;
@@ -304,6 +305,7 @@ namespace AvatarStroop.Unity.Editor
                 viewObject=new GameObject("SyntheticNamedNoAvatarView");SceneManager.MoveGameObjectToScene(viewObject,fixture);
                 Require(viewObject.scene==fixture,"view not in synthetic scene");viewObject.hideFlags=HideFlags.HideAndDontSave;
                 var view=viewObject.AddComponent<WorldSpaceExperimentView>();view.Initialize(camera,Actor.Participant);
+                view.SetQuestionnaireLanguage("en");
                 var mapping=Mapping();view.ConfigureViveDevelopmentPreview(mapping,.5);view.SetPresentationAvailable(true);
                 view.SetViveDevelopmentStatus("Named No Avatar: one-block synthetic simulation; avatar source not applicable; no durable recording.","Synthetic controls only");
                 var avatarRoot=view.AvatarRoot;var head=view.AvatarHead.position;
@@ -396,6 +398,7 @@ namespace AvatarStroop.Unity.Editor
                 viewObject=new GameObject("SyntheticNamedAutomaticView");SceneManager.MoveGameObjectToScene(viewObject,fixture);
                 Require(viewObject.scene==fixture,"view not in synthetic scene");viewObject.hideFlags=HideFlags.HideAndDontSave;
                 var view=viewObject.AddComponent<WorldSpaceExperimentView>();view.Initialize(camera,Actor.Participant);
+                view.SetQuestionnaireLanguage("en");
                 var mapping=Mapping();view.ConfigureViveDevelopmentPreview(mapping,.5);view.SetPresentationAvailable(true);
                 view.SetViveDevelopmentStatus("Named Automatic: one-block synthetic simulation; geometry unvalidated; no durable recording.","Synthetic controls only");
                 var avatarRoot=view.AvatarRoot;var head=view.AvatarHead.position;

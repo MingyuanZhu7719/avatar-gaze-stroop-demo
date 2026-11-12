@@ -1,0 +1,979 @@
+{
+  "baseline_commit": "c7cf1cc38b52bf21bfe1f4b311cf8e34ac752ea2",
+  "format": 1,
+  "files": [
+    {
+      "path": "Assets/Stroop/Core/AppLanguage.cs",
+      "sha256": "f3b3a532decfb2d2ae30ea964cc3f7e4c1540c8d1df5d8fb895ab61bfabfb096"
+    },
+    {
+      "path": "Assets/Stroop/Core/AuditExport.cs",
+      "sha256": "c1d669f5269bb76e49aa8df2a5bcb48bf1211243d3e892f1c382fdd8577af398"
+    },
+    {
+      "path": "Assets/Stroop/Core/ClockFault.cs",
+      "sha256": "74e5af70c4214d43be4e7e5f60a8db8166af7958910543b55b12219de170ccdf"
+    },
+    {
+      "path": "Assets/Stroop/Core/ContinuousJournal.cs",
+      "sha256": "4b06ec7b077682a2dcc7210db27ce62fb2b52bb190530e03aa45627dd4c1ef4b"
+    },
+    {
+      "path": "Assets/Stroop/Core/DevelopmentGeometry.cs",
+      "sha256": "e1290a7c05d8b02e64025681f3a0996f7aebef510251f4f9a5211050eab88717"
+    },
+    {
+      "path": "Assets/Stroop/Core/Experiment.cs",
+      "sha256": "4477c893998ca82d3d86850bcc98e2e5675104aba16c9881411f07a959e00673"
+    },
+    {
+      "path": "Assets/Stroop/Core/Experiment.LegacyWozRecording.cs",
+      "sha256": "6b9c8f79b1f297ed358b72370d27703e85849d489b933135134ad43a8ff177f0"
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentIncrementalBinding.cs",
+      "sha256": "67de79120339b9111128764feb1d036ec28b3c390972c4ecee9bd0e62eb00f19"
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentIncrementalObservation.cs",
+      "sha256": "bdae93b94eeda7ec10a029f520233f416e10602b220563f83bf4593bc59b605e"
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentIncrementalSnapshot.cs",
+      "sha256": "b440a46ec4d1e28dcba57212390f43ff28728a21333bc15b4d34e6167a62101a"
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentMutationJournal.cs",
+      "sha256": "ba5f4dcd16d9cd8bc3fb2df30869cc69ce82b21f023ec3f954117905d0334244"
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentMutationObservation.cs",
+      "sha256": "989c6cbe861481e44c3e788d4763d594de8f0f80efbc29c1d8315bb5a888b59f"
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentMutationTrialSnapshot.cs",
+      "sha256": "0dde4950ad21f9a8d1ec2e732c213ec8e1a2d35851369a88479acc1d812725af"
+    },
+    {
+      "path": "Assets/Stroop/Core/ExperimentPersistentTrials.cs",
+      "sha256": "45ebd1155b42eb9891ec5922609300900d2ff1181ee68afd4f92fab146aa2221"
+    },
+    {
+      "path": "Assets/Stroop/Core/GazeControl.cs",
+      "sha256": "eac9e5f65fc8fa9fe7cf33709b3b6e0323c4a02774d122bc7a000c8c07f435e5"
+    },
+    {
+      "path": "Assets/Stroop/Core/JournalEvidenceExporter.cs",
+      "sha256": "9a04122fabea5037279a851f8e9a7f4b14931aba24e8f23faf4567e9998a05c4"
+    },
+    {
+      "path": "Assets/Stroop/Core/ParticipantGaze.cs",
+      "sha256": "302b0bc263f526ba39267a4863e373988c21202abb9c497624daac92001b40ec"
+    },
+    {
+      "path": "Assets/Stroop/Core/Protocol.cs",
+      "sha256": "fad99c5bf56225db06ddcbb1f7b9fa0d29de25a1cebe8d1a4803c0c14b485d14"
+    },
+    {
+      "path": "Assets/Stroop/Core/Questionnaire.cs",
+      "sha256": "bba62407bf49f02ae6daa0e499cb0937a15ae429bebb79638345fa50a147dfa5"
+    },
+    {
+      "path": "Assets/Stroop/Core/SafetyStop.cs",
+      "sha256": "5f711e9953df3a94b6cc1b27ef23faac817b9cc8db39470c688bf75ea1faa0d4"
+    },
+    {
+      "path": "Assets/Stroop/Core/SimulationJournalCapture.cs",
+      "sha256": "59a7ad917f4b6b5e514cbe588d4f13780408ca7c25c6cab4601c4cec24c28f50"
+    },
+    {
+      "path": "Assets/Stroop/Core/Transport.cs",
+      "sha256": "f94cdda4d3755b76132236524e758273dd2db226266326e63255fa60b3cef733"
+    },
+    {
+      "path": "Assets/Stroop/Core/TrialPlans.cs",
+      "sha256": "fde5dc0e616a49030788bd4f4d57fdd6747494f344a846d6a8b2c38240d339ff"
+    },
+    {
+      "path": "Assets/Stroop/Core/ViveLegacyRecordingDesign.cs",
+      "sha256": "1c48aa2303ac697af43fd81096e948f420fb497953e617f6fd6cb99e6cd4929f"
+    },
+    {
+      "path": "Assets/Stroop/Core/ViveLegacyWozRecordingSchema.cs",
+      "sha256": "9ac5e082ec6761af14df01f82e96e779426bb22086a09d6a849a3d27e57af135"
+    },
+    {
+      "path": "Assets/Stroop/Core/ViveNamedSimulationPlan.cs",
+      "sha256": "81e4f91fcfaeb8916463e4a3406a1e83646e767713b577fefcf95381bb97182b"
+    },
+    {
+      "path": "Assets/Stroop/Core/WozAuthenticatedControl.cs",
+      "sha256": "4f4875cc5a5208aa29b6c1c63744b1f75b984791bd56b4c035a2fa2710bd1c35"
+    },
+    {
+      "path": "Assets/Stroop/Core/WozAuthenticatedLan.cs",
+      "sha256": "655fe82e881c05f8a7a89a76882242e652d0ea66182da4b214659eefbeaf61ab"
+    },
+    {
+      "path": "Assets/Stroop/Core/WozLanPairing.cs",
+      "sha256": "1ad210efed07321682fcc66ca649f9140a85a2a5f0d0fb32ea557249673675bb"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/DesktopPreview.cs",
+      "sha256": "39e52306697e3734819311284e189702877af9f3dc7e29c4c485bc3a9258be2f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/OwnerCommands.cs",
+      "sha256": "2820e0b3c9842fede5921891df80c0a04052607e80c81d6f931b97c5e0f3f54c"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/PresentationAuditSampler.cs",
+      "sha256": "bfdabd366232566b805d5d1a68d84c616d6df7e778c804d1c8fa45d5ca2d36dc"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/PreviewExportReceipt.cs",
+      "sha256": "3bddf97eb8a492414cab156fcd32d25adaa83a0c733e2a93376c6055aad3b6ad"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/PreviewRecovery.cs",
+      "sha256": "313363b47c48b798ccd1de2d72c2d29c0350b0a5b5e1cdd82bade7ebfba75761"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/PreviewRestartWorkflow.cs",
+      "sha256": "9094f8012c1669e7f760af339c88fae8598008277c7ca4ae76dab030b4ef3a73"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/QuestPreviewInput.cs",
+      "sha256": "8448cb9fe9a9dddf06cf85d13079bb7b96a3b17652ca49d378442cd145f395ae"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/SimulationApplications.cs",
+      "sha256": "d4b5ecdb5a38d946240ac42e1ba2f4940283b79e55802a99fbbe75d7be270e2d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/SimulationLifecycleFiles.cs",
+      "sha256": "5e819289515d39ac2f8186afa7a390a9baa2b4d47f7e43ffbf78a350c88b74ce"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/SrAnipalViveProEyeProvider.cs",
+      "sha256": "004e2511b0e42183154d680ee9bfe4b7d314c0682d1d52aa3670ccafa9059fd1"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveActualExperimentTrialBinding.cs",
+      "sha256": "f4e64c7feb5965a3c96d6c3c4244c8cb0120d0103b0b5756db2a837506a1a66d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveAuthoritativeIntentCandidate.cs",
+      "sha256": "13b1de37e6ee52b747a84cee23006cf69e723baabc81b05b12c3ae0dcb483123"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveAutomaticCondition.cs",
+      "sha256": "0490cfc153e3f1b01bf3681b0ec8133f4a81059534c7e0fd1a1295fc2c3ca1f9"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveBlockPlanRequest.cs",
+      "sha256": "100de31466fde4a58aeb696b8cc4c08531dfe50fbbdf5e634e8f51c585d68d0f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveControlledRecordingBuildPolicy.cs",
+      "sha256": "231eaccaeb5b6f8d0a61e52ef414b84888bab121b73e8b44c57e18204beddc37"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveControllerReadinessDiagnostic.cs",
+      "sha256": "24e31b7d162bfa211e54bd09f16e77a0a94552f4776ef5b7bf9e1300515badbc"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveCountdownIntentCandidate.cs",
+      "sha256": "b68bb5cb82cacce84f4c39a0a0182117e8dbec9468491ff44ffa4c4ec4384639"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentAnalysisEntry.cs",
+      "sha256": "81d820d5c382eac6ce3e29bfee07130a5d4ca6b7f99d4bd7e350dedd3f76a118"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentAppAdapter.cs",
+      "sha256": "a7ca90500702699f6bf72bf774a13107636a570a38584667062093beba365c94"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentExport.cs",
+      "sha256": "6561671a22f750cdaf58f1f6d3046c6bc611f50d6b3b5bbd93dc97db52afb49e"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentJournal.cs",
+      "sha256": "acf4c4c19f9a927be58e7db4ebddf8c178868d80a3a4648b574422048d069db0"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentJournalExtraction.cs",
+      "sha256": "f7661168d46a6c4bec95b523e0c9e290d9a8591df5efe139f86e5fea6894a07b"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentJournalSink.cs",
+      "sha256": "90b79bc5492a8d72b725c6aec7189c98e6d7ad650f0660a97b4f0e455744987b"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentParticipant.cs",
+      "sha256": "28256999c4e7f956f22c7999417d907f2b358114bacd0eba2477517c8506b520"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentParticipant.LegacyWoz.cs",
+      "sha256": "75a0df821836ea0ffe6bb500be98a3af2f2267f875086ba9cd5ae93095d74a15"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPeerController.cs",
+      "sha256": "2457fdd1ffad14842979473df31ef658b973089e7f502b82d3f86f211cec769f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflight.cs",
+      "sha256": "50ae4e5cc7baecefc45516b2d7fc109882e9203e1e5468c92115de332b32d020"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflightChannel.cs",
+      "sha256": "4e4243eb3674a94b8d50de4974c93e75c0da33c8abdd491d6c0a7836bcc9b478"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflightCoordinator.cs",
+      "sha256": "26e111b9f80cd83a5d0670862cc7cfa6a4bfff93cd3a7015f15a41bfc2105c33"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflightOrchestration.cs",
+      "sha256": "1df6bdf160efc35849f6ae45b104679cd611a5e25e81ca84aa2f7fefc0405956"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentPreflightWire.cs",
+      "sha256": "0b51ad87c7e0ec580d002807505ad17936f0f4e18cc2e2611a6265ed36b352fe"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentProvenance.cs",
+      "sha256": "444988beed24ecd70df3c049dd19f79dc41eec425c7becefb133ca10774ec0b1"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentReadOnlyAnalysisController.cs",
+      "sha256": "8038e7ecf11afd3ecf8d65ae9efa4fb491575f1360859d774c20f1fdf3f44581"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentStreamIdentity.cs",
+      "sha256": "be31d17d7dd5b31bfd036f41cb6d4842e5f7d382024cb2be1e5246db4ed46274"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveDevelopmentTransport.cs",
+      "sha256": "46a1b6e953b0977be3f8554c5717d6dd4729114983577b211b03c34808497ab6"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveExclusiveMemoryStore.cs",
+      "sha256": "18c375f28ae395e2e7c328083884a189ac8fea849beb7f4627a840d342873572"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveExperimentMutationCursor.cs",
+      "sha256": "0150adbfbf287eb5c0570de19fbbd084a77cb1fff686c720351d52912e835513"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveFixedTrackpadMapping.cs",
+      "sha256": "f82c6887a63e794c93e5876f190938f902eb7150d9067cc92fadcd4091a2fa96"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveInMemoryDatagramSocket.cs",
+      "sha256": "fa8a3fdc9e42620b4ee66fcbdbd728b1b642d880d5899dcd5af30066abad707e"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveIsolatedCommitCapture.cs",
+      "sha256": "354a3e2ad60f5e6e538f29677ce8038336516f205c4ed862e46c3038438539bc"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveJournalCoverageReconciliation.cs",
+      "sha256": "f9325a02d898357bb2e5670bd3a574b68fe2b8492a031fb2651b5d5f35876e40"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveJournalMemoryPreview.cs",
+      "sha256": "d67203d823be02f8b01a19c3cf8ac2082d8160e17450fbda66888af321d89262"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozBridge.cs",
+      "sha256": "a5d75e8d6c1fc943af4d04c514ecca2bb212c75f28a8a731b8ee49aecb36cae8"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozControlledScene.cs",
+      "sha256": "0f0114780d5ce26b6901a4c3070a20f5749ce99ff05ec44d1396a700a13d9717"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozMemoryJournalFixture.cs",
+      "sha256": "b67991e7c19bc03e5373ba53c937c1676d566cd199af640491ebe415a5e7bb43"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozObservationOwner.cs",
+      "sha256": "82e59ee8e6bddcc38723e841ed34a03dbe3e9d99c2134956fe5dbe1e95fafec8"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozOperatorProcess.cs",
+      "sha256": "887d98b8a5d31f0ffc6f6096a95ef931f9ee650ce77e32a80fb81c668e831089"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozParticipantProcess.cs",
+      "sha256": "9ae8c62187434168c30a4d1ad852234b6b98fc80d37374ee8107110edea8e65d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozProcessPairing.cs",
+      "sha256": "4a4400b88d1141ae6bae341d2224e566cbc596c875b8073888c8a91afee239f0"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozProcessTransport.cs",
+      "sha256": "5eaee38e926ca1fd30a91d941620bb583ff383c985559ad4f4368ca87c3f1a34"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozRecordingBinding.cs",
+      "sha256": "e2be2a426551e1b4e859c6fc87ac1ff6c27dff1b3b4af719b24c36313d67b354"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozRecordingPresentation.cs",
+      "sha256": "249918506e246e289f9201adf03a3f3c5284c2804ba2db7243922135ff457634"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozSourceChoice.cs",
+      "sha256": "f8a59dd0ee6784883047a16cee13ba78a746f543cbedefc8c5622f9371f7a3ff"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLegacyWozSourceLifecycle.cs",
+      "sha256": "b261f18cd9d06e73d4bf92d6ca61365faec19db44e2cf7cfa6abaf1c6decd522"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveLivePresentationAdapter.cs",
+      "sha256": "27b8ad97a337ae5562e7bfbc00a1dc11f8d2efcf0e2f0f048e80f567f3a36cf7"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveMutationCursorCandidate.cs",
+      "sha256": "1b26f28a28a20d692cb3a40a9038fac886c46f24dae99fec0782148dabfa0070"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedOrdinaryInputBudgetCandidate.cs",
+      "sha256": "b047eb3fca21496153b4cc4f5c22ca2a3b719ff768cbff6d16ff46cb823ff1d7"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedPlanTaskMemoryProjection.cs",
+      "sha256": "b39ca6a0041f66a93d0793a1c8e2123d4d83af17b55238a8d439904903e0b663"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedRawRecordingPump.cs",
+      "sha256": "746430bf5af12000cd23de3f98b320968dc7c1e380f8b67a9a174c16435eac7d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedRecordingSetup.cs",
+      "sha256": "e4f8c30f9997c9519e3bd4cea0108ba212f2bdee9e8d9d5b8153376ac963bdf6"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedRecordingUiAdmission.cs",
+      "sha256": "3c3af07addc16905381fab2a2ac1afc01b1573a0a3d5bebe3c7e3d0c84747131"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedSessionFrameAdmission.cs",
+      "sha256": "b7318a4b75f119869f729cfae29465293f44a66268046bb834e5f8ab53bb8507"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedTaskMemoryView.cs",
+      "sha256": "8d800d88554bfcc917da18f3fe1fd00ff8bfb2aa061c0d99abd4ed8168cdeff9"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveNamedTaskRecordSnapshot.cs",
+      "sha256": "b3af5aaa0e897095c75ced4b211e9ca7633fe06d7f376e37e30db65115363f00"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveParticipantEyeSource.cs",
+      "sha256": "93468e8e2ebbcaa2e22c41a39e994e46ba8f795389941050ab39e6678e529bb3"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveParticipantRecordingBridge.cs",
+      "sha256": "26193fbac784596b9b05fee2f421ad05780c640bd470b04fb05454a3fa471b01"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePersistentTrialMirrorCandidate.cs",
+      "sha256": "939cda4440abd5a89aa201c41589fb0fbc80d31fd694048dda6803d6a6aec2d1"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePersistentTrialTransactionCandidate.cs",
+      "sha256": "26f6f0b944c1a3f1b6cbbf2fedc5cb6d902be59fb2fc7f6000bec26604745dd8"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePersistentTrialVectorCandidate.cs",
+      "sha256": "6b3562c2383b8bff829de98d90cae967d655090bcad679f63c463452edcb36d3"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeConsentAuthority.cs",
+      "sha256": "ac8502164e954190aafe3d29014fea1399f33082f96f0a0f82eac6caf8be21f5"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeCreateNewFixture.cs",
+      "sha256": "b3d246ade3bc209cc18b8e808add5a4514bee76809a87f5ab3284abf5a11a433"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeEyeFencedSource.cs",
+      "sha256": "7387fd83d0e4c0e93e539ed062deab2fed68702215c323f629e74d5f67e677fa"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeEyeSource.cs",
+      "sha256": "fcb61a3cb3b91b3606267c339379a7b62eb2acf36207d1108ad74b6b4e25ae86"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeJournalV3.cs",
+      "sha256": "03aff78f9d9bc9fb17a792e701d25c71183359a7f11c97fdfd6e5e61ed46ee1a"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeJournalV3Reader.cs",
+      "sha256": "00734642ff7aa671bf665da341168240921bed8a134332803fcf4b39acd7f1f0"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeMultiBatch.cs",
+      "sha256": "cf8b1640a4a3582cb7ea960fce3db2b19b1046eb13c60f71257b67b8fc242c79"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeNativeTarget.cs",
+      "sha256": "acca1ebb01edeb9d803542dcf4aff346993f1526f63197c7d84f0e302c60dd82"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeOwnedMemoryStart.cs",
+      "sha256": "f8326ee1a4584779fca533a4f4f242a9ac0941893ad412e8dfda208a503e9a0d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeOwnedStartReceipt.cs",
+      "sha256": "e5c4abb3ec60b3a5fa6026498bd4b7ff42275dc1d0574de52340e1e1685b07d1"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticePreviewCoordinator.cs",
+      "sha256": "9dee10a1f96b3ba74e25631eb924d8dd8a668107eb6d64c8656573ec2f439287"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeRetryContinuation.cs",
+      "sha256": "88cf2c8534f28ae0b59b98a556b12d02b446afb82f4d0dde6e4f13f4aee83a53"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeRetryReleaseValidator.cs",
+      "sha256": "355d45f3ba4950e20f6f23ff7f6f698532e16fddccc6ac7cf255664689750a88"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartBatch.cs",
+      "sha256": "82de50d754dc31d536ddd861505df170cb33872eac24c04133589d50af4325f2"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartBinding.cs",
+      "sha256": "f9ec220278610f5070fce2567a6f1b735662946e45d38f4511b84b4727fa3ed6"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartEnvelopeCodec.cs",
+      "sha256": "3a78f48b1a62b95c282dee97280f18a2b43268cdb0f096c482d813974f3fb816"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartMemoryStage.cs",
+      "sha256": "e5d867dfa71d8b893ecd7a9f5399c79c5c61f0d4d3d8db389491041c98c524e6"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeStartReservation.cs",
+      "sha256": "5ebe060b2b98cc07fdd7428d109834255638a16f796367533e1e73170c3c124d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeSyntheticEyeJoin.cs",
+      "sha256": "6e471a9b4bcab77c5e83347d4c16dbe4e38f5ee24142d85230090444a73010b9"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeTaskEventCursor.cs",
+      "sha256": "da2d6521f5552e724c937819ca97c29fbc40608286bdfbc90e1ae1091112d363"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeTerminalValidator.cs",
+      "sha256": "3cfc11fdc53584b8053c2c6bb5a89f7b7a3d5542e2857536ff1e9d57c67fbb95"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePracticeWriteTicketFixture.cs",
+      "sha256": "f73634df6e5558570d8b8b542269818cab1e116c35db0cfe6873e0445c0b7d7b"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreSessionRecordingChoice.cs",
+      "sha256": "8e7ce53d899ffceb5f8704d6744f27d6cefde0ed314dd3d0189686060801346d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreviewDiagnostics.cs",
+      "sha256": "ed85c8a8104d4cd449e304dac89725f56338a404c7c6928c3c4b7cc79d61f3a6"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreviewLaunchPlan.cs",
+      "sha256": "e9fa90f591a055ee9561b8bc0335da670478a2b9874fa3dee80638e48e05b367"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreviewMarkerContinuity.cs",
+      "sha256": "6dee97a7924940ad748fe462acb2d928df7a624ea05ccb75733e07b945ee0a5e"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/VivePreviewTrackpadInput.cs",
+      "sha256": "4aa63c8f67877d12f1a19f1a0a732d127233dbd450222cd9380a651bfd4255eb"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveProEyeCapture.cs",
+      "sha256": "fc220f27168a11944176f65f1c71d051f084ea73a3314bb0ecad2cdc03c09338"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveProEyeSdkDirection.cs",
+      "sha256": "9bece411d9cb56a7da3f2bc67319bdb0ea8c72e2eed2d1068ad848bf796ee059"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveProEyeWorker.cs",
+      "sha256": "80dbefc954fb7c3a78d99fccf43358feb6cb39f08c21d18bfd0d9d737d9f7854"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveQuestionnairePresentation.cs",
+      "sha256": "4c04d675975eda8eb04460117b7294ddcfa27784151c2a4ff67d03435967d720"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawByteBudget.cs",
+      "sha256": "c70dcb00974b9e96389b9d9544ecc9de3c6daa6ac71aae21ffbae9ccf43a880f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawDirectoryLease.cs",
+      "sha256": "78702912042f2696f621c5821d3e5726cbf145859ff401ac8eb84d93ce12cde9"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawExclusiveDestination.cs",
+      "sha256": "bbcaf4fc7c0b7222f0d2a2d50e547f6a3f9a574beff89fdb549a0a6b7c283938"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawFileId.cs",
+      "sha256": "f470c3d717db70e3a2d17c125aaf4de14dc679b2b0149d6a3fda78ccb0992a83"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawIoFence.cs",
+      "sha256": "5104782a761fc6d25d67161d9b5f8dee223c3fb37d52c57d93bcbb36703b0666"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawNativeOutputStorage.cs",
+      "sha256": "b3bd3f02d58e036e47cdc787a1e7e1b63bf4e10a8867af7029c988d19e09e108"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawPanelPolicy.cs",
+      "sha256": "b414d676e96f4bcb2600396eaf3496c5b861d1c5318d31a5850dedd88c93a753"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawPostCloseIdentity.cs",
+      "sha256": "00351d1078dfd61b677b2621655fa474f33906b44d69170382d1fc62ad6d0cbf"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawPreparedPlan.cs",
+      "sha256": "0d969fbf3a2f84252280323e351e2d877519582efbdab5caf3cc519be2122501"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawPrivateStage.cs",
+      "sha256": "c627f8b4bb91e8e9f2ea0bbc729dea641cde40608ed130c4bb6a310c17f5b660"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawReadableAnalysisCsv.cs",
+      "sha256": "e16511f745e2cff7f4a580c935484022c0b63d7858d0ecec4661d6c77361bc86"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawRecordingPresentation.cs",
+      "sha256": "bf16120c22b740bb4646ca339a34e88f8cec6dc82dbacf49cda21dabb595edcd"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawRelativeFileCapability.cs",
+      "sha256": "36aad7315b14d4c30c351b4b9f197afc5e71853d749e86bf1078005d3176a02e"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionContext.cs",
+      "sha256": "dd7fdda7bbce6b5c06d99c36db1c4843839de1787b4fd0f09eacb3a9e6c2caa1"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionEvidenceController.cs",
+      "sha256": "3992a3b5dd9865d3f56914f29c7ecfc789b5c349149c77e469080b6939a97898"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionJournalCodec.cs",
+      "sha256": "bbe5821dc46839704520e1e208ea19effbe83c9719c256d756c31f4798edd495"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionJournalReader.cs",
+      "sha256": "e26b0a16555e40d860656e70a1bccfdd811638034687aec6aa0043cb99ed85af"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionJournalSink.cs",
+      "sha256": "5b889deaefe3aeaf08d14bd7b9f800292747591c79d6b8425d4c25774f3bb056"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSessionStreamExport.cs",
+      "sha256": "02581321f5b52cbed21bfbf566ccb5c6c45995087ec447092174f8172137c765"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawSiblingStream.cs",
+      "sha256": "61ccdf05edcb214296041866ecb39f7420db9815b493ecb27d37652469ce0bb8"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawTaskFrameMeasurement.cs",
+      "sha256": "4fc22a0da29c533a9f2926e6d6d7d6d592d9c324797cf854a06e4d464b41811b"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawTrialProjection.cs",
+      "sha256": "51259a2510eebc9d5023888fc8bf6012c668a93836bc493f7a9fe4b28cff2a9e"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRawTrialReport.cs",
+      "sha256": "dca5965009002fe5f09f072203e80a7eda34d7f04ecbfcb25f2ff522b7c49128"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRecordingSessionCoordinator.cs",
+      "sha256": "9cad189b28d9b2fc633e1ff52bc31dd1e22c9fb9ac98a92a806982d7e744c0a8"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRecordingSinkPort.cs",
+      "sha256": "f2f609fc9181ef13f54bb44889a2592ac4717383ffb377284824bc93e78a5828"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveRenderProxyObservation.cs",
+      "sha256": "0d92e16f0e68012bddaaa0f10f8f99bd05815e689c5947c043674f056aa10ac5"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSelectedJournalEventCsv.cs",
+      "sha256": "30460de33db3a7f25088a479bf303e9e75617cc4111813fc1b653e1961a05d12"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSelectedSessionIntegrity.cs",
+      "sha256": "ac2a8e8c42066364da99dd096fb84151f80bb3e0a6bfaa8cc228ac575ed0b0a2"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSessionEvidenceAnalyzer.cs",
+      "sha256": "a73b0d519e4ea16c8320a1f3d2b7688ec2968579e637686a39f268d2f3c16bb4"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSessionEvidenceController.cs",
+      "sha256": "2f32820fa5955710234dc12f49dcaa0bf95ddfb247714a72fee626e52bb0cb9d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSessionFrameScanner.cs",
+      "sha256": "9448802261818ec5590f1b6394c0ad9c24f7f3d20c6799ee1d81483d6de5accb"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSessionJournalAsyncWriter.cs",
+      "sha256": "991f49928b8cfafa41aafec719d512a66092e8c72361550d0451410254e41f20"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSimulationTrialPose.cs",
+      "sha256": "98e52526d85c6265644a5a701db2976b992017db5eaed00abe68b6812a913960"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSingleControllerSelection.cs",
+      "sha256": "6af8c32951e9b0c9d840acdad8bfc853a1bf6f927ccd8a02e0876bb312e9be1f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveStartPoseStability.cs",
+      "sha256": "6781e91f38a11706ddd0968d463c00e9268337b022e2434ab244c54e43de322f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveStartupAlignmentGate.cs",
+      "sha256": "ab4cc5c22ac19b372b4745a287081cffc11396968c1b3adf47f34cbf05d4e237"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveStroopSafetyMenuGate.cs",
+      "sha256": "d2fd41a0a97d0b873b417c91138e932d8ca0e15ecea5f197ab38c1c93ffcc8be"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticAggregatePump.cs",
+      "sha256": "866dacd18a72cc551dd8888623e8ba2c2e1c327e5773baac8376e53a43616beb"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticAsyncReadableCsv.cs",
+      "sha256": "9f82e48258ec79b5fa299f6bede985eecad7b0531d785824f3ebca09603d1464"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticBlockTransaction.cs",
+      "sha256": "d5c0687b1d451f48272486f267f9b4e33f7fd3512aafb0f7c525e43cf1c0a698"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticCommitWorker.cs",
+      "sha256": "aa93af1e9c4f5ec0e5aae23d4c6e87ccd5ac902fda6703536828d43fdb366f75"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticMarkPresentedBudget.cs",
+      "sha256": "3182448f411642e102c96a4e5bcfc408d663387517696206690786b80f090742"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticReadbackTee.cs",
+      "sha256": "ace4b93d908c0e039e77c3f288ece544ac327e62af08bc62efa535c21b9df73f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticSafetyLatch.cs",
+      "sha256": "f1f3221eb409880218f63a65a35cb12cd6718fb32cce77fda9b2c240efecea0f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticSessionJournalReader.cs",
+      "sha256": "fe2fcdf4c15fdb71cd29a3156ebe47ab80289c59253615fb945297ded4db976a"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveSyntheticStreamExport.cs",
+      "sha256": "a9b29160cf926508e05952ac2e859a7bc2360012ed28ae8a475f1a497851c6bf"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveTaskEventWindowCandidate.cs",
+      "sha256": "abe7fe378dbf7b23ce2c0735b472494e2296b070598c55b9cc94970644408512"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveTlsSimulationCandidate.cs",
+      "sha256": "84845420285156ce94ea001bf6c05e9d8cba834cd50339f6fd22ba3a65298f21"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveTrialOpenRequest.cs",
+      "sha256": "6cdb0dd9ce0dab3e81c77007b90a0b467b50a7d4fda24469ef3e3ab3d2fef59e"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveTrialTransactionCandidate.cs",
+      "sha256": "46b8ae56e48aa7d4ffbb7fc4f26d29f5d8d991dbb9874ff3ce88b13581c87ddc"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozAuthoritySeamCandidate.cs",
+      "sha256": "e98ea040995110d9bf709477053e3b389f841371dacb8f40330bc9a553e5779c"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozEngineeringPeer.cs",
+      "sha256": "92a8af7ee864aa8dce32eaebb7aafe21b345ec8c1d87be4fabbb3bcdeaf03cfa"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozFrameMapper.cs",
+      "sha256": "ec6b08f200671336ab69e10ae1c6a7662f73706cf7882b10cbd111a310660ccc"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozOperatorSourceFactory.cs",
+      "sha256": "305de8b3f14d976a40fb1ac149cec7c778197cbed8d68c707d6640f6f74adfc1"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozOperatorTaskView.cs",
+      "sha256": "829f2679d639b4c033a9bf970d1bc3f8a1a921c1df26c5d13a769cd55a2b5795"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozParticipantHost.cs",
+      "sha256": "492166e73de036c1046eb1adb83fe8bb7200ff3d8e738910a5cde13bf43a9052"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozPreflightSamplePump.cs",
+      "sha256": "2e60ec6029f73eda9eb9350c49f09a4680409f588443f5a4399d7a639f956d5f"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozPresentationPolicy.cs",
+      "sha256": "aea877849db89ced2a43d030e8f30dd98ac2444518ce1b7489df0c4528305e6d"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozReferenceAlignment.cs",
+      "sha256": "b49b0565256631b438697f6f94085142e0cccab3de4a246330e71146d8c00e57"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/ViveWozSourceConfirmation.cs",
+      "sha256": "cde4148db2539b79e5969a471a053c24a6a053547bf10eee472875228b55a605"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/WozAuthenticatedDiagnosticTransport.cs",
+      "sha256": "8f4f61df9bda535ad163f8f4b5af32176ee30fd772c388526b625e5a4cc337e0"
+    },
+    {
+      "path": "Assets/Stroop/Runtime/WozSyntheticLanDiagnosticSession.cs",
+      "sha256": "83f7d815866833352edd4d9893e640c96700cd5ec03c36badc23119f1c79aa2c"
+    },
+    {
+      "path": "Assets/Stroop/Unity/AvatarPresentationObservation.cs",
+      "sha256": "cbb83c8d0ab43d8db9b0521c25c313074c6dc5f99e2881abcf30c315e8afdd99"
+    },
+    {
+      "path": "Assets/Stroop/Unity/AvatarRenderWitness.cs",
+      "sha256": "1503ebda785f5e01bada338d5b42657266b5725e56d13c159dff1f0f10010f32"
+    },
+    {
+      "path": "Assets/Stroop/Unity/DevelopmentApplicationBootstrap.cs",
+      "sha256": "4d90bf494789e450e6486e74ecb90b10cab9bf8ca3d0d8a09aa57887d5acc671"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ClassroomPresentationValidation.cs",
+      "sha256": "7164d553d542c64efa8c4d2ac22d0b6aea1f5c3c754a881b532721b9f3505f51"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/DevelopmentPlayerBuild.cs",
+      "sha256": "ab9b999b5acbf29df8f0b2d703fc9c2cf1e45f95411c91d6455a05cc2e7eee28"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/DevelopmentSceneBuilder.cs",
+      "sha256": "eab650ccd3736d5735a7bf7e31b7860cc7c5c4be78b93014ed71b9dffd5b79be"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/QuestPreviewBuild.cs",
+      "sha256": "9a18d6962ca8cf40b580c2761f3060c79fd4fe8f17142d630a9fdf7d612458b2"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveEvidencePanelIsolationFixture.cs",
+      "sha256": "151c423d187f9b3dc4d5aa6fd09d59fd0e6e73e6a0d40746572d6fd42f2571b6"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveLegacyRecordingPresentationFixture.cs",
+      "sha256": "eae7084d24e81d862eb98a167566b83078deadcc047ef5715d5ba3e546d338f0"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveLegacySceneConfigurationFixture.cs",
+      "sha256": "03679f9758b6c73760d38c17b1e31841e6411a1443d5a1b4bdfd090679f7cc8d"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveNamedAutomaticPresentationFixture.cs",
+      "sha256": "8448c968ff267d6d592caf22800325f18bd4edd56861933cff5bb8f927b60167"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveObservationCameraFixture.cs",
+      "sha256": "32e3cfa2ab2361daff3c3cd9cfef5081b325b74de2f0525f82972dd786cf710a"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveOperatorOwnerUiFixture.cs",
+      "sha256": "0521fed0d2ff2cc2e85164c7da836a9b580d808981eb4e4a2782762ad78a279f"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveOwnerFlowFixture.cs",
+      "sha256": "aa319d29553f77f0b0f6a10605db8ace965ff00b9888038528d15af523db6b3c"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveOwnerUiRegressionFixture.cs",
+      "sha256": "b271dcbe05ebe60deac95359c623fb521c6e36cafb9cae122de170e28a6f77e7"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/VivePreSessionChoiceFixture.cs",
+      "sha256": "c19fed570d4c2dfd7fdec682b6cec3a83a6538debbfff115c41f21cc4a148d32"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveProEyePreviewBuild.cs",
+      "sha256": "2fd3a8134afb811af5ac0ececac1cc87dffc3400dc966ffc963de9f83754ea98"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveRawPumpSafetyFixture.cs",
+      "sha256": "ed78c44f239732f1976ee0fd6546e8673a8b751d7c8e80c9b92dbe713428fdd5"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveSafetyMenuPresentationFixture.cs",
+      "sha256": "143dc933e039156b20f01fa9c03e775eb3f21cc0d78848e509a25e9dd7a204e5"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveSingleControllerFixture.cs",
+      "sha256": "66981035d72e1254b4f70617aa9827f1e50c7a9b19bfb3ae485b8ddc8b3cee6b"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveStroopPreviewBuild.cs",
+      "sha256": "6a68b8e330f3543195b03587c55470a900bd10063bc3016f9a7a324779827475"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveSyntheticFixtureIsolation.cs",
+      "sha256": "323f3fd651a13c131b8b7d393e5c89e6587b3c861504dd8d7415d4e25717a50d"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveWozEngineeringOperatorBuild.cs",
+      "sha256": "657c18862a5a683a8cd4b9dba4a99b71484d94b2ea38afac1efceee728547c28"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveWozEngineeringParticipantBuild.cs",
+      "sha256": "2fd9445c04d31a141dc26214c2085b36ec4dba98d2165742a1507acedd73b907"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveWozEngineeringParticipantFixture.cs",
+      "sha256": "f8a6ca649f2e1134f54e83102695e8834f7cc8aba155ed17334c9910aa1786b7"
+    },
+    {
+      "path": "Assets/Stroop/Unity/Editor/ViveWozOperatorDevelopmentBuild.cs",
+      "sha256": "68cfc4c1336234d275fb86a7add6e75e61a81c759c05abeb61a4a7f3da87f4b6"
+    },
+    {
+      "path": "Assets/Stroop/Unity/QuestLinkPreviewRig.cs",
+      "sha256": "2778e84583e1ab955d04119ed991378f636119b99a77c937690334ab194aa755"
+    },
+    {
+      "path": "Assets/Stroop/Unity/QuestPreviewStartAlignment.cs",
+      "sha256": "adcbfb656539b7292d8899d66be4721d621edf53cd48dce7056a4fbbeabec5ff"
+    },
+    {
+      "path": "Assets/Stroop/Unity/QuestPreviewStartupView.cs",
+      "sha256": "dcae057516e929cd7be7812a09cbbde70c969339fef24ecf59900befbd17c713"
+    },
+    {
+      "path": "Assets/Stroop/Unity/StimulusRenderWitness.cs",
+      "sha256": "3fe3824f7bfd5d4c2afa0bcbfffc169cd22bf00954619066d08a4d224c61eb6d"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveLegacyWozRawSceneAcquisition.cs",
+      "sha256": "15de623ee3e2ad1b61c22e0c4c69844d0520e9e4cfe79db58335903391c617bf"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveOwnerDesktopLayout.cs",
+      "sha256": "d390018f5386c15cf3e2c9d786ec1a89b1d20eaf159472430fb0bd0acf3b3067"
+    },
+    {
+      "path": "Assets/Stroop/Unity/VivePreviewStartAlignment.cs",
+      "sha256": "325fbfcb34c0fe3919d5656730e81ea3db3ce4397c210851328d94f041856cac"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveProEyePreview.cs",
+      "sha256": "ba80992dc217d91741f395d37f88aaa4a9731517ca9a507b54fe98aea1aa645a"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveRawPanelRenderWitness.cs",
+      "sha256": "2cffd57f1ef244efa16702da7c18d2a65147ae632e2c52aee5f0ee3bd6055d73"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveRawSessionEvidencePanel.cs",
+      "sha256": "3465e7090cac4a7535c15804af9b50638358cb8c346970cb899565a4b4449c60"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveRecordingChoiceRenderWitness.cs",
+      "sha256": "727d743777d77e85d364cb6e921efd594830ea034ff84926fa99953e5818945f"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveSessionEvidencePanel.cs",
+      "sha256": "0cc51db498b9c635ef27ca3573c8b261ed1e08b51aafee41d8ef2eff98d11425"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStartupView.cs",
+      "sha256": "94d499382e48db7f0d4c672a41d3435cc6a9535e10f58b0a180265f26f5baa73"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.cs",
+      "sha256": "3724f0eec53e80aaeea05e6eb6a8dbc1b5eb310838da78778c9e444279a90351"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.LegacyWozScene.cs",
+      "sha256": "9b90d7e89e68bc822255fd4a9c4ab3d4ea87275668119017987bed2aabce7f33"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.OwnerUi.cs",
+      "sha256": "826d520d75e13caa1ceef3e11c43ab4f5cac9caa1e79ba7302cef5934d50cb30"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopDeviceInput.cs",
+      "sha256": "40e5b95ebb52433b1ac9e3dcfeff6e1834844db1244594c28813cb35c7f6f447"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopPreviewRig.cs",
+      "sha256": "4cbef7977325b4a845a4b7b461b20b724823ddfc826afe1d7d81333228636063"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveStroopRecordingController.cs",
+      "sha256": "8a312810264461aff70c2d5b3dd0a41cfcf0ca8e558b849b7596f19122830948"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveVerifiedPresenceFeature.cs",
+      "sha256": "24a28cf8069eddbce93276d6daf2f4a220a5422699e79202f4fbc95ae3524e54"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozEngineeringOperatorBootstrap.cs",
+      "sha256": "495afc5b4482b142b7d24f93ab4a884650fe985b59219d12478ff548864f5ef8"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozEngineeringParticipantBootstrap.cs",
+      "sha256": "0e97a5deb280c93b072dba7bcb00e78ba9d6c5feccc81c39b6ec1521fbe59f17"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozEngineeringXrLease.cs",
+      "sha256": "bb597b56803bbf30371f1e58aadc9157eb83603eb8d9f9cac300c4fb4992231a"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozOperatorDevelopmentBootstrap.cs",
+      "sha256": "ed4e9e5e63daf47e1899b081b4ba3f71e2143f55a2ccdada5235e79668b7abb3"
+    },
+    {
+      "path": "Assets/Stroop/Unity/ViveWozOperatorDevelopmentRig.cs",
+      "sha256": "e3234f91afd7f5ae4e2f2ab88062451d7b5ecebd41f382b143500934c27c13b8"
+    },
+    {
+      "path": "Assets/Stroop/Unity/WorldSpaceExperimentView.cs",
+      "sha256": "db6bb6743aa186f3e396fc2b4c5961b25a2c51903d9b744c88e34c842753139f"
+    }
+  ],
+  "scope": "Current C# application and Editor fixture source; not proof of hardware acceptance or a binary release"
+}

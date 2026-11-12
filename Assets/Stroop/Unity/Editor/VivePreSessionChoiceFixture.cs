@@ -48,7 +48,6 @@ namespace AvatarStroop.Unity.Editor
         {
             Set(bootstrap,"selectedDesign",3);Set(bootstrap,"namedPlanCount",0);
             ((int[])Get(bootstrap,"namedPlanOptions"))[0]=0;((int[])Get(bootstrap,"namedPlanLists"))[0]=0;
-            Set(bootstrap,"selectedHand",0);
             Require(typeof(ViveStroopDevelopmentBootstrap).GetField("thresholdText",BindingFlags.Instance|BindingFlags.NonPublic)==null,
                 "startup must not require or retain a threshold input");
             Require(ViveFixedTrackpadMapping.SectorThreshold==0.5,"the VIVE sector threshold must remain fixed at 0.5");
@@ -107,15 +106,30 @@ namespace AvatarStroop.Unity.Editor
                 object[] setupArgs={true,@"C:\synthetic-not-opened","32",new Func<string,bool>(path=>true),null};
                 var localChoice=prepare.Invoke(null,setupArgs);
                 Require(localChoice!=null,"pure synthetic choice setup unavailable");
-                Set(bootstrap,"recordingSetup",localChoice);Call(bootstrap,"RenderPreSessionChoice");
-                Require(((string)Get(view,"previewDiagnostic")).Contains("Local development self-test only")&&
-                    ((string)Get(view,"previewDiagnostic")).Contains("questionnaire"),"task notice missing scope");
+                Require(Step(localChoice)=="Task","synthetic setup must begin with the independent task choice");
                 var choiceClock=new MonotonicClock("synthetic-notice-clock");
                 Call(localChoice,"Observe",true,true,false,false,false,false,choiceClock);
-                Call(localChoice,"Observe",true,true,true,false,false,false,choiceClock);Call(bootstrap,"RenderPreSessionChoice");
-                Require(((string)Get(view,"previewDiagnostic")).Contains("real eye")&&
-                    ((string)Get(view,"previewDiagnostic")).Contains("Withdrawal does not erase"),"eye notice missing privacy boundary");
+                Call(localChoice,"Observe",true,true,true,false,false,false,choiceClock);
+                Require(Step(localChoice)=="Eye","task choice must not imply the eye choice");
+                Call(localChoice,"Observe",true,true,false,false,false,false,choiceClock);
+                Call(localChoice,"Observe",true,true,true,false,false,false,choiceClock);
+                Require(Step(localChoice)=="Confirmed","two independent synthetic choices must be required");
+                Require(Get(rig,"worker")==null&&Get(bootstrap,"participant")==null,"pure choice transitions started hardware or task");
+                // A synthetic setup cannot grant capability to the actual Editor
+                // UI. Even a matching design, notice and both software choices
+                // must be cancelled by its closed production build gate.
+                Set(bootstrap,"selectedDesign",3);Set(bootstrap,"recordingSetupDesign",3);
+                Set(bootstrap,"controlledRecordingNoticeAccepted",true);
+                Set(bootstrap,"recordingSetup",localChoice);Call(bootstrap,"RenderPreSessionChoice");
+                Require(Step(localChoice)=="Cancelled"&&
+                    ((string)Get(view,"previewDiagnostic")).Contains("Recording choices cancelled")&&
+                    ((string)Get(view,"previewDiagnostic")).Contains("No recording has started"),
+                    "closed Editor recording capability must cancel synthetic setup instead of showing an actionable recording prompt");
+                Call(localChoice,"Observe",true,true,false,false,false,false,choiceClock);
+                Call(localChoice,"Observe",true,true,true,false,false,false,choiceClock);
+                Require(Step(localChoice)=="Cancelled","cancelled production-gate choice must not be revived by input");
                 Set(bootstrap,"recordingSetup",null);
+                Set(bootstrap,"recordingSetupDesign",-1);Set(bootstrap,"controlledRecordingNoticeAccepted",false);
                 Require(Get(rig,"worker")==null&&Get(bootstrap,"participant")==null,"notice fixture started hardware or task");
                 var choice=ConfigureRequest(bootstrap,rig,view);
                 Call(bootstrap,"OnApplicationFocus",false);
@@ -141,7 +155,7 @@ namespace AvatarStroop.Unity.Editor
                     "actual questionnaire navigation must use the same fixed threshold");
                 Require(!bootstrap.RecordingEnabled&&Get(bootstrap,"device")==null&&Get(rig,"worker")==null,
                     "normal configuration must not start a device or recording");
-                Debug.Log("VIVE_PRE_SESSION_SYNTHETIC_FIXTURE_PASSED: actual configuration without threshold input, fixed 0.5 task/questionnaire, prompt state, focus and stop; no XR, device, recording or research consent.");
+                Debug.Log("VIVE_PRE_SESSION_SYNTHETIC_FIXTURE_PASSED: actual configuration without threshold input, fixed 0.5 task/questionnaire, independent synthetic choices, closed-build cancellation, rehearsal prompts, focus and stop; no XR, device, recording or research consent. Installed recording disclosure rendering is not exercised by this closed Editor build.");
             }
             finally
             {

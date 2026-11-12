@@ -13,7 +13,9 @@ namespace AvatarStroop.Unity
     {
         [SerializeField] ViveStroopPreviewRig rig;
         [SerializeField] WorldSpaceExperimentView view;
-        int selectedHand=-1;
+        int ownerRunMode=-1;
+        bool ownerAdvanced,ownerDiagnostics,ownerStorageLimits,ownerOutputOptions;
+        bool ownerPreviewWoz;
         int selectedDesign=-1,namedListIndex=-1;
         int namedPlanCount=-1;
         readonly int[] namedPlanOptions={-1,-1,-1,-1},namedPlanLists={-1,-1,-1,-1};
@@ -28,8 +30,8 @@ namespace AvatarStroop.Unity
         VivePreSessionRecordingChoice preSessionChoice;
         ViveNamedRecordingSetup recordingSetup;
         int recordingSetupDesign=-1;
-        string recordingDirectory="",recordingBudgetMiB="";
-        string csvBudgetMiB="",csvCleanupSeconds="";
+        string recordingDirectory="",recordingBudgetMiB="256";
+        string csvBudgetMiB="64",csvCleanupSeconds="300";
         int recordingSelectionFreshFrame=-1;
         bool rawSelectionProvenancePending;
         double rawTaskChoicePollSeconds,rawEyeChoicePollSeconds;
@@ -39,10 +41,10 @@ namespace AvatarStroop.Unity
         string namedTaskPage;
         int namedTaskPageOffset,namedTaskTable;
         const int NamedTaskPageSize=8192;
-        string message="Select a controller before configuring.";
+        string message="Choose Preview or Record locally.";
         string avatarOutputNotice;
         string inputDiagnostic="No controller input poll has completed yet.";
-        VivePreviewControllerHand hand;
+        VivePreviewControllerHand hand=VivePreviewControllerHand.Automatic;
         ViveStroopDeviceInput device;
         ViveQuestionnaireTrackpadGate questionnaireGate;
         ViveDevelopmentParticipant participant;
@@ -445,12 +447,10 @@ namespace AvatarStroop.Unity
         {
             GUILayout.Space(8);
             if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
-            GUILayout.Label(LegacyRawRecordingRequested?"LEGACY CONTROLLED RECORDING SELF-TEST. Not a validated study. "+RecordingStatus:
-                LegacyPreviewSelected?(!configured?ViveStroopRecordingScopePresentation.LegacySelectionNotice(SelectedRecordingAvailable):ViveStroopRecordingScopePresentation.LegacyNotice):
-                ViveControlledRecordingBuildPolicy.Available?
-                "NAMED CONTROLLED RECORDING TEST ONLY. Separate task/eye choices and an explicit start are required. Not a validated study. Live WoZ is unavailable. "+RecordingStatus:
-                namedRawPump==null&&!rawInstallFailed?"Preview only. Recording and live WoZ are unavailable.":
-                "Preview only. Live WoZ is unavailable. "+RecordingStatus,recordingWrap);
+            GUILayout.Label(participant!=null&&participant.RawRecordingRequested?"PARTICIPANT  |  Local recording":
+                configured?"PARTICIPANT  |  Preview - no files":"PARTICIPANT  |  Setup");
+            if(configured)GUILayout.Label(RecordingStatus,recordingWrap);
+            if(configured||preSessionChoice!=null||recordingSetup!=null)rig.DrawSessionViewControls();
             if(preSessionChoice!=null)
             {
                 GUILayout.Label("Input rehearsal: "+preSessionChoice.Current+". No session or recording has started.");
@@ -468,104 +468,26 @@ namespace AvatarStroop.Unity
             }
             if(!configured)
             {
-                GUILayout.Label(ViveFixedTrackpadMapping.Label);
-                GUILayout.Label("Choose a preview:");
-                int previousDesign=selectedDesign;
-                selectedDesign=GUILayout.SelectionGrid(selectedDesign,new[]{LegacyRecordingAvailable?"Legacy A/B/C/D - preview or optional controlled recording":"Legacy A/B/C/D fixture - NO RECORDING / EXPORT","Named Automatic: one-block preview","Named No Avatar: one-block preview","Named explicit multi-block simulation"},1);
-                if(selectedDesign!=previousDesign)controlledRecordingNoticeAccepted=false;
-                if(view!=null)view.SetViveLegacyPreviewNotice(LegacyPreviewSelected);
-                if(LegacyPreviewSelected)GUILayout.Label(ViveStroopRecordingScopePresentation.LegacySelectionNotice(SelectedRecordingAvailable),recordingWrap);
-                if(selectedDesign==1)
-                {
-                    GUILayout.Label("Automatic: board 3 s, turn 0.5 s, participant reference 3 s, turn 0.5 s. One block; target geometry unvalidated.");
-                }
-                if(selectedDesign==2)
-                {
-                    GUILayout.Label("No Avatar: one block without an observer avatar.");
-                }
-                if(selectedDesign==1||selectedDesign==2)
-                {
-                    GUILayout.Label("Live WoZ and direct eye gaze are unavailable.");
-                    GUILayout.Label("Stimulus list:");
-                    namedListIndex=GUILayout.SelectionGrid(namedListIndex,new[]{"List 0","List 1","List 2","List 3"},4);
-                }
-                if(selectedDesign==3)
-                {
-                    GUILayout.Label("Choose each block. Live WoZ and direct eye gaze are unavailable.");
-                    GUILayout.Label("Number of blocks:");namedPlanCount=GUILayout.SelectionGrid(namedPlanCount,new[]{"1","2","3","4"},4);
-                    for(int i=0;i<=namedPlanCount;i++)
-                    {
-                        GUILayout.Label("Block "+(i+1)+" option:");namedPlanOptions[i]=GUILayout.SelectionGrid(namedPlanOptions[i],new[]{"Automatic","No Avatar"},2);
-                        GUILayout.Label("Block "+(i+1)+" stimulus list:");namedPlanLists[i]=GUILayout.SelectionGrid(namedPlanLists[i],new[]{"List 0","List 1","List 2","List 3"},4);
-                    }
-                    if(!ViveControlledRecordingBuildPolicy.Available)
-                    {
-                    namedIntentV3=GUILayout.Toggle(namedIntentV3,"Use explicit v3 recording-intent configuration (recording currently unavailable)");
-                    if(namedIntentV3)
-                    {
-                        namedTaskRecordingChoice=GUILayout.Toggle(namedTaskRecordingChoice,"Request local task-event recording");
-                        namedEyeRecordingChoice=GUILayout.Toggle(namedEyeRecordingChoice,"Request local eye-observation recording");
-                        GUILayout.Label("Requests open an input rehearsal only. Leave both off for the preview.");
-                        GUILayout.Label("The v3 intent preview does not support the named task table.");
-                    }
-                    }
-                }
-                if(selectedDesign==0||selectedDesign==3)
-                {
-                    GUILayout.Space(6);
-                    if(selectedDesign==0&&ViveLegacyWozRecordingBuildPolicy.Available)
-                    {
-                        bool next=GUILayout.Toggle(legacyWozRecordingSelected,"Record a LiveWoZ session locally (instead of Automatic).");
-                        if(next!=legacyWozRecordingSelected){legacyWozRecordingSelected=next;controlledRecordingNoticeAccepted=false;}
-                        if(next)GUILayout.Label("Local files include mapped operator head/eye poses. Participant eyes, answers and ratings never go to the operator.",recordingWrap);
-                    }
-                    if(SelectedRecordingAvailable)
-                    {
-                        GUILayout.Label("Development self-test only. Task, questionnaire and real eye/head observations stay in the selected local folder; this app does not upload them. Eye data may identify you.",recordingWrap);
-                        GUILayout.Label("Withdrawal stops further work but does not erase files or recall bytes already written. A failure leaves output UNKNOWN. Close and restart after failure or withdrawal; keep test files private.",recordingWrap);
-                        controlledRecordingNoticeAccepted=GUILayout.Toggle(controlledRecordingNoticeAccepted,"I understand and request a local development self-test, not a study participant session.");
-                    }
-                    GUILayout.Label("Recording requires task and eye choices in the headset. No file is created during selection.");
-                    GUILayout.Label("Existing local folder path (enter or paste):");
-                    recordingDirectory=GUILayout.TextField(recordingDirectory);
-                    GUILayout.Label("Maximum recording size (MiB, explicit; up to 8192):");
-                    recordingBudgetMiB=GUILayout.TextField(recordingBudgetMiB);
-                    GUILayout.Label("Folder access and space are not yet confirmed.");
-                    GUI.enabled=!rig.ViewRunning&&ControlledRecordingNoticeCurrent&&SelectedRecordingAvailable&&ViveRawRelativeFileCapability.ProductionGateOpen;
-                    if(GUILayout.Button("Prepare participant recording choices")){if(selectedDesign==0)BeginLegacyRecordingSetup();else BeginNamedRecordingSetup();}
-                    GUI.enabled=true;
-                    if(!SelectedRecordingAvailable||!ViveRawRelativeFileCapability.ProductionGateOpen)
-                        GUILayout.Label(selectedDesign==0?"Legacy raw recording is unavailable in this build. You can configure the memory-only preview.":"Recording unavailable: recording and storage checks are incomplete.");
-                }
-                selectedHand=GUILayout.SelectionGrid(selectedHand,new[]{"Left wand","Right wand"},2);
-                observationOptIn=GUILayout.Toggle(observationOptIn,"Enable bounded in-memory task observation (Legacy only; no files).");
-                if(selectedDesign>0&&observationOptIn)
-                    GUILayout.Label("Clear observation for named previews.");
-                GUI.enabled=!rig.ViewRunning;
-                if(GUILayout.Button("Confirm configuration for development preview"))TryConfigure();
-                GUILayout.Label("This preview button never starts recording. Recording requires its separate setup and start controls.",recordingWrap);
-                GUI.enabled=true;
-                if(rig.ViewRunning)GUILayout.Label("Stop the classroom view before configuring.");
+                DrawSetupControls();
             }
             else
             {
-                string design=participant.NamedPlan!=null?participant.NamedPlan.Blocks.Count+"-block simulation. ":participant.HasNamedOption?(participant.NamedOption.Option==ViveNamedOption.NoAvatar?
-                    "No Avatar: one block. ":
-                    "Automatic: one block; target geometry unvalidated. "):
-                    "Legacy A/B/C/D; automatic source. ";
-                GUILayout.Label(hand+" wand. "+design+"Trigger: confirm. Pause: owner controls only. "+
-                    (RecordingBlocked?"Use the desktop Withdraw task button.":"Desktop Escape withdraws."));
-                GUILayout.Label("Phase: "+participant.Phase+" | Input: "+(participant.InputReady?"ready":"not ready")+" | "+message);
+                string design=participant.NamedPlan!=null?participant.NamedPlan.Blocks.Count+" planned blocks":participant.HasNamedOption?
+                    (participant.NamedOption.Option==ViveNamedOption.NoAvatar?"No Avatar | 1 block":"Automatic | 1 block"):
+                    "Legacy A/B/C/D | 4 blocks";
+                OwnerHeading("Task status");
+                GUILayout.Label(design+"  |  "+participant.Phase,recordingWrap);
+                GUILayout.Label("Controller: "+(participant.InputReady?"ready":"not ready"),recordingWrap);
+                OwnerNotice(NextOwnerAction());
                 CapturePauseDiagnostic();
                 if(pauseDiagnostic!=null)
                 {
                     if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
-                    GUILayout.Label("Last pause reason: "+pauseDiagnostic,recordingWrap);
+                    if(participant.Phase==Phase.Paused||ownerDiagnostics)GUILayout.Label("Pause: "+pauseDiagnostic,recordingWrap);
                 }
                 if(participant.Phase==Phase.Ended)
                 {
-                    GUILayout.Label("Task ended ("+(participant.EndReason.HasValue?participant.EndReason.Value.ToString():"reason unavailable")+"). This task cannot restart. Close this preview and reopen the launcher to configure a new task.");
-                    if(LegacyPreviewSelected)GUILayout.Label(ViveStroopRecordingScopePresentation.LegacyNotice,recordingWrap);
+                    GUILayout.Label("Ended: "+(participant.EndReason.HasValue?participant.EndReason.Value.ToString():"reason unavailable")+". Reopen the application for a new task.",recordingWrap);
                 }
                 if(avatarOutputNotice!=null)
                 {
@@ -575,56 +497,33 @@ namespace AvatarStroop.Unity
                 if(!participant.InputReady)
                 {
                     if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
-                    GUILayout.Label("Last controller input poll: "+inputDiagnostic,recordingWrap);
+                    GUILayout.Label(inputDiagnostic,recordingWrap);
                 }
-                if(participant.NamedPlan!=null)
+                if(ownerAdvanced&&participant.NamedPlan!=null)
                     foreach(var block in participant.NamedPlan.Blocks)
                         GUILayout.Label("Planned block "+(block.Index+1)+": "+block.Selection.Option+", list "+block.Selection.ListIndex);
                 DrawRecordingControls();
                 if(recordingSetup!=null&&participant.RawRecordingRequested&&namedRawPump==null)
                 {
-                    GUILayout.Label(ViveControlledRecordingBuildPolicy.Available?"Local development self-test selected. Study use is not enabled. Review the output folder and limits before starting.":"The participant selected task and eye recording. Separate study consent and validated storage are still required.",recordingWrap);
+                    GUILayout.Label("Recording is off. Review the folder, then start recording explicitly.",recordingWrap);
                     GUILayout.Label("Selected local folder: "+recordingSetup.DirectoryPath,recordingWrap);
-                    GUILayout.Label("Choice times are controller-poll observations, not hardware event times. Storage remains unconfirmed until recorded.");
                     bool canStartRecording=CanStartSelectedRawRecording(participant.LegacyRecordingRequested);
-                    GUI.enabled=CanStartWithOwnerOutput(canStartRecording,ViveRawExclusiveDestination.ProductionGateOpen,false);
-                    if(GUILayout.Button("Start selected recording only")){if(participant.LegacyRecordingRequested)StartSelectedLegacyRecording(false);else StartSelectedNamedRecording(false);}
-                    GUI.enabled=CanStartWithOwnerOutput(canStartRecording,ViveRawExclusiveDestination.ProductionGateOpen,true);
-                    if(GUILayout.Button("Start recording and request local output")){if(participant.LegacyRecordingRequested)StartSelectedLegacyRecording(true);else StartSelectedNamedRecording(true);}
-                    GUI.enabled=true;
-                    GUILayout.Label("Optional analysis CSV maximum size (MiB, 1–8192):");
-                    csvBudgetMiB=GUILayout.TextField(csvBudgetMiB);
-                    GUILayout.Label("CSV cleanup timeout (seconds, 1–3600):");
-                    csvCleanupSeconds=GUILayout.TextField(csvCleanupSeconds);
-                    long csvBytes;int csvTimeout;
-                    bool csvParameters=TryParseCsvLimits(csvBudgetMiB,csvCleanupSeconds,out csvBytes,out csvTimeout);
-                    GUI.enabled=CanStartWithOwnerOutput(canStartRecording,ViveRawExclusiveDestination.ProductionGateOpen,true)&&
-                        ViveRawReadableAnalysisCsv.ProductionGateOpen&&csvParameters;
-                    if(GUILayout.Button("Start recording and request raw + analysis CSV")){if(participant.LegacyRecordingRequested)StartSelectedLegacyRecordingWithCsv(csvBytes,csvTimeout);else StartSelectedNamedRecordingWithCsv(csvBytes,csvTimeout);}
-                    GUI.enabled=true;
-                    GUILayout.Label("CSV is a separate owner request with its own target, limit and timeout. A CSV failure can leave both output results UNKNOWN; the original recording is retained.",recordingWrap);
-                    GUILayout.Label("Requesting local output is a separate owner action. It does not establish study consent or confirm that a file is saved.",recordingWrap);
-                    if(!ViveRawExclusiveDestination.ProductionGateOpen)
-                        GUILayout.Label("Local output is unavailable until its storage and withdrawal checks are complete.",recordingWrap);
+                    DrawRecordingStartControls(canStartRecording);
                 }
-                DrawPracticePreviewControls();
-                GUILayout.BeginHorizontal();
+                if(ownerAdvanced)DrawPracticePreviewControls();
+                GUILayout.Space(6);
                 GUI.enabled=(!participant.RawRecordingRequested||namedRawPump!=null)&&!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&(participant.Phase==Phase.Preparation||participant.Phase==Phase.PracticeRetry);
-                if(GUILayout.Button("Owner: begin practice"))
+                if((participant.Phase==Phase.Preparation||participant.Phase==Phase.PracticeRetry)&&GUILayout.Button("Begin practice"))
                 {if(namedRawPump!=null)RequestNamedBlockPlanStart(true);else Run(()=>{participant.OwnerBeginPractice(Actor.Owner);if(practicePreview!=null)practicePreview.OnPracticeStarted();});}
                 GUI.enabled=!participant.LegacyWozRecordingDeclared&&!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockPreparation&&pendingRawOwnerAction==null;
                 bool noAvatar=participant.HasNamedOption&&participant.NamedPlan==null&&participant.NamedOption.Option==ViveNamedOption.NoAvatar;
-                if(GUILayout.Button(participant.NamedPlan!=null?"Owner: confirm complete plan":noAvatar?"Owner: confirm No Avatar":"Owner: confirm Automatic"))
+                if(participant.Phase==Phase.BlockPreparation&&!participant.LegacyWozRecordingDeclared&&!ownerPreviewWoz&&GUILayout.Button(participant.NamedPlan!=null?"Confirm complete plan":noAvatar?"Confirm No Avatar":"Confirm Automatic"))
                     Run(()=>{if(participant.NamedPlan!=null)participant.OwnerConfirmNamedPlan(Actor.Owner,"local-development-owner");else if(noAvatar)participant.OwnerConfirmNamedNoAvatar(Actor.Owner,"local-development-owner");else participant.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"local-development-owner");});
                 GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz;
-                if(GUILayout.Button("Owner: begin first block"))
+                if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&GUILayout.Button("Begin first block"))
                 {if(namedRawPump!=null)RequestNamedBlockPlanStart(false);else Run(()=>participant.OwnerBeginBlock(Actor.Owner));}
-                GUI.enabled=participant.Phase!=Phase.Ended;
-                if(GUILayout.Button("Owner: pause"))PauseTask();
-                GUI.enabled=participant.Phase!=Phase.Ended||rawCompletionRequested;
-                if(GUILayout.Button("Withdraw task"))WithdrawTask();
-                GUI.enabled=true;GUILayout.EndHorizontal();
-                DrawLegacyWozControls();
+                GUI.enabled=true;
+                if(participant.LegacyWozRecordingDeclared||ownerPreviewWoz)DrawLegacyWozControls();
                 if(participant.ObservationEnabled)
                     GUILayout.Label(observationFaultLatched?"Development observation failed. Presentation is blocked; review or withdraw the task.":
                         participant.ObservationPending?"Development observation is catching up. Presentation is paused until current.":
@@ -632,8 +531,10 @@ namespace AvatarStroop.Unity
                 if(CanAcknowledgeInputFault(faultLatched,RecordingBlocked,participant.Phase)&&
                     GUILayout.Button("Owner: acknowledge input fault after review"))
                 {faultLatched=false;view.SetFaults(new string[0]);message="Fault acknowledged. A healthy input and an explicit resume are still required.";}
-                GUILayout.Label("Local preview controls; the two-computer operator app is separate.");
-                if(participant.HasNamedOption)
+                bool advanced=GUILayout.Toggle(ownerAdvanced,"Advanced task tools");
+                if(ownerAdvanced&&!advanced)ClearNamedTaskView();
+                ownerAdvanced=advanced;
+                if(ownerAdvanced&&participant.HasNamedOption)
                 {
                     if(namedRawPump==null&&participant.Phase==Phase.Ended&&!rig.ViewRunning&&!participant.NamedViewWithdrawalRequested)
                     {
@@ -652,7 +553,7 @@ namespace AvatarStroop.Unity
                                 GUILayout.Label("Events: "+namedTaskView.EventCount+" | trial-related events: "+namedTaskView.TrialEventCount+" | rating events: "+namedTaskView.RatingEventCount,recordingWrap);
                                 GUILayout.Label("Actual task records in snapshot: "+namedTaskView.TrialRecordCount+" trials and "+namedTaskView.RatingRecordCount+" ratings. Ratings carry block index but no independently recorded condition.",recordingWrap);
                                 if(namedTaskPage==null)SetNamedTaskPage(csv,0);
-                                GUILayout.Label("Showing characters "+(namedTaskPageOffset+1)+"–"+(namedTaskPageOffset+namedTaskPage.Length)+" of "+csv.Length+"; rows may cross page boundaries.",recordingWrap);
+                                GUILayout.Label("Showing characters "+(namedTaskPageOffset+1)+"-"+(namedTaskPageOffset+namedTaskPage.Length)+" of "+csv.Length+"; rows may cross page boundaries.",recordingWrap);
                                 GUILayout.TextArea(namedTaskPage,GUILayout.Height(180));
                                 GUILayout.BeginHorizontal();GUI.enabled=namedTaskPageOffset>0;
                                 if(GUILayout.Button("Previous page"))SetNamedTaskPage(csv,Math.Max(0,namedTaskPageOffset-NamedTaskPageSize));
@@ -676,7 +577,13 @@ namespace AvatarStroop.Unity
                 participant!=null&&participant.Phase==Phase.Ended,recording!=null,recordingStopConfirmed,
                 recording!=null&&recording.SegmentOpen);
             GUILayout.Space(8);
-            if(canReview)
+            ownerDiagnostics=GUILayout.Toggle(ownerDiagnostics,"Diagnostics and existing journal review");
+            if(ownerDiagnostics)
+            {
+                GUILayout.Label(rig.Status,recordingWrap);
+                GUILayout.Label(rig.CurrentHeadDiagnostic,recordingWrap);
+            }
+            if(canReview&&ownerDiagnostics)
             {
                 if(LegacyPreviewSelected)GUILayout.Label("This legacy preview created no session files. Journal review opens separately selected existing files, not these unsaved task records.",recordingWrap);
                 showEvidenceSummary=GUILayout.Toggle(showEvidenceSummary,"Review selected development journals (read-only)");
@@ -690,11 +597,11 @@ namespace AvatarStroop.Unity
             else
             {
                 ClearJournalEvidenceSummary();showEvidenceSummary=false;
-                GUILayout.Label(LegacyPreviewSelected?"Legacy results are memory-only until close; recording and file export are unavailable.":
+                if(ownerDiagnostics)GUILayout.Label(LegacyPreviewSelected?"Legacy results are memory-only until close; recording and file export are unavailable.":
                     namedRawPump!=null?"Recorded-session review is not available in this build.":
                     "Journal review is available after the classroom view and task have ended and recording has stopped.");
             }
-            if(!String.IsNullOrEmpty(message))GUILayout.Label(message);
+            if(!String.IsNullOrEmpty(message))GUILayout.Label(message,recordingWrap);
         }
         void DrawPracticePreviewControls()
         {
@@ -772,22 +679,25 @@ namespace AvatarStroop.Unity
             if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
             if(namedRawPump!=null||rawInstallFailed)
             {
-                GUILayout.Label(RecordingStatus,recordingWrap);
-                GUILayout.Label("Recording status reports software state only; it does not establish participant authorization, tracking accuracy or complete data.",recordingWrap);
+                OwnerHeading("Local output");
                 if(namedRawDestination!=null)
                 {
-                    GUILayout.Label("Output operation state: "+namedRawDestination.State+". Raw and CSV paths require separate review; this state is not confirmation of publication, coverage or durability.",recordingWrap);
-                    GUILayout.Label("Withdrawal cannot recall bytes already passed to the system. Unconfirmed output and cleanup remain unknown.",recordingWrap);
+                    GUILayout.Label("File writer: "+namedRawDestination.State,recordingWrap);
+                    if(recordingSetup!=null)GUILayout.Label("Folder: "+recordingSetup.DirectoryPath,recordingWrap);
+                    GUILayout.Label("After completion, review raw and CSV file paths below. Unconfirmed output is not a successful save.",recordingWrap);
+                    if(ownerDiagnostics)GUILayout.Label("Software status does not establish consent, tracking accuracy, coverage or durable storage. Withdrawal cannot recall existing bytes.",recordingWrap);
                     DrawNamedRawLocalCandidate();
                     DrawNamedCsvLocalCandidate();
                 }
                 return;
             }
+            if(participant!=null&&participant.RawRecordingRequested)
+            {GUILayout.Label("Recording is off. Complete source checks, then explicitly start recording. Practice is blocked until then.",recordingWrap);return;}
             if(participant!=null&&participant.HasNamedOption)
-            {GUILayout.Label("Legacy recording and CSV export cannot represent this named design and are disabled. Its events remain in memory only.",recordingWrap);return;}
+            {GUILayout.Label("Preview only: no task, eye or CSV files are saved.",recordingWrap);return;}
             if(LegacyRawRecordingRequested)
             {GUILayout.Label("Legacy self-test selected. Recording has not started; practice remains blocked until the explicit recording start.",recordingWrap);return;}
-            GUILayout.Label(ViveStroopRecordingScopePresentation.LegacyNotice,recordingWrap);
+            GUILayout.Label("Preview only: no task, eye or CSV files are saved.",recordingWrap);
             if(recording!=null)
             {
                 GUILayout.Label(recording.Status,recordingWrap);
@@ -989,11 +899,11 @@ namespace AvatarStroop.Unity
                     for(int i=0;i<=namedPlanCount;i++)if(namedPlanOptions[i]<0||namedPlanOptions[i]>1||namedPlanLists[i]<0||namedPlanLists[i]>3)
                         throw new InvalidOperationException("Select an available option and stimulus list for every planned block.");
                 }
-                if(observationOptIn||selectedHand<0||selectedHand>1)throw new InvalidOperationException("Select a wand and disable legacy observation.");
+                if(observationOptIn)throw new InvalidOperationException("Disable preview observation before recording.");
                 double entered=ViveFixedTrackpadMapping.SectorThreshold;
                 var map=ConfiguredTrackpadMapping();
                 new VivePreviewTrackpadInput(map,entered);
-                hand=selectedHand==0?VivePreviewControllerHand.Left:VivePreviewControllerHand.Right;
+                hand=VivePreviewControllerHand.Automatic;
                 recordingSetup=choice;recordingSetupDesign=selectedDesign;preSessionShownRevision=-1;preSessionShownFrame=-1;
                 if(view!=null)view.SetViveLegacyPreviewNotice(false);
                 message="Start the classroom view so the participant can make the recording choices. No recording has started.";
@@ -1073,7 +983,6 @@ namespace AvatarStroop.Unity
                 }
                 if(selectedDesign>0&&observationOptIn)throw new InvalidOperationException("Disable the legacy observation option for the named preview.");
                 if(selected&&observationOptIn)throw new InvalidOperationException("Disable preview observation before recording setup.");
-                if(selectedHand<0||selectedHand>1)throw new InvalidOperationException("Select the VIVE wand explicitly.");
                 double entered=ViveFixedTrackpadMapping.SectorThreshold;
                 var map=ConfiguredTrackpadMapping();
                 // Validate the full mapping before registering the wand. This
@@ -1081,7 +990,7 @@ namespace AvatarStroop.Unity
                 if(!selected&&selectedDesign==3&&namedIntentV3&&(namedTaskRecordingChoice||namedEyeRecordingChoice))
                 {
                     new VivePreviewTrackpadInput(map,entered);
-                    hand=selectedHand==0?VivePreviewControllerHand.Left:VivePreviewControllerHand.Right;
+                    hand=VivePreviewControllerHand.Automatic;
                     preSessionChoice=new VivePreSessionRecordingChoice(namedTaskRecordingChoice,namedEyeRecordingChoice);
                     preSessionShownRevision=-1;preSessionShownFrame=-1;
                     message="Start classroom view for the input rehearsal. Recording and the session remain unavailable.";
@@ -1123,7 +1032,7 @@ namespace AvatarStroop.Unity
                 var candidate=new ViveDevelopmentParticipant(config,taskClock,geometry,map,entered,true,options,4096);
                 view.SetViveLegacyPreviewNotice(selectedDesign==0&&!selected);
                 view.ConfigureViveDevelopmentPreview(map,entered);
-                CloseLegacyWozTaskBinding();participant=candidate;sharedClock=taskClock;hand=selectedHand==0?VivePreviewControllerHand.Left:VivePreviewControllerHand.Right;
+                CloseLegacyWozTaskBinding();participant=candidate;sharedClock=taskClock;hand=VivePreviewControllerHand.Automatic;
                 questionnaireGate=new ViveQuestionnaireTrackpadGate(entered);
                 view.SetQuestionnaireLanguage("en");view.SetPresentationAvailable(false);
                 view.SetPresentationAvailabilityCheck(()=>rig.HeadReady&&participant!=null&&participant.InputReady&&!PresentationBlocked&&
@@ -1143,8 +1052,7 @@ namespace AvatarStroop.Unity
             if(device!=null)throw new InvalidOperationException("Existing input adapter must be released first.");
             if(!configured&&preSessionChoice==null&&recordingSetup==null)
             {
-                if(selectedHand<0||selectedHand>1)return;
-                hand=selectedHand==0?VivePreviewControllerHand.Left:VivePreviewControllerHand.Right;
+                hand=VivePreviewControllerHand.Automatic;
             }
             device=new ViveStroopDeviceInput(hand);
         }

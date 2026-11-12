@@ -47,6 +47,8 @@ namespace AvatarStroop.Unity.Editor
                 "fresh application must be dormant and fail closed");
             Require(EditorSceneManager.SaveScene(scene,ScenePath),"operator scene save failed");
             Directory.CreateDirectory(output);
+            PlayerSettings.resizableWindow=true;
+            PlayerSettings.defaultScreenWidth=1600;PlayerSettings.defaultScreenHeight=1050;
             string executable=Path.Combine(output,"AvatarStroopViveWozOperatorDevelopment.exe");
             var result=BuildPipeline.BuildPlayer(new BuildPlayerOptions{scenes=new[]{ScenePath},locationPathName=executable,
                 target=BuildTarget.StandaloneWindows64,options=BuildOptions.None});

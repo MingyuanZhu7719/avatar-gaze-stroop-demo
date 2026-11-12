@@ -1,8 +1,17 @@
 # avatar-gaze-stroop-demo
 VR avatar gaze and Stroop demo planning.
 
+## VIVE interface update - 12 November 2026
 
-## Current VIVE development source
+Participant setup now separates **Preview (no files)** from **Record locally**, with explicit source/recording starts, output status and fixed pause/withdraw controls. Exactly one VIVE wand is identified automatically; a missing, ambiguous or replaced controller cannot silently supply responses. The fixed colour map and 0.5 threshold are retained.
+
+Both VIVE desktop interfaces have readable step sections, folded diagnostics, opaque panels, Windows DPI scaling and resizable windows. Quest presentation and the experiment protocol are unchanged. These are development packages; physical VIVE and two-PC acceptance remain separate.
+
+- [Participant and operator workflow](docs/vive-owner-workflow.md)
+- [Interface validation and limits](docs/vive-owner-ui-validation.md)
+
+
+## WoZ recording source baseline - 10 November 2026
 
 The current source adds a separate participant/operator WoZ workflow and explicit participant-local recording for the controlled Legacy task. It retains fixed VIVE colours (up red, right green, down blue, left yellow), the 0.5 trackpad threshold, headset startup alignment, pause diagnostics, and the existing single-PC/Quest paths.
 
@@ -55,7 +64,7 @@ The latest user-accepted working baseline is now readable directly on GitHub. It
 <!-- BEGIN software-implementation -->
 ## Software implementation
 
-Milestones 1–4 implement the portable experiment core, control and fault contracts, two independent simulation applications, owner controls, auditable CSV exports, and opt-in continuous simulation journals with offline evidence extraction. Unity presentation and scene-generation source is included and compiles against the installed Unity assemblies. **Actual VR rendering, real VIVE Pro Eye acquisition, and two-PC/headset validation remain pending; apparatus sessions are blocked.**
+Milestones 1-4 implement the portable experiment core, control and fault contracts, two independent simulation applications, owner controls, auditable CSV exports, and opt-in continuous simulation journals with offline evidence extraction. Unity presentation and scene-generation source is included and compiles against the installed Unity assemblies. **Actual VR rendering, real VIVE Pro Eye acquisition, and two-PC/headset validation remain pending; apparatus sessions are blocked.**
 
 - [Development milestones, actual test results, and remaining prerequisites](docs/development.md)
 - [Windows environment, local regression and standalone build verification](docs/windows-validation.md)

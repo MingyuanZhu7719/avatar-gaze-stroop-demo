@@ -36,10 +36,10 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
         self.assertIn('token="";ClearOfferReview();', stop)
 
     def test_recorded_disclosure_precedes_explicit_storage_consent(self):
-        gui = section("void OnGUI()", "void Close()")
-        disclosure = "Participant-local recording declared. Participant PC may save mapped operator head/eye poses plus source, time and status."
-        privacy = "Participant raw eyes, answers, timings and ratings never go to the operator."
-        consent = 'forwardingAndStorage=GUILayout.Toggle(forwardingAndStorage,"Forward my head/eye control and allow participant-local storage for this session.");'
+        gui = section("void DrawPairingForm()", "void OnGUI()")
+        disclosure = "The participant computer may save mapped operator head/eye poses, source, time and status."
+        privacy = "Participant answers, response times, ratings and raw eye data stay on the participant computer."
+        consent = 'forwardingAndStorage=GUILayout.Toggle(forwardingAndStorage,"Forward my head/eye control and allow participant-local storage for this session.",toggleStyle);'
         self.assertIn(disclosure, gui)
         self.assertIn(privacy, gui)
         self.assertLess(gui.index(disclosure), gui.index(consent))
@@ -48,23 +48,28 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
 
     def test_unrecorded_notices_and_forwarding_action_remain(self):
         for text in (
-            "Legacy WoZ development | Recording off | Hardware/alignment unvalidated",
             "DEVELOPMENT | Recording off | Alignment unvalidated",
-            "Authenticated messages, not encrypted. Operator head/eye only; participant answers and raw eyes stay local.",
-            'else scope=GUILayout.Toggle(scope,"Run an unrecorded development test.");',
-            'networkNotice=GUILayout.Toggle(networkNotice,"Allow plaintext messages on this isolated laboratory LAN.");',
-            'else forwarding=GUILayout.Toggle(forwarding,"Forward my head/eye control for this session.");',
+            'participantLocalRecording?"Participant-local storage requested":"Recording off"',
+            "Hardware and alignment require validation. Authentication does not encrypt LAN messages.",
+            'scope=GUILayout.Toggle(scope,participantLocalRecording?"Run a participant-local recording development test.":"Run an unrecorded development test.",toggleStyle);',
+            'networkNotice=GUILayout.Toggle(networkNotice,"Allow authenticated, unencrypted messages on this isolated laboratory LAN.",toggleStyle);',
+            'else forwarding=GUILayout.Toggle(forwarding,"Forward my head/eye control for this session.",toggleStyle);',
         ):
             self.assertIn(text, SOURCE)
 
     def test_invalid_offer_cannot_enable_connect_or_preserve_consent(self):
         opening = section("void OpenFromOwnerForm()", "void Update()")
-        gui = section("void OnGUI()", "void Close()")
+        gui = section("void DrawPairingForm()", "void OnGUI()")
         self.assertIn("!offerReviewed||!scope||!networkNotice||", opening)
         self.assertIn("!(participantLocalRecording?forwardingAndStorage:forwarding)", opening)
-        self.assertIn("if(offerReviewed)", gui)
-        self.assertIn("Paste a valid offer to review its recording mode before consent.", gui)
-        self.assertIn("GUI.enabled=offerReviewed&&scope&&networkNotice&&(participantLocalRecording?forwardingAndStorage:forwarding)", gui)
+        self.assertIn('if(!offerReviewed){GUILayout.Label("A valid offer is required before permissions can be confirmed.",mutedStyle);return;}', gui)
+        self.assertIn("bool ready=offerReviewed&&scope&&networkNotice&&(participantLocalRecording?forwardingAndStorage:forwarding)&&", gui)
+        self.assertIn("rig!=null&&rig.HeadReady&&rig.Worker!=null&&valid;", gui)
+        self.assertIn('if(OwnerButton("Connect to participant",ready))', gui)
+        button = section("bool OwnerButton(", "string NextOwnerAction()")
+        self.assertIn("GUI.enabled=old&&enabled;", button)
+        self.assertIn("GUILayout.Button(label,buttonStyle", button)
+        self.assertLess(gui.index("if(!offerReviewed)"), gui.index("forwardingAndStorage=GUILayout.Toggle"))
 
     def test_connect_reparses_and_matches_the_reviewed_mode_before_binding(self):
         opening = section("void OpenFromOwnerForm()", "void Update()")
@@ -90,29 +95,35 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
         for forbidden in (".ConfirmLocalOperatorSource(", ".ConfirmForwardingAndParticipantLocalStorage(", "process.Start(", "ViveLegacyWozOperatorProcess.BindInstalled("):
             self.assertNotIn(forbidden, outside_opening)
         self.assertEqual(2, SOURCE.count("OpenFromOwnerForm()"))
-        self.assertIn('if(GUILayout.Button("Import offer and connect"))try{OpenFromOwnerForm();}', SOURCE)
+        gui = section("void DrawPairingForm()", "void OnGUI()")
+        self.assertRegex(gui, r'if\(OwnerButton\("Connect to participant",ready\)\)\s*try\{OpenFromOwnerForm\(\);\}')
+        self.assertIn("if(process==null&&!closed)DrawPairingForm();", section("void OnGUI()", "void Close()"))
         for name in ("scope", "networkNotice", "forwarding", "forwardingAndStorage"):
             self.assertNotRegex(SOURCE, r"\b" + name + r"\s*=\s*true\b")
 
     def test_recorded_banners_report_declaration_not_recording_success(self):
         self.assertIn("process!=null?process.ParticipantLocalRecordingDeclared:offerReviewed&&participantLocalRecording", SOURCE)
         self.assertIn('view.SetFaults(new[]{ParticipantStorageDeclared?', SOURCE)
-        self.assertIn('GUILayout.Label(ParticipantStorageDeclared?', SOURCE)
+        gui = section("void OnGUI()", "void Close()")
+        self.assertIn('NetworkOpen?"CONNECTED  |  "+(ParticipantStorageDeclared?"Participant-local storage permitted":"Recording off"):"NOT CONNECTED"', gui)
+        self.assertIn("Hardware and alignment require validation.", gui)
         for text in (
             "DEVELOPMENT | Participant-local recording declared | Alignment unvalidated",
-            "Legacy WoZ development | Participant-local recording declared | Hardware/alignment unvalidated",
+            "The participant computer may save mapped operator head/eye poses, source, time and status.",
         ):
             self.assertIn(text, SOURCE)
-        for claim in ("Recording active", "Recording saved", "Recording complete", "Hardware verified", "Identity verified"):
+        for claim in ("Recording active", "Recording saved", "Recording complete", "Saving on participant computer", "Hardware verified", "Identity verified"):
             self.assertNotIn(claim, SOURCE)
 
     def test_existing_local_start_and_stop_controls_remain_explicit(self):
         self.assertEqual(1, SOURCE.count("rig.BeginView()"))
         self.assertEqual(1, SOURCE.count("rig.BeginEye()"))
-        self.assertIn('if(GUILayout.Button("Start operator XR view"))rig.BeginView();', SOURCE)
-        self.assertIn('if(GUILayout.Button("Start installed eye worker"))rig.BeginEye();', SOURCE)
-        self.assertIn('if(GUILayout.Button("Stop forwarding and pause participant"))RequestPause();', SOURCE)
-        self.assertIn('if(GUILayout.Button("Stop operator source and XR")){BeforeSourceStop();rig.StopView();}', SOURCE)
+        self.assertIn('if(OwnerButton("Start headset view",rig!=null&&!rig.ViewActive&&!closed&&process==null))rig.BeginView();', SOURCE)
+        self.assertIn('if(OwnerButton("Start eye tracking",rig!=null&&rig.HeadReady&&rig.Worker==null&&!closed&&process==null))rig.BeginEye();', SOURCE)
+        self.assertIn('if(OwnerButton("Stop forwarding and pause participant",process!=null&&!process.Terminal&&!closed))RequestPause();', SOURCE)
+        self.assertIn('if(OwnerButton("Stop headset and eye source",rig!=null&&rig.ViewActive)){BeforeSourceStop();rig.StopView();}', SOURCE)
+        gui = section("void OnGUI()", "void Close()")
+        self.assertLess(gui.index("GUILayout.EndScrollView()"), gui.index('OwnerButton("Stop forwarding and pause participant"'))
         self.assertIn("void OnApplicationFocus(bool focused){if(!focused)BeforeSourceStop();}", SOURCE)
         self.assertIn("void OnDisable(){Close();}", SOURCE)
 
