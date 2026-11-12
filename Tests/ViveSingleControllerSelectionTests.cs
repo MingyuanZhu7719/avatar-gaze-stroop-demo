@@ -6,6 +6,35 @@ namespace AvatarStroop.Tests
     {
         public static void Register(TestSuite suite)
         {
+            suite.Run("controller inspection does not lock an unready initial logical role",()=>{
+                var s=new ViveSingleControllerSelection();
+                Check.True(s.Inspect(1,8,2));Check.True(!s.IsCommitted);Check.Equal(0,s.SelectedDeviceId);
+                Check.True(s.Inspect(1,8,2));Check.True(!s.IsCommitted);
+                Check.True(s.Inspect(1,9,1));Check.True(!s.IsCommitted);
+                Check.True(s.Commit(1,9,1));Check.True(s.IsCommitted);Check.Equal(9,s.SelectedDeviceId);Check.Equal(1,s.SelectedRole);
+            });
+            suite.Run("controller precommit missing ambiguous or invalid candidates remain unlocked",()=>{
+                var s=new ViveSingleControllerSelection();Check.True(s.Inspect(1,8,2));
+                Check.True(!s.Inspect(0,0,0));Check.True(!s.Inspect(2,9,1));Check.True(!s.Inspect(1,9,0));
+                Check.True(!s.IsCommitted);Check.True(s.Commit(1,9,1));Check.Equal(9,s.SelectedDeviceId);
+            });
+            suite.Run("controller commit cannot bypass missing or multiple device gate",()=>{
+                foreach(int count in new[]{0,2,3})
+                {var s=new ViveSingleControllerSelection();Check.True(s.Inspect(1,8,1));Check.True(!s.Commit(count,8,1));Check.True(!s.IsCommitted);}
+            });
+            suite.Run("controller postcommit inspection detects replacement before readiness checks",()=>{
+                var s=new ViveSingleControllerSelection();Check.True(s.Commit(1,8,2));
+                Check.True(!s.Inspect(1,9,1));Check.True(!s.Commit(1,8,2));Check.Equal(8,s.SelectedDeviceId);Check.Equal(2,s.SelectedRole);
+            });
+            suite.Run("controller postcommit role change is permanently rejected without another commit",()=>{
+                var s=new ViveSingleControllerSelection();Check.True(s.Commit(1,8,2));
+                Check.True(!s.Inspect(1,8,1));Check.True(!s.Inspect(1,8,2));Check.True(!s.Commit(1,8,2));
+            });
+            suite.Run("controller postcommit disappearance preserves exact identity without transfer",()=>{
+                var s=new ViveSingleControllerSelection();Check.True(s.Commit(1,8,1));
+                Check.True(!s.Inspect(0,0,0));Check.True(!s.Inspect(2,8,1));Check.True(s.Inspect(1,8,1));Check.True(s.Commit(1,8,1));
+                Check.True(!s.Inspect(1,9,1));Check.True(!s.Commit(1,8,1));
+            });
             suite.Run("single controller waits without locking missing or ambiguous input",()=>{
                 var s=new ViveSingleControllerSelection();
                 Check.True(!s.Observe(0,0,0)); Check.True(!s.Observe(2,1,1));

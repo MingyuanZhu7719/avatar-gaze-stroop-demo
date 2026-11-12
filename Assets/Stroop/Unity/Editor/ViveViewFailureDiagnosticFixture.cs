@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading;
+using AvatarStroop.Core;
 using AvatarStroop.Runtime;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -15,7 +17,16 @@ namespace AvatarStroop.Unity.Editor
     public static class ViveViewFailureDiagnosticFixture
     {
         const string Secret="SYNTHETIC_EXCEPTION_MESSAGE_MUST_NOT_BE_LOGGED";
+        const string EyeSecret="SYNTHETIC_PROVIDER_DETAIL_UI_ONLY";
         static int assertions;
+        sealed class FailedEyeClient : IViveProEyeClient
+        {
+            public int PollCalls,DisposeCalls;
+            public string Diagnostic {get{return SrAnipalViveProEyeProvider.NativeMessage("Initialization",1023)+" "+EyeSecret;}}
+            public bool Start(){return false;}
+            public ViveProEyePoll Poll(){Interlocked.Increment(ref PollCalls);return null;}
+            public void Dispose(){Interlocked.Increment(ref DisposeCalls);}
+        }
         static void Require(bool value,string message)
         {if(!value)throw new InvalidOperationException("View failure diagnostic fixture: "+message);assertions++;}
         static FieldInfo Field(object target,string name)
@@ -34,9 +45,13 @@ namespace AvatarStroop.Unity.Editor
             return method.Invoke(target,args);
         }
         static string Failure(ViveStroopPreviewRig rig)
+        {return Diagnostic(rig,"LastViewFailure");}
+        static string EyeFailure(ViveStroopPreviewRig rig)
+        {return Diagnostic(rig,"LastEyeClientFailure");}
+        static string Diagnostic(ViveStroopPreviewRig rig,string name)
         {
-            var property=rig.GetType().GetProperty("LastViewFailure",BindingFlags.Instance|BindingFlags.NonPublic);
-            if(property==null)throw new InvalidOperationException("Diagnostic fixture property missing: LastViewFailure");
+            var property=rig.GetType().GetProperty(name,BindingFlags.Instance|BindingFlags.NonPublic);
+            if(property==null)throw new InvalidOperationException("Diagnostic fixture property missing: "+name);
             return (string)property.GetValue(rig,null);
         }
         static Exception SyntheticError()
@@ -51,6 +66,49 @@ namespace AvatarStroop.Unity.Editor
             Require(Get(rig,"worker")==null&&Get(rig,"source")==null&&Get(rig,"eyePump")==null,
                 "synthetic diagnostics created an eye source");
             Require(Get(rig,"development")==null&&!rig.ViewRunning,"synthetic diagnostics started a task or view");
+        }
+        static void AsynchronousEyeFailure(ViveStroopPreviewRig rig,List<string> messages)
+        {
+            Require(EyeFailure(rig)==null,"new view retained an eye client failure");
+            var client=new FailedEyeClient();
+            var worker=new ViveProEyeWorker(new MonotonicClock("synthetic-eye-failure-clock"),()=>null,()=>client);
+            try
+            {
+                Require(worker.Start(),"synthetic asynchronous eye request was rejected");
+                Require(SpinWait.SpinUntil(()=>worker.HasExited,5000),"synthetic failed eye client did not finish");
+                Require(!worker.Starting&&!worker.Started&&!worker.Stopping,"failed eye worker was not terminal");
+                string expected=worker.Diagnostic;
+                Require(expected.Contains("1023")&&expected.Contains(EyeSecret),"synthetic worker lost numeric initialization failure");
+                Set(rig,"worker",worker);Set(rig,"running",true);
+                // Exercise the actual owner Update branch. There is no camera,
+                // display, input, pump or native provider; terminal worker
+                // handling must return before any head/XR polling is attempted.
+                Call(rig,"Update");
+                Require(EyeFailure(rig)==expected&&rig.Status==expected,"asynchronous native failure was replaced by generic head status");
+                Require(Get(rig,"worker")==null&&!((bool)Get(rig,"stopping")),"finished failed eye worker was not cleaned up");
+                Require(client.PollCalls==0&&client.DisposeCalls==1,"failed initialization polled or disposed the client incorrectly");
+                Require(Get(rig,"source")==null&&Get(rig,"eyePump")==null&&Get(rig,"manager")==null&&
+                    Get(rig,"display")==null&&Get(rig,"input")==null&&Get(rig,"development")==null,
+                    "diagnostic update created an XR, eye-data or recording source");
+                Require(String.Join("\n",messages.ToArray()).Contains("VIVE_EYE_CLIENT_FAILURE_RETAINED"),"retained eye failure was not announced");
+                Require(!String.Join("\n",messages.ToArray()).Contains(EyeSecret),"provider detail leaked from the owner UI into logs");
+
+                Call(rig,"StopView");Call(rig,"FinishStop");Call(rig,"SetStatus","Generic head-only status after eye cleanup.");
+                Require(EyeFailure(rig)==expected,"stop or generic status erased the native first cause");
+                Call(rig,"RetainEyeClientFailure","Secondary client failure.");
+                Require(EyeFailure(rig)==expected,"later eye failure replaced the native first cause");
+                Call(rig,"BeginEye");
+                Require(EyeFailure(rig)==expected,"rejected eye start erased the native first cause");
+                NoHardwareOrOutput(rig);
+                Require(!String.Join("\n",messages.ToArray()).Contains(EyeSecret),"retained provider detail leaked during later cleanup");
+            }
+            finally
+            {
+                // This is only a fake background worker, never a native client.
+                // Ensure no fixture thread can outlive this isolated scene.
+                worker.Stop(1000);worker.Dispose();
+                Set(rig,"worker",null);Set(rig,"running",false);Set(rig,"stopping",false);
+            }
         }
         public static void Validate()
         {
@@ -99,8 +157,9 @@ namespace AvatarStroop.Unity.Editor
                 Environment.SetEnvironmentVariable(VivePreviewLaunchPlan.RuntimeVariable,null);
                 rig.BeginView();Require(Failure(rig)==first,"invalid launcher environment erased failure");
                 NoHardwareOrOutput(rig);
+                AsynchronousEyeFailure(rig,messages);
                 Debug.Log("VIVE_VIEW_FAILURE_DIAGNOSTIC_SYNTHETIC_FIXTURE_PASSED: "+assertions+
-                    " assertions; first-cause persistence, guarded start and message-free diagnostic stack. No XR startup, tracking, files or headset validation.");
+                    " assertions; view/async-eye first-cause persistence, numeric native failure, guarded starts and message-free logs. No XR startup, tracking, files or headset validation.");
             }
             finally
             {

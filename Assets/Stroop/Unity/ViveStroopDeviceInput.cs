@@ -1,5 +1,7 @@
 #if STROOP_XR_PREVIEW
 using System;
+using System.Collections.Generic;
+using System.Text;
 using AvatarStroop.Core;
 using AvatarStroop.Runtime;
 using UnityEngine;
@@ -89,6 +91,21 @@ namespace AvatarStroop.Unity
         readonly bool automatic;
         readonly ViveSingleControllerSelection selection=new ViveSingleControllerSelection();
         public string ControllerStatus { get { return automatic?selection.Status:"Controller: "+Hand; } }
+        // Desktop diagnostics only: a snapshot of existing input checks. Never
+        // copy this into task instructions, pause logs or recording payloads.
+        public string LogicalDeviceDiagnostic {get{return FormatLogicalDiagnostic();}}
+        public int DiagnosticSnapshotFrame {get;private set;}=-1;
+        struct LogicalDeviceSnapshot
+        {internal int Id,Role;internal bool Added,Enabled;}
+        readonly List<LogicalDeviceSnapshot> logicalInventory=new List<LogicalDeviceSnapshot>(4);
+        readonly int[] diagnosticBindingCounts=new int[8],diagnosticBindingIds=new int[32];
+        static readonly string[] DiagnosticActionNames={"position","rotation","tracked","trackingState","trackpad","click","trigger","menu"};
+        InputDevice candidateDevice;
+        int candidateRole;
+        bool poseBitsObserved,observedTracked,observedTrackingValid;
+        int observedTrackingFlags;
+        bool snapshotAvailable,snapshotCommitted,snapshotPoseObserved,snapshotTracked,snapshotTrackingValid;
+        int snapshotSelectedId,snapshotSelectedRole,snapshotTrackingFlags;
         readonly int creatorThread;
         bool disposed,hasPhase;
         readonly ViveStroopNeutralGate neutralGate=new ViveStroopNeutralGate();
@@ -140,20 +157,106 @@ namespace AvatarStroop.Unity
         bool SelectUniqueController()
         {
             if(!automatic)return true;
-            int count=0;InputDevice candidate=null;
-            foreach(var item in InputSystem.devices)
-                if(item is HTCViveControllerProfile.ViveController&&item.added&&item.enabled){count++;candidate=item;}
-            int role=0;
-            if(count==1)
-            {
-                bool left=false,right=false;
-                foreach(var usage in candidate.usages){if(usage.ToString()=="LeftHand")left=true;if(usage.ToString()=="RightHand")right=true;}
-                if(left!=right)role=left?1:2;
-            }
-            if(!selection.Observe(count,count==1?candidate.deviceId:0,role))return false;
+            InputDevice candidate;int count=ScanViveCandidates(out candidate);
+            candidateDevice=count==1?candidate:null;candidateRole=count==1?ControllerRole(candidate):0;
+            int role=candidateRole;
+            if(!selection.Inspect(count,count==1?candidate.deviceId:0,role))return false;
             Hand=(VivePreviewControllerHand)role;
             UseActions(role==1?leftActions:rightActions);return true;
         }
+        int ScanViveCandidates(out InputDevice candidate)
+        {
+            int count=0;candidate=null;logicalInventory.Clear();
+            foreach(var item in InputSystem.devices)
+            {
+                if(!(item is HTCViveControllerProfile.ViveController))continue;
+                bool added=item.added,enabled=item.enabled;
+                logicalInventory.Add(new LogicalDeviceSnapshot{Id=item.deviceId,Role=ControllerRole(item),Added=added,Enabled=enabled});
+                if(added&&enabled){count++;candidate=item;}
+            }
+            return count;
+        }
+        static int ControllerRole(InputDevice device)
+        {
+            bool left=false,right=false;
+            foreach(var usage in device.usages){if(usage.ToString()=="LeftHand")left=true;if(usage.ToString()=="RightHand")right=true;}
+            return left!=right?(left?1:2):0;
+        }
+        static string RoleLabel(int role){return role==1?"LeftHand":role==2?"RightHand":"unassigned-or-ambiguous";}
+        bool CandidateMatches(InputDevice device)
+        {
+            if(device==null)return false;
+            if(!automatic)return true;
+            int role=ControllerRole(device);
+            // A binding that resolves to another established identity is also
+            // an observed replacement, not permission to silently retry it.
+            if(selection.IsCommitted&&(selection.SelectedDeviceId!=device.deviceId||selection.SelectedRole!=role))
+                selection.Inspect(1,device.deviceId,role);
+            return candidateDevice!=null&&object.ReferenceEquals(candidateDevice,device)&&
+                candidateDevice.deviceId==device.deviceId&&role==candidateRole;
+        }
+        bool CommitCandidate(InputDevice device)
+        {
+            if(!automatic)return true;
+            if(!CandidateMatches(device))return false;
+            // Recheck metadata only: no additional physical control sampling.
+            // A second device appearing during validation cannot be ignored.
+            InputDevice current;int count=ScanViveCandidates(out current);
+            int role=count==1?ControllerRole(current):0;
+            if(!selection.Inspect(count,count==1?current.deviceId:0,role)||count!=1||
+                !object.ReferenceEquals(current,candidateDevice)||!object.ReferenceEquals(current,device)||role!=candidateRole)return false;
+            return selection.Commit(count,device.deviceId,role);
+        }
+        void CaptureLogicalDiagnostic()
+        {
+            // Primitive metadata only; formatting is deferred until the owner
+            // actually asks for this diagnostics snapshot. No control values
+            // are read and no per-frame strings/arrays are created here.
+            DiagnosticSnapshotFrame=Time.frameCount;snapshotAvailable=false;
+            try
+            {
+                CaptureBinding(0,position);CaptureBinding(1,rotation);CaptureBinding(2,tracked);CaptureBinding(3,trackingState);
+                CaptureBinding(4,trackpad);CaptureBinding(5,trackpadClick);CaptureBinding(6,trigger);CaptureBinding(7,menu);
+                snapshotCommitted=selection.IsCommitted;snapshotSelectedId=selection.SelectedDeviceId;snapshotSelectedRole=selection.SelectedRole;
+                snapshotPoseObserved=poseBitsObserved;snapshotTracked=observedTracked;snapshotTrackingValid=observedTrackingValid;
+                snapshotTrackingFlags=observedTrackingFlags;snapshotAvailable=true;
+            }
+            catch(Exception){/* Diagnostic failure cannot change input admission. */}
+        }
+        void CaptureBinding(int index,InputAction action)
+        {
+            int count=action==null?0:action.controls.Count;diagnosticBindingCounts[index]=count;
+            for(int i=0;i<Math.Min(count,4);i++)diagnosticBindingIds[index*4+i]=action.controls[i].device.deviceId;
+        }
+        string FormatLogicalDiagnostic()
+        {
+            if(!snapshotAvailable)return "Controller metadata has not been checked or is unavailable.";
+            var text=new StringBuilder("Logical VIVE devices: ");
+            if(logicalInventory.Count==0)text.Append("none");
+            for(int i=0;i<logicalInventory.Count;i++)
+            {
+                if(i!=0)text.Append("; ");var item=logicalInventory[i];
+                text.Append("id=").Append(item.Id).Append(" usages=").Append(RoleLabel(item.Role))
+                    .Append(" added=").Append(item.Added?"yes":"no").Append(" enabled=").Append(item.Enabled?"yes":"no");
+            }
+            text.Append(" | ownership=").Append(automatic?(snapshotCommitted?"locked":"candidate only"):"explicit role");
+            if(automatic&&snapshotCommitted)text.Append(" id=").Append(snapshotSelectedId).Append(" usage=").Append(RoleLabel(snapshotSelectedRole));
+            for(int i=0;i<8;i++)
+            {
+                text.Append(" | ").Append(DiagnosticActionNames[i]).Append(" bound IDs=");int count=diagnosticBindingCounts[i];
+                if(count==0)text.Append("none");
+                for(int j=0;j<Math.Min(count,4);j++){if(j!=0)text.Append(',');text.Append(diagnosticBindingIds[i*4+j]);}
+                if(count>4)text.Append("... (").Append(count).Append(" bindings)");
+            }
+            text.Append(" | pose bits=");
+            if(!snapshotPoseObserved)text.Append("not checked");
+            else text.Append("tracked=").Append(!snapshotTrackingValid?"invalid":snapshotTracked?"yes":"no")
+                .Append(", position=").Append((snapshotTrackingFlags&1)!=0?"yes":"no")
+                .Append(", rotation=").Append((snapshotTrackingFlags&2)!=0?"yes":"no");
+            return text.ToString();
+        }
+        bool SafetyUnavailable()
+        {safetyMenuGate.Reset();lastSafetyDevice=null;CaptureLogicalDiagnostic();return false;}
 
         InputAction Add(string name,string binding,string type)
         { return actions.AddAction(name,InputActionType.Value,binding,expectedControlLayout:type); }
@@ -204,6 +307,7 @@ namespace AvatarStroop.Unity
         ViveStroopDeviceFrame Unavailable(string message)
         {
             var gate=neutralGate.Observe(false,false,false,false,false,false);lastDevice=null;
+            CaptureLogicalDiagnostic();
             return new ViveStroopDeviceFrame(new VivePreviewTrackpadSample(false,false,0,0),false,gate.LostReady,false,false,false,false,message);
         }
 
@@ -229,24 +333,27 @@ namespace AvatarStroop.Unity
         public bool ReadSafetyMenu(bool presentationFocused)
         {
             MainThread();
+            poseBitsObserved=false;
             try
             {
                 if(!SelectUniqueController()||!presentationFocused||!OpenXRUtility.IsSessionFocused||!Bound(position)||!Bound(rotation)||
                     !Bound(tracked)||!Bound(trackingState)||!Active(menu))
-                {safetyMenuGate.Reset();lastSafetyDevice=null;return false;}
+                {return SafetyUnavailable();}
                 InputDevice selected=menu.controls[0].device;
                 if(!(selected is HTCViveControllerProfile.ViveController)||!selected.added||!selected.enabled||
                     position.controls[0].device!=selected||rotation.controls[0].device!=selected||
-                    tracked.controls[0].device!=selected||trackingState.controls[0].device!=selected)
-                {safetyMenuGate.Reset();lastSafetyDevice=null;return false;}
+                    tracked.controls[0].device!=selected||trackingState.controls[0].device!=selected||!CandidateMatches(selected))
+                {return SafetyUnavailable();}
                 Vector3 p=position.ReadValue<Vector3>();Quaternion q=rotation.ReadValue<Quaternion>();
                 float tracking=tracked.ReadValue<float>();int flags=trackingState.ReadValue<int>();float button=menu.ReadValue<float>();
+                poseBitsObserved=true;observedTracked=tracking>.5f;observedTrackingValid=ValidButton(tracking);observedTrackingFlags=flags;
                 if(!ValidPosition(p)||!ValidRotation(q)||!ValidButton(tracking)||tracking<=.5f||(flags&3)!=3||!ValidButton(button))
-                {safetyMenuGate.Reset();lastSafetyDevice=null;return false;}
+                {return SafetyUnavailable();}
+                if(!CommitCandidate(selected))return SafetyUnavailable();
                 bool changed=lastSafetyDevice!=null&&!object.ReferenceEquals(lastSafetyDevice,selected);
-                lastSafetyDevice=selected;return safetyMenuGate.Observe(true,changed,button>.5f);
+                lastSafetyDevice=selected;CaptureLogicalDiagnostic();return safetyMenuGate.Observe(true,changed,button>.5f);
             }
-            catch(Exception){safetyMenuGate.Reset();lastSafetyDevice=null;return false;}
+            catch(Exception){return SafetyUnavailable();}
         }
 
         // The caller supplies the current phase and independently validated
@@ -258,6 +365,7 @@ namespace AvatarStroop.Unity
             MainThread();
             if(!Enum.IsDefined(typeof(Phase),phase))throw new ArgumentOutOfRangeException("phase");
             bool phaseChanged=!hasPhase||previousPhase!=phase;hasPhase=true;previousPhase=phase;
+            poseBitsObserved=false;
             try
             {
                 if(!SelectUniqueController())return Unavailable(ControllerStatus);
@@ -278,12 +386,13 @@ namespace AvatarStroop.Unity
                     return Unavailable(Hand+" VIVE input device is not added or is disabled.");
                 if(position.controls[0].device!=device||rotation.controls[0].device!=device||tracked.controls[0].device!=device||
                     trackingState.controls[0].device!=device||trackpadClick.controls[0].device!=device||
-                    trigger.controls[0].device!=device||menu.controls[0].device!=device)
+                    trigger.controls[0].device!=device||menu.controls[0].device!=device||!CandidateMatches(device))
                     return Unavailable(Hand+" VIVE actions resolve to different devices; check the selected hand and bindings.");
                 bool deviceChanged=lastDevice!=null&&!object.ReferenceEquals(device,lastDevice);
                 lastDevice=device;
                 var p=position.ReadValue<Vector3>();var q=rotation.ReadValue<Quaternion>();
                 float tracking=tracked.ReadValue<float>();int flags=trackingState.ReadValue<int>();
+                poseBitsObserved=true;observedTracked=tracking>.5f;observedTrackingValid=ValidButton(tracking);observedTrackingFlags=flags;
                 var axis=trackpad.ReadValue<Vector2>();float click=trackpadClick.ReadValue<float>();
                 float triggerValue=trigger.ReadValue<float>(),menuValue=menu.ReadValue<float>();
                 if(!ValidPosition(p)||!ValidRotation(q))return Unavailable(Hand+" VIVE controller pose is invalid.");
@@ -293,8 +402,10 @@ namespace AvatarStroop.Unity
                     return Unavailable(Hand+" VIVE trackpad axis is invalid.");
                 if(!ValidButton(click)||!ValidButton(triggerValue)||!ValidButton(menuValue))
                     return Unavailable(Hand+" VIVE trackpad click, trigger or menu value is invalid.");
+                if(!CommitCandidate(device))return Unavailable("VIVE controller candidate changed during validation. Input remains blocked.");
                 bool clicked=click>.5f,triggerHeld=triggerValue>.5f,menuHeld=menuValue>.5f;
                 var gate=neutralGate.Observe(true,phaseChanged,deviceChanged,clicked,triggerHeld,menuHeld);
+                CaptureLogicalDiagnostic();
                 // During neutral waiting the real pressed level still reaches the
                 // trackpad router, so its held colour is released only on release.
                 return new ViveStroopDeviceFrame(new VivePreviewTrackpadSample(true,clicked,axis.x,axis.y),gate.NeutralPending,gate.LostReady,

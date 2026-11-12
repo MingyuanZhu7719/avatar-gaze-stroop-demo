@@ -43,7 +43,9 @@ namespace AvatarStroop.Unity
         const int NamedTaskPageSize=8192;
         string message="Choose Preview or Record locally.";
         string avatarOutputNotice;
-        string inputDiagnostic="No controller input poll has completed yet.";
+        string inputDiagnostic="Controller not checked in this update.";
+        int inputDiagnosticFrame=-1;
+        bool inputDiagnosticHeadReady,inputDiagnosticReady;
         VivePreviewControllerHand hand=VivePreviewControllerHand.Automatic;
         ViveStroopDeviceInput device;
         ViveQuestionnaireTrackpadGate questionnaireGate;
@@ -477,7 +479,7 @@ namespace AvatarStroop.Unity
                     "Legacy A/B/C/D | 4 blocks";
                 OwnerHeading("Task status");
                 GUILayout.Label(design+"  |  "+participant.Phase,recordingWrap);
-                GUILayout.Label("Controller: "+(participant.InputReady?"ready":"not ready"),recordingWrap);
+                GUILayout.Label("Controller: "+ControllerUiState,recordingWrap);
                 OwnerNotice(NextOwnerAction());
                 CapturePauseDiagnostic();
                 if(pauseDiagnostic!=null)
@@ -494,10 +496,10 @@ namespace AvatarStroop.Unity
                     if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
                     GUILayout.Label(avatarOutputNotice,recordingWrap);
                 }
-                if(!participant.InputReady)
+                if(!ControllerUiReady)
                 {
                     if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
-                    GUILayout.Label(inputDiagnostic,recordingWrap);
+                    GUILayout.Label(ControllerUiDiagnostic,recordingWrap);
                 }
                 if(ownerAdvanced&&participant.NamedPlan!=null)
                     foreach(var block in participant.NamedPlan.Blocks)
@@ -582,6 +584,12 @@ namespace AvatarStroop.Unity
             {
                 GUILayout.Label(rig.Status,recordingWrap);
                 GUILayout.Label(rig.CurrentHeadDiagnostic,recordingWrap);
+                if(device!=null&&device.DiagnosticSnapshotFrame>=0)
+                {
+                    GUILayout.Label("Controller routing check: frame "+device.DiagnosticSnapshotFrame+
+                        (device.DiagnosticSnapshotFrame==Time.frameCount?" (current).":" (previous; not a live connection check)."),recordingWrap);
+                    GUILayout.Label(device.LogicalDeviceDiagnostic,recordingWrap);
+                }
             }
             if(canReview&&ownerDiagnostics)
             {
@@ -1115,6 +1123,7 @@ namespace AvatarStroop.Unity
             if(device==null||!headReady)
             {if(preSessionChoice.IsTerminal)preSessionChoice.Cancel();else preSessionChoice.Observe(false,false,false,false,false,false);RenderPreSessionChoice();return;}
             var frame=device.Read(Phase.Preparation,headReady);
+            RecordControllerUiPoll(headReady,frame.InputReady,frame.Diagnostic);
             if(preSessionChoice.IsTerminal&&(!frame.DeviceReady||frame.DeviceChanged)){preSessionChoice.Cancel();RenderPreSessionChoice();return;}
             preSessionChoice.Observe(frame.DeviceReady,Time.frameCount>preSessionShownFrame,
                 frame.TriggerHeld,frame.MenuHeld,frame.Trackpad.Pressed,frame.DeviceChanged);
@@ -1129,6 +1138,7 @@ namespace AvatarStroop.Unity
             if(device==null||!headReady)
             {recordingSetup.Observe(false,false,false,false,false,false,null);RenderPreSessionChoice();return;}
             var frame=device.Read(Phase.Preparation,headReady);
+            RecordControllerUiPoll(headReady,frame.InputReady,frame.Diagnostic);
             recordingSetup.Observe(frame.DeviceReady,Time.frameCount>preSessionShownFrame&&view.WasViveRecordingChoiceRendered(recordingSetup.Revision,Time.frameCount),
                 frame.TriggerHeld,frame.MenuHeld,frame.Trackpad.Pressed,frame.DeviceChanged,rig.ActiveViewClock);
             RenderPreSessionChoice();
@@ -1190,6 +1200,7 @@ namespace AvatarStroop.Unity
         }
         public void Poll(bool headReady)
         {
+            BeginControllerUiPoll(headReady);
             if(preSessionChoice!=null){PollPreSessionChoice(headReady);return;}
             if(recordingSetup!=null&&!configured){PollNamedRecordingSetup(headReady);return;}
             if(!configured)return;
@@ -1210,7 +1221,8 @@ namespace AvatarStroop.Unity
                     // for loss/replacement before network or owner actions.
                     // This safety check takes no ordinary mutation capacity.
                     if(faultLatched||!headReady||device==null){FailNamedRawBeforeFrame();return;}
-                    recordedWozFrame=device.Read(participant.Phase,headReady);inputDiagnostic=recordedWozFrame.Diagnostic;
+                    recordedWozFrame=device.Read(participant.Phase,headReady);
+                    RecordControllerUiPoll(headReady,recordedWozFrame.InputReady,recordedWozFrame.Diagnostic);
                     if(!recordedWozFrame.DeviceReady||!recordedWozFrame.Trackpad.Usable||recordedWozFrame.DeviceChanged)
                     {questionnaireGate.Reset();FailNamedRawBeforeFrame();return;}
                 }
@@ -1250,9 +1262,9 @@ namespace AvatarStroop.Unity
                 if(faultLatched){questionnaireGate.Reset();Mutate(()=>ApplyInputUnavailable("Automatic safety: development input fault remains latched."));Render();return;}
                 if(device==null){questionnaireGate.Reset();Mutate(()=>ApplyInputUnavailable("Automatic safety: selected controller input adapter unavailable."));Render();return;}
                 var frame=recordedWozFrame??device.Read(participant.Phase,headReady);
-                // Update even when the neutral/observation safety path returns
-                // early. This is the last observed poll, not a live inventory.
-                inputDiagnostic=frame.Diagnostic;
+                // Display this existing poll only. Never obtain an extra input
+                // sample for UI, which could consume a neutral/confirmation edge.
+                RecordControllerUiPoll(headReady,frame.InputReady,frame.Diagnostic);
                 if(recordingSetup!=null&&namedRawPump==null&&(!frame.DeviceReady||frame.DeviceChanged))
                 {
                     recordingSetup.Cancel();view.SetPresentationAvailable(false);
@@ -1380,6 +1392,7 @@ namespace AvatarStroop.Unity
             }
             if(!headReady||device==null){FailNamedRawBeforeFrame();return;}
             var input=recordedWozFrame??device.Read(participant.Phase,headReady);
+            RecordControllerUiPoll(headReady,input.InputReady,input.Diagnostic);
             if(!input.DeviceReady||!input.Trackpad.Usable||input.DeviceChanged)
             {FailNamedRawBeforeFrame();message+=" Input device readiness or identity changed while preparing the block plan.";return;}
             if(rawPendingBlockPlan==null)
@@ -1899,7 +1912,7 @@ namespace AvatarStroop.Unity
             finally{CapturePauseDiagnostic("Recording stopped; task safety pause.",before,"Owner or software safety request.");recordingTerminal=true;if(view!=null)view.SetPresentationAvailable(false);CheckObservation(true);}
         }
         public void AfterXrStop()
-        {if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)recordingSetup.Cancel();if(device!=null){device.Dispose();device=null;}}
+        {BeginControllerUiPoll(false);if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)recordingSetup.Cancel();if(device!=null){device.Dispose();device=null;}}
         void OnDestroy()
         {
             CloseLegacyWozTaskBinding();
