@@ -39,15 +39,39 @@ namespace AvatarStroop.Tests
         {return new ViveSessionSyntheticRecord("task_event",new[]{"synthetic_value"},new[]{value});}
         static void Exit(ViveSessionJournalAsyncWriter writer)
         {Check.True(SpinWait.SpinUntil(()=>writer.HasExited,5000),"Synthetic worker did not exit.");}
+        // Positive enqueue/finish cases arrange an available queue gate rather
+        // than retrying a false result: contention terminates this writer.
+        // The existing fake target hook runs outside the writer queue gate.
+        sealed class HeaderPausedWriter:IDisposable
+        {
+            readonly ManualResetEvent entered=new ManualResetEvent(false),release=new ManualResetEvent(false);
+            internal readonly ViveSessionJournalAsyncWriter Writer;
+            internal HeaderPausedWriter(ViveSessionSyntheticTarget target,int count,int bytes,long maximumOutputBytes=67108864)
+            {
+                var previous=target.BeforeOperation;int writes=0;
+                target.BeforeOperation=operation=>{
+                    if(operation=="write"&&Interlocked.Increment(ref writes)==1)
+                    {entered.Set();if(!release.WaitOne(5000))throw new IOException("fixture header barrier timeout");}
+                    if(previous!=null)previous(operation);
+                };
+                Writer=new ViveSessionJournalAsyncWriter(target,count,bytes,maximumOutputBytes);
+                if(!entered.WaitOne(5000)){Writer.Withdraw();release.Set();Exit(Writer);throw new Exception("Synthetic header write did not reach its barrier.");}
+                Check.True(Writer.HasReservedIo&&target.WriteCount==0,"Header must be reserved outside the queue gate before owner actions.");
+            }
+            internal void Release(){release.Set();}
+            public void Dispose(){Writer.Withdraw();release.Set();Exit(Writer);entered.Dispose();release.Dispose();}
+        }
         public static void Register(TestSuite suite)
         {
             suite.Run("synthetic async writer emits versioned hash chained records and clean finish",()=>{
                 var target=new ViveSessionSyntheticTarget();int owner=Thread.CurrentThread.ManagedThreadId;
-                var writer=new ViveSessionJournalAsyncWriter(target,8,32768);
+                using(var header=new HeaderPausedWriter(target,8,32768))
+                {
+                var writer=header.Writer;
                 string[] keys={"synthetic_value"},values={"first"};var record=new ViveSessionSyntheticRecord("task_event",keys,values);
                 keys[0]="changed";values[0]="mutated";
                 Check.True(writer.TryEnqueue(record));Check.True(writer.TryEnqueue(new ViveSessionSyntheticRecord("eye_sample",new[]{"marker"},new[]{"fake"})));
-                Check.True(writer.Finish());Exit(writer);Check.Equal(ViveSessionSyntheticWriterState.Closed,writer.State);
+                Check.True(writer.Finish());header.Release();Exit(writer);Check.Equal(ViveSessionSyntheticWriterState.Closed,writer.State);
                 Check.Equal(2L,writer.Accepted);Check.Equal(2L,writer.Committed);
                 Check.True(target.OpenThread!=owner&&target.OpenThread==target.WriteThread&&target.OpenThread==target.FlushThread&&target.OpenThread==target.DisposeThread);
                 var frames=Decode(target.CopyBytes());Check.Equal(4,frames.Count);
@@ -57,6 +81,7 @@ namespace AvatarStroop.Tests
                 Check.Equal("first",frames[1].Fields["synthetic_value"]);Check.Equal("eye_sample",frames[2].Kind);
                 Check.Equal("close",frames[3].Kind);Check.Equal("2",frames[3].Fields["record_count"]);
                 Check.True(!writer.ProductionGateOpen&&!writer.ConsentAuthenticated&&!writer.HardwareAuthenticated&&!writer.DurableStorageProven);
+                }
             });
             suite.Run("synthetic record fields are strictly bounded and copied",()=>{
                 Check.Throws<ArgumentException>(()=>new ViveSessionSyntheticRecord("close",new[]{"x"},new[]{"a"}));
@@ -78,11 +103,14 @@ namespace AvatarStroop.Tests
             suite.Run("a close write reserved before withdrawal remains unclean even if bytes contain close",()=>{
                 var atClose=new ManualResetEvent(false);var release=new ManualResetEvent(false);var target=new ViveSessionSyntheticTarget();int writes=0;
                 target.BeforeOperation=op=>{if(op=="write"&&Interlocked.Increment(ref writes)==3){atClose.Set();if(!release.WaitOne(5000))throw new IOException("fixture timeout");}};
-                var writer=new ViveSessionJournalAsyncWriter(target,4,32768);Check.True(writer.TryEnqueue(Record("one")));Check.True(writer.Finish());
+                using(var header=new HeaderPausedWriter(target,4,32768))
+                {
+                var writer=header.Writer;Check.True(writer.TryEnqueue(Record("one")));Check.True(writer.Finish());header.Release();
                 Check.True(atClose.WaitOne(5000));writer.Withdraw();Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);
                 release.Set();Exit(writer);Check.Equal(0,target.FlushCount);Check.Equal(0,target.DisposeCount);
                 var frames=Decode(target.CopyBytes());Check.Equal(3,frames.Count);Check.Equal("close",frames[2].Kind);
                 Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);
+                }
             });
             suite.Run("queue overflow is fail closed and leaves in-flight result uncertain",()=>{
                 var inWrite=new ManualResetEvent(false);var release=new ManualResetEvent(false);var target=new ViveSessionSyntheticTarget();
@@ -100,6 +128,27 @@ namespace AvatarStroop.Tests
                 Check.True(watch.ElapsedMilliseconds<500);release.Set();Check.True(holder.Join(5000));Exit(writer);
                 Check.True(writer.State==ViveSessionSyntheticWriterState.Faulted||writer.State==ViveSessionSyntheticWriterState.Uncertain);
             });
+            suite.Run("finish under a held queue gate fails once and cannot produce a clean synthetic close",()=>{
+                var target=new ViveSessionSyntheticTarget();
+                using(var header=new HeaderPausedWriter(target,4,32768))
+                using(var entered=new ManualResetEvent(false))using(var release=new ManualResetEvent(false))
+                {
+                    var writer=header.Writer;
+                    var holder=new Thread(()=>{lock(writer.QueueGateForTest){entered.Set();release.WaitOne(5000);}}){IsBackground=true};holder.Start();
+                    try
+                    {
+                        Check.True(entered.WaitOne(5000));var watch=System.Diagnostics.Stopwatch.StartNew();
+                        bool finished=writer.Finish();watch.Stop(); // Exactly one request; false is terminal.
+                        Check.True(!finished&&watch.ElapsedMilliseconds<500,"Contended Finish must return false promptly, never wait or be retried.");
+                        Check.True(writer.QueueDetachedForTest);Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);
+                        Check.Equal(0,target.WriteCount);Check.Equal(0,target.FlushCount);Check.Equal(0,target.DisposeCount);
+                    }
+                    finally{release.Set();Check.True(holder.Join(5000));header.Release();}
+                    Exit(writer);Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);
+                    Check.Equal(0L,writer.Accepted);Check.Equal(0L,writer.Committed);Check.Equal(0,target.FlushCount);Check.Equal(0,target.DisposeCount);
+                    var frames=Decode(target.CopyBytes());Check.Equal(1,frames.Count);Check.Equal("header",frames[0].Kind);
+                }
+            });
             suite.Run("withdrawal detaches queued synthetic records without waiting for held queue gate",()=>{
                 var inWrite=new ManualResetEvent(false);var releaseWrite=new ManualResetEvent(false);var target=new ViveSessionSyntheticTarget();
                 target.BeforeOperation=op=>{if(op=="write"){inWrite.Set();if(!releaseWrite.WaitOne(5000))throw new IOException("fixture timeout");}};
@@ -113,9 +162,12 @@ namespace AvatarStroop.Tests
             suite.Run("fake I/O exception produces uncertain prefix without flush or retry",()=>{
                 var target=new ViveSessionSyntheticTarget();int calls=0;
                 target.BeforeOperation=op=>{if(op=="write"&&Interlocked.Increment(ref calls)==2)throw new IOException("synthetic");};
-                var writer=new ViveSessionJournalAsyncWriter(target,4,32768);Check.True(writer.TryEnqueue(Record("one")));
+                using(var header=new HeaderPausedWriter(target,4,32768))
+                {
+                var writer=header.Writer;Check.True(writer.TryEnqueue(Record("one")));header.Release();
                 Exit(writer);Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);Check.Equal(1,target.WriteCount);
                 Check.Equal(0,target.FlushCount);Check.Equal(0,target.DisposeCount);Check.Equal(0L,writer.Committed);
+                }
             });
             suite.Run("withdrawal while synthetic factory open is reserved starts no later write",()=>{
                 var opened=new ManualResetEvent(false);var release=new ManualResetEvent(false);var target=new ViveSessionSyntheticTarget();
@@ -132,29 +184,42 @@ namespace AvatarStroop.Tests
             });
             suite.Run("synthetic flush failure is uncertain even when close bytes exist",()=>{
                 var target=new ViveSessionSyntheticTarget();target.BeforeOperation=op=>{if(op=="flush")throw new IOException("synthetic flush failure");};
-                var writer=new ViveSessionJournalAsyncWriter(target,4,32768);Check.True(writer.TryEnqueue(Record("one")));Check.True(writer.Finish());
+                using(var header=new HeaderPausedWriter(target,4,32768))
+                {
+                var writer=header.Writer;Check.True(writer.TryEnqueue(Record("one")));Check.True(writer.Finish());header.Release();
                 Exit(writer);Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);Check.Equal(0,target.FlushCount);Check.Equal(0,target.DisposeCount);
                 var frames=Decode(target.CopyBytes());Check.Equal("close",frames[frames.Count-1].Kind);
+                }
             });
             suite.Run("separate synthetic sessions receive distinct tokens",()=>{
                 var a=new ViveSessionSyntheticTarget();var b=new ViveSessionSyntheticTarget();
-                var x=new ViveSessionJournalAsyncWriter(a,4,32768);var y=new ViveSessionJournalAsyncWriter(b,4,32768);
-                Check.True(x.Finish()&&y.Finish());Exit(x);Exit(y);Check.Equal(ViveSessionSyntheticWriterState.Closed,x.State);Check.Equal(ViveSessionSyntheticWriterState.Closed,y.State);
+                using(var first=new HeaderPausedWriter(a,4,32768))using(var second=new HeaderPausedWriter(b,4,32768))
+                {
+                var x=first.Writer;var y=second.Writer;
+                bool xFinish=x.Finish(),yFinish=y.Finish(); // One request per independent writer, never retry false.
+                Check.True(xFinish&&yFinish);first.Release();second.Release();Exit(x);Exit(y);Check.Equal(ViveSessionSyntheticWriterState.Closed,x.State);Check.Equal(ViveSessionSyntheticWriterState.Closed,y.State);
                 Check.True(BitConverter.ToString(Decode(a.CopyBytes())[0].Token)!=BitConverter.ToString(Decode(b.CopyBytes())[0].Token));
+                }
             });
             suite.Run("withdrawal during reserved flush forbids subsequent dispose",()=>{
                 var entered=new ManualResetEvent(false);var release=new ManualResetEvent(false);var target=new ViveSessionSyntheticTarget();
                 target.BeforeOperation=op=>{if(op=="flush"){entered.Set();if(!release.WaitOne(5000))throw new IOException("fixture timeout");}};
-                var writer=new ViveSessionJournalAsyncWriter(target,4,32768);Check.True(writer.Finish());Check.True(entered.WaitOne(5000));
+                using(var header=new HeaderPausedWriter(target,4,32768))
+                {
+                var writer=header.Writer;Check.True(writer.Finish());header.Release();Check.True(entered.WaitOne(5000));
                 writer.Withdraw();Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);release.Set();Exit(writer);
                 Check.Equal(1,target.FlushCount);Check.Equal(0,target.DisposeCount);Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);
+                }
             });
             suite.Run("withdrawal during reserved dispose preserves uncertain outcome",()=>{
                 var entered=new ManualResetEvent(false);var release=new ManualResetEvent(false);var target=new ViveSessionSyntheticTarget();
                 target.BeforeOperation=op=>{if(op=="dispose"){entered.Set();if(!release.WaitOne(5000))throw new IOException("fixture timeout");}};
-                var writer=new ViveSessionJournalAsyncWriter(target,4,32768);Check.True(writer.Finish());Check.True(entered.WaitOne(5000));
+                using(var header=new HeaderPausedWriter(target,4,32768))
+                {
+                var writer=header.Writer;Check.True(writer.Finish());header.Release();Check.True(entered.WaitOne(5000));
                 writer.Withdraw();Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);release.Set();Exit(writer);
                 Check.Equal(1,target.FlushCount);Check.Equal(1,target.DisposeCount);Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);
+                }
             });
             suite.Run("concurrent withdrawal and fault preserve in-flight uncertainty",()=>{
                 var entered=new ManualResetEvent(false);var release=new ManualResetEvent(false);var target=new ViveSessionSyntheticTarget();
@@ -166,26 +231,33 @@ namespace AvatarStroop.Tests
                 release.Set();Exit(writer);Check.Equal(ViveSessionSyntheticWriterState.Uncertain,writer.State);Check.Equal(0,target.FlushCount);
             });
             suite.Run("withdrawal after acknowledged close does not reopen or alter output",()=>{
-                var target=new ViveSessionSyntheticTarget();var writer=new ViveSessionJournalAsyncWriter(target,4,32768);
-                Check.True(writer.Finish());Exit(writer);Check.Equal(ViveSessionSyntheticWriterState.Closed,writer.State);
+                var target=new ViveSessionSyntheticTarget();using(var header=new HeaderPausedWriter(target,4,32768))
+                {
+                var writer=header.Writer;Check.True(writer.Finish());header.Release();Exit(writer);Check.Equal(ViveSessionSyntheticWriterState.Closed,writer.State);
                 byte[] before=target.CopyBytes();writer.Withdraw();byte[] after=target.CopyBytes();
                 Check.Equal(ViveSessionSyntheticWriterState.Closed,writer.State);Check.Equal(BitConverter.ToString(before),BitConverter.ToString(after));
+                }
             });
             suite.Run("withdrawal wins after dispose acknowledgement but before final completion",()=>{
                 var entered=new ManualResetEvent(false);var release=new ManualResetEvent(false);var target=new ViveSessionSyntheticTarget();
-                var writer=new ViveSessionJournalAsyncWriter(target,4,32768);
+                using(var header=new HeaderPausedWriter(target,4,32768))
+                {
+                var writer=header.Writer;
                 writer.BeforeCompletionForTest=()=>{entered.Set();if(!release.WaitOne(5000))throw new IOException("fixture timeout");};
-                Check.True(writer.Finish());Check.True(entered.WaitOne(5000));Check.True(!writer.HasReservedIo);
+                Check.True(writer.Finish());header.Release();Check.True(entered.WaitOne(5000));Check.True(!writer.HasReservedIo);
                 writer.Withdraw();Check.Equal(ViveSessionSyntheticWriterState.Revoked,writer.State);release.Set();Exit(writer);
                 Check.Equal(ViveSessionSyntheticWriterState.Revoked,writer.State);Check.Equal(1,target.DisposeCount);
                 var frames=Decode(target.CopyBytes());Check.Equal("close",frames[frames.Count-1].Kind);
+                }
             });
             suite.Run("synthetic output byte limit preserves an unclean bounded prefix",()=>{
-                var target=new ViveSessionSyntheticTarget();var writer=new ViveSessionJournalAsyncWriter(target,4,32768,256);
-                Check.True(writer.TryEnqueue(Record("one")));Check.True(writer.Finish());Exit(writer);
+                var target=new ViveSessionSyntheticTarget();using(var header=new HeaderPausedWriter(target,4,32768,256))
+                {
+                var writer=header.Writer;Check.True(writer.TryEnqueue(Record("one")));Check.True(writer.Finish());header.Release();Exit(writer);
                 Check.Equal(ViveSessionSyntheticWriterState.Faulted,writer.State);Check.True(target.CopyBytes().Length<=256);
                 var frames=Decode(target.CopyBytes());Check.True(frames.Count>=1&&frames[frames.Count-1].Kind!="close");
                 Check.Equal(0,target.FlushCount);Check.Equal(0,target.DisposeCount);
+                }
             });
         }
     }
