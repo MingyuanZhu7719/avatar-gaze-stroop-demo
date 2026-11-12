@@ -11,8 +11,8 @@ using UnityEngine.XR.OpenXR.Features.Interactions;
 
 namespace AvatarStroop.Unity
 {
-    // Explicitly selected physical wand. Zero is intentionally not a valid hand.
-    public enum VivePreviewControllerHand { Left = 1, Right = 2 }
+    // Automatic requires exactly one connected wand. Zero remains invalid.
+    public enum VivePreviewControllerHand { Left = 1, Right = 2, Automatic = 3 }
 
     // Pure gate shared by the physical adapter and synthetic regression tests.
     // Physical availability and neutral arming are intentionally independent:
@@ -84,7 +84,11 @@ namespace AvatarStroop.Unity
     public sealed class ViveStroopDeviceInput : IDisposable
     {
         readonly InputActionMap actions;
-        readonly InputAction position,rotation,tracked,trackingState,trackpad,trackpadClick,trigger,menu;
+        InputAction position,rotation,tracked,trackingState,trackpad,trackpadClick,trigger,menu;
+        readonly InputAction[] leftActions,rightActions;
+        readonly bool automatic;
+        readonly ViveSingleControllerSelection selection=new ViveSingleControllerSelection();
+        public string ControllerStatus { get { return automatic?selection.Status:"Controller: "+Hand; } }
         readonly int creatorThread;
         bool disposed,hasPhase;
         readonly ViveStroopNeutralGate neutralGate=new ViveStroopNeutralGate();
@@ -97,27 +101,58 @@ namespace AvatarStroop.Unity
 
         public ViveStroopDeviceInput(VivePreviewControllerHand hand)
         {
-            if(hand!=VivePreviewControllerHand.Left&&hand!=VivePreviewControllerHand.Right)
-                throw new ArgumentOutOfRangeException("hand", "Select an explicit left or right VIVE controller.");
+            if(hand!=VivePreviewControllerHand.Left&&hand!=VivePreviewControllerHand.Right&&hand!=VivePreviewControllerHand.Automatic)
+                throw new ArgumentOutOfRangeException("hand", "Use automatic selection or a supported VIVE controller role.");
             var manager=XRGeneralSettings.Instance==null?null:XRGeneralSettings.Instance.Manager;
             if(manager==null||manager.activeLoader!=null||manager.isInitializationComplete)
                 throw new InvalidOperationException("Register VIVE inputs before starting the configured XR loader.");
-            Hand=hand;creatorThread=System.Threading.Thread.CurrentThread.ManagedThreadId;
+            Hand=hand;automatic=hand==VivePreviewControllerHand.Automatic;creatorThread=System.Threading.Thread.CurrentThread.ManagedThreadId;
             actions=new InputActionMap("ViveStroopDevelopment");
             try
             {
-                string device="<ViveController>{"+(hand==VivePreviewControllerHand.Left?"LeftHand":"RightHand")+"}/";
-                position=Add("Position",device+"devicePosition","Vector3");
-                rotation=Add("Rotation",device+"deviceRotation","Quaternion");
-                tracked=Add("Tracked",device+"isTracked","Button");
-                trackingState=Add("TrackingState",device+"trackingState","Integer");
-                trackpad=Add("Trackpad",device+"trackpad","Vector2");
-                trackpadClick=Add("TrackpadClick",device+"trackpadClicked","Button");
-                trigger=Add("Trigger",device+"triggerPressed","Button");
-                menu=Add("Menu",device+"menu","Button");
+                if(automatic)
+                {
+                    leftActions=CreateActions(VivePreviewControllerHand.Left);
+                    rightActions=CreateActions(VivePreviewControllerHand.Right);
+                    UseActions(leftActions);
+                }
+                else UseActions(CreateActions(hand));
                 actions.Enable();
             }
             catch { actions.Dispose(); throw; }
+        }
+
+        InputAction[] CreateActions(VivePreviewControllerHand hand)
+        {
+            string prefix=hand==VivePreviewControllerHand.Left?"Left":"Right";
+            string device="<ViveController>{"+prefix+"Hand}/";
+            return new[] { Add(prefix+"Position",device+"devicePosition","Vector3"),
+                Add(prefix+"Rotation",device+"deviceRotation","Quaternion"),
+                Add(prefix+"Tracked",device+"isTracked","Button"),
+                Add(prefix+"TrackingState",device+"trackingState","Integer"),
+                Add(prefix+"Trackpad",device+"trackpad","Vector2"),
+                Add(prefix+"TrackpadClick",device+"trackpadClicked","Button"),
+                Add(prefix+"Trigger",device+"triggerPressed","Button"),
+                Add(prefix+"Menu",device+"menu","Button") };
+        }
+        void UseActions(InputAction[] set)
+        {position=set[0];rotation=set[1];tracked=set[2];trackingState=set[3];trackpad=set[4];trackpadClick=set[5];trigger=set[6];menu=set[7];}
+        bool SelectUniqueController()
+        {
+            if(!automatic)return true;
+            int count=0;InputDevice candidate=null;
+            foreach(var item in InputSystem.devices)
+                if(item is HTCViveControllerProfile.ViveController&&item.added&&item.enabled){count++;candidate=item;}
+            int role=0;
+            if(count==1)
+            {
+                bool left=false,right=false;
+                foreach(var usage in candidate.usages){if(usage.ToString()=="LeftHand")left=true;if(usage.ToString()=="RightHand")right=true;}
+                if(left!=right)role=left?1:2;
+            }
+            if(!selection.Observe(count,count==1?candidate.deviceId:0,role))return false;
+            Hand=(VivePreviewControllerHand)role;
+            UseActions(role==1?leftActions:rightActions);return true;
         }
 
         InputAction Add(string name,string binding,string type)
@@ -196,7 +231,7 @@ namespace AvatarStroop.Unity
             MainThread();
             try
             {
-                if(!presentationFocused||!OpenXRUtility.IsSessionFocused||!Bound(position)||!Bound(rotation)||
+                if(!SelectUniqueController()||!presentationFocused||!OpenXRUtility.IsSessionFocused||!Bound(position)||!Bound(rotation)||
                     !Bound(tracked)||!Bound(trackingState)||!Active(menu))
                 {safetyMenuGate.Reset();lastSafetyDevice=null;return false;}
                 InputDevice selected=menu.controls[0].device;
@@ -225,6 +260,7 @@ namespace AvatarStroop.Unity
             bool phaseChanged=!hasPhase||previousPhase!=phase;hasPhase=true;previousPhase=phase;
             try
             {
+                if(!SelectUniqueController())return Unavailable(ControllerStatus);
                 if(!presentationReady)return Unavailable("XR presentation or head tracking is not ready.");
                 if(!OpenXRUtility.IsSessionFocused)return Unavailable("OpenXR session is not focused.");
                 var positionState=Inspect(position,false);var rotationState=Inspect(rotation,false);
@@ -234,7 +270,7 @@ namespace AvatarStroop.Unity
                 if(!positionState.Ready||!rotationState.Ready||!trackedState.Ready||!trackingStateState.Ready||
                    !trackpadState.Ready||!clickState.Ready||!triggerState.Ready||!menuState.Ready)
                     return Unavailable(ViveControllerReadinessDiagnostic.Bindings(Hand.ToString(),new[] {
-                        positionState,rotationState,trackedState,trackingStateState,trackpadState,clickState,triggerState,menuState })+DetectedWandHands());
+                        positionState,rotationState,trackedState,trackingStateState,trackpadState,clickState,triggerState,menuState })+(automatic?" "+ControllerStatus:DetectedWandHands()));
                 InputDevice device=trackpad.controls[0].device;
                 if(!(device is HTCViveControllerProfile.ViveController))
                     return Unavailable(Hand+" input resolved to an unsupported controller profile.");

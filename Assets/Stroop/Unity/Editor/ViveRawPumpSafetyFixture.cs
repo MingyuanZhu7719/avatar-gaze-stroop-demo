@@ -386,7 +386,9 @@ namespace AvatarStroop.Unity.Editor
                 Set(bootstrap,"participant",task);Set(bootstrap,"sharedClock",clock);Set(bootstrap,"configured",true);Set(bootstrap,"namedRawPump",pump);
                 Set(bootstrap,"rawPlanStartRequested",1);Set(bootstrap,"rawPendingBlockPlan",capture[3]);Set(bootstrap,"rawPlanDeadline",0d);
                 Set(rig,"previewCamera",camera);camera.cullingMask=-1;
-                Call(bootstrap,"ProcessNamedBlockPlanStart",true);
+                // Reflection does not supply C# optional arguments. This
+                // automatic-condition timeout has no recorded WoZ frame.
+                Call(bootstrap,"ProcessNamedBlockPlanStart",true,null);
                 Require((bool)Get(bootstrap,"rawSafetyLatched")&&camera.cullingMask==0&&task.Phase==Phase.Preparation&&task.CurrentTrial==null,
                     "expired plan wait must stop before practice or stimulus");
                 Require(((string)Get(bootstrap,"message")).Contains("in-flight I/O is unknown"),"timeout must report unknown I/O");

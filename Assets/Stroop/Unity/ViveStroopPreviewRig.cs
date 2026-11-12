@@ -56,7 +56,8 @@ namespace AvatarStroop.Unity
         Vector3 rawPosition;
         Quaternion rawRotation;
         string status=StoppedNotice;
-        GUIStyle label,button;
+        GUIStyle label,button,panel;
+        GUISkin ownerSkin;
         Vector2 ownerScroll;
 
         public void Configure(Camera camera, Transform origin, Transform offset, WorldSpaceExperimentView classroom)
@@ -69,6 +70,7 @@ namespace AvatarStroop.Unity
             view.SetFaults(new[]{"VIVE input is unavailable. No task has started."});
         }
         public bool ViewRunning {get{return starting||running||stopping;}}
+        public string Status {get{return status;}}
         public bool HeadReady {get{return running&&headReady;}}
         internal MonotonicClock ActiveViewClock {get{return running&&!stopping?clock:null;}}
         public static Rect OwnerPanelBounds(float width,float height)
@@ -172,32 +174,72 @@ namespace AvatarStroop.Unity
         }
         void OnGUI()
         {
-            if(label==null){label=new GUIStyle(GUI.skin.label){fontSize=22,wordWrap=true};button=new GUIStyle(GUI.skin.button){fontSize=20,wordWrap=true};}
-            GUILayout.BeginArea(OwnerPanelBounds(Screen.width,Screen.height),GUI.skin.box);
+            using(var desktop=ViveOwnerDesktopLayout.Begin())
+            {
+            var previousSkin=GUI.skin;var previousColor=GUI.color;
+            EnsureOwnerStyles();GUI.skin=ownerSkin;
+            // IMGUI overlays the desktop mirror only. A fully opaque background
+            // prevents classroom TextMesh geometry from leaking through the UI;
+            // it does not change headset camera visibility or stimulus gates.
+            GUI.color=new Color(.055f,.07f,.09f,1);
+            GUI.DrawTexture(new Rect(0,0,desktop.Width,desktop.Height),Texture2D.whiteTexture);
+            GUI.color=Color.white;
+            GUILayout.BeginArea(OwnerPanelBounds(desktop.Width,desktop.Height),panel);
             ownerScroll=GUILayout.BeginScrollView(ownerScroll);
-            GUILayout.Label(ViveStroopRecordingScopePresentation.OwnerDesignHeading(development!=null&&development.LegacyDesignSelected,
-                development!=null&&development.LegacyRawRecordingRequested,development!=null&&development.Configured,
-                ViveControlledRecordingBuildPolicy.Available,ViveStroopDevelopmentBootstrap.LegacyRecordingAvailable),label);
-            GUILayout.Label(ScopeNotice,label);
-            GUILayout.Label("Select Enable eye preview. The cyan dot shows gaze direction from the headset centre, not fixation. Invalid or repeated samples are hidden.",label);
-            GUILayout.Label("Put on the headset and follow its startup prompt. Placement happens once; real head movement remains. The virtual floor may shift.",label);
-            GUILayout.BeginHorizontal();
-            GUI.enabled=!starting&&!running&&!stopping&&!xrCleanupUncertain&&!quitRequested&&(development==null||!development.RecordingBlocked);
-            if(GUILayout.Button("Start classroom view",button,GUILayout.Height(45)))BeginView();
-            GUI.enabled=starting||running;
-            if(GUILayout.Button("Stop view",button,GUILayout.Height(45)))StopView();
-            GUI.enabled=running&&headReady&&worker==null&&!stopping&&!restartBlocked&&(development==null||(!development.RecordingBlocked&&!development.PreSessionChoiceActive));
-            if(GUILayout.Button("Enable eye preview",button,GUILayout.Height(45)))BeginEye();
-            GUI.enabled=worker!=null&&!stopping&&(development==null||!development.NamedRawCompletionActive);
-            if(GUILayout.Button("Stop eye preview",button,GUILayout.Height(45)))StopEye();
-            GUI.enabled=true;
-            if(GUILayout.Button("Exit",button,GUILayout.Height(45)))RequestQuit();
-            GUILayout.EndHorizontal();
-
-            GUILayout.Label(status,label);
             if(development!=null)development.DrawOwnerControls();
+            else
+            {
+                GUILayout.Label("PARTICIPANT  |  Setup",label);
+                GUILayout.Label("The classroom task is not configured.",label);
+            }
             GUILayout.EndScrollView();
+            GUILayout.Space(10);
+            if(development!=null)development.DrawOwnerSafetyControls();
+            if(GUILayout.Button("Close application",button,GUILayout.Height(40)))RequestQuit();
             GUILayout.EndArea();
+            GUI.skin=previousSkin;GUI.color=previousColor;
+            }
+        }
+        void EnsureOwnerStyles()
+        {
+            if(ownerSkin!=null)return;
+            ownerSkin=Instantiate(GUI.skin);
+            ownerSkin.label.fontSize=17;ownerSkin.label.wordWrap=true;
+            ownerSkin.label.normal.textColor=new Color(.92f,.94f,.97f,1);
+            ownerSkin.button.fontSize=17;ownerSkin.button.wordWrap=true;
+            ownerSkin.button.padding=new RectOffset(12,12,10,10);
+            ownerSkin.textField.fontSize=17;ownerSkin.textField.padding=new RectOffset(8,8,8,8);
+            ownerSkin.toggle.fontSize=17;ownerSkin.toggle.wordWrap=true;
+            ownerSkin.toggle.padding=new RectOffset(24,8,8,8);
+            label=new GUIStyle(ownerSkin.label){fontSize=18,wordWrap=true};
+            button=new GUIStyle(ownerSkin.button){fontSize=17,wordWrap=true};
+            panel=new GUIStyle(){padding=new RectOffset(20,20,18,18)};
+        }
+        // Called only inside the configured owner panel. Starting XR/eye
+        // preview remains explicit and never begins task or file recording.
+        public void DrawSessionViewControls()
+        {
+            EnsureOwnerStyles();
+            GUILayout.Space(6);
+            GUILayout.Label("Headset and eye tracking",label);
+            GUILayout.Label(stopping?"Stopping headset view...":starting?"Starting headset view...":
+                !running?"Headset view is off.":!headReady?"Put on the headset and follow its prompt.":
+                worker==null?"Headset ready. Eye tracking is off.":"Headset ready. Eye tracking client is on.");
+            bool previousEnabled=GUI.enabled;
+            GUILayout.BeginHorizontal();
+            GUI.enabled=previousEnabled&&!starting&&!running&&!stopping&&!xrCleanupUncertain&&!quitRequested&&(development==null||!development.RecordingBlocked);
+            if(GUILayout.Button("Start classroom view",button,GUILayout.Height(45)))BeginView();
+            GUI.enabled=previousEnabled&&(starting||running);
+            if(GUILayout.Button("Stop view",button,GUILayout.Height(45)))StopView();
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUI.enabled=previousEnabled&&running&&headReady&&worker==null&&!stopping&&!restartBlocked&&(development==null||(!development.RecordingBlocked&&!development.PreSessionChoiceActive));
+            if(GUILayout.Button("Enable eye tracking",button,GUILayout.Height(45)))BeginEye();
+            GUI.enabled=previousEnabled&&worker!=null&&!stopping&&(development==null||!development.NamedRawCompletionActive);
+            if(GUILayout.Button("Stop eye tracking",button,GUILayout.Height(45)))StopEye();
+            GUILayout.EndHorizontal();GUI.enabled=previousEnabled;
+            if(xrCleanupUncertain||restartBlocked||RawInstallFailure||(!ViewRunning&&status!=StoppedNotice))GUILayout.Label(status,label);
+            GUILayout.Space(8);
         }
         public void BeginView()
         {
@@ -299,7 +341,7 @@ namespace AvatarStroop.Unity
             {
                 var controls=development==null?null:development.ReadStartupAlignmentInput(pose&&supported);
                 startupInputReady=controls!=null&&controls.DeviceReady;
-                startupInputDiagnostic=controls==null?"Select a wand before starting view.":controls.Diagnostic;
+                startupInputDiagnostic=controls==null?"VIVE controller input is not configured.":controls.Diagnostic;
                 bool eligible=startupGate.Observe(Time.frameCount,subsystems,pose&&supported,capable,present,
                     startupView!=null&&startupView.WasRenderedBefore(Time.frameCount),controls!=null&&controls.DeviceReady,
                     controls!=null&&controls.DeviceChanged,controls!=null&&controls.TriggerHeld,
@@ -328,7 +370,7 @@ namespace AvatarStroop.Unity
             else if(headReady)headStatus="Head view ready. Eye capture is off.";
             else if(alignment.Applied)headStatus="Initial view placed. Preparing the next tracked frame.";
             else if(startupGate.AutomaticWearVerified||startupGate.ManualConfirmed)headStatus="Look naturally forward and hold still briefly. Preparing the view once.";
-            else if(development==null||!development.StartupControllerConfigured)headStatus="Stop view, select a wand and configure the preview, then start view again.";
+            else if(development==null||!development.StartupControllerConfigured)headStatus="Configure the session on the desktop, then restart the headset view.";
             else if(!startupInputReady)headStatus="Startup controller is not ready: "+startupInputDiagnostic;
             else headStatus="In the headset: release all controls, then press the trigger once to confirm you are wearing it.";
             headDiagnosticFrame=Time.frameCount;
@@ -340,8 +382,8 @@ namespace AvatarStroop.Unity
                     string prompt=startupGate.KnownAbsent?"Put on the headset.":
                         alignment.HeightRejected?"View preparation paused.\nCheck the desktop status.":
                         startupGate.AutomaticWearVerified||startupGate.ManualConfirmed?"Look naturally forward.\nHold still briefly.\nPreparing your view...":
-                        development==null||!development.StartupControllerConfigured?"Select a wand on the desktop,\nthen restart the view.":
-                        !startupInputReady?"Controller unavailable.\nCheck the selected wand on the desktop.":
+                        development==null||!development.StartupControllerConfigured?"Configure the session on the desktop,\nthen restart the view.":
+                        !startupInputReady?"Controller unavailable.\nConnect exactly one VIVE controller.\nCheck controller status on the desktop.":
                         "Wearing the headset?\nRelease all controls, then press TRIGGER.\nLook naturally forward and hold still.";
                     startupView.Show(pose&&supported,prompt);
                 }
@@ -659,6 +701,7 @@ namespace AvatarStroop.Unity
         bool WantsToQuit(){if(RawInstallFailure){ServiceRawInstallFailure();return true;}if(development!=null&&development.NamedRawPumpAttached){development.RequestNamedRawStopForViewClose();return true;}if(worker==null&&!starting&&!running&&!stopping)return true;RequestQuit();return false;}
         void OnDestroy()
         {
+            if(ownerSkin!=null){Destroy(ownerSkin);ownerSkin=null;}
             HideGazeMarker();gazeContinuity.Reset();
             if(startupView!=null){startupView.Dispose();startupView=null;}
             Application.wantsToQuit-=WantsToQuit;

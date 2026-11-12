@@ -101,6 +101,7 @@ namespace AvatarStroop.Tests
             QuestPreviewInputTests.Register(suite);
             VivePreviewTrackpadInputTests.Register(suite);
             ViveFixedTrackpadMappingTests.Register(suite);
+            ViveSingleControllerSelectionTests.Register(suite);
             ViveStartPoseStabilityTests.Register(suite);
             ViveStartupAlignmentGateTests.Register(suite);
             ViveQuestionnairePresentationTests.Register(suite);

@@ -50,6 +50,8 @@ namespace AvatarStroop.Unity.Editor
             // Configure only this isolated project's official cached packages and
             // generated scene; the installed system runtime is never changed.
             QuestPreviewBuild.Configure();
+            PlayerSettings.resizableWindow=true;
+            PlayerSettings.defaultScreenWidth=1600;PlayerSettings.defaultScreenHeight=1050;
             var openxr=OpenXRSettings.GetSettingsForBuildTargetGroup(BuildTargetGroup.Standalone);
             Require(openxr!=null,"missing isolated OpenXR settings");
             var touch=openxr.GetFeature<OculusTouchControllerProfile>();

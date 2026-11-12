@@ -74,11 +74,11 @@ def start_here_text(controlled=False, legacy=False, guide="", woz=False):
     scope = recording_manifest(controlled, legacy, woz)["recording_scope"]
     heading = ("VIVE DEVELOPMENT PREVIEW / LOCAL SELF-TEST\nPackage scope: " + scope + ".\n"
                "Recording is OFF by default. Building or opening the package starts no task, XR, eye source or file capture.\n"
-               "Confirm configuration for development preview is non-recording: task records stay in memory until close, with no task or eye files.\n")
+               "Choose Preview (no files) for a non-recording run. Task records stay in memory until close, with no task or eye files.\n")
     if controlled:
         woz_notice = ("OPTIONAL PARTICIPANT-LOCAL LEGACY WOZ RECORDING\n"
                       "This separately opted-in development package adds recorded Legacy WoZ; network and recording remain OFF by default.\n"
-                      "Before preparing participant choices, select Legacy A/B/C/D and Record a LiveWoZ session locally (instead of Automatic). Local storage, both headset choices and explicit recording start remain required.\n"
+                      "Choose Record locally, Legacy A/B/C/D, and Use a second-PC WoZ operator. Local storage, both headset choices and explicit recording start remain required.\n"
                       "Use the matching operator package on a second prepared PC. At block preparation, exchange the existing operator clock ID and exact private-LAN endpoints; accept plaintext messaging and create the recorded offer.\n"
                       "The operator must review and explicitly allow forwarding plus participant-local storage before connecting. Start the operator first, then connect the participant. Never use Automatic for the declared recorded WoZ session.\n"
                       "Participant files may include mapped operator head/eye poses plus source, time and status. Participant raw eyes, answers, timings and ratings never go to the operator. Messages are authenticated, not encrypted.\n"
@@ -91,15 +91,15 @@ def start_here_text(controlled=False, legacy=False, guide="", woz=False):
     return heading + (
         "Participant controller manual pause is disabled. Trigger confirms selections, continues and explicitly resumes. Ask the operator to pause or stop. Desktop Withdraw task is the reliable withdrawal control; Escape is not handled in every failed state.\n"
         "Trackpad colours are fixed: up red, right green, down blue, left yellow. Hardware, LAN and study validation are pending.\n"
-        "Open the outer launcher only when no other VIVE preview is running. Select a design and wand, confirm the non-recording configuration, then start the classroom view. The trackpad sector threshold is fixed at 0.5.\n"
+        "Open the outer launcher only when no other VIVE preview is running. Choose Preview (no files), select a design, click Configure preview (no recording), then Start classroom view. Keep exactly one VIVE wand connected; it is selected automatically, regardless of its left/right assignment. The trackpad sector threshold is fixed at 0.5.\n"
         "Follow the headset startup prompt, release controls and hold still briefly. Real head movement is preserved; the virtual floor may shift.\n"
-        "Enable eye preview is a separate explicit diagnostic action, not file recording. Calibration, tracking and focus must remain valid.\n"
+        "Enable eye tracking is a separate explicit diagnostic action, not file recording. Calibration, tracking and focus must remain valid.\n"
         "The pre-session input rehearsal is not consent and does not create a session or record data.\n"
         "SteamVR is selected for this process only. The system runtime and existing Quest build are not changed.\n"
         "This package has not been validated in a headset and does not establish eye accuracy or complete-session coverage.\n\n"
         "OPTIONAL UNRECORDED LEGACY WOZ\n"
         "Use the matching operator package on a second prepared PC. Its START-HERE explains process-local SteamVR startup; do not change the system runtime.\n"
-        "Select Legacy A/B/C/D and non-recording configuration. Complete practice, then leave Automatic unselected.\n"
+        "Choose Preview (no files), Legacy A/B/C/D, and Use a second-PC WoZ operator (unrecorded). Complete practice.\n"
         "Copy the operator's existing clock ID into the participant WoZ panel. Enter exact private-LAN IPv4 endpoints (participant 45171, operator 45172), accept plaintext messaging and create an offer.\n"
         "Transfer the temporary offer privately. Start the operator with explicit head/eye forwarding first, then connect the participant and begin the current block when ready.\n"
         "For a short check, answer one or two main trials, then use Revoke source and pause task. Confirm the task pauses and avatar clears; no automatic resume.\n"
