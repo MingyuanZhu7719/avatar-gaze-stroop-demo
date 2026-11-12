@@ -19,6 +19,34 @@ namespace AvatarStroop.Tests
             {var r=w.TrySubmit(n,id,bytes,payload,plan);if(r==ViveSyntheticWorkerAdmission.Queued)return;Check.Equal(ViveSyntheticWorkerAdmission.Busy,r);Thread.Sleep(1);}
             throw new Exception("bounded submit wait exceeded");
         }
+        // Busy means the nonblocking operation did not inspect or change the
+        // submission. Retry only that result; Queued must immediately fail an
+        // expected rejection rather than becoming an unnoticed extra write.
+        static ViveSyntheticWorkerAdmission SubmitWhenNotBusy(ViveSyntheticCommitWorker w,long n,object id,byte[] bytes,int payload,ViveSyntheticWorkerPlan plan)
+        {
+            for(int i=0;i<5000;i++)
+            {var result=w.TrySubmit(n,id,bytes,payload,plan);if(result!=ViveSyntheticWorkerAdmission.Busy)return result;Thread.Sleep(1);}
+            throw new Exception("bounded admission decision wait exceeded");
+        }
+        static void Reject(ViveSyntheticCommitWorker w,long n,object id,byte[] bytes,int payload,ViveSyntheticWorkerPlan plan)
+        {Check.Equal(ViveSyntheticWorkerAdmission.Rejected,SubmitWhenNotBusy(w,n,id,bytes,payload,plan));}
+        static void Empty(ViveSyntheticCommitWorker w)
+        {
+            for(int i=0;i<5000;i++)
+            {ViveSyntheticWorkerAck ack;var result=w.TryTakeAck(out ack);if(result==ViveSyntheticWorkerAckRead.Busy){Thread.Sleep(1);continue;}
+                Check.Equal(ViveSyntheticWorkerAckRead.Empty,result);Check.True(ack==null);return;}
+            throw new Exception("bounded empty ack decision wait exceeded");
+        }
+        static void HoldGate(ViveSyntheticCommitWorker w,Action whileHeld)
+        {
+            using(var held=new ManualResetEvent(false))using(var release=new ManualResetEvent(false))
+            {
+                var field=typeof(ViveSyntheticCommitWorker).GetField("gate",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);Check.True(field!=null);
+                object gate=field.GetValue(w);var holder=new Thread(()=>{lock(gate){held.Set();release.WaitOne(5000);}}){IsBackground=true};holder.Start();
+                try{Check.True(held.WaitOne(5000));whileHeld();}
+                finally{release.Set();Check.True(holder.Join(5000));}
+            }
+        }
         static ViveSyntheticWorkerAck Take(ViveSyntheticCommitWorker w)
         {
             for(int i=0;i<5000;i++)
@@ -45,7 +73,7 @@ namespace AvatarStroop.Tests
                     Check.Equal(ViveSyntheticWorkerOutcome.Accepted,first.Outcome);Check.Equal(ViveSyntheticWorkerOutcome.Accepted,second.Outcome);
                     byte[] hash;using(var sha=SHA256.Create())hash=sha.ComputeHash(original);EqualBytes(hash,first.CopyDigest());
                     var returned=first.CopyDigest();returned[0]^=255;EqualBytes(hash,first.CopyDigest());
-                    ViveSyntheticWorkerAck extra;Check.Equal(ViveSyntheticWorkerAckRead.Empty,w.TryTakeAck(out extra));Check.True(extra==null);
+                    Empty(w);
                     bool fault,revoked;string reason;var sink=Bytes(w,out fault,out revoked,out reason);
                     var expected=new byte[original.Length+b.Length];Buffer.BlockCopy(original,0,expected,0,original.Length);Buffer.BlockCopy(b,0,expected,original.Length,b.Length);
                     EqualBytes(expected,sink);Check.True(!fault&&!revoked&&reason==null&&!w.ResearchAdmission&&!w.RealStorage&&!w.ConsentAuthenticated);
@@ -62,10 +90,10 @@ namespace AvatarStroop.Tests
             suite.Run("synthetic worker rejects repeated identity and out of order ordinal",()=>{
                 using(var w=new ViveSyntheticCommitWorker(1,1024,2,4096))
                 {var id=new object();Submit(w,0,id,Frame(0,1),1,ViveSyntheticWorkerPlan.Complete);Take(w);
-                    Check.Equal(ViveSyntheticWorkerAdmission.Rejected,w.TrySubmit(1,id,Frame(1,1),1,ViveSyntheticWorkerPlan.Complete));}
+                    Reject(w,1,id,Frame(1,1),1,ViveSyntheticWorkerPlan.Complete);}
                 using(var w=new ViveSyntheticCommitWorker(1,1024,2,4096))
-                {Check.Equal(ViveSyntheticWorkerAdmission.Rejected,w.TrySubmit(1,new object(),Frame(1,1),1,ViveSyntheticWorkerPlan.Complete));
-                    Check.Equal(ViveSyntheticWorkerAdmission.Rejected,w.TrySubmit(0,new object(),Frame(0,1),1,ViveSyntheticWorkerPlan.Complete));}
+                {Reject(w,1,new object(),Frame(1,1),1,ViveSyntheticWorkerPlan.Complete);
+                    Reject(w,0,new object(),Frame(0,1),1,ViveSyntheticWorkerPlan.Complete);}
             });
             suite.Run("synthetic worker accepts exact frame and payload maximums",()=>{
                 using(var w=new ViveSyntheticCommitWorker(2,262144,2,524288))
@@ -75,9 +103,9 @@ namespace AvatarStroop.Tests
             });
             suite.Run("synthetic worker rejects oversize and wrong frame arithmetic",()=>{
                 using(var w=new ViveSyntheticCommitWorker(1,262144,1,524288))
-                {Check.Equal(ViveSyntheticWorkerAdmission.Rejected,w.TrySubmit(0,new object(),Frame(0,261968),261968,ViveSyntheticWorkerPlan.Complete));}
+                {Reject(w,0,new object(),Frame(0,261968),261968,ViveSyntheticWorkerPlan.Complete);}
                 using(var w=new ViveSyntheticCommitWorker(1,1024,1,4096))
-                {Check.Equal(ViveSyntheticWorkerAdmission.Rejected,w.TrySubmit(0,new object(),Frame(0,4),5,ViveSyntheticWorkerPlan.Complete));}
+                {Reject(w,0,new object(),Frame(0,4),5,ViveSyntheticWorkerPlan.Complete);}
             });
             suite.Run("synthetic worker marks partial and full fake failures uncertain without retry",()=>{
                 foreach(var plan in new[]{ViveSyntheticWorkerPlan.PartialThenFail,ViveSyntheticWorkerPlan.CompleteThenFail})
@@ -85,7 +113,7 @@ namespace AvatarStroop.Tests
                 {var frame=Frame(0,8);Submit(w,0,new object(),frame,8,plan);var ack=Take(w);Check.Equal(ViveSyntheticWorkerOutcome.Uncertain,ack.Outcome);
                     bool fault,revoked;string issue;var bytes=Bytes(w,out fault,out revoked,out issue);Check.True(fault&&!revoked&&issue=="fake_write_uncertain");
                     Check.Equal(plan==ViveSyntheticWorkerPlan.PartialThenFail?frame.Length/2:frame.Length,bytes.Length);
-                    Check.Equal(ViveSyntheticWorkerAdmission.Rejected,w.TrySubmit(1,new object(),Frame(1,1),1,ViveSyntheticWorkerPlan.Complete));}
+                    Reject(w,1,new object(),Frame(1,1),1,ViveSyntheticWorkerPlan.Complete);}
             });
             suite.Run("synthetic worker capacity rejection has no partial fake write",()=>{
                 using(var w=new ViveSyntheticCommitWorker(1,1024,2,177))
@@ -94,7 +122,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("synthetic worker revocation refuses future submissions",()=>{
                 using(var w=new ViveSyntheticCommitWorker(1,1024,1,4096))
-                {w.Revoke();Check.Equal(ViveSyntheticWorkerAdmission.Rejected,w.TrySubmit(0,new object(),Frame(0,1),1,ViveSyntheticWorkerPlan.Complete));
+                {w.Revoke();Reject(w,0,new object(),Frame(0,1),1,ViveSyntheticWorkerPlan.Complete);
                     bool fault,revoked;string issue;Check.Equal(0,Bytes(w,out fault,out revoked,out issue).Length);Check.True(revoked);}
             });
             suite.Run("synthetic worker submit ack and revoke never wait for worker lock",()=>{
@@ -107,9 +135,37 @@ namespace AvatarStroop.Tests
                     {Check.Equal(ViveSyntheticWorkerAdmission.Busy,w.TrySubmit(0,new object(),Frame(0,1),1,ViveSyntheticWorkerPlan.Complete));
                         ViveSyntheticWorkerAck ack;Check.Equal(ViveSyntheticWorkerAckRead.Busy,w.TryTakeAck(out ack));w.Revoke();}
                     finally{release.Set();}
-                    Check.True(holder.Join(5000));Check.Equal(ViveSyntheticWorkerAdmission.Rejected,w.TrySubmit(0,new object(),Frame(0,1),1,ViveSyntheticWorkerPlan.Complete));
+                    Check.True(holder.Join(5000));Reject(w,0,new object(),Frame(0,1),1,ViveSyntheticWorkerPlan.Complete);
                 }
             });
+            suite.Run("synthetic worker revoked submission is Busy under held gate then rejected without changing prefix",()=>{
+                using(var w=new ViveSyntheticCommitWorker(2,1024,3,4096))
+                {
+                    Submit(w,0,new object(),Frame(0,3),3,ViveSyntheticWorkerPlan.Complete);Check.Equal(ViveSyntheticWorkerOutcome.Accepted,Take(w).Outcome);
+                    bool fault,revoked;string issue;var prefix=Bytes(w,out fault,out revoked,out issue);Check.True(!fault&&!revoked);
+                    var identity=new object();var frame=Frame(1,2);
+                    HoldGate(w,()=>{w.Revoke();
+                        Check.Equal(ViveSyntheticWorkerAdmission.Busy,w.TrySubmit(1,identity,frame,2,ViveSyntheticWorkerPlan.Complete));});
+                    Reject(w,1,identity,frame,2,ViveSyntheticWorkerPlan.Complete);
+                    EqualBytes(prefix,Bytes(w,out fault,out revoked,out issue));Check.True(!fault&&revoked&&issue==null);Empty(w);
+                }
+            });
+            foreach(bool outOfOrder in new[]{false,true})
+            {
+                bool wrongOrdinal=outOfOrder;
+                suite.Run("synthetic worker "+(wrongOrdinal?"out of order":"invalid frame")+" submission is Busy under held gate then rejected without a write",()=>{
+                    using(var w=new ViveSyntheticCommitWorker(2,1024,3,4096))
+                    {
+                        Submit(w,0,new object(),Frame(0,3),3,ViveSyntheticWorkerPlan.Complete);Check.Equal(ViveSyntheticWorkerOutcome.Accepted,Take(w).Outcome);
+                        bool fault,revoked;string issue;var prefix=Bytes(w,out fault,out revoked,out issue);
+                        long ordinal=wrongOrdinal?2:1;var identity=new object();var frame=Frame((int)ordinal,4);int payload=wrongOrdinal?4:5;
+                        HoldGate(w,()=>Check.Equal(ViveSyntheticWorkerAdmission.Busy,w.TrySubmit(ordinal,identity,frame,payload,ViveSyntheticWorkerPlan.Complete)));
+                        Reject(w,ordinal,identity,frame,payload,ViveSyntheticWorkerPlan.Complete);
+                        EqualBytes(prefix,Bytes(w,out fault,out revoked,out issue));Check.True(fault&&!revoked&&issue=="invalid_submission");Empty(w);
+                        Reject(w,1,new object(),Frame(1,1),1,ViveSyntheticWorkerPlan.Complete);
+                    }
+                });
+            }
         }
         // Do not register in a build containing the original worker: these
         // cases require isolated, test-only hooks around the reservation CAS.
@@ -132,7 +188,7 @@ namespace AvatarStroop.Tests
                                 phase=="after_reserve"?ViveSyntheticWorkerOutcome.Uncertain:ViveSyntheticWorkerOutcome.Accepted;
                             Check.Equal(expected,ack.Outcome);bool fault,revoked;string reason;var bytes=Bytes(w,out fault,out revoked,out reason);
                             Check.True(revoked);Check.Equal(phase=="before_reserve"?0:frame.Length,bytes.Length);
-                            Check.Equal(ViveSyntheticWorkerAdmission.Rejected,w.TrySubmit(1,new object(),Frame(1,1),1,ViveSyntheticWorkerPlan.Complete));
+                            Reject(w,1,new object(),Frame(1,1),1,ViveSyntheticWorkerPlan.Complete);
                         }
                         finally{release.Set();ViveSyntheticWorkerTestHook.Callback=null;}
                     }
@@ -151,7 +207,7 @@ namespace AvatarStroop.Tests
                         };
                         try
                         {
-                            var status=w.TrySubmit(0,new object(),Frame(0,2),2,ViveSyntheticWorkerPlan.Complete);
+                            var status=SubmitWhenNotBusy(w,0,new object(),Frame(0,2),2,ViveSyntheticWorkerPlan.Complete);
                             Check.True(joined,"revocation must not wait for admission lock");
                             if(phase=="before_admission_commit")Check.Equal(ViveSyntheticWorkerAdmission.Rejected,status);
                             else{Check.Equal(ViveSyntheticWorkerAdmission.Queued,status);Check.Equal(ViveSyntheticWorkerOutcome.NotWritten,Take(w).Outcome);}

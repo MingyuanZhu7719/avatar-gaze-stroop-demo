@@ -12,11 +12,29 @@ namespace AvatarStroop.Apps
     public static class SimulatorHost
     {
         static readonly SimulationLifecycleFiles lifecycleFiles=new SimulationLifecycleFiles();
+        static readonly System.Collections.Generic.Dictionary<string,FaultEvent> firstScenarioFaults=new System.Collections.Generic.Dictionary<string,FaultEvent>();
+        sealed class CompletionEvidence
+        {
+            internal readonly string Source,Session;
+            internal readonly Phase Phase;
+            internal readonly int Block;
+            internal readonly bool RecoveryRequired;
+            internal CompletionEvidence(string source,string session,Phase phase,int block,bool recovery)
+            {Source=source;Session=session;Phase=phase;Block=block;RecoveryRequired=recovery;}
+        }
+        static void ObserveScenarioFaults(SimulationPeer app)
+        {
+            firstScenarioFaults.Clear();
+            app.Monitor.FaultRecorded+=fault=>{
+                if(fault.Kind=="fault_started"&&!firstScenarioFaults.ContainsKey(fault.Detail))firstScenarioFaults.Add(fault.Detail,fault);
+            };
+        }
         public static int Main(string[] args)
         {
             AppLanguage.UseEnglishResources();
             try
             {
+                if(args.Length==1&&args[0]=="completion-self-test")return ValidateCompletionEvidence();
                 if(args.Length==3&&args[0]=="journal-extract")
                 {
                     var evidence=JournalEvidenceExporter.Export(Path.GetFullPath(args[1]),Path.GetFullPath(args[2]));
@@ -43,17 +61,18 @@ namespace AvatarStroop.Apps
                     "synthetic timed first press edge",Environment.GetEnvironmentVariable("STROOP_BUILD_SOURCE_DIGEST"));
                 int local=Int32.Parse(args[2],CultureInfo.InvariantCulture),remote=Int32.Parse(args[3],CultureInfo.InvariantCulture);
                 Directory.CreateDirectory(output);
-                Console.WriteLine("SIMULATION ONLY — independent "+role+" process; no real tracking or headset.");
+                Console.WriteLine("SIMULATION ONLY - independent "+role+" process; no real tracking or headset.");
                 if(role=="operator")
                 {
                     using(var app=new OperatorSimulationApplication(session,local,remote,args[5]=="fault-script",args[5]=="safety-stop"))
                     {
+                        if(completion)ObserveScenarioFaults(app);
                         if(recording)app.EnableRecording(Path.Combine(output,"operator-journal.asj"),provenance,.1);
                         double activeStart=WaitForStartup(app,role,local,remote,barrier);
                         Action tick=()=>{app.Tick();CheckRecording(app);AcknowledgeRecording(app,role,app.CurrentTask==null?"None":app.CurrentTask.Phase.ToString(),app.AcquiredSamples.Count,ref lastAcknowledged);};
-                        int postExitTicks=0;
+                        int postExitTicks=0;CompletionEvidence completionEvidence=null;
                         if(killFixture)RunJournalKillFixture(app,activeStart,tick);
-                        else if(completion)RunOperatorScenario(app,args[5],barrier,output,activeStart,tick,out postExitTicks);
+                        else if(completion)RunOperatorScenario(app,args[5],barrier,output,activeStart,tick,out postExitTicks,out completionEvidence);
                         else while(app.Clock.Now-activeStart<8){tick();Thread.Sleep(2);}
                         double activeElapsed=app.Clock.Now-activeStart;
                         app.CloseRecording();CheckRecording(app);
@@ -62,7 +81,7 @@ namespace AvatarStroop.Apps
                             Report(writer,"pid",Process.GetCurrentProcess().Id);Report(writer,"samples_sent",app.SamplesSent);
                             Report(writer,"acquired_samples",app.AcquiredSamples.Count);RecordingReport(writer,app);
                             StartupReport(writer,barrier,activeStart,activeElapsed);
-                            CompletionReport(writer,completion,postExitTicks);
+                            CompletionReport(writer,completion,postExitTicks,completionEvidence);
                             Report(writer,"samples_send_failed",app.SamplesSendFailed);Report(writer,"samples_suppressed",app.SamplesSuppressed);
                             Report(writer,"clock_mapping_available",app.Synchronizer.Snapshot().Available);
                             Report(writer,"clock_unavailable_reason",app.Synchronizer.Snapshot().UnavailableReason);
@@ -83,11 +102,13 @@ namespace AvatarStroop.Apps
                 {
                     using(var app=new ParticipantSimulationApplication(session,local,remote))
                     {
+                        if(completion)ObserveScenarioFaults(app);
                         if(recording)app.EnableRecording(Path.Combine(output,"participant-journal.asj"),provenance,.1);
                         double activeStart=WaitForStartup(app,role,local,remote,barrier);
                         Action tick=()=>{app.Tick();app.RecordControllerEvaluation();app.DriveHeadlessSimulation();CheckRecording(app);AcknowledgeRecording(app,role,app.Experiment.Phase.ToString(),0,ref lastAcknowledged);};
+                        CompletionEvidence completionEvidence=null;
                         if(killFixture)RunJournalKillFixture(app,activeStart,tick);
-                        else if(completion)RunParticipantScenario(app,args[5],barrier,output,activeStart,tick);
+                        else if(completion)RunParticipantScenario(app,args[5],barrier,output,activeStart,tick,out completionEvidence);
                         else while(app.Clock.Now-activeStart<7){tick();Thread.Sleep(2);}
                         double activeElapsed=app.Clock.Now-activeStart;
                         WriteClockEvidence(app,output,"participant");
@@ -99,7 +120,7 @@ namespace AvatarStroop.Apps
                             Report(writer,"pid",Process.GetCurrentProcess().Id);Report(writer,"phase",app.Experiment.Phase);
                             RecordingReport(writer,app);
                             StartupReport(writer,barrier,activeStart,activeElapsed);
-                            CompletionReport(writer,completion,0);
+                            CompletionReport(writer,completion,0,completionEvidence);
                             Report(writer,"main_trials",app.Experiment.Trials.Count(x=>!x.IsPractice));Report(writer,"ratings",app.Experiment.Ratings.Count);
                             Report(writer,"interrupted_main_trials",app.Experiment.Trials.Count(x=>!x.IsPractice&&x.Outcome==TrialOutcome.Interrupted));
                             Report(writer,"applied_remote_stops",app.AppliedRemoteStops);Report(writer,"export_directory",exported.DirectoryPath);
@@ -148,15 +169,17 @@ namespace AvatarStroop.Apps
             return e.Phase==Phase.Rest&&e.Trials.Count(x=>!x.IsPractice)==24&&e.Ratings.Count==5&&
                 new[]{"HeadInvalid","EyeInvalid","ConnectionStale","RecoveryDecisionRequired"}.All(kind=>app.Monitor.Events.Any(x=>x.Kind=="fault_started"&&x.Detail==kind));
         }
-        static void RunParticipantScenario(ParticipantSimulationApplication app,string scenario,string directory,string output,double start,Action tick)
+        static void RunParticipantScenario(ParticipantSimulationApplication app,string scenario,string directory,string output,double start,Action tick,out CompletionEvidence completionEvidence)
         {
-            bool goalWritten=false;
+            bool goalWritten=false;completionEvidence=null;
             while(true)
             {
                 CheckScenarioDeadline(app,scenario,directory,output,start);
                 tick();
                 if(!goalWritten&&ParticipantGoalReached(app,scenario))
                 {
+                    completionEvidence=new CompletionEvidence("participant_local_engine",app.Identity.SessionId,app.Experiment.Phase,app.Experiment.BlockIndex,
+                        app.Monitor.Snapshot(app.Clock.Now,app.Synchronizer).RecoveryDecisionRequired);
                     string goal=Signal("PARTICIPANT_GOAL",app,scenario).TrimEnd('\n');
                     foreach(var trial in app.Experiment.Trials.Where(x=>!x.IsPractice))goal+="\ntrial\t"+trial.TrialId+"\t"+trial.Stimulus.Key;
                     WriteStartupRecord(Path.Combine(directory,"participant-goal.tsv"),goal);goalWritten=true;
@@ -165,8 +188,104 @@ namespace AvatarStroop.Apps
                 Thread.Sleep(2);
             }
         }
-        static bool OperatorGoalReached(OperatorSimulationApplication app,string scenario,string directory)
+        // Engineering completion evidence only. This never supplies a task to
+        // the renderer, tracking source, countdown or receiver recovery path.
+        static string SelectOperatorCompletionEvidence(string session,string scenario,TaskSnapshot current,TaskSnapshot accepted,
+            bool recoveryRequired,bool clockAvailable,int clockExchanges,
+            System.Collections.Generic.IReadOnlyDictionary<string,string> expected,System.Collections.Generic.IReadOnlyDictionary<string,string> observed,
+            bool stopAcknowledged,bool stopPending)
         {
+            if((scenario!="fault-script"&&scenario!="safety-stop")||!clockAvailable||clockExchanges<3||expected==null||observed==null||
+                (scenario=="fault-script"?expected.Count!=24:expected.Count==0||expected.Count>=24)||observed.Count!=expected.Count)return null;
+            for(int index=0;index<expected.Count;index++)
+            {
+                string id=session+"/b0/t"+index,word,actual;
+                if(!expected.TryGetValue(id,out word)||!observed.TryGetValue(id,out actual)||word!=actual)return null;
+            }
+            Phase terminal=scenario=="fault-script"?Phase.Rest:Phase.Paused;
+            var task=current;string source="current_task";
+            if(task==null&&scenario=="fault-script"&&recoveryRequired)
+            {task=accepted;source="historical_accepted_terminal_task";}
+            if(task==null||task.SessionId!=session||task.BlockIndex!=0||task.Segment!=0||task.Phase!=terminal||task.Condition!=Condition.B||
+                task.TrialId!=null||task.Word.HasValue||task.Ink.HasValue||
+                (source=="current_task"&&recoveryRequired)||
+                (scenario=="safety-stop"&&(!stopAcknowledged||stopPending)))return null;
+            return source;
+        }
+        sealed class CompletionTestSocket:IUdpSocket
+        {
+            internal readonly System.Collections.Generic.Queue<byte[]> Incoming=new System.Collections.Generic.Queue<byte[]>();
+            internal int TrackingSent;
+            public System.Net.IPEndPoint LocalEndpoint {get{return new System.Net.IPEndPoint(System.Net.IPAddress.Loopback,45172);}}
+            public bool Poll(){return Incoming.Count>0;}
+            public byte[] Receive(ref System.Net.IPEndPoint sender)
+            {sender=new System.Net.IPEndPoint(System.Net.IPAddress.Loopback,45171);return Incoming.Dequeue();}
+            public void Send(byte[] bytes,System.Net.IPEndPoint remote)
+            {WirePacket packet;string error;if(WireCodec.TryDecode(bytes,out packet,out error)&&packet.Kind==WireKind.HeadEye)TrackingSent++;}
+            public void Dispose(){}
+        }
+        // Deterministic engineering checks on the actual completion selector,
+        // receiver and operator tick. No real socket, clock delay or files.
+        static int ValidateCompletionEvidence()
+        {
+            int assertions=0;
+            Action<bool,string> require=(value,issue)=>{if(!value)throw new InvalidOperationException("Completion self-test: "+issue);assertions++;};
+            const string session="synthetic-completion-self-test";
+            var expected=new System.Collections.Generic.Dictionary<string,string>();
+            for(int i=0;i<24;i++)expected.Add(session+"/b0/t"+i,"Green/Red");
+            var observed=new System.Collections.Generic.Dictionary<string,string>(expected);
+            var terminal=new TaskSnapshot(session,0,0,null,null,null,Phase.Rest,Condition.B);
+            Func<string,TaskSnapshot,TaskSnapshot,bool,bool,int,System.Collections.Generic.IReadOnlyDictionary<string,string>,System.Collections.Generic.IReadOnlyDictionary<string,string>,bool,bool,string> select=
+                (scenario,current,accepted,recovery,clock,exchanges,goal,trials,ack,pending)=>SelectOperatorCompletionEvidence(session,scenario,current,accepted,recovery,clock,exchanges,goal,trials,ack,pending);
+            require(select("fault-script",terminal,terminal,false,true,3,expected,observed,false,false)=="current_task","fresh terminal task must qualify");
+            require(select("fault-script",null,terminal,true,true,3,expected,observed,false,false)=="historical_accepted_terminal_task","latched receiver may supply historical audit milestone");
+            require(select("fault-script",null,terminal,false,true,3,expected,observed,false,false)==null,"historical fallback requires an actual recovery latch");
+            foreach(var invalid in new[]{new TaskSnapshot("other-session",0,0,null,null,null,Phase.Rest,Condition.B),
+                new TaskSnapshot(session,1,0,null,null,null,Phase.Rest,Condition.B),new TaskSnapshot(session,0,1,null,null,null,Phase.Rest,Condition.B),
+                new TaskSnapshot(session,0,0,null,null,null,Phase.Questionnaire,Condition.B),new TaskSnapshot(session,0,0,null,null,null,Phase.Rest,Condition.A)})
+                require(select("fault-script",null,invalid,true,true,3,expected,observed,false,false)==null,"historical task must retain exact session, block, segment, phase and condition");
+            var missing=new System.Collections.Generic.Dictionary<string,string>(observed);missing.Remove(session+"/b0/t23");
+            require(select("fault-script",null,terminal,true,true,3,expected,missing,false,false)==null,"missing observed trial cannot qualify");
+            var mismatch=new System.Collections.Generic.Dictionary<string,string>(observed);mismatch[session+"/b0/t23"]="Red/Green";
+            require(select("fault-script",null,terminal,true,true,3,expected,mismatch,false,false)==null,"trial content mismatch cannot qualify");
+            require(select("fault-script",null,terminal,true,false,3,expected,observed,false,false)==null&&
+                select("fault-script",null,terminal,true,true,2,expected,observed,false,false)==null,"clock availability and exchange threshold remain required");
+            var partial=new System.Collections.Generic.Dictionary<string,string>();for(int i=0;i<3;i++)partial.Add(session+"/b0/t"+i,"Green/Red");
+            var paused=new TaskSnapshot(session,0,0,null,null,null,Phase.Paused,Condition.B);
+            require(select("safety-stop",paused,paused,false,true,3,partial,partial,true,false)=="current_task","current acknowledged safety stop must qualify");
+            require(select("safety-stop",null,paused,true,true,3,partial,partial,true,false)==null,"safety stop must never accept historical task");
+            require(select("safety-stop",paused,paused,false,true,3,partial,partial,false,false)==null&&
+                select("safety-stop",paused,paused,false,true,3,partial,partial,true,true)==null,"safety stop still requires acknowledged nonpending request");
+            require(select("safety-stop",terminal,terminal,false,true,3,partial,partial,true,false)==null,"safety stop requires current Paused phase");
+            var peer=new PeerIdentity(session,"participant",PeerRole.Participant,"simulator/participant",ControlSource.Simulator,"participant-monotonic");
+            var map=new ClockSynchronizer("operator-monotonic",peer.ClockId,new DevelopmentClockConfiguration(3,.1,.2,2,200));
+            for(int i=0;i<3;i++)
+            {double sent=i*.1;string id="completion-exchange-"+i;require(map.RegisterRequest(id,sent),"clock request rejected");
+                require(map.ObserveReply(WirePacket.TimeReply(peer,i,sent+.002,id,"operator-monotonic",sent,sent+.001),sent+.003),"clock reply rejected");}
+            var monitor=new ReceiveMonitor(peer,DevelopmentFixtures.Faults(),"simulator-no-hardware","operator-monotonic");
+            require(monitor.Observe(WirePacket.Hello(peer,0,.25,SessionConfiguration.ProtocolVersion),.25,map).Accepted,"fixture handshake rejected");
+            var main=new TaskSnapshot(session,0,0,session+"/b0/t23",Colour.Green,Colour.Red,Phase.MainTask,Condition.B);
+            require(monitor.Observe(WirePacket.Task(peer,1,.26,main),.261,map).Accepted&&monitor.CurrentTask(.27,map)!=null,"fresh task must be usable before synthetic gap");
+            require(monitor.Snapshot(.6,map).RecoveryDecisionRequired,"250 ms recovery latch must survive fixture gap");
+            require(monitor.Observe(WirePacket.Task(peer,2,.61,terminal),.612,map).Accepted,"postgap terminal packet must remain an accepted audit record");
+            require(select("fault-script",monitor.CurrentTask(.613,map),monitor.LastTask,true,map.Snapshot().Available,3,expected,observed,false,false)=="historical_accepted_terminal_task","actual latched monitor milestone rejected");
+            require(monitor.CurrentTask(.614,map)==null&&monitor.Snapshot(.615,map).RecoveryDecisionRequired,"audit milestone must not restore receiver readiness");
+            var socket=new CompletionTestSocket();
+            using(var transport=new UdpPeer(socket.LocalEndpoint,new System.Net.IPEndPoint(System.Net.IPAddress.Loopback,45171),false,socket))
+            using(var app=new OperatorSimulationApplication(session,45172,45171,false,false,transport))
+            {
+                app.Monitor.RecordConnectionFault("synthetic_completion_gap",app.Clock.Now);
+                socket.Incoming.Enqueue(WireCodec.Encode(WirePacket.Hello(peer,0,0,SessionConfiguration.ProtocolVersion)));
+                socket.Incoming.Enqueue(WireCodec.Encode(WirePacket.Task(peer,1,0,terminal)));app.Tick();
+                require(select("fault-script",app.CurrentTask,app.Monitor.LastTask,true,true,3,expected,observed,false,false)=="historical_accepted_terminal_task","accepted operator audit task missing");
+                app.Tick();require(app.CurrentTask==null&&app.AcquiredSamples.Count==0&&socket.TrackingSent==0&&
+                    app.Monitor.Snapshot(app.Clock.Now,app.Synchronizer).RecoveryDecisionRequired,"historical completion must not acquire or transmit a source sample");
+            }
+            Console.WriteLine("PASS simulator completion evidence self-test: "+assertions+" assertions; historical audit only, receiver latch and source suppression preserved; no real sockets/files/XR.");return 0;
+        }
+        static bool OperatorGoalReached(OperatorSimulationApplication app,string scenario,string directory,out CompletionEvidence completionEvidence)
+        {
+            completionEvidence=null;
             string path=Path.Combine(directory,"participant-goal.tsv");if(!File.Exists(path))return false;
             string content;if(!lifecycleFiles.TryReadText(path,out content))return false;
             var lines=new System.Collections.Generic.List<string>();
@@ -180,20 +299,24 @@ namespace AvatarStroop.Apps
                 expected.Add(fields[1],fields[2]);
             }
             if(scenario=="fault-script"?expected.Count!=24:expected.Count==0||expected.Count>=24)throw new InvalidDataException("Participant goal has the wrong main-trial count");
-            if(!app.Synchronizer.Snapshot().Available||app.ClockExchanges.Count<3||app.CurrentTask==null||
-                app.CurrentTask.Phase!=(scenario=="fault-script"?Phase.Rest:Phase.Paused)||app.ObservedTrials.Count!=expected.Count)return false;
-            foreach(var trial in expected){string observed;if(!app.ObservedTrials.TryGetValue(trial.Key,out observed)||observed!=trial.Value)return false;}
-            return scenario=="fault-script"||(app.StopDelivery.Acknowledged&&!app.StopDelivery.Pending);
+            double now=app.Clock.Now;
+            bool recovery=app.Monitor.Snapshot(now,app.Synchronizer).RecoveryDecisionRequired;
+            string source=SelectOperatorCompletionEvidence(app.Identity.SessionId,scenario,app.Monitor.CurrentTask(now,app.Synchronizer),app.Monitor.LastTask,
+                recovery,app.Synchronizer.Snapshot().Available,app.ClockExchanges.Count,expected,app.ObservedTrials,app.StopDelivery.Acknowledged,app.StopDelivery.Pending);
+            if(source==null)return false;
+            completionEvidence=new CompletionEvidence(source,app.Identity.SessionId,scenario=="fault-script"?Phase.Rest:Phase.Paused,0,recovery);
+            return true;
         }
-        static void RunOperatorScenario(OperatorSimulationApplication app,string scenario,string directory,string output,double start,Action tick,out int postExitTicks)
+        static void RunOperatorScenario(OperatorSimulationApplication app,string scenario,string directory,string output,double start,Action tick,out int postExitTicks,out CompletionEvidence completionEvidence)
         {
-            bool completeWritten=false;postExitTicks=0;
+            bool completeWritten=false;postExitTicks=0;completionEvidence=null;
             while(true)
             {
                 CheckScenarioDeadline(app,scenario,directory,output,start);
                 tick();
-                if(!completeWritten&&OperatorGoalReached(app,scenario,directory))
-                {WriteStartupRecord(Path.Combine(directory,"operator-complete.tsv"),Signal("OPERATOR_COMPLETE",app,scenario).TrimEnd('\n'));completeWritten=true;}
+                CompletionEvidence candidate;
+                if(!completeWritten&&OperatorGoalReached(app,scenario,directory,out candidate))
+                {WriteStartupRecord(Path.Combine(directory,"operator-complete.tsv"),Signal("OPERATOR_COMPLETE",app,scenario).TrimEnd('\n'));completeWritten=true;completionEvidence=candidate;}
                 if(HasSignal(directory,"participant-exited.tsv",Signal("PARTICIPANT_EXITED",app,scenario)))
                 {
                     if(!completeWritten)throw new InvalidDataException("Participant exit arrived before acknowledged scenario completion");
@@ -214,12 +337,20 @@ namespace AvatarStroop.Apps
             {
                 Report(writer,"reason","integration_scenario_timeout");Report(writer,"active_elapsed_seconds",app.Clock.Now-start);
                 WriteLifecycleReadEvidence(writer);
+                Report(writer,"participant_goal_file_exists",File.Exists(Path.Combine(directory,"participant-goal.tsv")));
+                Report(writer,"operator_complete_file_exists",File.Exists(Path.Combine(directory,"operator-complete.tsv")));
+                Report(writer,"participant_exited_file_exists",File.Exists(Path.Combine(directory,"participant-exited.tsv")));
+                foreach(var first in firstScenarioFaults.Values.OrderBy(fault=>fault.LocalSeconds))
+                    writer.WriteLine("first_fault\t"+first.Detail+"\t"+first.LocalSeconds.ToString("R",CultureInfo.InvariantCulture));
                 var participant=app as ParticipantSimulationApplication;var op=app as OperatorSimulationApplication;
                 if(participant!=null)
                 {
                     Report(writer,"phase",participant.Experiment.Phase);Report(writer,"main_trials",participant.Experiment.Trials.Count(x=>!x.IsPractice));
                     Report(writer,"ratings",participant.Experiment.Ratings.Count);Report(writer,"selected_source",participant.Experiment.LockedControl);
                     Report(writer,"selected_source_ready",participant.Experiment.LockedControl.HasValue&&participant.SourceReady(participant.Experiment.LockedControl.Value));
+                    Report(writer,"participant_goal_currently_eligible",ParticipantGoalReached(participant,scenario));
+                    Report(writer,"missing_required_faults",String.Join(",",new[]{"HeadInvalid","EyeInvalid","ConnectionStale","RecoveryDecisionRequired"}.
+                        Where(kind=>!participant.Monitor.Events.Any(fault=>fault.Kind=="fault_started"&&fault.Detail==kind))));
                 }
                 if(op!=null){Report(writer,"phase",op.CurrentTask==null?"Unavailable":op.CurrentTask.Phase.ToString());Report(writer,"observed_trials",op.ObservedTrials.Count);Report(writer,"stop_acknowledged",op.StopDelivery.Acknowledged);}
                 var faults=app.Monitor.Snapshot(app.Clock.Now,app.Synchronizer);var map=app.Synchronizer.Snapshot();
@@ -230,10 +361,16 @@ namespace AvatarStroop.Apps
             }
             throw new TimeoutException("Integration scenario did not reach its required evidence before the test deadline: "+role+" "+scenario);
         }
-        static void CompletionReport(TextWriter writer,bool completion,int postExitTicks)
+        static void CompletionReport(TextWriter writer,bool completion,int postExitTicks,CompletionEvidence evidence)
         {
             Report(writer,"scenario_completion_enabled",completion);Report(writer,"completion_reason",completion?"scenario_goal":"fixed_duration");
             Report(writer,"post_participant_exit_ticks",postExitTicks);
+            Report(writer,"completion_task_evidence_source",evidence==null?"not_applicable":evidence.Source);
+            Report(writer,"completion_task_evidence_scope","audit_milestone_only_not_source_or_rendering_readiness");
+            Report(writer,"completion_task_evidence_session",evidence==null?"":evidence.Session);
+            Report(writer,"completion_task_evidence_phase",evidence==null?"":evidence.Phase.ToString());
+            Report(writer,"completion_task_evidence_block",evidence==null?-1:evidence.Block);
+            Report(writer,"completion_receiver_recovery_required",evidence!=null&&evidence.RecoveryRequired);
         }
         // Opt-in local process-test rendezvous. This is not a transport handshake,
         // connection retry or apparatus recovery procedure. The app is already bound.

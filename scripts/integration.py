@@ -243,9 +243,22 @@ def verify_completion(output, barrier, session, scenario):
     assert set(goal[1:]) == {"trial\t" + identity + "\t" + stimulus for identity, stimulus in trials.items()}, goal
     for report in (participant, operator):
         assert report["scenario_completion_enabled"] == "True" and report["completion_reason"] == "scenario_goal", report
+        assert report["completion_task_evidence_scope"] == "audit_milestone_only_not_source_or_rendering_readiness", report
+        assert report["completion_task_evidence_session"] == session and report["completion_task_evidence_block"] == "0", report
+        assert report["completion_task_evidence_phase"] == ("Rest" if scenario == "fault-script" else "Paused"), report
+        assert report["completion_receiver_recovery_required"] in ("True", "False"), report
+    assert participant["completion_task_evidence_source"] == "participant_local_engine", participant
+    source = operator["completion_task_evidence_source"]
+    if scenario == "fault-script":
+        assert source in ("current_task", "historical_accepted_terminal_task"), operator
+        assert participant["completion_receiver_recovery_required"] == "True", participant
+        assert operator["completion_receiver_recovery_required"] == ("True" if source == "historical_accepted_terminal_task" else "False"), operator
+    else:
+        assert source == "current_task" and operator["completion_receiver_recovery_required"] == "False", operator
     assert participant["post_participant_exit_ticks"] == "0" and operator["post_participant_exit_ticks"] == "1", (participant, operator)
     assert not (barrier / "timeout.tsv").exists(), "A timed-out run cannot pass"
     print("PASS bounded scenario completion and explicit operator tick after confirmed participant exit")
+    print("Completion evidence: participant local engine; operator " + source + "; audit milestone only, no source/rendering readiness claim")
 
 def verify_scenario(output, scenario, source_digest):
     participant, expected, faults = read_report(output / "participant-report.tsv")
@@ -309,6 +322,7 @@ def main():
         binary = build / "AvatarStroop.Simulator.exe"
         subprocess.run([str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-target:exe", "-main:AvatarStroop.Apps.SimulatorHost", "-out:"+str(binary)] + [str(p) for p in sources], check=True)
         launch = [str(mono), str(binary)]
+    subprocess.run(list(launch) + ["completion-self-test"], check=True, timeout=20)
     run_scenario(launch, build, "fault-script", source_digest)
     run_scenario(launch, build, "safety-stop", source_digest)
     run_killed_recording(launch, build, source_digest, release_startup)
