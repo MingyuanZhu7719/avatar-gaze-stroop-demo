@@ -20,7 +20,7 @@ A short one- or two-trial stop produces at most a raw prefix. It is not normal s
 
 ## Public validation and boundaries
 
-See [current evidence](woz-recording-public-evidence-20261110a.md) and the root public manifest for exact current source hashes and checks. The public test entry point is:
+Use the [development verification guide](development.md#verification), the exact source revision and the generated package manifest to identify what was checked. The bounded public test entry point is:
 
     python scripts/test-public-woz.py --static-only
     python scripts/test-public-woz.py --unity-data "/path/to/existing/Editor/Data"
@@ -29,5 +29,9 @@ The runner requires Python 3.10+, an already installed Unity Mono compiler, and 
 
 Existing machine-only native fixture roots and allowlists are empty and explicitly rejected. No generalized path authorization replaces them. Three machine-specific native fixture executables and private build/native scripts are omitted. The public runner's narrow CS0649 exceptions are pinned to exact reviewed fixture declaration lines and remain visible in logs; other warnings fail compilation.
 
-Private participant and operator packages were compiled before this source publication. Their recorded evidence is historical and separate from fresh checks of this sanitized source. Public managed API compilation is not a reproduction of those private player binaries. Physical two-PC LAN, actual HMD visibility/alignment, real SDK/gaze acquisition, accuracy, sampling completeness, scientific validity and durability are not accepted. No real-user recording was performed for public preparation.
+Build both roles from the same reviewed revision and retain their generated manifests with the local packages. A managed API compilation does not validate a player or physical two-PC operation. Eye-acquisition and AOI evidence have their own [sampling and timing contract](vive-eye-acquisition-cadence.md); source availability and a local rehearsal do not establish scientific validity, spatial accuracy or durability. Private recordings, logs and player binaries are not distributed here.
+
+## Wire compatibility
+
+WoZ wire v2 requires the same serialization runtime and build on both computers. `WireCodec.Number` preserves round-trip `R` spellings only when invariant parsing returns the original double bits; otherwise it uses a verified `G17` spelling. Signed zeros normalize to `0`. This addresses the [.NET Framework round-trip formatting limitation](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-numeric-format-strings#round-trip-format-specifier-r). Canonical-byte checks, authentication and replay rejection remain unchanged. Do not mix builds across this contract. `Tests/WozAuthenticatedLanTests.cs` and `Tests/WozAuthenticatedControlTests.cs` retain the executable compatibility regressions.
 

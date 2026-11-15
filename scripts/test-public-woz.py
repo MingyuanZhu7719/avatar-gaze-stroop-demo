@@ -86,20 +86,19 @@ def main():
             binary = out / (name + ".exe")
             options = ["-nostdlib+", "-r:" + str(refs / "mscorlib.dll"), "-r:" + str(refs / "System.dll"), "-r:" + str(refs / "System.Core.dll"), "-nologo", "-langversion:7.3", "-warnaserror", "-target:exe",
                        "-define:" + MODES[mode], "-main:" + main, "-out:" + str(binary)]
-            # Explicit fixture-only warnings remain visible and are checked against reviewed declarations.
-            if mode == "recording":
-                options.append("-warnaserror-:0649")
+            # A focused suite may leave a hook used by another suite unassigned.
+            # Keep those warnings visible and verify every declaration in both modes.
+            options.append("-warnaserror-:0649")
             rsp = out / (name + ".rsp")
             rsp.write_text("\n".join('"' + x + '"' for x in options + [str(x.relative_to(ROOT)) for x in sources]), encoding="utf-8")
             log = run([str(mono), str(csc), "-noconfig", "@" + str(rsp)], out / (name + "-compile.log"), 120)
-            if mode == "recording":
-                import re
-                allowed = json.loads((ROOT / "scripts/public-woz-fixture-warning-declarations.json").read_text())
-                for match in re.finditer(r"(?m)^(.+?)\((\d+),\d+\): warning CS0649:", log):
-                    relative = match[1].replace("\\", "/")
-                    declaration = (ROOT / relative).read_text(encoding="utf-8-sig").splitlines()[int(match[2])-1].strip()
-                    if declaration not in allowed.get(relative, []):
-                        raise RuntimeError("Unreviewed fixture warning: " + relative + ":" + match[2])
+            import re
+            allowed = json.loads((ROOT / "scripts/public-woz-fixture-warning-declarations.json").read_text())
+            for match in re.finditer(r"(?m)^(.+?)\((\d+),\d+\): warning CS0649:", log):
+                relative = match[1].replace("\\", "/")
+                declaration = (ROOT / relative).read_text(encoding="utf-8-sig").splitlines()[int(match[2])-1].strip()
+                if declaration not in allowed.get(relative, []):
+                    raise RuntimeError("Unreviewed fixture warning: " + relative + ":" + match[2])
             run([str(binary)] if os.name == "nt" else [str(mono), str(binary)], out / (name + "-tests.log"), 240)
             result["managed"].append({"name": name, "core_runtime_sources": len(core), "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest()})
         compile_run("unrecorded-memory", "ordinary", BASE_TESTS, "AvatarStroop.Tests.ViveLegacyWozSceneTests")

@@ -1,29 +1,66 @@
-# Headset preview compatibility assessment
+# XR build prerequisites
 
-This is the compatibility assessment that preceded the user-approved isolated Quest integration. See [Quest preview implementation and verification](quest-preview.md) for its current status. The ordinary desktop project still has no XR dependencies.
+The ordinary desktop project has no XR package dependency. Its
+`ProjectSettings/ProjectVersion.txt` retains the desktop baseline. Headset builds
+use a separate prepared project and the pinned **Unity 6000.3.25f1** Editor;
+they do not upgrade or add packages to the checkout in place.
 
-The ordinary desktop preview remains separate, with ordinary cameras and keyboard input. The optional Quest 3 integration uses the existing Windows Meta Link runtime for stereo display and head pose. It does not replace VIVE Pro Eye, supply its eye tracking, or validate the research apparatus. The system OpenXR runtime and drivers have not been changed.
+The shared preparation helper is named `scripts/prepare-quest-preview.py` for
+historical reasons, but both Quest Link and VIVE builders use it. It copies
+existing official package-cache contents into local package dependencies,
+checks their versions and inventories the application source. It does not
+download packages or install an Editor, driver or vendor SDK.
 
-For the project's **6000.0.48f1** baseline, the following exact package combination is present in another existing local project's lockfile/cache and satisfies its declared dependencies:
+| Package | Version pinned by the preparation script |
+|---|---|
+| `com.unity.xr.openxr` | 1.17.1 |
+| `com.unity.xr.management` | 4.7.0 |
+| `com.unity.xr.core-utils` | 2.5.2 |
+| `com.unity.inputsystem` | 1.19.0 |
+| `com.unity.xr.legacyinputhelpers` | 2.1.12 |
 
-| Official Unity package | Candidate version | Declared minimum Unity |
-|---|---:|---:|
-| `com.unity.xr.openxr` | 1.17.1 | 2022.3 |
-| `com.unity.xr.management` | 4.7.0 | 2022.3 |
-| `com.unity.xr.core-utils` | 2.5.2 | 2021.3 |
-| `com.unity.inputsystem` | 1.19.0 | 2022.3 |
-| `com.unity.xr.legacyinputhelpers` (indirect) | 2.1.12 | 2019.4 |
+These are the supported build inputs, not a claim that they are the newest
+packages or compatible with every Unity release. An Editor/package upgrade
+requires a separate dependency and API review; do not bypass the preparation
+script's version checks. XR configuration and subsequent build steps use
+separate Editor invocations so the selected input backend can take effect.
 
-Official [Unity 6000.0](https://docs.unity3d.com/6000.0/Documentation/Manual/com.unity.xr.openxr.html) and [6000.3](https://docs.unity3d.com/6000.3/Documentation/Manual/com.unity.xr.openxr.html) package lists include OpenXR 1.17.1. The exact baseline Editor is absent on RICHARD; installed **6000.3.25f1 in an isolated copy** is therefore a candidate for testing this combination. These are metadata/source compatibility checks, not an executed integration result.
+## Host runtime and hardware
 
-Do **not** copy that older cached combination into 6000.6.7f1. Core Utils 2.5.2 contains an unguarded `GetInstanceID()` Editor call, which conflicts with the API removal already encountered in this project. Its Legacy Input Helpers dependency also requests `com.unity.modules.vr`, removed in Unity 6.5. [Unity upgrade notes](https://docs.unity3d.com/6000.6/Documentation/Manual/UpgradeGuideUnity65.html) and the [6000.6 OpenXR package list](https://docs.unity3d.com/6000.6/Documentation/Manual/com.unity.xr.openxr.html) indicate a newer path; OpenXR 1.18.0 is the listed released baseline, but its complete compatible dependency set has not been verified here.
+| Target | Required setup | What it provides |
+|---|---|---|
+| Desktop preview | Existing supported Unity/.NET toolchain | Ordinary cameras and desktop input; no headset eye tracking. |
+| Quest PC Link preview | Windows, Meta Quest Link, connected Quest headset and Touch controllers | Stereo display, tracked head and preview input. Quest does not replace VIVE eye acquisition. |
+| VIVE participant/diagnostic | Windows x64, SteamVR/OpenXR, VIVE tracking/controller setup and supported installed HTC eye client | Classroom or diagnostics, with explicitly started eye acquisition. |
+| VIVE WoZ operator | Its own tracked headset and eye client; explicitly configured laboratory LAN pairing | Separate operator-control source; the participant package can separately enable participant-local recording. |
 
-The minimal project work would enable the Windows Standalone OpenXR loader and add an XR Origin with a head-pose-driven camera, preserving separate roles and the simulation gate. Meta XR's full SDK, AR Foundation, XR Interaction Toolkit and Android SDK/NDK/JDK are not prerequisites for this limited PC Link display/head-pose preview. [OpenXR supported runtimes](https://docs.unity3d.com/Packages/com.unity.xr.openxr@1.17/manual/index.html), [Unity Link setup](https://docs.unity3d.com/Packages/com.unity.xr.meta-openxr@2.1/manual/get-started/link.html).
+The Quest route uses the host's configured Link/OpenXR setup. The VIVE launcher
+validates SteamVR and selects it through the child-process `XR_RUNTIME_JSON`
+environment before Unity starts. Neither builder changes the system runtime.
+The installed eye-client ABI and loader restrictions are documented in the
+[VIVE adapter](vive-pro-eye-adapter.md).
 
-## Installation and permission boundary
+Android SDK/NDK/JDK, AR Foundation, XR Interaction Toolkit and a complete Meta
+XR SDK are not dependencies of these Windows PC preview builders. Account,
+runtime-consent and calibration setup belong to the relevant vendor tools;
+the application does not perform those actions automatically.
 
-The user subsequently approved adding these official cached packages to an isolated preview project. No packages are added to the ordinary desktop project. Cache license files identify Unity Companion License and, for OpenXR distribution, Unity Package Distribution License; any new explicit agreement remains a stop point. The Input System backend requires a separate Editor invocation after configuration. [Official Input System installation](https://docs.unity3d.com/Packages/com.unity.inputsystem@1.19/manual/Installation.html).
+## Prepare and build
 
-Meta Link is already installed and registered as the current OpenXR runtime, but the user's headset connection and any required developer/account setup have not been verified. Do not create accounts, accept new agreements, change runtime or grant tracking permissions silently. [Meta Link development setup](https://developers.meta.com/vr/documentation/unity/unity-link/).
+Use new sibling workspace directories for prepared projects and outputs. Keep
+earlier builds and recordings separate. For the classroom participant or eye
+diagnostic, prepare the project before invoking the corresponding builder:
 
-The approved development step is an isolated, explicitly labelled headset-preview project. Its eventual acceptance criterion is actual visible stereo rendering and tracked head movement; a successful build alone is insufficient. Real Pro Eye acquisition and formal apparatus acceptance remain separate work.
+```text
+python scripts/prepare-quest-preview.py --editor "<Unity.exe>" --project "<new-project>" --package-cache "<existing-PackageCache>"
+```
+
+Then follow [Quest preview](quest-preview.md), [VIVE adapter and build targets](vive-pro-eye-adapter.md),
+or [desktop preview](desktop-preview.md). The separate WoZ operator builder
+performs its own isolated-project preparation and requires an unused project,
+output and log directory.
+
+Open the generated package through its launcher. A successful build or source
+inventory check does not establish visible stereo output, readable UI,
+controller behavior, gaze accuracy or recording completeness. Verify those on
+the actual setup, and retain session-specific evidence outside the source tree.

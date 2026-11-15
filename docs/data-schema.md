@@ -1,5 +1,7 @@
 # Data export and participant gaze schema
 
+This document specifies the portable `avatar-stroop-csv-1` snapshot and its supplied gaze-summary inputs. Native VIVE VRAW/readable CSV, callback acquisitions and Unity AOI attachments use the separate [eye acquisition and timing contract](vive-eye-acquisition-cadence.md). Limits of this portable exporter are not claims that the repository has no native acquisition or AOI implementation.
+
 Schema version: `avatar-stroop-csv-1`; current software version: `0.5.1-dev`. The portable implementation is in `Assets/Stroop/Core/AuditExport.cs` and `ParticipantGaze.cs`. These are in-memory append-only audit containers, a CSV snapshot exporter, and descriptive gaze-duration calculations. The optional [continuous simulation journal](journal.md) is a separate format and evidence path. Hardware acquisition, apparatus calibration, display-photon timing, automatic AOI classification, and validated clock synchronization are not supplied by these components.
 
 ## Export a snapshot
@@ -117,7 +119,7 @@ In D, eyes/remaining-face intervals are rejected because the avatar is absent. `
 
 The current independent-process integration scenarios have produced and validated real filesystem exports. `scripts/integration.py` runs separate local operator and participant processes over loopback UDP, verifies matching task snapshots, clock/source provenance, faults or acknowledged safety stop, every participant-bundle file hash and row count, source-acquisition row counts, explicit absence of participant eye samples, and absence of headless renderer claims. The fault scenario ends in `Rest` after one block and ratings; the safety-stop scenario ends `Paused` with an interrupted trial. Both correctly export `complete_bundle=true` and `session_completed=false`. This verifies software processes and snapshot data on one host, not two physical computers, headsets or measured rendered exposure.
 
-The portable C# 7.3 code and Unity adapter code have passed managed compilation using the locally installed Unity compiler/runtime and assemblies. The attempted Unity Editor check could not run because no valid Editor license was available; the log reports `No valid Unity Editor license found`. Therefore Editor execution, a rendered scene, camera-observed export records, VR input, and hardware display timing remain unverified. The separate [M4 journal](journal.md) defines tested write/flush failure behavior and interrupted-process prefix checks; see [development.md](development.md) for which complete integration runs have actually passed. Disk-full apparatus behavior, abrupt physical power loss, real participant acquisition and apparatus calibration remain unvalidated.
+Use the [development verification entry points](development.md#verification) for results tied to the source revision under review. The separate [simulation journal](journal.md) defines write/flush failure behavior and interrupted-process prefix checks. Neither the snapshot exporter nor a successful software test establishes physical display timing, apparatus calibration or power-loss durability.
 
 
 ## Diagnostic retention and presentation sampling
@@ -141,3 +143,9 @@ input sequence changes alone remain sampled. Thus this is not complete per-frame
 history: brief discrete holds/culling are retained, but unsampled pose excursions
 and exact exposure durations cannot be inferred. The timestamp remains a camera
 render proxy, never a photon-onset measurement. Headless evaluation is unchanged.
+
+## Native VIVE file identity
+
+Native VRAW recording uses a separate revocable source/stage/CSV lifecycle. Its metadata witness opens request `FILE_READ_ATTRIBUTES` (0x80) through `NtCreateFile`, while retaining the writer's exclusive data access. Metadata witnesses use read/write/delete sharing so they can compare the pinned volume/file identity around the original data-handle close. [`NtCreateFile` requires a valid access mask](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile#remarks); the zero-access behavior of higher-level `CreateFileW` must not be assumed here.
+
+Every metadata operation remains subject to current authority and ordered receipt checks. An identity match proves the result of that completed check; it does not promise a later path lookup, power-loss durability or participant authorization. Unknown or mismatched close/identity operations do not become successful CSV output. See the [local recording guide](controlled-recording-self-test-guide.txt) for output handling.

@@ -24,14 +24,6 @@ python scripts/build-desktop-preview.py --editor "C:\Program Files\Unity\Hub\Edi
 
 Output defaults to `build/desktop-preview`. The script rejects mismatched player/launcher sources and package manifests before building. Add `--check-only` to validate consistency without launching the Editor. It creates two Windows x64 Mono players and compiles the owner window with installed Unity Mono/Roslyn plus Windows Forms. No tool download, license activation or system runtime selection is performed.
 
-## Verification on RICHARD, 28 October 2026
+## Verification boundary
 
-- 148 portable C# regression groups passed (including ten new startup/status contract groups).
-- Managed Unity compilation passed against installed 6000.6.7f1 assemblies: 18 core/runtime, five Unity runtime and two Editor sources, warnings as errors.
-- Independent-process simulation, safety-stop, CSV/journal checks and forced-termination recovery passed.
-- Both final Unity player builds succeeded with zero errors and zero warnings. The separate Windows Forms owner executable compiled with warnings as errors. The package source consistency check passed after refreshing two stale files in the disposable copy.
-- Independent review corrected operator-exit control gating, status-text height, atomic startup-ready publication and mixed-source build prevention.
-
-**Actual UI acceptance is still pending.** The attempted Computer Use launch of `AvatarStroopPreview.exe` returned **“Computer Use app approval timed out.”** A subsequent read-only window inventory showed no preview window. No approval dialog was operated, the action was not retried through another mechanism, and no actual screenshot or button-interaction pass is claimed. The application-specific automation permission is separate from Unity licensing and from running the executable manually.
-
-The new direct-launch path is implemented and built, but the test counts and successful builds do not certify visible typography, camera render acknowledgements, actual keyboard interaction, or headset output. `RunKind.Apparatus` remains blocked. See [XR preview prerequisites](xr-preview-prerequisites.md) before choosing a headset integration path.
+The launchers, owner commands, IPC and simulator lifecycle have portable and Windows Framework test entry points listed in [development verification](development.md#verification). Use results for the exact source and package revision. Compile and build success do not establish visible typography, physical controller behavior or headset timing. This desktop simulation does not admit `RunKind.Apparatus`; see [XR preview prerequisites](xr-preview-prerequisites.md) for the separate headset paths.

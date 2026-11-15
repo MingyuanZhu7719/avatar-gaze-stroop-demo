@@ -5,6 +5,9 @@
   "Assets/Stroop/Runtime/ViveLegacyWozBridge.cs": [
     "internal bool FailCloseForTest;"
   ],
+  "Assets/Stroop/Runtime/ViveNamedRawRecordingPump.cs": [
+    "internal Action BeforeIdleWaitForTest;"
+  ],
   "Assets/Stroop/Runtime/ViveNamedSessionFrameAdmission.cs": [
     "internal Action AfterCountdownReservationForTest;",
     "internal Action BeforeStatusProofPublishForTest,BeforeConsumerReceiptPublishForTest;",
@@ -35,9 +38,5 @@
     "internal Action BeforeCloseForTest;",
     "internal Action BeforeVerifyFileTypeForTest;",
     "internal Action BeforeWriteForTest;"
-  ],
-  "Assets/Stroop/Runtime/ViveSyntheticAsyncReadableCsv.cs": [
-    "internal Action AfterFinishClaimForTest;",
-    "internal Action<byte[]> AfterCopyBeforeEnqueueForTest;"
   ]
 }

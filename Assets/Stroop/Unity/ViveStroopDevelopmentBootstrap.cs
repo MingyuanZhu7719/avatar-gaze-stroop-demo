@@ -2365,7 +2365,9 @@ namespace AvatarStroop.Unity
 // admission, recording start, participant authorization or file operation.
 namespace AvatarStroop.Unity
 {
+    using System;
     using AvatarStroop.Core;
+    using AvatarStroop.Runtime;
     internal static class ViveLegacySceneConfiguration
     {
         internal static SessionConfiguration CreatePreview(string session)

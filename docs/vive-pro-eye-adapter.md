@@ -1,97 +1,144 @@
-# VIVE Pro Eye acquisition adapter: local engineering candidate
+# VIVE Pro Eye acquisition and application integration
 
-This candidate adds real SRanipal acquisition behind `IHeadEyeSource` and a separate Unity hardware rehearsal. It does **not** enable formal apparatus sessions, live two-computer WoZ, participant measurement recording, or a VIVE trackpad response mapping. The accepted Quest and simulated experiment flows remain unchanged. The proposed four-option experiment redesign is still pending its definitions.
+The Windows VIVE path connects the installed HTC eye client to the classroom
+participant, the separate WoZ operator application, and an optional diagnostic
+rehearsal. These are distinct build targets. Participant task input uses the
+implemented VIVE trackpad mapping; controlled development builds can record
+locally after separate task/eye choices. These features do not establish
+apparatus accuracy or approve a study protocol.
 
-## Current completion boundary (5 November)
+See [owner workflow](vive-owner-workflow.md) for participant operation,
+[participant-local WoZ recording](woz-participant-local-recording.md) for pairing
+and storage, and [eye acquisition, calibration and AOI](vive-eye-acquisition-cadence.md)
+for the recording schema and timestamp meanings.
 
-The v3 hardware rehearsal has been manually exercised. Private wearer observations are retained outside version control. No further wearer check is requested or scheduled here. Quantitative accuracy, precision and end-to-end apparatus acceptance are not established by qualitative feedback or aggregate frame counts.
+## Native dependency and lifetime
 
-| Area | Implemented and observed | Remaining work |
-|---|---|---|
-| Real eye acquisition | Installed-client ABI, explicit start/stop, background native lifetime, raw validity/provenance, derived unit ray and fresh head mapping; the user has exercised the separate hardware rehearsal. | Sustained quality and hardware timing remain unmeasured. No claim that every native frame is valid or retained. |
-| Headset presentation | SteamVR selection for the rehearsal child only, tracked view, one-shot alignment, direction marker and a geometric observer placeholder. | A VIVE participant build of the classroom/task flow and a suitable participant/observer rig are not delivered by this rehearsal. |
-| Operator control | `ViveProEyeHeadEyeSource` supplies the existing `IHeadEyeSource` shape with explicit `LiveOperator` identity. | The real source is not wired into an operator application or live participant transport. Current peer applications explicitly use simulator identities and synthetic sources. |
-| Coordinates and targets | Named rehearsal X reflection, head rotation and derived gaze direction are covered by synthetic tests and qualitative head-turn feedback. | Operator tracking space to participant-avatar space, eye origins, anatomical head/eye rig alignment and a real participant-eye target require explicit apparatus transforms. The existing direct-look reference is not live participant eye tracking. |
-| Data and time | Native counters/masks and separate local observation times are represented in memory; the preview retains aggregate diagnostics only. | Versioned acquisition/transport/export provenance is needed before real data enters the journal. Native timestamp units/epoch and capture-time correspondence are not established. Existing simulation exports are not VIVE recordings. |
-| Task responses | The accepted Quest preview response flow remains available. | VIVE trackpad bindings are not selected or implemented. No ABXY mapping is silently assigned to a trackpad. |
-| Failure handling | Native errors, invalid/stale/reordered observations, head/reference loss and unsafe cleanup are blocked in the isolated adapter. Existing transport/journal faults have synthetic tests. | Real two-PC clock exchange, end-to-end latency, dropout/reconnect and combined task-state behavior still require integration and eventual apparatus validation. |
-| Study admission | Formal apparatus gate remains blocked; existing conditions and source semantics are preserved. | Hardware integration does not define the pending four-option condition redesign or approve a study protocol. |
+`SrAnipalViveProEyeProvider` loads the existing Windows x64 `SRanipal.dll` from
+HTC's installed eye-calibration Dashboard Plugins directory. The supported
+client file version is pinned to **1.3.5.1**. Runtime-service and client-library
+versions are distinct; an updated client requires an ABI review before use.
+The loader uses an absolute DLL path and restricted dependency search flags.
+Build scripts do not bundle vendor binaries, install a runtime, change the
+system OpenXR selection, accept eye-data agreements, or invoke calibration.
 
-Safe local work can continue with source review, synthetic regression and provenance/transport design. It must not silently enable live recording, choose VIVE task bindings, equate host observation time with hardware capture time, or remove the apparatus gate. See [software validation and its limits](vive-pro-eye-validation.md); local operational logs and wearer observations are excluded from publication.
+The native v2 payload is 240 bytes. Left, right and combined eye records begin
+at offsets 16, 64 and 112, with 48-byte eye records. Interop uses the Windows
+calling convention; device and calibration booleans use the one-byte C++ ABI.
+The exported header field named `no_user` represents positive data availability
+in this client. Decode inverts it into the adapter's logical `NoUser` absence
+flag; it is not a reliable physical-wear detector.
 
-## Local dependencies and startup
+The installed provider uses native eye callbacks. It immediately copies the
+allowed fields and original monotonic receipt time into a bounded FIFO. Status,
+device and calibration queries run separately; each callback retains the prior
+completed health report and its age. The polling implementation remains for
+providers without callback support and compatibility tests. Callback results
+identify the actual registration return code, not a fabricated eye-read result.
 
-The implementation uses the existing Windows x64 HTC installation. `sr_runtime.exe` was observed as 1.3.6.12, while its signed `SRanipal.dll` client is 1.3.5.1. These are different version numbers. The adapter checks the client version and uses its installed Dashboard Plugins directory, an absolute DLL path, and safe dependency search flags. It does not ship vendor binaries, download an SDK, alter DLL search directories, change OpenXR, install drivers, accept eye-data consent, or launch calibration.
+Native initialization, queries, callback draining and release belong to the
+background worker. Unity consumes a current immutable eye snapshot and acquires
+head pose independently. A cache read cannot refresh the eye's timestamp.
+Normal recording completion unregisters callbacks and drains their tail before
+sealing; withdrawal revokes admission immediately. Queue overflow or uncertain
+cleanup is reported as a fault. A stopped worker must finish cleanup before
+another capture can start.
 
-The thin interop declarations were checked against the installed official managed wrapper, native exports and marshalled layout. `Initial(2, null)`, `GetStatus`, `GetEyeData_v2`, `IsViveProEye`, `IsUserNeedCalibration` and `Release` use the observed Windows ABI. Eye data occupies 240 bytes, with left, right and combined rays at offsets 16, 64 and 112. This is local ABI evidence, not a claim of current vendor support for every Unity version. An updated native client requires review before this adapter will load it.
+## Data, validity and coordinates
 
-HTC's [runtime and SDK support page](https://developer.vive.com/us/support/sdk/category_howto/where-to-download-eye-tracking-runtime-and-sdk.html) now points developers toward OpenXR. The legacy documentation links were unavailable during implementation. No third-party repository's SDK copy was imported. Follow the user's already installed [official SR_Runtime workflow](https://developer.vive.com/resources/openxr/openxr-pcvr/tutorials/how-use-sr_runtime/) and keep eye-data agreement decisions in HTC's UI.
-
-## What is acquired
-
-| Field | Meaning and limit |
+| Data | Meaning |
 |---|---|
-| Native frame sequence and timestamp | Original signed Int32 values. Timestamp units, epoch and wrap semantics are not established; they are not converted to host time or called milliseconds. A decrease requires an explicit new stream epoch. |
-| Host observation times | Monotonic process-clock seconds recorded after API return, separately for eye and head. They are not exposure time, photon onset or verified transport latency. |
-| Left, right and combined rays | Raw native origin in millimetres and direction, with original UInt64 validity mask. Origin and direction validity are independent. No pupil measurements or eye images are retained by the adapter. |
-| Head pose | Current XR tracking-local quaternion with independent device/tracking flags and host observation time. No valid eye is fabricated from head pose. |
-| Runtime, device and calibration state | Native return/status codes, device availability, logical eye-data absence, and calibration-required/unknown/reported-ready. The installed native field named `no_user` is actually positive data presence and is inverted at decode; it is not a reliable physical-wear detector. Reported-ready is not quantitative accuracy validation. |
-| Source identity | `LiveOperator`, `OperatorControl`, explicit `vive-pro-eye/operator/...` stream. No participant serial or other identifying hardware ID is used. |
+| Native frame and timestamp | Original signed Int32 values. Timestamp units, epoch and wrap-to-host mapping remain opaque. |
+| Eye receipt and health-query times | Process-monotonic observations with separate callback, query and dequeue brackets; not sensor exposure or photon onset. |
+| Left/right/combined rays | Raw origin in millimetres, raw direction and original UInt64 mask. Origin and direction validity are independent. Pupil measurements and images are not retained. |
+| Head observation | Independently timed XR quaternion and device/tracking validity; not a simultaneous head pose attached to every callback. |
+| Calibration | Successful raw `NeedsCalibration` output and its result code, or unknown after failure. `ReportedReady` is not quantitative accuracy validation. |
+| Operator control sample | `ViveProEyeHeadEyeSource` supplies `IHeadEyeSource` with operator-control provenance, separate from participant eye measurement. |
 
-`ViveProEyeObservation` retains raw fields and explains validation alongside the existing `HeadEyeSample`. The latter's legacy single capture-time field contains the oldest included **local observation** time. `HardwareCaptureTimeVerified` remains false. This candidate does not send that sample into study transport or journals without its provenance; future acquisition recording needs an explicit schema extension first.
+The operator/preview source rejects invalid masks, missing data, malformed rays,
+stale or reordered observations, unavailable calibration, and invalid head pose.
+Raw values remain unchanged. A separate derived unit direction follows the HTC
+Unity ray convention: reflect X, normalize a finite nondegenerate direction,
+then apply the declared head/reference transform. Combined gaze has no automatic
+left/right fallback. Normalization does not repair a missing validity bit or
+establish spatial accuracy.
 
-## Validity, mapping and faults
+Participant raw acquisition deliberately retains invalid samples as evidence.
+Its `eye_acquisition` stream is independent of Unity-admitted observations and
+their AOI attachment. Eye quality can make an eye observation unavailable
+without stopping an otherwise valid task/head interval. Analysis must use raw
+masks and the correct stream denominator, rather than treating every exported
+row as usable gaze.
 
-The adapter rejects repeated or reordered counter pairs, stale/future host observations, unknown/required calibration, native errors, absent eye data, invalid masks, nonfinite or degenerate directions, unrepresentable magnitudes and nonunit head quaternions. The raw eye direction is preserved. A separate derived direction is normalized using the installed HTC/Unity ray convention before coordinate mapping; it must then pass the unchanged Core unit check. Head and eye remain independently marked. Valid mapped eye additionally requires a fresh valid head observation. It never substitutes cached eye data or camera-forward direction. The 100 ms observation-age limit is an explicit engineering value, not an approved study threshold or an estimate of hardware frame age.
+The classroom AOI path transforms the combined origin and direction into Unity
+world coordinates and intersects the most recent completed render's immutable
+geometry. It records current-pose and rendered-scene clocks separately. Task,
+eyes, remaining face and other are mutually exclusive surface-proxy categories;
+invalid and outside-task rows retain explicit reasons. These categories are
+not fixation detection, anatomical calibration, or proof of physical display
+exposure. Condition D has no applicable avatar AOI.
 
-The installed 1.3.5.1 client and HTC sample establish the misleading native header polarity: byte 0 is positive when eye data is available, despite the managed name `no_user`. The adapter's legacy `NoUser` property retains logical absence semantics, so decoding uses `nativeByte == 0`. The initial candidate used the opposite polarity and could reject valid data. An injected native-buffer-to-source regression now checks the full validity path; structure size and mask layout tests alone could not detect that semantic error.
+The diagnostic marker is only a projected direction indicator. Its brief
+display continuity never alters source validity, native counts or sample times.
+A previously accepted marker is not a new eye sample.
 
-The named rehearsal mapper reflects native direction X and rotates the HMD-local direction once by the tracked head quaternion. It assumes tracking-local and avatar-root-local frames coincide only in the dedicated engineering setup. Raw origin is retained without claiming its full world-coordinate transform. Apparatus mapping and latency validation remain outstanding; subsequent physical movement is preserved and no system recenter is invoked.
+## Build targets
 
-Mapping version 2 uses the actual quaternion inverse. Version 1 used its conjugate, which scaled the vector for a finite-precision quaternion accepted near the existing unit-length boundary and could then reject the result. The correction preserves input vector length without normalizing or altering raw values, masks or tolerance. Synthetic regressions establish this numerical defect; no live evidence yet establishes it as the cause of reported wandering.
+Use the pinned Editor and cached package preparation in
+[XR prerequisites](xr-preview-prerequisites.md). Project and output directories
+must be distinct from the repository and from earlier builds. Each package
+records source inventories and binary hashes; those are build evidence, not
+hardware acceptance.
 
-Mapping version 3 adds a separate SDK-to-ray conversion. Installed HTC `GetGazeRay(... Ray ..., EyeData_v2)` constructs a Unity `Ray`, whose constructor normalizes the direction. It does not require the SDK field to satisfy our earlier `abs(length-squared - 1) <= 1e-6` check. The adapter now derives a unit ray from a finite direction with magnitude greater than the official float `1e-5` threshold. Nonfinite, zero/degenerate and overflowing magnitudes remain rejected. Native masks and raw directions are never repaired or replaced, and a missing validity bit is never rescued by normalization. No single-eye fallback, smoothing, shared Core tolerance, quaternion normalization, freshness or calibration change is included. This addresses a demonstrated contract mismatch; it does not establish the magnitudes of previously rejected live vectors or repair hardware accuracy.
-
-The diagnostic marker has a separate display-only continuity state. Cyan means a newly accepted usable projected ray. Between native frames, amber may show the same previously accepted WORLD point for at most 100 ms from its original observation time, explicitly labelled as a previous sample. This never changes source validity, sample counts or timestamps, and does not reproject an old eye direction using a new head pose. Any current raw validity failure, head/focus/reference loss, stale/missing/reordered frame, identity change, or fresh off-board ray clears it immediately. Stop clears the point. This prevents needless render-cadence blanking; it does not repair invalid eye input or establish accuracy.
-
-The desktop retains only aggregate diagnostic counters after Stop until the next Begin or application exit, so a completed short check can be inspected without keeping the headset on. It separates native direction flags, derived normalization, nonfinite/degenerate/overflow direction rejection, head and mapping rejection, off-board projection, and healthy duplicate views. A convertible direction count is not a usable-frame or accuracy count. Totals include unworn time; the head-ready subset is not proof of wear. No vectors, timestamps or samples are retained in this summary or written to files.
-
-Native initialization, polling and release belong to a background worker so they cannot block the rendered view. The view reads the latest immutable observation with its original time; reading the cache cannot make it a new eye frame. Stop requests are nonblocking, and another capture cannot start while the previous worker still owns the client. Native calls cannot be safely force-cancelled; a hung client may require closing the dedicated process. Uncertain native cleanup is reported rather than treated as a successful restart.
-
-## Build and use
-
-Use the existing Unity 6000.3.25f1 Editor and already cached official packages. Prepare a new isolated project with `scripts/prepare-quest-preview.py`, then run `scripts/build-vive-eye-preview.py --editor <Unity.exe> --project <isolated-project> --output <separate-output> --render-fixture`. This reuses the package/settings helper but builds only `ViveProEyeDiagnostic.unity`; it contains no experiment bootstrap, Quest rig or automatic XR startup.
-
-Open the package-root **`AvatarStroopViveEyePreview.exe` launcher** only when no participant or other foreground XR session is active. The launcher validates the installed SteamVR x64 manifest and library, then sets `XR_RUNTIME_JSON` only in the new Unity child's environment. It never changes the parent's environment, Windows default OpenXR selection or the ordinary Quest launcher. This per-process selection follows the [Khronos loader override mechanism](https://registry.khronos.org/OpenXR/specs/1.1/loader.html#overriding-the-default-runtime-usage). It must happen before Unity native pre-initialization; setting it in a later Unity callback is too late to rely on. Missing or unexpected files block launch instead of silently falling back to Oculus. This local package expects the verified standard Steam installation under Program Files (x86); a different installation needs explicit path support.
-
-Keep the `UnityPlayer` directory beside the launcher; do not directly open its `AvatarStroopViveEyePlayer.exe`. A launcher lease and existing-process checks prevent another old/new VIVE preview from being opened concurrently. Starting the player still does not start acquisition: click **Begin live preview** on the desktop. **Stop capture** releases this process's client and XR loader; it does not quit SteamVR or SR_Runtime. The world board shows head/eye availability and diagnostic counters. The cyan point is a direction-only intersection projected from HMD centre, not a measured eye origin or fixation/accuracy result. The observer is a geometric placeholder, not a validated avatar rig. No trials, responses, study export, raw sample files or network transport are started by this player. HTC's runtime may maintain its own local operational logs.
-
-`scripts/build-vive-eye-probe.py` separately builds an opt-in CLI. With no arguments it prints usage and does not capture. `--self-check` checks layout only. `--observe-live --seconds 3` requests a short eye-only observation and prints aggregate counts, never vectors, identifiers or files. The duration limits the polling loop, not a hard deadline on a blocked vendor call. It does not sample XR head pose.
-
-## Validation boundary
-
-Portable tests use synthetic providers and buffers. Editor images are explicitly synthetic, and a successful player build does not establish headset readability, tracking quality or end-to-end WoZ. Before study admission, verify left/right/up/down direction, head/eye independence, removal/re-wear and tracking loss, reference-space changes, calibration quality, sustained usable-data rate, time synchronization and two-computer transmission. Participant measurement capture, apparatus mapping, VIVE task input and scientific acceptance remain separate work.
-
-Existing raw sessions, exports and prior builds are preserved. The hardware rehearsal is published separately from subsequent Stroop integration work. Publication does not admit an apparatus session or merge the candidate into main.
-
-Executed software checks and their limits are recorded in [candidate validation](vive-pro-eye-validation.md). Each local generated package carries its exact source inventory and binary hashes.
-
-## Official implementation comparison (5 November)
-
-The user's current decision is to repair this adapter first, using official implementations as references, without migrating dependencies. Installed HTC calibration tools contain Unity 2019.1 application assemblies and SRanipal/ViveSR_Client 1.3.5.1. Their compiled API, framework and sample types are useful for signature/layout/control-flow comparison; they are not standalone SDK source or independently launchable example scenes. No SRanipal SDK source/package was found in the searched local workspace/install trees. Importing the complete calibration application's Assembly-CSharp.dll would also import application/UI/physics/HVR dependencies and is not a clean SDK replacement.
-
-The installed official and current native paths use the same Initial(2), Release(2) and GetEyeData_v2 entry points, Winapi calling convention, and 240-byte v2 payload. Official polling caches once per Unity frame or uses a callback, whereas our serial worker polls independently and separately checks status/device/calibration. Official GetGazeRay copies the native direction and flips X; it does not establish finite/unit validity merely because the field is named normalized. At the avatar-sample callsite, HTC tries combined gaze and then left/right gaze. GetGazeRay(COMBINED) itself has no fallback. Our combined-only contract is retained; motion in that sample is not proof that combined gaze passed our checks.
-
-Further metadata-only inspection establishes that the Ray overload then normalizes a derived direction through Unity's Ray constructor. Two independent reviews verified this path and the exact combined XYZ offsets 132/136/140. Native poll/callback/IPC paths pass these direction bytes through. An upstream optional component filter exists, but defaults off; whether it was enabled in the wearer run is unknown. Neither averaging nor filtering is asserted to explain the observed live rejections. The preview's old aggregate mixed nonfinite, zero and finite nonunit values and cannot reconstruct their magnitudes retrospectively.
-
-The comparison also confirmed a status-selector defect in the pinned native 1.3.5.1 client: GetStatus(0) resolves the initialized eye module ID, whereas GetStatus(2) queries fixed module ID zero. Version 2 is an initialization/release selector, not the eye-status selector. The adapter now uses a separate EyeStatusType=0 for status only; lifecycle calls remain 2. A managed-delegate regression exercises the actual dispatch without loading HTC DLLs and verifies selectors plus unchanged return-code/status propagation. The observed runtime happened to assign eye module ID zero, so this correction is not asserted to explain the current wandering.
-
-Possible reference routes, not installed or executed:
-
-| Reference | Relevant evidence | Current limitation |
+| Target | Build entry point | Purpose |
 |---|---|---|
-| [HTC VIVE OpenXR Eye Tracker](https://developer.vive.com/resources/openxr/unity/tutorials/face-data/getting-the-data-of-eye-tracker/) | Official PC support table includes VIVE Pro series and the tutorial supplies per-eye valid gaze poses. | Plugin/runtime extension availability and this Unity 6000.3.25f1 configuration still need isolated verification. The [repository license](https://github.com/ViveSoftware/VIVE-OpenXR-Unity/blob/master/LICENSE.txt) points to HTC's SDK agreement; no new terms were accepted. |
-| [EyeTrackingDataCollectionExample](https://github.com/Pretendprof/EyeTrackingDataCollectionExample) | BSD-2-Clause research example with SRanipal acquisition and head/eye handling. | Its README targets older Unity/OpenVR and explicitly warns about XR Manager compatibility; SRanipal SDK is separately required. It is not a Unity 6 drop-in. |
-| [GazeMetrics](https://github.com/isayasMatter/GazeMetrics) | MIT-licensed reference for accuracy/precision validation. | This is a quality-assessment reference, not evidence that this device or adapter now passes. No data collection was started. |
+| Classroom participant | `scripts/build-vive-stroop-preview.py` | Task/controller flow, automatic or explicitly paired WoZ control, separately enabled local recording. |
+| WoZ operator | `scripts/build-vive-woz-operator-preview.py` | Separate operator headset/source, explicit forwarding permission and participant pairing. No operator recording by default. |
+| Eye diagnostic rehearsal | `scripts/build-vive-eye-preview.py` | Head/eye diagnostics and marker; no experiment task or participant recording. |
+| Eye-only CLI probe | `scripts/build-vive-eye-probe.py` | Explicit short native diagnostic; no XR head capture. |
 
-HTC's [current SDK guidance](https://developer.vive.com/us/support/sdk/category_howto/where-to-download-eye-tracking-runtime-and-sdk.html) recommends OpenXR and still lists the legacy SDK route. This does not justify changing the working runtime during diagnosis. The smallest official comparison using already installed software is sequential HTC validation and our preview, with only one eye client active. If reaching HTC validation requires another calibration, stop and coordinate that user action rather than triggering it automatically. A new official sample build requires the actual SDK package and its version/dependency/license checks. No packages, third-party programs or agreements were added in this review.
+For a participant build, prepare a new isolated project, then select the
+recording capabilities needed for that package:
+
+```text
+python scripts/prepare-quest-preview.py --editor "<Unity.exe>" --project "<new-project>" --package-cache "<existing-PackageCache>"
+python scripts/build-vive-stroop-preview.py --editor "<Unity.exe>" --project "<new-project>" --output "<new-output>" --controlled-recording-development --legacy-raw-recording-development
+```
+
+Add `--legacy-woz-recording-development` only when the participant package also
+needs local WoZ recording; it requires both preceding recording flags. Omit all
+recording flags for a preview-only package. The operator builder prepares its
+own new isolated project:
+
+```text
+python scripts/build-vive-woz-operator-preview.py --editor "<Unity.exe>" --package-cache "<existing-PackageCache>" --project "<new-operator-project>" --output "<new-operator-output>" --logs "<new-log-directory>"
+```
+
+The diagnostic builder uses a separately prepared project:
+
+```text
+python scripts/build-vive-eye-preview.py --editor "<Unity.exe>" --project "<new-diagnostic-project>" --output "<new-diagnostic-output>"
+```
+
+Use the package-root launcher and keep its `UnityPlayer` directory beside it.
+The VIVE launcher validates the installed SteamVR runtime and sets
+`XR_RUNTIME_JSON` only for its new Unity child, before XR initialization. It
+does not change the Windows default runtime. Opening a package does not
+silently start eye acquisition or recording. The CLI probe prints usage with
+no arguments; `--self-check` checks ABI layout, while `--observe-live --seconds 3`
+explicitly requests an eye-only observation. A duration bound cannot cancel a
+blocked vendor call.
+
+## Verification
+
+Synthetic interop and callback tests cover payload semantics, invalid data,
+native lifetime, bounded queues and clock provenance. Unity fixtures cover
+render-scene association, masking and geometry classification. See
+[development verification](development.md#verification) for maintained commands.
+
+Physical acceptance remains build- and setup-specific: verify controller flow,
+unique native cadence and invalid-data fractions, calibrated target directions,
+head/eye independence, tracking loss/recovery, AOI eye/face hits, and any required
+two-PC clock/transport behavior. Check the completed recording and its terminal
+counts before analysis. Software receipt/scene clocks do not establish a native
+sensor-to-photon clock mapping.

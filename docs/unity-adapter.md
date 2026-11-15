@@ -1,6 +1,6 @@
 # Unity development presentation adapter
 
-This adapter is a **simulation development implementation**, not an accepted apparatus configuration. Its project baseline is **Unity 6000.0.48f1**. The world-space layout, primitive avatar, camera placement, colours, font sizing and held-pose fault display all require review and headset verification. The initial Mac Editor attempt was blocked by licensing. Subsequent [Windows verification](windows-validation.md) used an isolated copy with installed Unity **6000.6.7f1**: actual import, scene generation/reload and both Windows player builds passed after a material API compatibility fix. Visual acceptance remains pending. Real-device `RunKind.Apparatus` sessions remain globally blocked.
+This document describes the shared Unity presentation and simulation adapter. The source project retains Unity **6000.0.48f1**; package-specific XR builds use a configured isolated project as described in [development](development.md#toolchain-and-isolated-builds). The primitive avatar, camera layout and render callbacks are software components whose physical visibility and timing require validation for the chosen apparatus. Formal `RunKind.Apparatus` admission remains separate from development previews.
 
 ## Integration
 
@@ -55,18 +55,8 @@ The following describes the implemented wiring. Windows player builds have passe
 5. In the operator application, **P** or the `Operator / Safety stop` context command sends a safety-stop request. The display distinguishes pending delivery from participant acknowledgement. There is no remote resume command; an unacknowledged request must not be treated as a delivered stop.
 6. Owner export writes a synthetic audit snapshot under the project's `exports` directory with render/clock provenance when callbacks have actually occurred. It does not fabricate participant eye tracking, completed trials, completed sessions or headset validation.
 
-## Verification record
+## Verification
 
-Run from the repository root:
+Use the configured isolated Unity project and selected package's Editor entry points for compilation, asset import, scene generation/reload, player builds and synthetic camera/owner fixtures. This preserves the real player/Editor assembly layout and conditional XR symbols. Record the exact source revision and configuration with those results. See [development verification](development.md#verification) for the separate portable and integration entry points.
 
-```sh
-python3 scripts/compile-unity.py
-```
-
-The script reuses `scripts/test.py` compiler discovery (`STROOP_UNITY_CONTENTS` may explicitly select an existing installation). It compiles the actual core and application runtime sources, Unity adapter/bootstrap, and Editor sources as separate assemblies, using the installed Unity Mono/Roslyn compiler and real Unity managed assemblies, C# 7.3 and **warnings as errors**. This compile script uses no fake Unity API stubs and performs no package installation, Editor launch or licensing action.
-
-On 28 October 2026, the adapter and integrated managed assemblies compiled successfully against the installed Unity assemblies; the final integration check is recorded in [Development architecture and verification](development.md). This is managed API compilation evidence only. An independent source review identified the dynamic font-atlas rebinding and missing questionnaire anchors, both corrected before the adapter compile passed.
-
-An ordinary Editor attempt used `-batchmode -nographics -noUpm -quit` with `-executeMethod AvatarStroop.Unity.Editor.DevelopmentSceneBuilder.CreateScenes`. It **failed with exit code 1 before asset import or scene generation**. The local evidence log, `build/unity-editor-check.log`, ends with **“No valid Unity Editor license found. Please activate your license.”** No license activation, retry, package-download workaround or screenshot substitute was performed. This is a failed prerequisite check, not a successful Editor import or render test.
-
-**Later Windows evidence:** actual Editor import, scene save/reload, build-time shaders and both standalone Windows player builds passed with 6000.6.7f1 in an isolated copy; see the [dated verification record](windows-validation.md). **Still unverified:** visible text; rendered acknowledgement under actual camera culling/pause/stale-frame scenarios; actual headset warning visibility and typography; XR/controller input; real operator or participant tracking; two physical computers/two VIVE Pro Eye devices; calibrated geometry, timing and synchronization. Real-device apparatus operation remains blocked. Do not mark PRD AC-06 or AC-08 as passed on compilation, builds or headless simulation evidence.
+Camera callbacks describe a software render pass, not photon onset or measured headset visibility. Controller behavior, calibrated geometry, spatial gaze accuracy, physical timing and two-computer acceptance require their own evidence. A successful compile or fixture does not complete PRD AC-06 or AC-08.

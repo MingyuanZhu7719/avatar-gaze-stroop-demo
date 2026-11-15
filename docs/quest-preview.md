@@ -2,7 +2,7 @@
 
 This optional build adds a head-tracked participant view and Touch controller interaction to the existing simulation. **Quest 3 is a preview device. It does not replace VIVE Pro Eye, measure participant eye movements, or supply real WoZ gaze.** Avatar control remains the owner's explicitly selected automatic or independent synthetic source. The apparatus gate remains closed.
 
-**Current acceptance (2026-10-29):** the user confirmed that the adjusted 2 m HUD is readable inside Quest 3. This accepts the preview text layout only. The subsequently requested classroom/whiteboard layout needs its own wearer review. Physical controller responses, deliberate head-movement checks and the complete experiment flow remain unaccepted; the desktop mirror's top-header crop is still a separate known issue.
+**Historical Quest-only layout check (2026-10-29):** the user confirmed that the adjusted 2 m HUD is readable inside Quest 3. This accepts the preview text layout only. The subsequently requested classroom/whiteboard layout needs its own wearer review. Physical controller responses, deliberate head-movement checks and the complete experiment flow remain unaccepted; the desktop mirror's top-header crop is still a separate known issue.
 
 ## Open the preview
 
@@ -106,7 +106,7 @@ The word retains its centre height, depth and rendering witness. The first rende
 The earlier live practice request did not start a trial: at 06:06:47 UTC the current player was still in Preparation with a live no-XR-focus diagnostic. The Start Practice command had not been issued in that session. The subsequent classroom work superseded waiting in the headset. No new main-task source, VIVE trackpad mapping or formal collection was selected. A brief review of the new classroom is the next human visual check; it is separate from the accepted HUD and from eventual controller/practice-flow acceptance.
 
 
-The delivered classroom package uses fixed characterSize **0.0225**, fontSize 100 and scale 1; the longest word measures about **0.9405 by 0.25137 m**. Its synthetic renders and migration checks passed, both Windows players built with zero errors/warnings, and the owner Framework probe passed 19 checks. See the [classroom verification record](development.md#classroom-verification-result) for the source/test boundary. New-package GUI and headset review are still pending: when switching versions, the existing old package was found in a later PracticeCorrection session and was left intact. Finish or close that old preview before opening the complete new package; no competing XR player was launched.
+The delivered classroom package uses fixed characterSize **0.0225**, fontSize 100 and scale 1; the longest word measures about **0.9405 by 0.25137 m**. Its synthetic renders and migration checks passed, both Windows players built with zero errors/warnings, and the owner Framework probe passed 19 checks. See the [classroom verification record](development.md#verification) for the source/test boundary. New-package GUI and headset review are still pending: when switching versions, the existing old package was found in a later PracticeCorrection session and was left intact. Finish or close that old preview before opening the complete new package; no competing XR player was launched.
 
 
 ### User feedback and requested task-view cleanup

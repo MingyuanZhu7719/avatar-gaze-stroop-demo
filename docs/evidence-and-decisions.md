@@ -108,7 +108,7 @@ Correct arithmetic and a readable diagram do not establish headset accuracy, ani
 
 | Version | Scope |
 |---|---|
-| Earlier Word plan | Historical design document at `docs/Avatar_Gaze_Experiment_Plan.docx`; retained unchanged |
+| Earlier Word plan | [Historical Word document](https://github.com/MingyuanZhu7719/avatar-gaze-stroop-demo/blob/daaab2c42aed92360c9d679a9fef8c608c01cf53/docs/Avatar_Gaze_Experiment_Plan.docx) preserved in Git history; the Markdown design is current |
 | 26 October 2026 Markdown baseline | Latest accepted four-condition design, explicit practice rule and timing, balanced 24-trial blocks, bilingual custom items, control restrictions, pause rules, evidence boundaries, and open lab checks |
 | 28 October 2026 local control-architecture revision | Confirms a VIVE Pro Eye, computer, and application for each of the participant and operator roles. The independent operator capture application/PC transmits live head rotation and eye gaze to the participant application/PC, whose avatar interface also accepts its local automatic source. Flow, presentation interface, and logs are shared; actual live deviations and unresolved integration checks remain explicit. Other experimental parameters are retained |
 

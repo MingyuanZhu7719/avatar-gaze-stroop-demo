@@ -362,7 +362,10 @@ namespace AvatarStroop.Tests
                     Check.Equal("LEGACY_ABCD",result.TrialProjection.DesignVariant);Check.True(result.TrialProjection.OperatorWozRecordingDeclared);
                     using(var input=new MemoryStream(bytes,false))using(var output=new MemoryStream())
                     {
-                        Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,16777216,20000,33554432,CancellationToken.None));
+                        // Match the current CSV budget: expanded eye/AOI columns also widen long-form WoZ rows.
+                        const long maximumCsvBytes=268435456;
+                        Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,16777216,20000,maximumCsvBytes,CancellationToken.None));
+                        Check.True(output.Length>0&&output.Length<=maximumCsvBytes,"CSV remains within its explicit output budget");
                         var csv=Encoding.UTF8.GetString(output.ToArray());Check.True(csv.Contains("woz_network_evidence")&&csv.Contains("woz_receipt_participant_time")&&csv.Contains("woz_head_operator_time"));
                         Check.True(csv.Contains("PoseUsed")&&csv.Contains("INDEPENDENT_NOT_SYNCHRONIZED")&&csv.Contains("HMAC_SHARED_KEY_POSSESSION")&&csv.Contains("NATIVE_TIME_OPAQUE")&&csv.Contains("INGEST_NOT_SAMPLE_ALIGNMENT"));
                         Check.True(csv.Contains(f.Clock.ClockId)&&csv.Contains(f.RemoteClock.ClockId)&&!csv.Contains("WOZPROC2."));

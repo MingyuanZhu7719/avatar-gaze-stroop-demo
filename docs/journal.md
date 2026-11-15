@@ -1,12 +1,12 @@
 # Continuous simulation recording and offline evidence extraction
 
-M4 adds an opt-in recorder to the two development simulation applications. It does not admit apparatus sessions, acquire real eyes/headsets, choose a participant fault policy, or resume an interrupted experiment. Existing CSV snapshot export remains a separate operation. Recording uses the installed C# runtime and no added package.
+This format is the opt-in journal used by the two development simulation applications. It does not itself acquire real eyes/headsets or admit an apparatus session. Native VIVE VRAW and readable CSV use a separate [acquisition and timing contract](vive-eye-acquisition-cadence.md). Portable CSV snapshot export also remains a separate operation. This journal uses the installed C# runtime and no added package.
 
 ## Enable and inspect
 
 The console host accepts `--journal` after its existing role/session/ports/output/scenario arguments. It creates `participant-journal.asj` or `operator-journal.asj` inside the explicitly supplied output directory. Each path must be unused. The integration launcher supplies the option to both roles, coordinates their startup, and uses the existing opt-in scenario-completion evidence handshake; manually starting a peer before its counterpart has bound is not an accepted readiness procedure.
 
-The Unity development bootstrap accepts `--stroop-journal /absolute/path/new-session.asj` independently of its optional owner command-file argument. Supply a different unused file for each role and an existing parent directory. Current executed compilation, scene and player-build evidence is recorded in [development.md](development.md); those checks do not establish headset or study validation. No recording directory, access policy or retention rule is selected for a study.
+The Unity development bootstrap accepts `--stroop-journal /absolute/path/new-session.asj` independently of its optional owner command-file argument. Supply a different unused file for each role and an existing parent directory. Build and verification entry points are listed in [development.md](development.md#verification); results must identify the tested revision and do not establish headset or study validation. No recording directory, access policy or retention rule is selected for a study.
 
 For an existing .NET SDK, extract an offline journal with:
 

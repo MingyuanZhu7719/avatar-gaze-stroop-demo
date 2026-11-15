@@ -1,23 +1,18 @@
 # Eye acquisition cadence and calibration evidence
 
-The 15 November local rehearsal contained 7,907 admitted eye observations over
-215.831 software seconds (36.63 observations/s). That is an export observation
-density, not the native sensor rate. Inspection found two software limitations:
+Native acquisition and Unity admission are separate sampling layers. A
+latest-only worker snapshot with one admission per Unity update cannot preserve
+every native frame. Serial blocking SDK health/read calls can also limit
+acquisition throughput, and an ordinary timed wait may exceed its requested
+delay because of OS scheduling. The callback and FIFO design below separates
+native delivery from owner-thread admission and records timing evidence for
+each layer.
 
-1. `ViveProEyeWorker` previously retained only `Latest`; the owner admitted at most
-   one sample per Unity update. Intermediate native frames could be overwritten.
-2. On this Windows machine, 120 `ManualResetEvent.WaitOne(5)` waits measured a
-   median of 15.556 ms, mean 15.830 ms, and p95 16.135 ms. The nominal 5 ms delay
-   was not a reliable 5 ms delay. These measurements were made without eye
-   acquisition; they do not isolate the prior run's vendor IPC cost.
-
-The worker now uses an interruptible high-resolution Windows waitable timer.
-An isolated probe using the same installed Unity Mono runtime measured 120 waits
-at median 5.489 ms, mean 5.471 ms, p95 5.955 ms, with stop interruption passing.
-It does not change global timer resolution. Unsupported platforms fall back to
-the ordinary wait, and `UsesHighResolutionPollDelay` reports the active mode.
-This does not guarantee any native data rate. Native callback acquisition is
-described below; cadence must still be checked in each new hardware run.
+The worker uses an interruptible high-resolution Windows waitable timer for its
+nominal 5 ms delay, without changing global timer resolution. Unsupported
+platforms fall back to the ordinary wait, and `UsesHighResolutionPollDelay`
+reports the active mode. Neither that setting nor callback registration
+guarantees a native data rate; measure cadence in each hardware run.
 
 The separately authorized acquisition FIFO retains every distinct successful
 native frame identity, including invalid directions and calibration-required
@@ -43,9 +38,10 @@ task's same `IClock`; separately paired Unity clock values are recorded with the
 AOI association. Neither clock pairing establishes the meaning of the opaque
 native timestamp.
 
-The FIFO holds 2,048 records. Overflow faults recording admission instead of
-silently discarding the oldest record. Identity deduplication is bounded at
-262,144 distinct frame/timestamp pairs per admitted run; reaching that budget
+The worker acquisition FIFO holds 2,048 records. Overflow faults recording
+admission instead of silently discarding the oldest record. Identity
+deduplication is bounded at 262,144 distinct frame/timestamp pairs per admitted
+run; reaching that budget
 also faults admission. Consent/revocation and graceful terminal drain use the
 same run boundary as status evidence. Pre-admission eye observations are not
 recorded. Normal completion first quiesces and drains callback acquisition, as
@@ -56,10 +52,11 @@ specified below; withdrawal remains an immediate admission revocation.
 The installed provider uses `RegisterEyeDataCallback_v2` instead of obtaining
 each eye sample through a blocking `GetEyeData_v2` read. The callback copies
 only the allowed native gaze fields, original native frame/timestamp, local
-receipt time, and the latest completed health report into a bounded in-memory
-FIFO. It calls no Unity, disk, task, or native health API. A separate worker
-drains the FIFO, using bounded bursts when it has a backlog; the ordinary poll
-delay does not impose one delay per queued callback during each burst.
+receipt time, and the latest completed health report into a separate 2,048-entry
+in-memory FIFO. It calls no Unity, disk, task, or native health API. A separate
+worker drains this FIFO. It permits at most 32 immediate continuations before
+the next ordinary wait when there is a backlog, so queued callbacks do not each
+incur a poll delay during a burst.
 
 The archival FIFO and the live task snapshot serve different purposes. An
 archived callback retains the health report known at its receipt time. The
@@ -71,7 +68,7 @@ No historical callback receives a synthetic simultaneous head pose or task/AOI.
 
 | Actual CSV columns | Interpretation |
 |---|---|
-| `eye_capture_mode` | `native_callback` for callback capture; `native_poll` for the earlier polling path. |
+| `eye_capture_mode` | `native_callback` for callback capture; `native_poll` for polling clients and compatible older recordings. |
 | `eye_native_result_source` | In callback mode, the generic native result comes from `callback_registration`, not an eye-read call. |
 | `eye_callback_registration_result` | Actual registration result; no `GetEyeData_v2` success code is invented. |
 | `eye_callback_observed` / `eye_eye_observed` | Original shared-clock callback receipt observation, retained when queued. |
@@ -85,6 +82,13 @@ are absent. Local callback receipt is still **not hardware capture time**.
 Assess rates from unique native identities and original receipt times, not
 dequeue cadence; a burst that drains queued data does not increase the sensor
 rate or create additional samples.
+
+Raw acquisition records (kind 6) use version 2 for callback provenance. The
+reader also accepts version 1 polling records. Admitted observations (kind 2)
+accept absent extensions, the earlier AOI-only extension, and the current
+version 2 provenance extension with optional AOI. Compatibility preserves the
+evidence present in each file; it does not add missing callback or AOI data.
+Older readers can reject these additive records and extensions.
 
 Normal completion uses an asynchronous barrier. The owner requests completion
 without waiting for native code. The worker unregisters the callback outside
@@ -116,9 +120,9 @@ Metadata-only inspection of the installed client established:
 The pinned `IsUserNeedCalibration` export (RVA `0x8520`) forwards to
 `ViveSR_GetParameterBool` using parameter 13. The client's export (RVA `0x5dd0`)
 copies one byte from the IPC reply into the output buffer. Its C++ boolean ABI
-is now expressed as `UnmanagedType.I1`, including the device boolean return.
-The prior calibration output buffer was initialized false on each call, so
-this ABI correction is **not evidence that it caused the earlier transitions**.
+uses `UnmanagedType.I1`, including the device boolean return. Correct boolean
+marshalling alone does not establish the cause of calibration-required
+transitions.
 
 Acquisitions retain the calibration call's own result code and successful
 boolean output with its shared-clock query bracket. Failed calls retain an
@@ -130,18 +134,17 @@ eligibility. This is a sampling/freshness policy, not evidence that the physical
 calibration stayed constant between queries.
 
 Calibration-required reports are neither smoothed into ready nor suppressed.
-A lower count of Required transitions after switching from polling to 100 ms
-health queries **does not establish that calibration fluctuation was fixed**.
+A lower count of Required transitions at a less frequent health-query cadence
+**does not establish that calibration fluctuation was fixed**.
 Compare query times, raw successful `eye_calibration_needed` values, their result
 codes, report age, and the callback channel-validity waveform. Short transitions
 between health queries may be unobserved. `ReportedReady` remains an SDK report,
 not an accuracy validation. The native integer timestamp remains opaque; these
 brackets do not establish sensor exposure or photon onset.
 
-The earlier recording cannot distinguish all vendor/runtime causes of the
-calibration changes. The new hardware test must compare raw calibration output,
-API durations, validity masks and sample gaps; blink, headset removal, or poor
-physical calibration must not be inferred from that flag alone.
+Hardware validation must compare raw calibration output, API durations,
+validity masks and sample gaps. The calibration flag alone cannot distinguish
+vendor/runtime causes, blinks, headset removal, or poor physical calibration.
 
 ## AOI geometry and software-time association
 
@@ -183,7 +186,7 @@ The task AOI remains usable. A physically invalid ray is `invalid`, not `other`.
 There is no camera-forward or camera-origin fallback for missing eye data.
 
 The scene is intentionally masked at the start of every recording update for
-safety. AOI geometry and renderer eligibility are now copied inside the actual
+safety. AOI geometry and renderer eligibility are copied inside the actual
 participant-camera **completed-render callback**, after matching the pre-cull
 task/avatar revisions. The next update uses that immutable scene together with
 the current Unity camera pose and linked eye ray. No safety guard is moved or
@@ -212,15 +215,14 @@ and pose capture. This engineering freshness cap is not an analysis gap-filling
 rule. Task phase/block/trial and avatar applicability must still match. Skipped
 render intervals, older scenes, and changed trial identities are invalid.
 
-The first hardware test of policy v1 found that every main-task AOI was marked
-`presentation_unavailable`. Its before-mask snapshot called the live readiness
-predicate before the new update had read the head pose. That predicate correctly
-requires `headReadyFrame == Time.frameCount`, so it was false at that point even
-when the preceding frame had rendered successfully. The v2 completed-render
-snapshot fixes this ordering error. It retains real render evidence instead of
-forcing visibility true or weakening head tracking. Existing v1 files remain
-readable with their original policy/meaning labels; their invalid AOIs are not
-retrospectively changed into measurements.
+A before-mask snapshot cannot use the live readiness predicate before the new
+update has read the head pose: that predicate requires
+`headReadyFrame == Time.frameCount` and is false at that point even if the
+preceding frame rendered successfully. Policy v2 uses the completed-render
+snapshot to avoid this ordering error without forcing visibility true or
+weakening head tracking. Existing v1 files remain readable with their original
+policy/meaning labels; their invalid AOIs are not retrospectively changed into
+measurements.
 
 The per-update avatar guard can also temporarily set a missing-source display
 warning while it hides an A/B/C avatar. Current camera-pose eligibility therefore
@@ -231,6 +233,23 @@ The regression fixture exercises the production BCAD automatic-avatar reveal,
 camera callbacks, guard, AOI projection, and subsequent reveal, with faulted-render
 negative controls.
 
+## Validation workflow
+
+For each hardware validation run:
+
+1. Verify the raw chain, final terminal record, and complete-file boundary before
+   treating an exported CSV as a normally completed recording.
+2. Measure unique acquisition identities and receipt-time intervals separately
+   from admitted observations. Inspect native sequence gaps, callback-to-dequeue
+   delay, health-query durations/ages, validity masks, and queue faults. A target
+   rate or high-resolution timer flag is not a measured result.
+3. Compare calibration reports with their query times and channel validity;
+   retain unknown reports and do not infer physical accuracy from `ReportedReady`.
+4. Check AOI coverage and association lags separately for each condition. Use
+   controlled target-looking trials to validate eye/face/task discrimination;
+   a synthetically correct intersection or successful render is not spatial
+   validation of the headset.
+
 Before perceived-evaluation analysis, retain raw recordings and separately
 report native acquisition quality, admitted pose/AOI coverage, association
 lags, and missing intervals. Restrict gaze outcomes to valid active-task
@@ -238,5 +257,7 @@ observations, use time-weighted durations with a predeclared maximum gap rule,
 and report coverage against total active-task time. Do not bridge long gaps or
 include questionnaire/rest time in gaze denominators. Spatial calibration and
 independent validation must show whether eyes can be distinguished from nearby
-face; otherwise collapse to face-level analysis. A hit on these proxies alone
-is neither a fixation nor mutual gaze nor evidence that someone felt evaluated.
+face. Use a face-level outcome only if that region itself passes spatial
+validation and the analysis plan specifies it; otherwise leave the outcome
+unavailable. A hit on these proxies alone is neither a fixation nor mutual
+gaze nor evidence that someone felt evaluated.

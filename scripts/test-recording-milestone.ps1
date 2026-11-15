@@ -17,7 +17,8 @@ public static class RecordingMilestoneMemoryRunner
 }
 '@ | Set-Content -LiteralPath 'build\RecordingMilestoneMemoryRunner.cs' -Encoding utf8
  # Native/file fixtures may be compiled but are never registered or invoked.
- # The two CS0649 warnings are pre-existing unused synthetic async CSV hooks.
+ # Synthetic hook fields can be unassigned in this focused runner; CS0649
+ # remains visible, while all other compiler warnings remain errors.
  $sources=@(Get-ChildItem Assets\Stroop\Core,Assets\Stroop\Runtime,Tests -Filter '*.cs' -Recurse -File | Where-Object {$_.Name -ne 'WozLanPairingUiTests.cs'} | Sort-Object FullName | ForEach-Object {'"'+$_.FullName.Substring($root.Length+1)+'"'})
  $arguments=@('-nologo','-langversion:7.3','-warnaserror','-warnaserror-:0649','-define:STROOP_TEST_BUILD,VIVE_RAW_SYNTHETIC_TEST','-target:exe','-main:RecordingMilestoneMemoryRunner','-out:build/RecordingMilestoneMemoryRunner.exe')+$sources+'"build\RecordingMilestoneMemoryRunner.cs"'
  $arguments | Set-Content -LiteralPath 'build\RecordingMilestoneMemoryRunner.rsp' -Encoding utf8

@@ -301,4 +301,4 @@ The pilot sample size and precision objectives remain open. Neither 24 nor 48 tr
 | Sampling and analysis | Pilot N and precision rationale, population/eligibility, sequence allocation, list assignment, technical exclusions, and planned descriptive analyses |
 | Terminology and data handling | Confirm Richard's preferred final label; settle storage, access, retention, identifier linkage, and withdrawal handling |
 
-**Document precedence:** this Markdown plan is the current design entry point. The older `docs/Avatar_Gaze_Experiment_Plan.docx` is retained as a historical version and is not updated or deleted by this documentation revision. The diagrams describe the plan, not completed software.
+**Document precedence:** this Markdown plan is the current design entry point. The [earlier Word plan](https://github.com/MingyuanZhu7719/avatar-gaze-stroop-demo/blob/daaab2c42aed92360c9d679a9fef8c608c01cf53/docs/Avatar_Gaze_Experiment_Plan.docx) remains available in Git history for provenance. The diagrams describe the plan, not completed software.
