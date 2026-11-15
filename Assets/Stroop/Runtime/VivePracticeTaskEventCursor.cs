@@ -404,7 +404,7 @@ namespace AvatarStroop.Runtime
                 try
                 {
                     if(!(lease.DrainFence!=null?issuer.TryFinalizeCursorDrain(anchor,this,lease,newTargetReceipt,lease.DrainFence):issuer.TryFinalizeCursorAppend(anchor,this,lease,newTargetReceipt,lease.Fence))||
-                        !Object.ReferenceEquals(appendLease,lease)||pending==null)
+                        Object.ReferenceEquals(appendLease,lease)||pending!=null)
                     {Fail("append_receipt_or_context_invalid");return false;}
                     return true;
                 }

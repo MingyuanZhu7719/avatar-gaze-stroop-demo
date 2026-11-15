@@ -44,11 +44,25 @@ namespace AvatarStroop.Tests
                 using(var dispatcher=new OwnerCommandDispatcher(path,"session-a",c=>{calls++;return null;}))
                 {
                     File.WriteAllText(path,wire.Substring(0,20),new UTF8Encoding(false));Check.Equal(0,dispatcher.DispatchPending());Check.Equal(0,calls);
-                    Check.Throws<IOException>(()=>OwnerCommandFile.Append(path,Command(2)));
+                    byte[] incomplete=File.ReadAllBytes(path);
+                    Check.Throws<OwnerCommandAppendRefusedException>(()=>OwnerCommandFile.Append(path,Command(2)));
+                    Check.Equal(Convert.ToBase64String(incomplete),Convert.ToBase64String(File.ReadAllBytes(path)));
                     File.AppendAllText(path,wire.Substring(20)+"\n",new UTF8Encoding(false));Check.Equal(1,dispatcher.DispatchPending());Check.Equal(1,calls);
                     File.AppendAllText(path,"invalid|record\n"+new String('x',300)+"\n",new UTF8Encoding(false));Check.Equal(2,dispatcher.DispatchPending());Check.Equal(1,calls);
                     Check.True(OwnerCommandFile.FindAcknowledgement(path,command).Accepted);
                 }
+            }));
+            suite.Run("M3 owner command capacity refusal preserves every existing byte",()=>WithDirectory(path=>{
+                var command=Command(1);byte[] wire=Encoding.UTF8.GetBytes(OwnerCommandCodec.Encode(command)+"\n");
+                // The exact limit is allowed; the next complete command must be
+                // refused before writing anything, with a distinguishable outcome.
+                byte[] prefix=new byte[OwnerCommandFile.MaximumFileBytes-wire.Length];
+                for(int i=0;i<prefix.Length;i++)prefix[i]=10;
+                File.WriteAllBytes(path,prefix);OwnerCommandFile.Append(path,command);
+                byte[] full=File.ReadAllBytes(path);Check.Equal(OwnerCommandFile.MaximumFileBytes,full.Length);
+                for(int i=0;i<wire.Length;i++)Check.Equal(wire[i],full[prefix.Length+i]);
+                Check.Throws<OwnerCommandAppendRefusedException>(()=>OwnerCommandFile.Append(path,Command(2)));
+                Check.Equal(Convert.ToBase64String(full),Convert.ToBase64String(File.ReadAllBytes(path)));
             }));
             suite.Run("M3 owner successful duplicate ID remains idempotent across dispatcher restart",()=>WithDirectory(path=>{
                 int calls=0;var command=Command(1);OwnerCommandFile.Append(path,command);OwnerCommandFile.Append(path,command);

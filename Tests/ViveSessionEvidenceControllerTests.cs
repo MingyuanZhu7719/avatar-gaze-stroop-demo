@@ -462,6 +462,15 @@ namespace AvatarStroop.Tests
                     "missing synthetic event classification");
                 Check.True(!csv.Contains("fixture/trial-0")&&!csv.Contains("fixture-list"));c.ClearMemory();Check.Equal("",c.MemoryEventCsv);
             });
+            suite.Run("VIVE selected-journal event CSV quotes token delimiters and embedded line breaks", () => {
+                var rows=new[]{new ViveCoverageRecord{Sequence=0,Kind="initial_unknown",Fields=new Dictionary<string,string>()}};
+                string csv=ViveSelectedJournalEventCsv.AppendSource("",1,"part,\"quoted\"\r\nline","vive-practice-journal-v3",
+                    ViveDevelopmentJournalReadStatus.CleanClose,100,rows);
+                string prefix=ViveSelectedJournalEventCsv.Header+
+                    "selected-journal-observed-event-v1,u64:1,\"id:part,\"\"quoted\"\"\r\nline\","+
+                    B64("vive-practice-journal-v3")+",status:CleanClose,u64:100,u64:0,"+B64("initial_unknown")+",";
+                Check.True(csv.StartsWith(prefix,StringComparison.Ordinal),"Token must occupy one quoted CSV cell with doubled quotes.");
+            });
             suite.Run("VIVE selected-journal event view refuses a source beyond its independent memory budget", () => {
                 var rows=new List<ViveCoverageRecord>();var fields=new Dictionary<string,string>{{"event_kind","PhaseChanged"},{"observed_local_seconds","1"},
                     {"block_index","0"},{"segment","0"},{"phase","MainTask"},{"trial_id",null},{"detail","fixture"}};
