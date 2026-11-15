@@ -71,7 +71,9 @@ def compile_launcher(editor, source, output):
     tests = source / "Tests/VivePreviewLaunchPlanTests.cs"
     # Exercise the actual Windows child environment using a harmless console
     # executable, never the Unity player or an XR/native-eye process.
-    with tempfile.TemporaryDirectory(prefix="vive-launch-env-", dir=output) as temporary:
+    # CLR4 fixtures append their own session paths. Nesting them under a deep
+    # build output can exceed MAX_PATH even when the actual package path is valid.
+    with tempfile.TemporaryDirectory(prefix="vive-launch-env-") as temporary:
         directory = Path(temporary)
         child, smoke = directory / "EnvironmentChild.exe", directory / "EnvironmentSmoke.exe"
         subprocess.run(compiler + ["-target:exe", "-define:VIVE_LAUNCH_ENV_CHILD",
