@@ -388,7 +388,7 @@ namespace AvatarStroop.Runtime
             ViveExclusiveMemoryTarget.Receipt issued;
             if(target.AppendWithReceipt(bytes,plan,out issued)!=ViveFakeWriteResult.Accepted||issued==null)return false;
             if(!guard.CanContinue()||!RetryTargetStillCurrent()){target.MarkOutcomeUncertain();return false;}
-            writer=candidate;pendingReceipt=new VivePracticeOwnedStartReceipt(this,participant,choices,clock,issued,batch,choiceGeneration);return true;
+            pendingReceipt=new VivePracticeOwnedStartReceipt(this,participant,choices,clock,issued,batch,choiceGeneration);return true;
             }
             finally{sinkBusy=false;}
         }

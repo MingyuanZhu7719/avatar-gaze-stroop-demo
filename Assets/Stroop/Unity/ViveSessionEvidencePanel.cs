@@ -67,6 +67,7 @@ namespace AvatarStroop.Unity
                     int selected=GUILayout.Toolbar(memoryView,MemoryViews);
                     if(selected!=memoryView){memoryView=selected;page=0;scroll=Vector2.zero;}
                     string text=memoryView==1?controller.MemoryManifestCsv:memoryView==2?controller.MemoryFieldCsv:memoryView==3?controller.MemoryEventCsv:controller.MemoryText;
+                    if(text==null){showSensitive=false;return;}
                     const int size=1500;int pages=Math.Max(1,(text.Length+size-1)/size);
                     page=Mathf.Clamp(page,0,pages-1);
                     GUILayout.Label("Screen pages can split rows; this preview does not save or publish data.",wrap);

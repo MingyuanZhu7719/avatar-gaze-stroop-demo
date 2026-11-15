@@ -84,7 +84,7 @@ def _extract(launch, source, parent, session, role, source_digest):
     source, parent = Path(source), Path(parent)
     original_hash, original_length = _sha(source), source.stat().st_size
     completed = subprocess.run(list(launch) + ["journal-extract", str(source), str(parent)],
-                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
+                               capture_output=True, text=True, encoding="utf-8-sig", errors="replace", timeout=20)
     assert completed.returncode == 0, (completed.returncode, completed.stdout, completed.stderr)
     destinations = [line.split("\t", 1)[1] for line in completed.stdout.splitlines()
                     if line.startswith("extraction_directory\t")]

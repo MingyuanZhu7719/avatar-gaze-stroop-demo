@@ -287,8 +287,19 @@ namespace AvatarStroop.Apps
                     throw new InvalidOperationException("Owner start is available only for the first block with a confirmed ready source.");
                 pending=new OwnerCommand(Guid.NewGuid().ToString("N"),kind,chosen);sentAt=clock.Elapsed.TotalSeconds;
                 if(kind==OwnerCommandKind.Export)ExportOutcome("CSV export requested; waiting for acknowledgement and a verified folder.");
-                // Preserve this ID even if append throws: the write outcome may be uncertain.
-                OwnerCommandFile.Append(commands,pending);receipt.Text="Queued: "+kind+"; waiting for the participant application to acknowledge.";
+                try
+                {
+                    OwnerCommandFile.Append(commands,pending);
+                }
+                catch(OwnerCommandAppendRefusedException)
+                {
+                    // Nothing was written: the command can never be acknowledged.
+                    // Clear the pending state immediately and let Guard show the
+                    // refusal. A plain IOException from Write/Flush keeps pending
+                    // because that write outcome is genuinely uncertain.
+                    pending=null;sentAt=0;throw;
+                }
+                receipt.Text="Queued: "+kind+"; waiting for the participant application to acknowledge.";
             });
         }
         void ResetExportPresentation()

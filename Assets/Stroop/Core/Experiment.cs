@@ -646,14 +646,18 @@ namespace AvatarStroop.Core
             }
             else if(beforePause == Phase.Practice && current != null && current.Outcome == TrialOutcome.Interrupted)
             {
-                // PRD section 3 applies one explicit-pause rule to both task types: an
-                // explicit resume follows the next planned trial, never silently
-                // repeats the interrupted item, and never records it as an incorrect
-                // answer. Practice therefore continues with the next planned trial of
-                // the same eight-trial attempt, exactly as an interrupted main trial
-                // advances. The interrupted trial stays registered as Interrupted and
-                // still occupies one of the eight planned trials, so the 6/8 rule is
-                // unchanged after a pause and no trial is invented.
+                // Two resume rules share this branch:
+                //   - Explicit pause (tracking==false): AdvancePractice() advances
+                //     trialIndex to the next planned trial. The interrupted trial
+                //     stays Interrupted and is never recorded as incorrect.
+                //   - Tracking gap (tracking==true): the same planned trial is
+                //     re-presented as a retry (CreateTrial emits retry_of and a
+                //     /retry-s suffix because trialIndex is unchanged while Segment
+                //     advanced), giving the participant a second chance to answer the
+                //     interrupted stimulus. The interrupted attempt remains
+                //     Interrupted (unscored); the retry's first response is what
+                //     counts toward the 6/8 rule. The retry reuses the same planned
+                //     index, so it is an extra TrialRecord, not a ninth planned trial.
                 if(tracking){Segment=checked(Segment+1);TraceMutation();Move(Phase.Practice);CreateTrial(true);}
                 else {Log("practice_resume_next_planned_trial", "interrupted_trial", current.TrialId);AdvancePractice();}
             }

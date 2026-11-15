@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Two real local processes/UDP sockets with synthetic data. Does not verify two computers or VR."""
 from pathlib import Path
+import argparse
 import csv
 import hashlib
 import math
@@ -297,14 +298,20 @@ def verify_scenario(output, scenario, source_digest):
     print("PASS " + scenario + ": independent processes, matching tasks, source/clock provenance and hashed partial export")
 
 def main():
-    dotnet_only = "--dotnet" in sys.argv
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dotnet", action="store_true", help="Use the installed .NET SDK instead of Unity Mono.")
+    parser.add_argument("--evidence-dir", type=Path, default=ROOT / "build",
+                        help="Directory for run evidence; use a short path for Windows Mono exports.")
+    args = parser.parse_args()
     try:
-        installed = None if dotnet_only else unity_tools()
+        installed = None if args.dotnet else unity_tools()
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 2
     build = ROOT / "build"
     build.mkdir(exist_ok=True)
+    evidence = args.evidence_dir.resolve()
+    evidence.mkdir(parents=True, exist_ok=True)
     sources = sorted((ROOT / "Assets/Stroop/Core").glob("*.cs")) + sorted((ROOT / "Assets/Stroop/Runtime").glob("*.cs")) + [ROOT / "Apps/SimulatorHost.cs"]
     source_hash = hashlib.sha256()
     for source in sources:
@@ -320,12 +327,13 @@ def main():
     else:
         _, mono, csc = installed
         binary = build / "AvatarStroop.Simulator.exe"
-        subprocess.run([str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-target:exe", "-main:AvatarStroop.Apps.SimulatorHost", "-out:"+str(binary)] + [str(p) for p in sources], check=True)
+        # Keep the compiler command below the Windows command-line limit in deep checkouts.
+        subprocess.run([str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-target:exe", "-main:AvatarStroop.Apps.SimulatorHost", "-out:"+str(binary)] + [str(p.relative_to(ROOT)) for p in sources], cwd=str(ROOT), check=True)
         launch = [str(mono), str(binary)]
     subprocess.run(list(launch) + ["completion-self-test"], check=True, timeout=20)
-    run_scenario(launch, build, "fault-script", source_digest)
-    run_scenario(launch, build, "safety-stop", source_digest)
-    run_killed_recording(launch, build, source_digest, release_startup)
+    run_scenario(launch, evidence, "fault-script", source_digest)
+    run_scenario(launch, evidence, "safety-stop", source_digest)
+    run_killed_recording(launch, evidence, source_digest, release_startup)
     print("SIMULATION ONLY: one host, no headset; partial software sessions, no study completion or actual camera rendering claimed.")
     return 0
 

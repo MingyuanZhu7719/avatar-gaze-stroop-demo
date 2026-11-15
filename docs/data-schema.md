@@ -1,6 +1,6 @@
 # Data export and participant gaze schema
 
-Schema version: `avatar-stroop-csv-1`; current software version: `0.4.0-dev`. The portable implementation is in `Assets/Stroop/Core/AuditExport.cs` and `ParticipantGaze.cs`. These are in-memory append-only audit containers, a CSV snapshot exporter, and descriptive gaze-duration calculations. The optional [continuous simulation journal](journal.md) is a separate format and evidence path. Hardware acquisition, apparatus calibration, display-photon timing, automatic AOI classification, and validated clock synchronization are not supplied by these components.
+Schema version: `avatar-stroop-csv-1`; current software version: `0.5.1-dev`. The portable implementation is in `Assets/Stroop/Core/AuditExport.cs` and `ParticipantGaze.cs`. These are in-memory append-only audit containers, a CSV snapshot exporter, and descriptive gaze-duration calculations. The optional [continuous simulation journal](journal.md) is a separate format and evidence path. Hardware acquisition, apparatus calibration, display-photon timing, automatic AOI classification, and validated clock synchronization are not supplied by these components.
 
 ## Export a snapshot
 
