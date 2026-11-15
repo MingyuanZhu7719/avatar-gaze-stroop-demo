@@ -670,7 +670,8 @@ namespace AvatarStroop.Runtime
             [System.Runtime.CompilerServices.CallerLineNumber]int line=0)
         {NoteFirstFault("raw_"+member+":"+line);admission.IoFence.Abort();Terminate(3);}
         // Normal end is distinct from stop/withdraw/fault. Only the owner of
-        // an already Completed task can freeze the same worker's status FIFO,
+        // an already Completed task can request native callback quiescence,
+        // drain its provider FIFO and then freeze the same worker's status FIFO,
         // drain its previously registered records and seal the task cursor.
         // Nothing here waits for disk or certifies physical sample coverage.
         internal bool RequestCompletedDrain()
@@ -699,6 +700,18 @@ namespace AvatarStroop.Runtime
                 var seal=pendingCompletionStatusSeal;
                 if(seal==null)
                 {
+                    // The owner never waits for a native unregister call. The
+                    // worker stops callbacks and publishes all already received
+                    // packets before acknowledging this asynchronous boundary.
+                    var acquisitionSeal=worker.PrepareAcquisitionSeal(statusRun);
+                    if(acquisitionSeal==ViveProEyeWorker.AcquisitionSealDisposition.Faulted)
+                    {Fail();return false;}
+                    if(acquisitionSeal==ViveProEyeWorker.AcquisitionSealDisposition.Busy)
+                    {
+                        // Continue draining bounded batches while the provider
+                        // finishes, so its tail cannot fill the worker queue.
+                        return PrepareStatus()!=Preparation.Faulted;
+                    }
                     if(!worker.TrySealStatusEvidence(statusRun,out seal,true)||seal==null)
                     {Fail();return false;}
                     pendingCompletionStatusSeal=seal;

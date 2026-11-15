@@ -43,13 +43,16 @@ namespace AvatarStroop.Runtime
                 "status_returned_present","status_returned","device_returned_present","device_returned","calibration_returned_present","calibration_returned",
                 "read_started_present","read_started","read_returned_present","read_returned","status_result_present","status_result",
                 "calibration_result_present","calibration_result","calibration_needed_present","calibration_needed","read_result_present","read_result",
+                "callback_based","callback_observed_present","callback_observed","health_query_started_present","health_query_started",
+                "health_query_completed_present","health_query_completed","health_age_at_callback_seconds","callback_to_dequeue_seconds",
+                "callback_registration_result_present","callback_registration_result","capture_mode","native_result_source","recording_extension_version","aoi_present",
                 "aoi_extension_version","aoi_policy","aoi_coordinate_basis","aoi_pose_time_meaning","aoi_classification_meaning",
                 "aoi_capture_local","aoi_capture_completed_local_present","aoi_capture_completed_local","aoi_unity_seconds","aoi_unity_frame",
                 "aoi_scene_capture_local_present","aoi_scene_capture_local","aoi_scene_capture_completed_local_present","aoi_scene_capture_completed_local",
                 "aoi_scene_unity_seconds_present","aoi_scene_unity_seconds","aoi_scene_unity_frame",
                 "aoi_task_revision","aoi_avatar_revision","aoi_last_render_frame","aoi_last_render_unity_seconds_present","aoi_last_render_unity_seconds",
                 "aoi_last_render_task_revision","aoi_last_render_avatar_revision","aoi_phase","aoi_block","aoi_trial","aoi_category","aoi_reason",
-                "aoi_active_task","aoi_avatar_applicable","aoi_origin_valid","aoi_direction_valid","aoi_geometry_count","aoi_eye_to_pose_seconds","aoi_eye_to_scene_seconds","aoi_unity_clock_offset_seconds","aoi_scene_unity_clock_offset_seconds"});
+                "aoi_active_task","aoi_avatar_applicable","aoi_origin_valid","aoi_direction_valid","aoi_geometry_count","aoi_eye_to_pose_seconds","aoi_eye_to_scene_seconds","aoi_unity_clock_offset_seconds","aoi_scene_unity_clock_offset_seconds","aoi_scene_to_pose_seconds","aoi_scene_frame_age"});
             foreach(string name in new[]{"aoi_camera_position","aoi_world_origin","aoi_world_direction"})
                 foreach(string axis in new[]{"x","y","z"})fields.Add(name+"_"+axis);
             foreach(string axis in new[]{"x","y","z","w"})fields.Add("aoi_camera_rotation_"+axis);
@@ -241,6 +244,8 @@ namespace AvatarStroop.Runtime
                 append(Meta("native_acquisition","ONE_UNIQUE_NATIVE_ID_PER_WORKER_ACQUISITION_INCLUDING_INVALID_QUALITY"));
                 append(Meta("native_sequence_gaps","COUNTER_DELTAS_NOT_PROVEN_PHYSICAL_SENSOR_LOSS"));
                 append(Meta("native_clock_alignment","OPAQUE_NATIVE_TIMESTAMP_WITH_SAME_PROCESS_API_CALL_BRACKETS_NO_PHOTON_ONSET"));
+                append(Meta("callback_acquisition_time","ORIGINAL_PROCESS_CALLBACK_RECEIPT_PRESERVED_DEQUEUE_DOES_NOT_REFRESH_AGE"));
+                append(Meta("callback_health_state","PRIOR_COMPLETED_HEALTH_QUERY_WITH_EXPLICIT_AGE_NOT_CURRENT_CALIBRATION_ACCURACY"));
                 append(Meta("aoi_association","CURRENT_UNITY_POSE_AND_DECLARED_SCENE_SOFTWARE_TIMES_NOT_NATIVE_CAPTURE_POSE"));
                 append(Meta("aoi_absence","MISSING_NOT_ZERO_DWELL_NO_FORWARD_FILL"));
                 append(Meta("blank_extension_cells","NOT_RECORDED_OR_NOT_APPLICABLE_FOR_THIS_RECORD_KIND_CHECK_PRESENT_FLAGS_AND_EXTENSION_VERSION"));

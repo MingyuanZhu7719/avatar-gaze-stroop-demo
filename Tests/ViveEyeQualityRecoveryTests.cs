@@ -10,13 +10,34 @@ namespace AvatarStroop.Tests
 {
     public static partial class ViveNamedRawRecordingPumpTests
     {
+        sealed class SealingFrameBoundaryClient : IViveProEyeClient,IViveProEyeAcquisitionSeal
+        {
+            readonly SequencedFrameBoundaryClient inner;
+            internal readonly ManualResetEvent Entered=new ManualResetEvent(false),ReleaseSeal=new ManualResetEvent(false);
+            internal bool RejectSeal;
+            bool sealedSource;
+            internal SealingFrameBoundaryClient(SequencedFrameBoundaryClient inner){this.inner=inner;}
+            public string Diagnostic {get{return inner.Diagnostic;}}
+            public bool Start(){return inner.Start();}
+            public ViveProEyePoll Poll(){return inner.Poll();}
+            public bool RequestAcquisitionSeal()
+            {
+                Entered.Set();
+                if(!ReleaseSeal.WaitOne(3000))throw new Exception("synthetic unregister timeout");
+                sealedSource=!RejectSeal;return sealedSource;
+            }
+            public bool AcquisitionSealDrained {get{return sealedSource;}}
+            public bool HasBufferedAcquisition {get{return false;}}
+            public void Dispose(){inner.Dispose();}
+        }
         // Real task/worker/pump/admission, synthetic hardware and stalled
         // memory writer. Stalling ACK makes the admitted record kinds visible
         // without converting an eye-absence marker into a fake sample.
         sealed class EyeQualityFixture : IDisposable
         {
             internal readonly MonotonicClock Clock=new MonotonicClock("eye-quality-continuation");
-            readonly SequencedFrameBoundaryClient client=new SequencedFrameBoundaryClient();
+            internal readonly SequencedFrameBoundaryClient client=new SequencedFrameBoundaryClient();
+            internal readonly SealingFrameBoundaryClient Sealer;
             internal readonly ViveProEyeWorker Worker;
             internal readonly ViveDevelopmentParticipant Task;
             internal readonly ViveNamedSessionFrameAdmission Admission;
@@ -25,9 +46,11 @@ namespace AvatarStroop.Tests
             internal bool HeadValid=true;
             long headSeq;
             int nativeSeq;
-            internal EyeQualityFixture(bool practice,bool frozenBeforeBaseline=false,bool acquisition=false)
+            internal EyeQualityFixture(bool practice,bool frozenBeforeBaseline=false,bool acquisition=false,bool callbackSeal=false)
             {
-                Worker=new ViveProEyeWorker(Clock,()=>new ViveHeadFrame(++headSeq,Clock.Now,true,HeadValid,Rotation.Identity),()=>client);
+                Sealer=callbackSeal?new SealingFrameBoundaryClient(client):null;
+                Worker=new ViveProEyeWorker(Clock,()=>new ViveHeadFrame(++headSeq,Clock.Now,true,HeadValid,Rotation.Identity),
+                    ()=>Sealer==null?(IViveProEyeClient)client:Sealer);
                 Check.True(Worker.Start()&&client.Waiting.WaitOne(3000));
                 if(frozenBeforeBaseline)Send();
                 Task=NewTask(Clock);
@@ -99,11 +122,45 @@ namespace AvatarStroop.Tests
             }
             public void Dispose()
             {
+                if(Sealer!=null)Sealer.ReleaseSeal.Set();
                 Pump.Stop();Writer.Release.Set();Worker.TryRequestStop();client.Release();Worker.Stop(1000);Worker.Dispose();
             }
         }
         public static void RegisterEyeQualityRecoveryTests(TestSuite suite)
         {
+            suite.Run("completion remains responsive during callback unregister and includes the last published tail",()=>{
+                using(var f=new EyeQualityFixture(false,acquisition:true,callbackSeal:true))
+                {
+                    f.Send();f.Stage();ForceSyntheticCompleted(f.Task);
+                    Check.True(f.Pump.RequestCompletedDrain());
+                    f.client.Release();Check.True(f.Sealer.Entered.WaitOne(3000));
+                    var elapsed=System.Diagnostics.Stopwatch.StartNew();
+                    Check.True(f.Pump.PollRequestedCompletionDrain());
+                    Check.True(elapsed.ElapsedMilliseconds<500,"owner waited for synthetic native unregister");
+                    Check.Equal(0,f.Writer.CompleteCalls);Check.True(!f.Admission.Sealed);
+                    f.Sealer.ReleaseSeal.Set();Check.True(f.client.Waiting.WaitOne(3000));
+                    f.Send(); // A final packet returned after the unregister barrier.
+                    Check.True(f.Pump.PollRequestedCompletionDrain());
+                    var records=f.Records.OfType<ViveRawEyeAcquisition>().OrderBy(x=>x.Sequence).ToArray();
+                    Check.Equal(2,records.Length);Check.Equal(1L,records[1].Sequence);
+                    f.Writer.CompleteResult=true;f.Writer.Release.Set();
+                    Check.True(f.Writer.CompleteEntered.WaitOne(3000));
+                    Check.True(SpinWait.SpinUntil(()=>f.Pump.HasExited,3000));
+                    Check.Equal(ViveNamedRawRecordingPump.Outcome.CloseCallsReturned,f.Pump.State);
+                }
+            });
+            suite.Run("callback unregister failure cannot produce a normal completion terminal",()=>{
+                using(var f=new EyeQualityFixture(false,acquisition:true,callbackSeal:true))
+                {
+                    f.Send();f.Stage();ForceSyntheticCompleted(f.Task);
+                    Check.True(f.Pump.RequestCompletedDrain());
+                    f.client.Release();Check.True(f.Sealer.Entered.WaitOne(3000));
+                    f.Sealer.RejectSeal=true;f.Sealer.ReleaseSeal.Set();
+                    Check.True(f.client.Waiting.WaitOne(3000));f.SendNoEye();
+                    Check.True(!f.Pump.PollRequestedCompletionDrain());
+                    Check.Equal(0,f.Writer.CompleteCalls);Check.True(f.Admission.IoFence.IsFaulted);
+                }
+            });
             suite.Run("acquisition archives intermediate invalid frames independently of Unity admission",()=>{
                 using(var f=new EyeQualityFixture(false,acquisition:true))
                 {

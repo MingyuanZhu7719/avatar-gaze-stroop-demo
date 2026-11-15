@@ -79,6 +79,11 @@ namespace AvatarStroop.Runtime
                         if(eye.TrialAtIngest!=null&&eye.TrialAtIngest.Length>MaxTextBytes)return false;
                         int text=eye.TrialAtIngest==null?0:Utf8.GetByteCount(eye.TrialAtIngest);
                         if(text>MaxTextBytes)return false;bytes=checked(EyeFixedUpper+text);
+                        if(eye.CaptureMode!=null||eye.NativeResultSource!=null)
+                        {
+                            if(!ViveRawSessionJournalCodec.ValidCaptureSource(eye.CaptureMode,eye.NativeResultSource))return false;
+                            bytes=checked(bytes+96);
+                        }
                         if(eye.Aoi!=null)
                         {
                             int aoiTrial=eye.Aoi.Trial==null?0:Utf8.GetByteCount(eye.Aoi.Trial);

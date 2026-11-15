@@ -22,6 +22,7 @@ namespace AvatarStroop.Runtime
         internal sealed class Frame
         {
             internal readonly ViveEyeAoiObservation Aoi;
+            internal readonly string CaptureMode,NativeResultSource;
             internal readonly int NativeFrame,NativeTimestamp,Block,Segment;
             internal readonly long HeadSequence,TaskEventCursor,LossGeneration;
             internal readonly double EyeObserved,HeadObserved;double checkedAt;
@@ -40,6 +41,8 @@ namespace AvatarStroop.Runtime
             internal Frame(ViveProEyePoll poll,ViveDevelopmentParticipant.NamedRecordingTaskStamp task,long loss,double checkedAt,ViveEyeAoiObservation aoi=null)
             {
                 Aoi=aoi;
+                CaptureMode=poll.NativeDiagnostics==null?null:poll.NativeDiagnostics.CaptureMode;
+                NativeResultSource=poll.NativeDiagnostics==null?null:poll.NativeDiagnostics.NativeResultSource;
                 NativeFrame=poll.Eye.FrameSequence;NativeTimestamp=poll.Eye.Timestamp;EyeObserved=poll.Eye.ObservedLocalSeconds;
                 HeadSequence=poll.Head.ObservationSequence;HeadObserved=poll.Head.ObservedLocalSeconds;
                 CombinedMask=poll.Eye.Combined.ValidityMask;RawCombinedDirection=poll.Eye.Combined.Direction;RawHeadRotation=poll.Head.RawTrackingRotation;

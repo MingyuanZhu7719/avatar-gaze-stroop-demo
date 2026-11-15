@@ -48,6 +48,7 @@ namespace AvatarStroop.Tests
         public static void Register(TestSuite t)
         {
             ViveNativeAcquisitionTests.Register(t);
+            SrAnipalCallbackTests.Register(t);
             t.Run("SRanipal native C++ boolean outputs use the verified one-byte ABI",()=>{
                 var calibration=typeof(SrAnipalViveProEyeProvider).GetNestedType("CalibrationDelegate",BindingFlags.NonPublic);
                 var parameter=calibration.GetMethod("Invoke").GetParameters()[0];

@@ -23,10 +23,10 @@ namespace AvatarStroop.Runtime
     // No interpolation, native-clock alignment or quantitative validation is implied.
     public sealed class ViveEyeAoiObservation
     {
-        public const string PolicyVersion="vive-classroom-exclusive-surface-proxies-v1";
+        public const string PolicyVersion="vive-classroom-exclusive-render-surface-proxies-v2";
         public const string CoordinateBasis="unity-world-metres-sdk-x-reflected-origin-mm-to-m";
         public const string PoseTimeMeaning="current-unity-camera-pose-not-native-acquisition-pose";
-        public const string ClassificationMeaning="before-mask-scene-analytic-surface-proxy-not-validated-fixation-or-full-scene-occlusion";
+        public const string ClassificationMeaning="last-completed-render-scene-analytic-surface-proxy-not-validated-fixation-or-full-scene-occlusion";
         public double CaptureLocalSeconds {get;private set;}
         public double? CaptureCompletedLocalSeconds {get;private set;}
         public double UnitySeconds {get;private set;}

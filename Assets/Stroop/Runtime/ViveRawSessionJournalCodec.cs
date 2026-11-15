@@ -85,7 +85,13 @@ namespace AvatarStroop.Runtime
                 Ray(w,frame.Left);Ray(w,frame.Right);Ray(w,frame.Combined);Bool(w,frame.HeadDeviceConnected);Bool(w,frame.HeadRotationValid);
                 w.Write(frame.RawHeadRotation.X);w.Write(frame.RawHeadRotation.Y);w.Write(frame.RawHeadRotation.Z);w.Write(frame.RawHeadRotation.W);
                 w.Write((int)frame.PhaseAtIngest);w.Write(frame.Block);w.Write(frame.Segment);Text(w,frame.TrialAtIngest);w.Write(frame.TaskEventCursor);
-                if(frame.Aoi!=null)WriteAoi(w,frame.Aoi,frame.NativeFrame,frame.NativeTimestamp,frame.EyeObserved,frame.CheckedAt);
+                if(frame.CaptureMode!=null||frame.NativeResultSource!=null)
+                {
+                    if(!ValidCaptureSource(frame.CaptureMode,frame.NativeResultSource))throw new InvalidOperationException("Unknown eye capture/result source.");
+                    w.Write(2);Text(w,frame.CaptureMode);Text(w,frame.NativeResultSource);Bool(w,frame.Aoi!=null);
+                    if(frame.Aoi!=null)WriteAoi(w,frame.Aoi,frame.NativeFrame,frame.NativeTimestamp,frame.EyeObserved,frame.CheckedAt);
+                }
+                else if(frame.Aoi!=null)WriteAoi(w,frame.Aoi,frame.NativeFrame,frame.NativeTimestamp,frame.EyeObserved,frame.CheckedAt);
             });
         }
         internal static byte[] Frame(byte[] payload,byte[] previous,bool magic,out byte[] digest)

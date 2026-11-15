@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using AvatarStroop.Core;
 
 namespace AvatarStroop.Runtime
@@ -19,12 +20,17 @@ namespace AvatarStroop.Runtime
         int Release();
         void Close();
     }
+    internal interface ISrAnipalCallbackNativeClient
+    {
+        int RegisterEyeCallback(IntPtr callback);
+        int UnregisterEyeCallback(IntPtr callback);
+    }
 
     // Thin, independently authored interop for the already installed HTC runtime.
     // No HTC binary is shipped, downloaded, installed or searched in the working directory.
     // Native ABI verified against the installed HTC 1.3.5.1 client (runtime 1.3.6.12).
     // Explicit Start is required. This class never opens calibration or accepts consent.
-    public sealed class SrAnipalViveProEyeProvider : IViveProEyeClient, IViveProEyeCleanupStatus
+    public sealed partial class SrAnipalViveProEyeProvider : IViveProEyeClient, IViveProEyeCleanupStatus, IViveProEyeLiveSnapshot
     {
         // Installed 1.3.5.1 uses the unversioned eye selector for GetStatus;
         // selector 2 there queries fixed module 0 instead of its initialized eye ID.
@@ -45,7 +51,8 @@ namespace AvatarStroop.Runtime
         {
             internal readonly ISrAnipalNativeClient Client;
             internal readonly IntPtr Buffer;
-            internal QuarantinedResources(ISrAnipalNativeClient client,IntPtr buffer){Client=client;Buffer=buffer;}
+            internal readonly object CallbackLifetime;
+            internal QuarantinedResources(ISrAnipalNativeClient client,IntPtr buffer,object callbackLifetime){Client=client;Buffer=buffer;CallbackLifetime=callbackLifetime;}
         }
         public string Diagnostic {get;private set;}="Stopped; explicit Start is required.";
         public bool Started {get{return initialized;}}
@@ -96,7 +103,9 @@ namespace AvatarStroop.Runtime
                 initializationEntered=true;
                 int result=client.Initialize();LastNativeResult=result;
                 if(result!=Work){Diagnostic=NativeMessage("Initialization",result);CloseKnownInactiveClient();return false;}
-                initialized=true;Diagnostic="HTC client initialized; waiting for fresh device data.";return true;
+                initialized=true;
+                if(client is ISrAnipalCallbackNativeClient&&!StartCallbackCapture())return false;
+                Diagnostic="HTC client initialized; waiting for fresh device data.";return true;
             }
             catch(Exception error)
             {
@@ -114,6 +123,7 @@ namespace AvatarStroop.Runtime
             try{head=headReader();}catch(Exception){Diagnostic="Head observation failed; eye data cannot supply a head pose.";}
             if(!initialized)return new ViveProEyePoll(head,null,ViveEyeRuntimeState.Unavailable,ViveEyeCalibrationState.Unknown,false,LastNativeResult);
             if(pollFault)return Failure(head,null,null);
+            if(callbackCaptureMode)return PollCallbackCapture(head);
             long sequence=pollSequence++;
             double started=clock.Now;
             double? statusReturned=null,deviceReturned=null,calibrationReturned=null,readStarted=null,readReturned=null;
@@ -203,6 +213,7 @@ namespace AvatarStroop.Runtime
         public void Stop()
         {
             if(disposed||quarantined)return;
+            if(callbackRegistered&&!StopCallbackCapture())return;
             if(initialized)
             {
                 try
@@ -216,6 +227,7 @@ namespace AvatarStroop.Runtime
                 }
             }
             initialized=false;pollFault=false;
+            if(callbackCaptureMode)CloseCallbackCaptureState();
             if(CloseKnownInactiveClient())Diagnostic="Stopped; this process released its eye client.";
         }
         public void Dispose(){if(disposed)return;try{Stop();}finally{disposed=true;}}
@@ -237,10 +249,11 @@ namespace AvatarStroop.Runtime
         void Quarantine()
         {
             if(quarantined)return;
+            Volatile.Write(ref callbackAccepting,0);
             quarantined=true;initialized=false;pollFault=true;
             lock(nativeGate)
             {
-                quarantine.Add(new QuarantinedResources(client,buffer));
+                quarantine.Add(new QuarantinedResources(client,buffer,this));
                 if(actualNative){nativeQuarantined=true;nativeOwned=false;ownsNativeLease=false;}
             }
             Diagnostic+=" Native ownership is uncertain; resources are retained until process exit. Restart this process before another capture.";
@@ -268,7 +281,7 @@ namespace AvatarStroop.Runtime
                 Marshal.OffsetOf(typeof(EyeData),"Combined").ToInt32()!=112)
                 throw new InvalidOperationException("SRanipal native layout does not match the verified x64 ABI.");
         }
-        sealed class InstalledClient : ISrAnipalNativeClient
+        sealed class InstalledClient : ISrAnipalNativeClient, ISrAnipalCallbackNativeClient
         {
             IntPtr library;
             InitialDelegate initial;
@@ -277,6 +290,7 @@ namespace AvatarStroop.Runtime
             EyeDelegate read;
             CalibrationDelegate calibration;
             DeviceDelegate device;
+            CallbackRegistrationDelegate registerCallback,unregisterCallback;
             public void Open()
             {
                 if(Environment.OSVersion.Platform!=PlatformID.Win32NT||IntPtr.Size!=8)
@@ -292,12 +306,16 @@ namespace AvatarStroop.Runtime
                 initial=Bind<InitialDelegate>("Initial");release=Bind<ReleaseDelegate>("Release");
                 status=Bind<StatusDelegate>("GetStatus");read=Bind<EyeDelegate>("GetEyeData_v2");
                 calibration=Bind<CalibrationDelegate>("IsUserNeedCalibration");device=Bind<DeviceDelegate>("IsViveProEye");
+                registerCallback=Bind<CallbackRegistrationDelegate>("RegisterEyeDataCallback_v2");
+                unregisterCallback=Bind<CallbackRegistrationDelegate>("UnregisterEyeDataCallback_v2");
             }
             public int Initialize(){return initial(EyeV2,IntPtr.Zero);}
             public int GetStatus(out int value){return status(EyeStatusType,out value);}
             public bool IsViveProEye(){return device();}
             public int NeedsCalibration(ref bool needed){return calibration(ref needed);}
             public int Read(IntPtr data){return read(data);}
+            public int RegisterEyeCallback(IntPtr callback){return registerCallback(callback);}
+            public int UnregisterEyeCallback(IntPtr callback){return unregisterCallback(callback);}
             public int Release(){return release(EyeV2);}
             public void Close()
             {
@@ -306,7 +324,7 @@ namespace AvatarStroop.Runtime
                     if(!FreeLibrary(library))throw new InvalidOperationException("Cannot unload HTC client (Windows error "+Marshal.GetLastWin32Error()+").");
                     library=IntPtr.Zero;
                 }
-                initial=null;release=null;status=null;read=null;calibration=null;device=null;
+                initial=null;release=null;status=null;read=null;calibration=null;device=null;registerCallback=null;unregisterCallback=null;
             }
             T Bind<T>(string name) where T:class
             {
@@ -319,6 +337,7 @@ namespace AvatarStroop.Runtime
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int ReleaseDelegate(int feature);
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int StatusDelegate(int feature,out int state);
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int EyeDelegate(IntPtr data);
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int CallbackRegistrationDelegate(IntPtr callback);
         // The pinned ViveSR_GetParameterBool implementation writes one byte;
         // these are C++ bool values, not four-byte Windows BOOL values. The old
         // initialized-false ref buffer did not establish the cause of observed

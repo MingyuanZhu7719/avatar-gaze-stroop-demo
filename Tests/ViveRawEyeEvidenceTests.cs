@@ -36,11 +36,11 @@ namespace AvatarStroop.Tests
                 missing?nan:zero,rotation,missing?nan:zero,missing?nan:new Vec3(0,0,1),
                 new[]{new ViveEyeAoiGeometry("task",!missing,missing?nan:zero,rotation,missing?nan:new Vec3(1,1,1))});
         }
-        static ViveNamedSessionFrameAdmission.Frame Frame(ViveNamedSessionFrameAdmission.Manifest manifest,ViveEyeAoiObservation aoi)
+        static ViveNamedSessionFrameAdmission.Frame Frame(ViveNamedSessionFrameAdmission.Manifest manifest,ViveEyeAoiObservation aoi,ViveNativePollDiagnostics diagnostics=null)
         {
             var ray=new ViveEyeRay(3,true,true,new Vec3(0,0,0),new Vec3(0,0,1));
             var poll=new ViveProEyePoll(new ViveHeadFrame(3,.8,true,true,new Rotation(0,0,0,1)),
-                new ViveEyeFrame(43,9001,.75,false,ray,ray,ray),ViveEyeRuntimeState.Working,ViveEyeCalibrationState.ReportedReady,true,0,2);
+                new ViveEyeFrame(43,9001,.75,false,ray,ray,ray),ViveEyeRuntimeState.Working,ViveEyeCalibrationState.ReportedReady,true,0,2,diagnostics);
             var stamp=new ViveDevelopmentParticipant.NamedRecordingTaskStamp(null,null,manifest.Plan,manifest.Intent,1,11,manifest.Session,Phase.Countdown,0,0,"ingest-trial");
             return new ViveNamedSessionFrameAdmission.Frame(poll,stamp,0,1,aoi);
         }
@@ -67,6 +67,32 @@ namespace AvatarStroop.Tests
         }
         static ViveRawSessionReadResult Scan(byte[] data)
         {using(var input=new MemoryStream(data,false))return ViveRawSessionJournalReader.Scan(input,true,true,4194304,1000,CancellationToken.None);}
+        static ViveNativePollDiagnostics CallbackDiagnostics(double healthEnd=.64)
+        {return new ViveNativePollDiagnostics(20,.82,.83,.61,.62,.63,null,null,0,0,false,null,true,.75,.6,healthEnd,0);}
+        static ViveRawEyeAcquisition CallbackAcquisition(double healthEnd=.64)
+        {
+            var ray=new ViveEyeRay(3,true,true,new Vec3(0,0,0),new Vec3(0,0,1));
+            var poll=new ViveProEyePoll(null,new ViveEyeFrame(43,9001,.75,false,ray,ray,ray),ViveEyeRuntimeState.Working,
+                ViveEyeCalibrationState.ReportedReady,true,0,2,CallbackDiagnostics(healthEnd));
+            return new ViveRawEyeAcquisition(0,.84,poll,1,0,0,0);
+        }
+        // Build historical byte variants without asking the new writer to emit
+        // old semantics. Prefix lengths and the complete chain are rebuilt.
+        static byte[] ReplaceText(byte[] input,string before,string after,bool remove=false)
+        {
+            byte[] needle=Encoding.UTF8.GetBytes(before),replacement=Encoding.UTF8.GetBytes(after);int found=-1;
+            for(int at=4;at<=input.Length-needle.Length;at++)
+            {
+                if(BitConverter.ToInt32(input,at-4)!=needle.Length)continue;bool match=true;
+                for(int i=0;i<needle.Length;i++)if(input[at+i]!=needle[i]){match=false;break;}
+                if(match){Check.Equal(-1,found);found=at-4;}
+            }
+            Check.True(found>=0);using(var output=new MemoryStream())
+            {
+                output.Write(input,0,found);if(!remove){byte[] length=BitConverter.GetBytes(replacement.Length);output.Write(length,0,4);output.Write(replacement,0,replacement.Length);}
+                int tail=found+4+needle.Length;output.Write(input,tail,input.Length-tail);return output.ToArray();
+            }
+        }
         static List<string> Cells(string text)
         {
             var values=new List<string>();var cell=new StringBuilder();bool quoted=false;
@@ -93,7 +119,8 @@ namespace AvatarStroop.Tests
                         if(row[1]=="observation")
                         {aoi++;Check.Equal("task",row[header.IndexOf("eye_aoi_category")]);Check.Equal("false",row[header.IndexOf("eye_aoi_avatar_applicable")]);
                             Check.Equal("scene-trial",row[header.IndexOf("eye_aoi_trial")]);Check.Equal("ingest-trial",row[header.IndexOf("eye_ingest_trial_id")]);
-                            Check.Equal("8",row[header.IndexOf("eye_aoi_phase")]);Check.Equal("7",row[header.IndexOf("eye_ingest_phase")]);}
+                            Check.Equal("8",row[header.IndexOf("eye_aoi_phase")]);Check.Equal("7",row[header.IndexOf("eye_ingest_phase")]);
+                            Check.Equal("0",row[header.IndexOf("eye_aoi_scene_frame_age")]);}
                     }
                     Check.Equal(1,native);Check.Equal(1,aoi);
                 }
@@ -112,7 +139,20 @@ namespace AvatarStroop.Tests
                 Check.Equal(ViveRawSessionReadStatus.Invalid,Scan(denominator).Status);
             });
             suite.Run("missing AOI geometry remains explicit invalid evidence without preventing capture",()=>{
-                var result=Scan(Fixture(missingAoi:true));Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,result.Status);Check.True(result.CaptureTerminalObserved);
+                var bytes=Fixture(missingAoi:true);var result=Scan(bytes);Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,result.Status);Check.True(result.CaptureTerminalObserved);
+                using(var input=new MemoryStream(bytes,false))using(var output=new MemoryStream())
+                {
+                    Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,4194304,1000,33554432,CancellationToken.None));
+                    var lines=Encoding.UTF8.GetString(output.ToArray()).Split(new[]{'\n'},StringSplitOptions.RemoveEmptyEntries);var header=Cells(lines[0]);int observed=0;
+                    foreach(string line in lines)
+                    {
+                        var row=Cells(line);if(row[1]!="observation")continue;observed++;
+                        Check.Equal("-1",row[header.IndexOf("eye_aoi_scene_unity_frame")]);
+                        Check.Equal(String.Empty,row[header.IndexOf("eye_aoi_scene_frame_age")]);
+                        Check.Equal(String.Empty,row[header.IndexOf("eye_aoi_scene_frame_age_raw")]);
+                    }
+                    Check.Equal(1,observed);
+                }
                 var old=Scan(Fixture(withAoi:false));Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,old.Status);Check.True(old.CaptureTerminalObserved);
             });
             suite.Run("new reader accepts historical terminal without acquisition extension",()=>{
@@ -123,6 +163,47 @@ namespace AvatarStroop.Tests
                 var m=Manifest();var ledger=new ViveRawByteBudget.QueueLedger(ViveRawByteBudget.SelectExplicit(1048576),m);int bound;
                 var acquisition=Acquisition();Check.True(ledger.TryFrameBound(1,acquisition,out bound));Check.True(ViveRawSessionJournalCodec.AcquisitionPayload(2,acquisition).Length+40<=bound);
                 var frame=Frame(m,Aoi());Check.True(ledger.TryFrameBound(2,frame,out bound));Check.True(ViveRawSessionJournalCodec.RecordPayload(3,frame,m).Length+40<=bound);
+            });
+            suite.Run("callback capture preserves original receipt time cached health and registration result source",()=>{
+                var bytes=Fixture(change:frames=>{
+                    frames[1]=ViveRawSessionJournalCodec.AcquisitionPayload(1,CallbackAcquisition());
+                    var m=Manifest();frames[2]=ViveRawSessionJournalCodec.RecordPayload(2,Frame(m,Aoi(),CallbackDiagnostics()),m);
+                });
+                Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,Scan(bytes).Status);
+                using(var input=new MemoryStream(bytes,false))using(var output=new MemoryStream())
+                {
+                    Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,4194304,1000,33554432,CancellationToken.None));
+                    var lines=Encoding.UTF8.GetString(output.ToArray()).Split(new[]{'\n'},StringSplitOptions.RemoveEmptyEntries);var header=Cells(lines[0]);int samples=0;
+                    foreach(string line in lines)
+                    {
+                        var row=Cells(line);if(row[1]!="eye_acquisition"&&row[1]!="observation")continue;samples++;
+                        Check.Equal("native_callback",row[header.IndexOf("eye_capture_mode")]);Check.Equal("callback_registration",row[header.IndexOf("eye_native_result_source")]);
+                        if(row[1]=="eye_acquisition")
+                        {Check.Equal("0.75",row[header.IndexOf("eye_callback_observed")]);Check.Equal("0.82",row[header.IndexOf("eye_poll_started")]);
+                            Check.Equal("false",row[header.IndexOf("eye_read_result_present")]);Check.Equal("0",row[header.IndexOf("eye_callback_registration_result")]);}
+                    }
+                    Check.Equal(2,samples);
+                }
+                Check.Throws<InvalidOperationException>(()=>ViveRawSessionJournalCodec.AcquisitionPayload(1,CallbackAcquisition(.8)));
+                var m2=Manifest();var noAoi=Frame(m2,null,CallbackDiagnostics());int bound;
+                Check.True(new ViveRawByteBudget.QueueLedger(ViveRawByteBudget.SelectExplicit(1048576),m2).TryFrameBound(2,noAoi,out bound));
+                Check.True(ViveRawSessionJournalCodec.RecordPayload(3,noAoi,m2).Length+40<=bound);
+            });
+            suite.Run("new reader retains native acquisition v1 and historical AOI policy without relabelling",()=>{
+                var bytes=Fixture(change:frames=>{
+                    var native=ReplaceText(ReplaceText(frames[1],"native_poll","",true),"eye_read","",true);
+                    // Polling diagnostics end in five absent callback fields.
+                    Array.Resize(ref native,native.Length-5);Buffer.BlockCopy(BitConverter.GetBytes(1),0,native,9,4);frames[1]=native;
+                    frames[2]=ReplaceText(ReplaceText(frames[2],ViveEyeAoiObservation.PolicyVersion,"vive-classroom-exclusive-surface-proxies-v1"),
+                        ViveEyeAoiObservation.ClassificationMeaning,"before-mask-scene-analytic-surface-proxy-not-validated-fixation-or-full-scene-occlusion");
+                });
+                Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,Scan(bytes).Status);
+                using(var input=new MemoryStream(bytes,false))using(var output=new MemoryStream())
+                {
+                    Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,4194304,1000,33554432,CancellationToken.None));
+                    string csv=Encoding.UTF8.GetString(output.ToArray());Check.True(csv.Contains("vive-classroom-exclusive-surface-proxies-v1"));
+                    Check.True(!csv.Contains("vive-classroom-exclusive-render-surface-proxies-v2"));
+                }
             });
         }
     }

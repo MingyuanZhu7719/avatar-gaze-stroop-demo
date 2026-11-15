@@ -6,6 +6,25 @@ namespace AvatarStroop.Runtime
 {
     public sealed partial class ViveProEyeWorker
     {
+        internal enum AcquisitionSealDisposition { Ready, Busy, Faulted }
+        // Only requests the asynchronous native barrier; the owner never calls
+        // SDK unregister or waits. Worker publication acknowledges all buffered
+        // callbacks before the existing status/archival FIFO seal can proceed.
+        internal AcquisitionSealDisposition PrepareAcquisitionSeal(object runIdentity)
+        {
+            if(!Object.ReferenceEquals(Thread.CurrentThread,headThread)||runIdentity==null)return AcquisitionSealDisposition.Faulted;
+            if(!Monitor.TryEnter(gate))return AcquisitionSealDisposition.Busy;
+            try
+            {
+                if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||
+                    !current.Ready||current.StopRequested||!GenerationLive(current)||!current.StatusEnabled||
+                    current.StatusFault||StatusAuthorityRevoked(current))return AcquisitionSealDisposition.Faulted;
+                if(!current.AcquisitionEnabled||current.AcquisitionSource==null)return AcquisitionSealDisposition.Ready;
+                Interlocked.Exchange(ref current.AcquisitionSealRequested,1);
+                return current.AcquisitionProviderDrained?AcquisitionSealDisposition.Ready:AcquisitionSealDisposition.Busy;
+            }
+            finally{Monitor.Exit(gate);}
+        }
         public bool UsesHighResolutionPollDelay
         {get{lock(gate){return current!=null&&current.HighResolutionPollDelay;}}}
 
@@ -51,12 +70,18 @@ namespace AvatarStroop.Runtime
         {
             if(!run.AcquisitionEnabled||!run.StatusEnabled||StatusAuthorityRevoked(run)||run.StatusFault||run.StatusSealed)return;
             if(!timeValid||time<run.StatusEnabledAt){FaultStatusEvidence(run);return;}
+            if(poll!=null&&poll.Eye!=null)
+            {
+                if(!WireCodec.Finite(poll.Eye.ObservedLocalSeconds)||poll.Eye.ObservedLocalSeconds<0)
+                {FaultStatusEvidence(run);return;}
+                if(poll.Eye.ObservedLocalSeconds<=run.StatusEnabledAt)return;
+            }
             run.AcquisitionPolls++;
             if(poll==null||poll.Eye==null||poll.NativeResultCode!=0)return;
             var eye=poll.Eye;var timing=poll.NativeDiagnostics;
             // The loop admission also excludes polls reserved before enable. A
             // timed provider makes the API-start boundary explicit in the file.
-            if(timing!=null&&timing.PollStartedLocalSeconds<run.StatusEnabledAt)return;
+            if(timing!=null&&!timing.CallbackBased&&timing.PollStartedLocalSeconds<run.StatusEnabledAt)return;
             if(!WireCodec.Finite(eye.ObservedLocalSeconds)||eye.ObservedLocalSeconds<run.StatusEnabledAt||eye.ObservedLocalSeconds>time)
             {FaultStatusEvidence(run);return;}
             ulong identity=((ulong)(uint)eye.FrameSequence<<32)|(uint)eye.Timestamp;

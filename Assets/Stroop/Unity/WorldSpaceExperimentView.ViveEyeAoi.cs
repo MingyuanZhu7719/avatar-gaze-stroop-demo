@@ -26,6 +26,8 @@ namespace AvatarStroop.Unity
             internal Matrix4x4[] Inverses;
         }
         EyeAoiScene eyeAoiScene;
+        IClock eyeAoiClock;
+        const double EyeAoiMaximumSceneAgeSeconds=.1;
 
         void ObserveViveEyeAoiCameraRender(Camera camera)
         {
@@ -34,6 +36,14 @@ namespace AvatarStroop.Unity
                 GraphicsSettings.currentRenderPipeline!=null||role!=Actor.Participant||!PresentationIsAvailable()||!isActiveAndEnabled)return;
             eyeAoiLastRenderFrame=Time.frameCount;eyeAoiLastRenderUnitySeconds=Time.realtimeSinceStartupAsDouble;
             eyeAoiLastRenderTaskRevision=presentationRevision;eyeAoiLastRenderAvatarRevision=avatarRevision;
+            if(eyeAoiClock==null)return;
+            // Geometry must belong to this completed participant-camera pass,
+            // with the same task/avatar revisions captured before culling. An
+            // enabled renderer alone does not manufacture a render observation.
+            if(capturedAvatar==null||capturedAvatarFrame!=Time.frameCount||capturedTaskRevision!=presentationRevision||
+                capturedAvatarRevision!=avatarRevision){eyeAoiScene=null;return;}
+            try{CaptureViveEyeAoiRenderedScene(eyeAoiClock);}
+            catch(Exception){eyeAoiScene=null;} // Optional telemetry cannot bypass or interrupt task render safety.
         }
 
         void ResolveEyeAoiGeometry()
@@ -46,12 +56,21 @@ namespace AvatarStroop.Unity
             if(rightEye!=null){eyeAoiGeometry[3]=rightEye.Find("White");eyeAoiGeometry[5]=rightEye.Find("Pupil");}
         }
 
-        // Recording deliberately masks and hides the scene at the start of every
-        // Update. Snapshot the existing scene BEFORE that guard; never weaken it
-        // or reconstruct avatar visibility from a requested condition afterwards.
-        public void CaptureViveEyeAoiSceneBeforeMask(IClock clock)
+        // Bind the same software clock used by admission before rendering starts.
+        // Do not query new-frame head readiness here: before ReadHead its sequence
+        // intentionally belongs to the preceding frame and cannot authorize a view.
+        public void BindViveEyeAoiRenderClock(IClock clock)
         {
-            if(clock==null)throw new ArgumentNullException("clock");
+            if(object.ReferenceEquals(clock,eyeAoiClock))return;
+            eyeAoiClock=clock;eyeAoiScene=null;eyeAoiLastRenderFrame=-1;eyeAoiLastRenderUnitySeconds=null;
+            eyeAoiLastRenderTaskRevision=eyeAoiLastRenderAvatarRevision=-1;
+        }
+
+        // Copy actual transforms and visibility while the participant camera has
+        // just completed its pass. The next Update can mask/hide everything again
+        // without altering this immutable historical scene observation.
+        void CaptureViveEyeAoiRenderedScene(IClock clock)
+        {
             eyeAoiScene=null;ResolveEyeAoiGeometry();
             var scene=new EyeAoiScene {Started=clock.Now,UnitySeconds=Time.realtimeSinceStartupAsDouble,Frame=Time.frameCount,
                 Phase=currentView==null?Phase.Preparation:currentView.Phase,Block=currentView==null?-1:currentView.BlockIndex,
@@ -80,14 +99,15 @@ namespace AvatarStroop.Unity
             scene.Completed=clock.Now;eyeAoiScene=scene;
         }
 
-        // This method must be called on Unity's main thread. Its pose/geometry are
-        // sampled now, while the native eye sample retains its earlier identity and
-        // observation time. It never backdates the pose to the native sample.
+        // This method must be called on Unity's main thread. Camera pose is sampled
+        // now and geometry comes from a recent completed render, while the native
+        // eye sample retains its original identity/time. None is backdated.
         public ViveEyeAoiObservation CaptureViveEyeAoi(ViveEyeFrame eye,double captureLocalSeconds)
         {return CaptureViveEyeAoiCore(eye,captureLocalSeconds,null);}
         public ViveEyeAoiObservation CaptureViveEyeAoi(ViveEyeFrame eye,IClock clock)
         {
             if(clock==null)throw new ArgumentNullException("clock");
+            BindViveEyeAoiRenderClock(clock);
             return CaptureViveEyeAoiCore(eye,clock.Now,()=>clock.Now);
         }
         ViveEyeAoiObservation CaptureViveEyeAoiCore(ViveEyeFrame eye,double captureLocalSeconds,Func<double> captureCompleted)
@@ -129,9 +149,12 @@ namespace AvatarStroop.Unity
             string category="invalid",reason;
             if(!active){category="outside_task";reason="outside_main_task";}
             else if(!AoiFinite(captureLocalSeconds)||captureLocalSeconds<eye.ObservedLocalSeconds)reason="invalid_capture_time";
-            else if(scene==null||scene.Frame!=Time.frameCount)reason="missing_current_frame_scene_snapshot";
-            else if(scene.Phase!=currentView.Phase||scene.Block!=currentView.BlockIndex||scene.Trial!=currentView.TrialId||scene.Applicable!=applicable)reason="scene_task_context_changed";
+            else if(scene==null)reason="no_completed_render_scene";
+            else if(scene.Frame<0||scene.Frame>Time.frameCount||(long)Time.frameCount-scene.Frame>1)reason="stale_render_scene";
+            else if(scene.Phase!=currentView.Phase||scene.Block!=currentView.BlockIndex||scene.Trial!=currentView.TrialId||
+                scene.Applicable!=applicable||scene.TaskRevision!=presentationRevision)reason="scene_task_context_changed";
             else if(!AoiFinite(scene.Started)||!AoiFinite(scene.Completed)||scene.Completed<scene.Started||scene.Completed>captureLocalSeconds)reason="invalid_scene_clock_bracket";
+            else if(!IsRecentViveEyeAoiScene(scene.Frame,Time.frameCount,scene.Completed,captureLocalSeconds))reason="stale_render_scene";
             else if(!cameraUsable||!scene.CameraUsable)reason="presentation_unavailable";
             else if(eye.NoUser||!originValid||!directionValid)reason="invalid_combined_ray";
             else if(!scene.GeometryValid)reason="geometry_unavailable";
@@ -170,6 +193,12 @@ namespace AvatarStroop.Unity
             var renderer=value.GetComponent<Renderer>();
             return renderer!=null&&renderer.enabled&&presentationCamera!=null&&
                 (presentationCamera.cullingMask&(1<<value.gameObject.layer))!=0;
+        }
+        internal static bool IsRecentViveEyeAoiScene(int sceneFrame,int currentFrame,double completed,double capture)
+        {
+            return sceneFrame>=0&&currentFrame>=sceneFrame&&(long)currentFrame-sceneFrame<=1&&
+                AoiFinite(completed)&&AoiFinite(capture)&&completed>=0&&capture>=completed&&
+                capture-completed<=EyeAoiMaximumSceneAgeSeconds;
         }
         static bool AoiFinite(double value){return !Double.IsNaN(value)&&!Double.IsInfinity(value);}
         static bool AoiFinite(Vector3 value){return AoiFinite(value.x)&&AoiFinite(value.y)&&AoiFinite(value.z);}

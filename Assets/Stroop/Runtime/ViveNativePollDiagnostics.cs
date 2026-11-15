@@ -7,6 +7,7 @@ namespace AvatarStroop.Runtime
     // verified mapping from the opaque native timestamp to software time.
     public sealed class ViveNativePollDiagnostics
     {
+        public const double MaximumCachedHealthAgeSeconds=.250;
         public long ProviderPollSequence {get;private set;}
         public double PollStartedLocalSeconds {get;private set;}
         public double PollReturnedLocalSeconds {get;private set;}
@@ -19,15 +20,27 @@ namespace AvatarStroop.Runtime
         public int? CalibrationResult {get;private set;}
         public bool? CalibrationNeeded {get;private set;}
         public int? ReadResult {get;private set;}
+        public bool CallbackBased {get;private set;}
+        public double? CallbackObservedLocalSeconds {get;private set;}
+        public double? HealthQueryStartedLocalSeconds {get;private set;}
+        public double? HealthQueryCompletedLocalSeconds {get;private set;}
+        public int? CallbackRegistrationResult {get;private set;}
+        public string CaptureMode {get{return CallbackBased?"native_callback":"native_poll";}}
+        public string NativeResultSource {get{return CallbackBased?"callback_registration":"eye_read";}}
         public ViveNativePollDiagnostics(long providerPollSequence,double pollStartedLocalSeconds,double pollReturnedLocalSeconds,
             double? statusReturnedLocalSeconds,double? deviceReturnedLocalSeconds,double? calibrationReturnedLocalSeconds,
-            double? readStartedLocalSeconds,double? readReturnedLocalSeconds,int? statusResult,int? calibrationResult,bool? calibrationNeeded,int? readResult)
+            double? readStartedLocalSeconds,double? readReturnedLocalSeconds,int? statusResult,int? calibrationResult,bool? calibrationNeeded,int? readResult,
+            bool callbackBased=false,double? callbackObservedLocalSeconds=null,double? healthQueryStartedLocalSeconds=null,
+            double? healthQueryCompletedLocalSeconds=null,int? callbackRegistrationResult=null)
         {
             ProviderPollSequence=providerPollSequence;PollStartedLocalSeconds=pollStartedLocalSeconds;PollReturnedLocalSeconds=pollReturnedLocalSeconds;
             StatusReturnedLocalSeconds=statusReturnedLocalSeconds;DeviceReturnedLocalSeconds=deviceReturnedLocalSeconds;
             CalibrationReturnedLocalSeconds=calibrationReturnedLocalSeconds;ReadStartedLocalSeconds=readStartedLocalSeconds;
             ReadReturnedLocalSeconds=readReturnedLocalSeconds;StatusResult=statusResult;CalibrationResult=calibrationResult;
             CalibrationNeeded=calibrationNeeded;ReadResult=readResult;
+            CallbackBased=callbackBased;CallbackObservedLocalSeconds=callbackObservedLocalSeconds;
+            HealthQueryStartedLocalSeconds=healthQueryStartedLocalSeconds;HealthQueryCompletedLocalSeconds=healthQueryCompletedLocalSeconds;
+            CallbackRegistrationResult=callbackRegistrationResult;
         }
     }
 

@@ -7,7 +7,7 @@ namespace AvatarStroop.Runtime
 {
     internal static partial class ViveRawSessionJournalCodec
     {
-        // Additive VRAW3+ kind 6 and kind-2 extension version 1. Updated readers
+        // Additive VRAW3+ kind 6 version 2 and kind-2 extension version 1. Updated readers
         // accept older files; older readers reject these new records/extensions.
         // Acquisitions preserve invalid SDK data independently of task admission.
         internal static bool ValidAcquisition(ViveRawEyeAcquisition value)
@@ -21,22 +21,41 @@ namespace AvatarStroop.Runtime
             if(d==null)return true; // Older/synthetic provider has no timing telemetry.
             if(d.ProviderPollSequence<0||!LocalTime(d.PollStartedLocalSeconds)||!LocalTime(d.PollReturnedLocalSeconds)||
                 d.PollStartedLocalSeconds>d.PollReturnedLocalSeconds||d.PollReturnedLocalSeconds>value.WorkerPublishedLocalSeconds||
-                e.ObservedLocalSeconds<d.PollStartedLocalSeconds||e.ObservedLocalSeconds>d.PollReturnedLocalSeconds)return false;
-            double previous=d.PollStartedLocalSeconds;
+                e.ObservedLocalSeconds>d.PollReturnedLocalSeconds)return false;
+            if(d.CallbackBased)
+            {
+                // Callback time is the original process-clock receipt. Poll now
+                // means dequeue and must not refresh that timestamp or attach a
+                // health query which completed after the callback was observed.
+                if(!d.CallbackObservedLocalSeconds.HasValue||d.CallbackObservedLocalSeconds.Value!=e.ObservedLocalSeconds||
+                    !d.HealthQueryStartedLocalSeconds.HasValue||!d.HealthQueryCompletedLocalSeconds.HasValue||
+                    !LocalTime(d.HealthQueryStartedLocalSeconds.Value)||!LocalTime(d.HealthQueryCompletedLocalSeconds.Value)||
+                    d.HealthQueryStartedLocalSeconds.Value>d.HealthQueryCompletedLocalSeconds.Value||
+                    d.HealthQueryCompletedLocalSeconds.Value>d.CallbackObservedLocalSeconds.Value||
+                    d.ReadStartedLocalSeconds.HasValue||d.ReadReturnedLocalSeconds.HasValue||d.ReadResult.HasValue||
+                    !d.CallbackRegistrationResult.HasValue||d.CallbackRegistrationResult.Value!=0||p.NativeResultCode!=d.CallbackRegistrationResult)return false;
+            }
+            else if(e.ObservedLocalSeconds<d.PollStartedLocalSeconds||d.CallbackObservedLocalSeconds.HasValue||
+                d.HealthQueryStartedLocalSeconds.HasValue||d.HealthQueryCompletedLocalSeconds.HasValue||d.CallbackRegistrationResult.HasValue)return false;
+            double previous=d.CallbackBased?d.HealthQueryStartedLocalSeconds.Value:d.PollStartedLocalSeconds;
+            double bracketEnd=d.CallbackBased?d.HealthQueryCompletedLocalSeconds.Value:d.PollReturnedLocalSeconds;
             foreach(double? at in new[]{d.StatusReturnedLocalSeconds,d.DeviceReturnedLocalSeconds,d.CalibrationReturnedLocalSeconds,d.ReadStartedLocalSeconds,d.ReadReturnedLocalSeconds})
-            {if(at.HasValue){if(!LocalTime(at.Value)||at.Value<previous||at.Value>d.PollReturnedLocalSeconds)return false;previous=at.Value;}}
+            {if(at.HasValue){if(!LocalTime(at.Value)||at.Value<previous||at.Value>bracketEnd)return false;previous=at.Value;}}
             return true;
         }
         internal static byte[] AcquisitionPayload(long ordinal,ViveRawEyeAcquisition value)
         {
             if(ordinal<1||!ValidAcquisition(value))throw new InvalidOperationException("Invalid native acquisition evidence.");
             return Build(w=>{
-                var p=value.Poll;var e=p.Eye;w.Write(ordinal);w.Write((byte)6);w.Write(1);
+                var p=value.Poll;var e=p.Eye;w.Write(ordinal);w.Write((byte)6);w.Write(2);
                 w.Write(value.Sequence);w.Write(value.WorkerPublishedLocalSeconds);w.Write(value.EligiblePolls);w.Write(value.DuplicatePolls);
                 w.Write(value.NativeSequenceGapCount);w.Write(value.NativeSequenceDiscontinuities);
                 w.Write(e.FrameSequence);w.Write(e.Timestamp);w.Write(e.ObservedLocalSeconds);w.Write((int)p.Runtime);w.Write((int)p.Calibration);
                 Bool(w,p.EyeDeviceConnected);OptionalInt(w,p.NativeResultCode);OptionalInt(w,p.NativeRuntimeStatus);Bool(w,e.NoUser);
-                NativeRay(w,e.Left);NativeRay(w,e.Right);NativeRay(w,e.Combined);WritePollDiagnostics(w,p.NativeDiagnostics);
+                NativeRay(w,e.Left);NativeRay(w,e.Right);NativeRay(w,e.Combined);
+                Text(w,p.NativeDiagnostics==null?"native_poll":p.NativeDiagnostics.CaptureMode);
+                Text(w,p.NativeDiagnostics==null?"eye_read":p.NativeDiagnostics.NativeResultSource);
+                WritePollDiagnostics(w,p.NativeDiagnostics);
             });
         }
         static void WritePollDiagnostics(BinaryWriter w,ViveNativePollDiagnostics d)
@@ -46,7 +65,12 @@ namespace AvatarStroop.Runtime
             OptionalDouble(w,d.StatusReturnedLocalSeconds);OptionalDouble(w,d.DeviceReturnedLocalSeconds);OptionalDouble(w,d.CalibrationReturnedLocalSeconds);
             OptionalDouble(w,d.ReadStartedLocalSeconds);OptionalDouble(w,d.ReadReturnedLocalSeconds);OptionalInt(w,d.StatusResult);
             OptionalInt(w,d.CalibrationResult);OptionalBool(w,d.CalibrationNeeded);OptionalInt(w,d.ReadResult);
+            Bool(w,d.CallbackBased);OptionalDouble(w,d.CallbackObservedLocalSeconds);
+            OptionalDouble(w,d.HealthQueryStartedLocalSeconds);OptionalDouble(w,d.HealthQueryCompletedLocalSeconds);
+            OptionalInt(w,d.CallbackRegistrationResult);
         }
+        internal static bool ValidCaptureSource(string mode,string source)
+        {return mode=="native_callback"&&source=="callback_registration"||mode=="native_poll"&&source=="eye_read";}
         static void NativeRay(BinaryWriter w,ViveEyeRay ray)
         {Ray(w,ray==null?null:new ViveNamedSessionFrameAdmission.RawEyeRay(ray));}
         static void OptionalDouble(BinaryWriter w,double? value){Bool(w,value.HasValue);if(value.HasValue)w.Write(value.Value);}

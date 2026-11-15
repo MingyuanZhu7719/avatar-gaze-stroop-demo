@@ -84,6 +84,9 @@ namespace AvatarStroop.Runtime
             internal int AcquisitionHead,AcquisitionCount,LastAcquisitionFrame;
             internal long AcquisitionSequence,AcquisitionPolls,AcquisitionDuplicates,AcquisitionNativeGaps,AcquisitionDiscontinuities;
             internal bool HighResolutionPollDelay;
+            internal IViveProEyeAcquisitionSeal AcquisitionSource;
+            internal int AcquisitionSealRequested;
+            internal bool AcquisitionProviderDrained;
         }
 
         const int MinimumPollDelayMilliseconds=5;
@@ -240,6 +243,8 @@ namespace AvatarStroop.Runtime
                 if(clock==null||!clock.TryReadRecordingAdmissionTime(out now))
                     return new RecordingStartReadiness(RecordingStartReadinessState.Unavailable,RecordingStartReadinessReason.InvalidTime);
                 var reason=run.StartStreak.Read(now);
+                if(reason==RecordingStartReadinessReason.None&&!CallbackHealthFreshAt(run.Latest,now))
+                    reason=RecordingStartReadinessReason.CalibrationUnavailable;
                 return reason==RecordingStartReadinessReason.None?
                     new RecordingStartReadiness(RecordingStartReadinessState.Ready,reason,run):
                     new RecordingStartReadiness(RecordingStartReadinessState.Waiting,reason);
@@ -374,6 +379,7 @@ namespace AvatarStroop.Runtime
                 double now;var timebase=sharedClock as MonotonicClock;
                 if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||
                     !current.Ready||current.StopRequested||!current.StatusEnabled||StatusAuthorityRevoked(current)||current.StatusFault||current.StatusSealed||
+                    current.AcquisitionEnabled&&current.AcquisitionSource!=null&&!current.AcquisitionProviderDrained||
                     !allowEmpty&&current.StatusNextSequence==0||timebase==null||!timebase.TryReadRecordingAdmissionTime(out now)||now<current.LastStatusTime)return false;
                 current.StatusSealed=true;Volatile.Write(ref current.TaskCapability,null);InvalidateTicket(current);
                 seal=new StatusSeal(this,current,current.StatusNextSequence-1,now);current.StatusSeal=seal;return true;
@@ -446,6 +452,7 @@ namespace AvatarStroop.Runtime
         static RecordingStartReadinessReason ClassifyRecordingStartStatus(bool timeValid,double time,ViveProEyePoll poll)
         {
             if(!timeValid)return RecordingStartReadinessReason.InvalidTime;
+            if(!CallbackHealthFreshAt(poll,time))return RecordingStartReadinessReason.CalibrationUnavailable;
             var status=ObserveEyeStatus(0,time,poll);
             var causes=status.CauseFlags;
             if(causes==EyeStatusCause.None)return RecordingStartReadinessReason.None;
@@ -648,7 +655,7 @@ namespace AvatarStroop.Runtime
                     current.TicketIssued||current.IssuedLossGeneration!=current.LossGeneration||
                     current.IssuedStatusEnabled!=current.StatusEnabled||current.IssuedStatusRevision!=current.StatusRevision||
                     (current.StatusEverEnabled&&(Volatile.Read(ref statusRevoked)!=0||!current.StatusEnabled||StatusAuthorityRevoked(current)||current.StatusSealed||current.StatusFault||current.StatusNextSequence==0||current.StatusCount!=0||current.StatusReserved!=null))||
-                    !Object.ReferenceEquals(current.IssuedPoll,frame)||!EyeUsableForTicket(frame)||!HeadUsableForTicket(frame))return RecordingTicketDisposition.Unavailable;
+                    !Object.ReferenceEquals(current.IssuedPoll,frame)||!EyeUsableForTicket(frame)||!CurrentCallbackHealthFresh(frame)||!HeadUsableForTicket(frame))return RecordingTicketDisposition.Unavailable;
                 var eye=frame.Eye;
                 if(current.HasTicketEye)
                 {
@@ -704,7 +711,7 @@ namespace AvatarStroop.Runtime
             ViveRawEyeObservation.Reason? unavailable=null;
             var eye=frame.Eye;
             if(run.StatusNextSequence==0||run.LastStatus==null||eye==null)unavailable=ViveRawEyeObservation.Reason.NoEye;
-            else if(!EyeUsableForTicket(frame)||now<eye.ObservedLocalSeconds)
+            else if(!EyeUsableForTicket(frame)||!CallbackHealthFreshAt(frame,now)||now<eye.ObservedLocalSeconds)
                 unavailable=ViveRawEyeObservation.Reason.InvalidQuality;
             else if(run.HasTicketEye&&eye.FrameSequence==run.LastTicketFrame&&eye.Timestamp==run.LastTicketTimestamp)
                 unavailable=now-run.LastTicketObserved>maximumAge?ViveRawEyeObservation.Reason.FrozenOrStale:
@@ -724,6 +731,25 @@ namespace AvatarStroop.Runtime
         static bool HeadUsableForTicket(ViveProEyePoll poll)
         {return poll!=null&&poll.Head!=null&&poll.Head.DeviceConnected&&poll.Head.RotationReportedValid&&poll.Head.RawTrackingRotation.IsUnit&&
             !Double.IsNaN(poll.Head.ObservedLocalSeconds)&&!Double.IsInfinity(poll.Head.ObservedLocalSeconds)&&poll.Head.ObservedLocalSeconds>=0;}
+        // Recheck at owner admission, not only at provider dequeue. A blocked
+        // next health query can otherwise leave a Ready latest poll cached after
+        // its health report expires while its eye still passes maximumAge.
+        internal static bool CallbackHealthFreshAt(ViveProEyePoll poll,double now)
+        {
+            var d=poll==null?null:poll.NativeDiagnostics;
+            if(d==null||!d.CallbackBased)return true;
+            if(poll.Eye==null||!WireCodec.Finite(now)||!d.CallbackObservedLocalSeconds.HasValue||
+                !d.HealthQueryStartedLocalSeconds.HasValue||!d.HealthQueryCompletedLocalSeconds.HasValue)return false;
+            double start=d.HealthQueryStartedLocalSeconds.Value,end=d.HealthQueryCompletedLocalSeconds.Value,at=d.CallbackObservedLocalSeconds.Value;
+            return WireCodec.Finite(start)&&WireCodec.Finite(end)&&WireCodec.Finite(at)&&start>=0&&end>=start&&end<=at&&
+                at==poll.Eye.ObservedLocalSeconds&&now>=at&&now-end<=ViveNativePollDiagnostics.MaximumCachedHealthAgeSeconds;
+        }
+        bool CurrentCallbackHealthFresh(ViveProEyePoll poll)
+        {
+            if(poll==null||poll.NativeDiagnostics==null||!poll.NativeDiagnostics.CallbackBased)return true;
+            var timebase=sharedClock as MonotonicClock;double now;
+            return timebase!=null&&timebase.TryReadRecordingAdmissionTime(out now)&&CallbackHealthFreshAt(poll,now);
+        }
         static bool EyeUsableForTicket(ViveProEyePoll poll)
         {
             if(poll==null||poll.Eye==null||poll.Runtime!=ViveEyeRuntimeState.Working||poll.Calibration!=ViveEyeCalibrationState.ReportedReady||
@@ -926,11 +952,12 @@ namespace AvatarStroop.Runtime
                 lock(gate)
                 {
                     run.Starting=false;
-                    if(!run.StopRequested){run.Ready=initialized;run.Diagnostic=diagnostic;}
+                    if(!run.StopRequested){run.Ready=initialized;run.Diagnostic=diagnostic;run.AcquisitionSource=client as IViveProEyeAcquisitionSeal;}
                 }
                 if(!initialized){failure="Eye client initialization failed. "+diagnostic;return;}
                 pollDelay=new ViveNativePollDelay(run.StopSignal);
                 lock(gate){run.HighResolutionPollDelay=pollDelay.HighResolution;}
+                int acquisitionBurst=0;
                 while(!run.StopSignal.WaitOne(0))
                 {
                     // The provider call itself must begin after software
@@ -943,7 +970,11 @@ namespace AvatarStroop.Runtime
                     // is never published once stop wins the fence.
                     if(Interlocked.Read(ref stopGeneration)!=run.StopGeneration||Interlocked.CompareExchange(ref run.PollFence,1,0)!=0)break;
                     if(Interlocked.Read(ref stopGeneration)!=run.StopGeneration){Interlocked.Exchange(ref run.PollFence,2);break;}
+                    bool acquisitionSealOk=Volatile.Read(ref run.AcquisitionSealRequested)==0||run.AcquisitionSource==null||run.AcquisitionSource.RequestAcquisitionSeal();
                     ViveProEyePoll poll=client.Poll();
+                    var liveSource=client as IViveProEyeLiveSnapshot;
+                    ViveProEyePoll livePoll=poll,observedLive;
+                    if(liveSource!=null&&liveSource.TryGetLiveSnapshot(out observedLive))livePoll=observedLive;
                     if(Interlocked.CompareExchange(ref run.PollFence,0,1)!=1||Interlocked.Read(ref stopGeneration)!=run.StopGeneration)break;
                     double statusObserved=0;var statusClock=sharedClock as MonotonicClock;
                     bool statusTimeValid=statusClock!=null&&statusClock.TryReadRecordingAdmissionTime(out statusObserved);
@@ -955,17 +986,19 @@ namespace AvatarStroop.Runtime
                         if(run.StopRequested||!GenerationLive(run))break;
                         if(!run.StatusEverEnabled&&Volatile.Read(ref statusRevoked)==0)
                         {
-                            var health=ClassifyRecordingStartStatus(statusTimeValid,statusObserved,poll);
-                            var eye=poll==null?null:poll.Eye;
+                            var health=ClassifyRecordingStartStatus(statusTimeValid,statusObserved,livePoll);
+                            var eye=livePoll==null?null:livePoll.Eye;
                             run.StartStreak.Observe(statusTimeValid,statusObserved,health,
                                 eye==null?0:eye.FrameSequence,eye==null?0:eye.Timestamp,eye==null?-1:eye.ObservedLocalSeconds);
                         }
                         if(Volatile.Read(ref statusRevoked)!=0||(run.StatusEverEnabled&&StatusAuthorityRevoked(run)))ClearStatusEvidence(run);
-                        else {if(statusPollEligible){RecordStatusEvidence(run,poll,statusTimeValid,statusObserved);
+                        else {if(statusPollEligible){RecordStatusEvidence(run,livePoll,statusTimeValid,statusObserved);
                                 double published=0;bool publicationTimeValid=statusClock!=null&&statusClock.TryReadRecordingAdmissionTime(out published);
                                 RecordAcquisitionEvidence(run,poll,publicationTimeValid,published);}
                             if(Volatile.Read(ref statusRevoked)!=0||(run.StatusEverEnabled&&StatusAuthorityRevoked(run)))ClearStatusEvidence(run);}
-                        if(!EyeUsableForTicket(poll))
+                        if(liveSource!=null&&liveSource.AcquisitionFaulted&&run.StatusEnabled)FaultStatusEvidence(run);
+                        if(!acquisitionSealOk&&run.StatusEnabled)FaultStatusEvidence(run);
+                        if(!EyeUsableForTicket(livePoll))
                         {
                             // A channel gap invalidates unconsumed eye data,
                             // not an already accepted task/head epoch.
@@ -974,7 +1007,7 @@ namespace AvatarStroop.Runtime
                             if(taskEpoch!=null&&taskEpoch.TaskAuthority)run.LastConsumedTicket=taskEpoch;
                             if(run.LossGeneration==Int64.MaxValue)run.TicketOverflow=true;else run.LossGeneration++;
                         }
-                        run.Latest=poll;run.Diagnostic=diagnostic;
+                        run.Latest=livePoll;run.Diagnostic=diagnostic;
                         run.NativePolls++;
                         if(poll!=null&&poll.Eye!=null&&poll.NativeResultCode.HasValue&&poll.NativeResultCode.Value==0)
                         {
@@ -986,7 +1019,12 @@ namespace AvatarStroop.Runtime
                             }
                             run.HasSuccessfulEyeRead=true;run.LastEyeSequence=poll.Eye.FrameSequence;run.LastEyeTimestamp=poll.Eye.Timestamp;
                         }
+                        if(Volatile.Read(ref run.AcquisitionSealRequested)!=0&&acquisitionSealOk&&run.AcquisitionSource!=null&&
+                            run.AcquisitionSource.AcquisitionSealDrained)run.AcquisitionProviderDrained=true;
                     }
+                    if(run.AcquisitionSource!=null&&run.AcquisitionSource.HasBufferedAcquisition&&acquisitionBurst<32)
+                    {acquisitionBurst++;continue;}
+                    acquisitionBurst=0;
                     if(pollDelay.Wait(MinimumPollDelayMilliseconds))break;
                     lock(gate){run.HighResolutionPollDelay=pollDelay.HighResolution;}
                 }

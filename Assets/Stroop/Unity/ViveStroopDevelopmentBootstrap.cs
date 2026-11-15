@@ -1638,12 +1638,12 @@ namespace AvatarStroop.Unity
             rawAoiCaptureFailureLogged=true;
             Debug.LogWarning("VIVE_EYE_AOI_CAPTURE_UNAVAILABLE: "+error.GetType().Name+"; affected observations have no validated scene association.");
         }
-        internal void CaptureRawEyeAoiSceneBeforeMask()
+        internal void BindRawEyeAoiClock()
         {
             try
             {
                 if(namedRawPump!=null&&view!=null&&sharedClock!=null&&!RecordingBlocked)
-                    view.CaptureViveEyeAoiSceneBeforeMask(sharedClock);
+                    view.BindViveEyeAoiRenderClock(sharedClock);
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
             {NoteRawAoiCaptureFailure(error);}

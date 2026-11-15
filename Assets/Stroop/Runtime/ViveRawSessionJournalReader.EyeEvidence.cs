@@ -21,13 +21,19 @@ namespace AvatarStroop.Runtime
         }
         static ViveRawEyeAcquisition ReadAcquisition(BinaryReader r,Rows rows)
         {
-            if(I32(r,rows,"acquisition_version")!=1)throw new Invalid();
+            int version=I32(r,rows,"acquisition_version");if(version!=1&&version!=2)throw new Invalid();
             long sequence=I64(r,rows,"acquisition_sequence");double published=F64(r,rows,"worker_published",true);
             long eligible=I64(r,rows,"eligible_polls"),duplicates=I64(r,rows,"duplicate_polls"),gaps=I64(r,rows,"native_sequence_gaps"),discontinuities=I64(r,rows,"native_sequence_discontinuities");
             int nativeFrame=I32(r,rows,"native_frame"),nativeTime=I32(r,rows,"native_timestamp");double observed=F64(r,rows,"eye_observed",true);
             int runtime=I32(r,rows,"runtime"),calibration=I32(r,rows,"calibration");bool connected=Flag(r,rows,"eye_connected");
             int? result=OptionalI32(r,rows,"native_result"),status=OptionalI32(r,rows,"runtime_status");bool noUser=Flag(r,rows,"no_user");
             var left=ReadNativeRay(r,rows,"left");var right=ReadNativeRay(r,rows,"right");var combined=ReadNativeRay(r,rows,"combined");
+            string mode=null,resultSource=null;
+            if(version>=2)
+            {
+                mode=Text(r,rows,"capture_mode",true);resultSource=Text(r,rows,"native_result_source",true);
+                if(!ViveRawSessionJournalCodec.ValidCaptureSource(mode,resultSource))throw new Invalid();
+            }
             ViveNativePollDiagnostics diagnostics=null;
             if(Flag(r,rows,"poll_diagnostics_present"))
             {
@@ -36,19 +42,50 @@ namespace AvatarStroop.Runtime
                     readStart=OptionalF64(r,rows,"read_started"),readEnd=OptionalF64(r,rows,"read_returned");
                 int? statusResult=OptionalI32(r,rows,"status_result"),calibrationResult=OptionalI32(r,rows,"calibration_result");
                 bool? needed=OptionalBool(r,rows,"calibration_needed");int? readResult=OptionalI32(r,rows,"read_result");
-                diagnostics=new ViveNativePollDiagnostics(pollSequence,start,end,statusAt,deviceAt,calibrationAt,readStart,readEnd,statusResult,calibrationResult,needed,readResult);
+                bool callback=false;double? callbackAt=null,healthStart=null,healthEnd=null;int? registration=null;
+                if(version>=2)
+                {
+                    callback=Flag(r,rows,"callback_based");callbackAt=OptionalF64(r,rows,"callback_observed");
+                    healthStart=OptionalF64(r,rows,"health_query_started");healthEnd=OptionalF64(r,rows,"health_query_completed");
+                    registration=OptionalI32(r,rows,"callback_registration_result");
+                }
+                diagnostics=new ViveNativePollDiagnostics(pollSequence,start,end,statusAt,deviceAt,calibrationAt,readStart,readEnd,statusResult,calibrationResult,needed,readResult,
+                    callback,callbackAt,healthStart,healthEnd,registration);
+                if(callback&&callbackAt.HasValue&&healthEnd.HasValue)
+                {
+                    rows.DoubleBits("health_age_at_callback_seconds",BitConverter.DoubleToInt64Bits(callbackAt.Value-healthEnd.Value));
+                    rows.DoubleBits("callback_to_dequeue_seconds",BitConverter.DoubleToInt64Bits(end-callbackAt.Value));
+                }
             }
             var poll=new ViveProEyePoll(null,new ViveEyeFrame(nativeFrame,nativeTime,observed,noUser,left,right,combined),
                 (ViveEyeRuntimeState)runtime,(ViveEyeCalibrationState)calibration,connected,result,status,diagnostics);
             var value=new ViveRawEyeAcquisition(sequence,published,poll,eligible,duplicates,gaps,discontinuities);
+            if(version>=2&&(mode!=(diagnostics==null?"native_poll":diagnostics.CaptureMode)||
+                resultSource!=(diagnostics==null?"eye_read":diagnostics.NativeResultSource)))throw new Invalid();
             if(!ViveRawSessionJournalCodec.ValidAcquisition(value))throw new Invalid();return value;
         }
-        static void ReadAoi(BinaryReader r,Rows rows,int nativeFrame,int nativeTimestamp,double eyeObserved,double checkedAt)
+        static void ReadEyeFrameExtension(BinaryReader r,Rows rows,int nativeFrame,int nativeTimestamp,double eyeObserved,double checkedAt)
         {
-            if(I32(r,rows,"aoi_extension_version")!=1||Text(r,rows,"aoi_policy",true)!=ViveEyeAoiObservation.PolicyVersion||
-                Text(r,rows,"aoi_coordinate_basis",true)!=ViveEyeAoiObservation.CoordinateBasis||
-                Text(r,rows,"aoi_pose_time_meaning",true)!=ViveEyeAoiObservation.PoseTimeMeaning||
-                Text(r,rows,"aoi_classification_meaning",true)!=ViveEyeAoiObservation.ClassificationMeaning)throw new Invalid();
+            int version=r.ReadInt32();
+            if(version==1){ReadAoi(r,rows,nativeFrame,nativeTimestamp,eyeObserved,checkedAt,true);return;}
+            if(version!=2)throw new Invalid();rows.Int("recording_extension_version",version);
+            string mode=Text(r,rows,"capture_mode",true),source=Text(r,rows,"native_result_source",true);
+            if(!ViveRawSessionJournalCodec.ValidCaptureSource(mode,source))throw new Invalid();
+            if(Flag(r,rows,"aoi_present"))ReadAoi(r,rows,nativeFrame,nativeTimestamp,eyeObserved,checkedAt);
+        }
+        static void ReadAoi(BinaryReader r,Rows rows,int nativeFrame,int nativeTimestamp,double eyeObserved,double checkedAt,bool versionAlreadyRead=false)
+        {
+            if(versionAlreadyRead)rows.Int("aoi_extension_version",1);
+            else if(I32(r,rows,"aoi_extension_version")!=1)throw new Invalid();
+            string policy=Text(r,rows,"aoi_policy",true);
+            if(Text(r,rows,"aoi_coordinate_basis",true)!=ViveEyeAoiObservation.CoordinateBasis||
+                Text(r,rows,"aoi_pose_time_meaning",true)!=ViveEyeAoiObservation.PoseTimeMeaning)throw new Invalid();
+            string meaning=Text(r,rows,"aoi_classification_meaning",true);
+            bool historical=policy=="vive-classroom-exclusive-surface-proxies-v1"&&
+                (meaning=="before-mask-scene-analytic-surface-proxy-not-validated-fixation-or-full-scene-occlusion"||
+                 meaning=="analytic-surface-proxy-not-validated-fixation-or-full-scene-occlusion");
+            bool current=policy==ViveEyeAoiObservation.PolicyVersion&&meaning==ViveEyeAoiObservation.ClassificationMeaning;
+            if(!historical&&!current)throw new Invalid();
             double captured=F64(r,rows,"aoi_capture_local",true);double? completed=OptionalF64(r,rows,"aoi_capture_completed_local");
             double unitySeconds=F64(r,rows,"aoi_unity_seconds",true);int unityFrame=I32(r,rows,"aoi_unity_frame");
             double? sceneStart=OptionalF64(r,rows,"aoi_scene_capture_local"),sceneEnd=OptionalF64(r,rows,"aoi_scene_capture_completed_local"),sceneUnity=OptionalF64(r,rows,"aoi_scene_unity_seconds");
@@ -76,6 +113,8 @@ namespace AvatarStroop.Runtime
             rows.DoubleBits("aoi_eye_to_pose_seconds",BitConverter.DoubleToInt64Bits(captured-eyeObserved));
             if(sceneStart.HasValue)rows.DoubleBits("aoi_eye_to_scene_seconds",BitConverter.DoubleToInt64Bits(sceneStart.Value-eyeObserved));
             if(sceneStart.HasValue&&sceneUnity.HasValue)rows.DoubleBits("aoi_scene_unity_clock_offset_seconds",BitConverter.DoubleToInt64Bits(sceneStart.Value-sceneUnity.Value));
+            if(sceneEnd.HasValue)rows.DoubleBits("aoi_scene_to_pose_seconds",BitConverter.DoubleToInt64Bits(captured-sceneEnd.Value));
+            if(sceneFrame>=0)rows.Int("aoi_scene_frame_age",unityFrame-sceneFrame);
             rows.DoubleBits("aoi_unity_clock_offset_seconds",BitConverter.DoubleToInt64Bits(captured-unitySeconds));
         }
     }
