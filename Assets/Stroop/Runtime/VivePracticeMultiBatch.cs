@@ -446,7 +446,7 @@ namespace AvatarStroop.Runtime
         {
             // Writer-only commit would separate its head from cursor progress.
             // The issuer must use CommitPreparedAndCursor under the full locks.
-            lock(sync){Faulted=true;outstanding=null;return false;}
+            throw new NotSupportedException("Use CommitPreparedAndCursor: a writer-only commit would separate its head from cursor progress.");
         }
         // The issuer already holds cursor -> issuer -> choice -> participant ->
         // target locks. The writer lock is acquired last and both private state

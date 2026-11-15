@@ -28,6 +28,7 @@ namespace AvatarStroop.Apps
         readonly Button openExport = ActionButton("Open exported data");
         readonly Button closePlayers = ActionButton("Close both preview windows");
         readonly Button reconnect = ActionButton("End preview and reconnect / new session");
+        readonly Button cancelPending = ActionButton("Cancel pending command");
         readonly Timer timer = new Timer { Interval=250 };
         readonly Stopwatch clock = Stopwatch.StartNew();
         Process participant, operatorPlayer;
@@ -77,6 +78,7 @@ namespace AvatarStroop.Apps
             layout.Controls.Add(MakeLabel("Confirm a gaze-control source once after practice; it stays selected for all 4 blocks. No default selection.\nThe source controls gaze input; the A-D avatar conditions still change in BCAD order. D has no avatar with either source. Live WoZ is not connected.",70));
             layout.Controls.Add(Row(source,lockBlock,begin));
             receipt.ForeColor=Color.FromArgb(33,75,96); layout.Controls.Add(receipt);
+            layout.Controls.Add(Row(cancelPending));
 #if QUEST_PREVIEW_LAUNCHER
             layout.Controls.Add(MakeLabel("Touch: X red / Y green / A blue / B yellow. Release before the next answer.\nRatings: read the introduction, then A. Stick UP lowers / DOWN raises 1-5; centre, then A confirms.\nA continues after rest immediately; right trigger continues after correction. Left menu pauses.\nPaused: trigger resumes; B withdraws. PC P / Esc: safety controls.",100));
 #else
@@ -93,6 +95,7 @@ namespace AvatarStroop.Apps
             begin.Click+=(s,e)=>Send(OwnerCommandKind.Begin);
             export.Click+=(s,e)=>Send(OwnerCommandKind.Export);
             openExport.Click+=(s,e)=>Guard(OpenExport);
+            cancelPending.Click+=(s,e)=>Guard(CancelPending);
             source.SelectedIndexChanged+=(s,e)=>RefreshControls();
             timer.Tick+=(s,e)=>Poll(); timer.Start(); RefreshControls();
             FormClosing+=(s,e)=> {
@@ -263,6 +266,7 @@ namespace AvatarStroop.Apps
             launch.Enabled=!launchOutcomeUncertain&&!RestartBlocksActions&&CanReplace(participant)&&CanReplace(operatorPlayer);
             closePlayers.Enabled=(!RestartBlocksActions||restart.Stage==PreviewRestartStage.Blocked)&&(Alive(participant)||Alive(operatorPlayer));
             reconnect.Enabled=!RestartBlocksActions&&ParticipantFresh&&pending==null&&latest.Phase!=Phase.Ended;
+            cancelPending.Enabled=pending!=null;
             practice.Enabled=free&&(latest.Phase==Phase.Preparation||latest.Phase==Phase.Familiarization||latest.Phase==Phase.PracticeRetry);
             source.Enabled=free&&latest.BlockIndex==0&&latest.Phase==Phase.BlockPreparation&&!latest.LockedSource.HasValue;
             lockBlock.Enabled=source.Enabled&&source.SelectedIndex>=0;
@@ -287,9 +291,26 @@ namespace AvatarStroop.Apps
                     throw new InvalidOperationException("Owner start is available only for the first block with a confirmed ready source.");
                 pending=new OwnerCommand(Guid.NewGuid().ToString("N"),kind,chosen);sentAt=clock.Elapsed.TotalSeconds;
                 if(kind==OwnerCommandKind.Export)ExportOutcome("CSV export requested; waiting for acknowledgement and a verified folder.");
-                // Preserve this ID even if append throws: the write outcome may be uncertain.
-                OwnerCommandFile.Append(commands,pending);receipt.Text="Queued: "+kind+"; waiting for the participant application to acknowledge.";
+                try
+                {
+                    OwnerCommandFile.Append(commands,pending);
+                }
+                catch(OwnerCommandAppendRefusedException)
+                {
+                    // Nothing was written: the command can never be acknowledged.
+                    // Clear the pending state immediately and let Guard show the
+                    // refusal. A plain IOException from Write/Flush keeps pending
+                    // because that write outcome is genuinely uncertain.
+                    pending=null;sentAt=0;throw;
+                }
+                receipt.Text="Queued: "+kind+"; waiting for the participant application to acknowledge.";
             });
+        }
+        void CancelPending()
+        {
+            if(pending==null)return;
+            pending=null;sentAt=0;
+            receipt.Text="Cancelled the pending owner command; controls re-enabled. If the participant already executed it, its acknowledgement is ignored.";
         }
         void ResetExportPresentation()
         {

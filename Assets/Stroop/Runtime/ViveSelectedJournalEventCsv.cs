@@ -23,6 +23,13 @@ namespace AvatarStroop.Runtime
             string value;if(fields==null||!fields.TryGetValue(key,out value))return "state:missing";
             return value==null?"state:null":B64(value);
         }
+        static readonly char[] CsvRequiresQuoting={',','"','\n','\r'};
+        static string Csv(string value)
+        {
+            if(value==null)return "state:null";
+            if(value.IndexOfAny(CsvRequiresQuoting)<0)return value;
+            return "\""+value.Replace("\"","\"\"")+"\"";
+        }
         static bool IsCoverage(string kind)
         {
             return kind=="initial_coverage_unknown"||kind=="recovery_coverage_unknown"||kind=="gap"||
@@ -71,7 +78,7 @@ namespace AvatarStroop.Runtime
                 string ignored;
                 string observed=row.Fields.TryGetValue(observedKey,out ignored)?Optional(row.Fields,observedKey):"state:missing";
                 string observedSource=row.Fields.ContainsKey(observedKey)?B64(observedKey):"state:missing";
-                Add(output,ref bytes,new[]{Version,U64(sourceIndex),"id:"+token,B64(schema),"status:"+status,U64(verified),U64(row.Sequence),B64(row.Kind),decode,
+                Add(output,ref bytes,new[]{Version,U64(sourceIndex),Csv("id:"+token),B64(schema),Csv("status:"+status),U64(verified),U64(row.Sequence),B64(row.Kind),decode,
                     sourceKind,taskSequence,eventKind,Optional(row.Fields,"block_index"),Optional(row.Fields,practice?"task_segment":"segment"),
                     Optional(row.Fields,"trial_id"),observed,Optional(row.Fields,"phase"),Optional(eventFields,"word"),Optional(eventFields,"ink"),
                     Optional(eventFields,"list"),Optional(eventFields,"planned_index"),Optional(eventFields,"response"),Optional(eventFields,"correct"),

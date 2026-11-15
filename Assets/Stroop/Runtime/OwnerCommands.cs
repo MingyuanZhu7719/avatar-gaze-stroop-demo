@@ -82,6 +82,14 @@ namespace AvatarStroop.Runtime
         {try{return !String.IsNullOrEmpty(reason)&&Utf8.GetByteCount(reason)<=2048?reason:"handler_rejection_invalid_reason";}catch(ArgumentException){return "handler_rejection_invalid_reason";}}
     }
 
+    // Thrown when append is refused before any bytes are written (size limit or
+    // incomplete tail), so callers can safely discard a pending command. Distinct
+    // from a mid-write IOException, whose outcome is genuinely uncertain.
+    public sealed class OwnerCommandAppendRefusedException : IOException
+    {
+        public OwnerCommandAppendRefusedException(string message) : base(message) {}
+    }
+
     public static class OwnerCommandFile
     {
         internal const int MaximumFileBytes=1024*1024;
@@ -97,8 +105,8 @@ namespace AvatarStroop.Runtime
             byte[] bytes=Encoding.UTF8.GetBytes(line+"\n");
             using(var stream=new FileStream(path,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.Read))
             {
-                if(stream.Length+bytes.Length>MaximumFileBytes)throw new IOException("Development command journal limit reached; start a new explicit session queue");
-                if(stream.Length>0){stream.Position=stream.Length-1;if(stream.ReadByte()!=10)throw new IOException("Incomplete file tail requires owner review; append refused");}
+                if(stream.Length+bytes.Length>MaximumFileBytes)throw new OwnerCommandAppendRefusedException("Development command journal limit reached; start a new explicit session queue");
+                if(stream.Length>0){stream.Position=stream.Length-1;if(stream.ReadByte()!=10)throw new OwnerCommandAppendRefusedException("Incomplete file tail requires owner review; append refused");}
                 stream.Position=stream.Length;stream.Write(bytes,0,bytes.Length);stream.Flush(true);
             }
         }

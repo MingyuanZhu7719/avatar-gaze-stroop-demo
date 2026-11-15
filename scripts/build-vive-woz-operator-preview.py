@@ -9,7 +9,6 @@ import argparse
 from collections import Counter
 import datetime
 import importlib.util
-import json
 import os
 from pathlib import Path
 import re
