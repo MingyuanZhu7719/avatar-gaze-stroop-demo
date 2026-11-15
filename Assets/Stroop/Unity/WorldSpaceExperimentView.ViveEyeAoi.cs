@@ -120,9 +120,14 @@ namespace AvatarStroop.Unity
             var invalid=new Vec3(Double.NaN,Double.NaN,Double.NaN);
             Vec3 cameraPosition=cameraTransform==null?invalid:AoiVec(cameraTransform.position);
             Rotation cameraRotation=cameraTransform==null?new Rotation(Double.NaN,Double.NaN,Double.NaN,Double.NaN):AoiRotation(cameraTransform.rotation);
-            bool cameraUsable=cameraTransform!=null&&AoiFinite(cameraTransform.position)&&cameraRotation.IsUnit&&
+            // Current pose validity is independent of the prior rendered scene.
+            // The raw per-frame guard clears the avatar before reading tracking;
+            // that intentionally produces a transient missing-source warning in
+            // A/B/C. It must not invalidate geometry from an already completed,
+            // fault-free render. Scene.CameraUsable retains the render-time check.
+            bool cameraPoseUsable=cameraTransform!=null&&AoiFinite(cameraTransform.position)&&cameraRotation.IsUnit&&
                 presentationCamera.isActiveAndEnabled&&presentationCamera.targetTexture==null&&
-                !hasPresentationFault&&isActiveAndEnabled&&role==Actor.Participant;
+                isActiveAndEnabled&&role==Actor.Participant;
             bool originValid=cameraTransform!=null&&eye.Combined!=null&&eye.Combined.OriginReportedValid&&eye.Combined.OriginMillimeters.IsFinite;
             Vec3 unit;
             bool directionValid=cameraTransform!=null&&eye.Combined!=null&&eye.Combined.DirectionReportedValid&&
@@ -155,7 +160,8 @@ namespace AvatarStroop.Unity
                 scene.Applicable!=applicable||scene.TaskRevision!=presentationRevision)reason="scene_task_context_changed";
             else if(!AoiFinite(scene.Started)||!AoiFinite(scene.Completed)||scene.Completed<scene.Started||scene.Completed>captureLocalSeconds)reason="invalid_scene_clock_bracket";
             else if(!IsRecentViveEyeAoiScene(scene.Frame,Time.frameCount,scene.Completed,captureLocalSeconds))reason="stale_render_scene";
-            else if(!cameraUsable||!scene.CameraUsable)reason="presentation_unavailable";
+            else if(!cameraPoseUsable)reason="camera_pose_unavailable";
+            else if(!scene.CameraUsable)reason="rendered_scene_unavailable";
             else if(eye.NoUser||!originValid||!directionValid)reason="invalid_combined_ray";
             else if(!scene.GeometryValid)reason="geometry_unavailable";
             else

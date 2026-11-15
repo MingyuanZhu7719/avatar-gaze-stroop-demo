@@ -222,6 +222,15 @@ forcing visibility true or weakening head tracking. Existing v1 files remain
 readable with their original policy/meaning labels; their invalid AOIs are not
 retrospectively changed into measurements.
 
+The per-update avatar guard can also temporarily set a missing-source display
+warning while it hides an A/B/C avatar. Current camera-pose eligibility therefore
+does not reuse that transient avatar warning. The completed-render snapshot still
+checks display faults at render time; a genuinely faulted scene remains invalid
+after the warning clears. Disabled or malformed current cameras remain invalid.
+The regression fixture exercises the production BCAD automatic-avatar reveal,
+camera callbacks, guard, AOI projection, and subsequent reveal, with faulted-render
+negative controls.
+
 Before perceived-evaluation analysis, retain raw recordings and separately
 report native acquisition quality, admitted pose/AOI coverage, association
 lags, and missing intervals. Restrict gaze outcomes to valid active-task

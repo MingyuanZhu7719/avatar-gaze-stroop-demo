@@ -1109,25 +1109,40 @@ namespace AvatarStroop.Tests
                 }
                 finally{if(writer!=null)writer.Release.Set();client.Release.Set();worker.Stop(1000);worker.Dispose();}
             });
+#if STROOP_TEST_BUILD && !UNITY_5_3_OR_NEWER
             suite.Run("named raw pump idle stop is asynchronous and not a clean close",()=>{
                 var clock=new MonotonicClock("pump-stop-clock");var client=new Client(clock);
                 var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
+                var idle=new ManualResetEvent(false);var releaseIdle=new ManualResetEvent(false);
+                ViveNamedRawRecordingPump pump=null;
                 try
                 {
                     Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
                     var admission=ViveNamedSessionFrameAdmission.CreateSyntheticForTest(task,worker,clock,16);
                     Check.True(admission.ConfirmTask()&&admission.ConfirmEye());
                     var writer=new ViveNamedRawRecordingPump.SyntheticWriter(admission);
-                    var pump=ViveNamedRawRecordingPump.StartSyntheticForTest(task,worker,clock,admission,writer);
-                    pump.Stop();Check.True(SpinWait.SpinUntil(()=>pump.HasExited,3000));
+                    // Hold the consumer after its empty poll. An immediate
+                    // stop after thread startup can instead race reservation
+                    // or cleanup and correctly retain an uncertain outcome.
+                    writer.BeforeIdleWaitForTest=()=>{idle.Set();if(!releaseIdle.WaitOne(3000))throw new InvalidOperationException("Synthetic idle barrier timeout.");};
+                    pump=ViveNamedRawRecordingPump.StartSyntheticForTest(task,worker,clock,admission,writer);
+                    Check.True(idle.WaitOne(3000),"Synthetic writer did not reach idle.");
+                    Check.True(!pump.HasReservedIo);pump.Stop();
+                    Check.True(!pump.HasExited,"Stop waited for the blocked idle consumer.");
+                    releaseIdle.Set();Check.True(SpinWait.SpinUntil(()=>pump.HasExited,3000));
                     Check.Equal(ViveNamedRawRecordingPump.Outcome.StoppedWithoutClose,pump.State);
-                    Check.Equal(0,writer.Calls);Check.Equal(1,writer.CleanupCalls);
+                    Check.Equal(0,writer.Calls);Check.Equal(0,writer.CompleteCalls);Check.Equal(1,writer.CleanupCalls);
                     Check.True(!pump.StageRigFrame(null,1)&&!pump.WithdrawalRequested);
                     pump.Withdraw();Check.True(pump.WithdrawalRequested);
                     Check.Equal(ViveNamedRawRecordingPump.Outcome.WithdrawnWithoutClose,pump.State);
                 }
-                finally{client.Release.Set();worker.Stop(1000);worker.Dispose();}
+                finally
+                {
+                    releaseIdle.Set();if(pump!=null){pump.Stop();SpinWait.SpinUntil(()=>pump.HasExited,3000);}
+                    client.Release.Set();worker.Stop(1000);worker.Dispose();idle.Dispose();releaseIdle.Dispose();
+                }
             });
+#endif
             suite.Run("named raw pump fault does not invent withdrawal and later withdrawal is retained",()=>{
                 var clock=new MonotonicClock("pump-fault-clock");var client=new Client(clock);
                 var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);

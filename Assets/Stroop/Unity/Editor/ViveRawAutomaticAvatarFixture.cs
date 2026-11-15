@@ -47,6 +47,40 @@ namespace AvatarStroop.Unity.Editor
             Require((bool)Call(worker,"TryPollTaskForRecording",poll)&&((ViveProEyePoll)poll[0]).Eye==null&&
                 (bool)Call(pump,"StageRigFrame",poll[0],1.0),"raw fresh head did not pass without gaze");
         }
+        static ViveEyeFrame Eye(Camera camera,Vector3 target,IClock clock)
+        {
+            var local=Quaternion.Inverse(camera.transform.rotation)*(target-camera.transform.position).normalized;
+            var ray=new ViveEyeRay(3UL,true,true,new Vec3(0,0,0),new Vec3(-local.x,local.y,local.z));
+            return new ViveEyeFrame(41,937,clock.Now,false,ray,ray,ray);
+        }
+        static void CheckAoiAfterRawGuard(WorldSpaceExperimentView view,ViveStroopPreviewRig rig,Camera camera,
+            IClock clock,bool visible,Condition condition)
+        {
+            var board=view.transform.Find("WorldSpaceContent/ClassroomEnvironment/Whiteboard/WritingArea");
+            Require(board!=null,"production classroom writing area missing");
+            var eye=Eye(camera,board.position,clock);
+            var before=view.CaptureViveEyeAoi(eye,clock);
+            Require(before.Category=="task"&&before.AvatarAoiApplicable==visible,
+                "rendered production geometry invalid in "+condition+": "+before.Reason);
+            Require(before.Geometry.Count==6&&before.Geometry[0].Enabled&&
+                before.Geometry.Skip(1).All(g=>g.Enabled==visible),"rendered BCAD geometry visibility incorrect");
+            // This is the exact production guard, including the owner callback
+            // and ClearRawAutomaticAvatar -> ClearAvatarOutput -> RefreshWarnings.
+            // Merely SetActive(false) never reproduces its transient warning.
+            rig.BlockTaskPresentation();
+            Require(camera.cullingMask==0&&!view.AvatarRoot.gameObject.activeInHierarchy,
+                "real per-frame guard did not hide the production scene");
+            Require((bool)Get(view,"hasPresentationFault")==visible,
+                "real A/B/C missing-source warning or D control was not reproduced");
+            var after=view.CaptureViveEyeAoi(eye,clock);
+            Require(after.Category=="task"&&after.Reason=="valid_surface_proxy"&&after.AvatarAoiApplicable==visible,
+                "mask-after-render invalidated completed BCAD geometry in "+condition+": "+after.Reason);
+            Require(after.SceneUnityFrame==before.SceneUnityFrame&&after.TaskRevision==before.TaskRevision&&
+                after.AvatarRevision==before.AvatarRevision&&after.SceneCaptureLocalSeconds==before.SceneCaptureLocalSeconds&&
+                after.Geometry.Zip(before.Geometry,(a,b)=>a.Enabled==b.Enabled&&a.PositionWorld.Equals(b.PositionWorld)&&
+                    a.RotationWorld.Equals(b.RotationWorld)&&a.ScaleWorld.Equals(b.ScaleWorld)).All(equal=>equal),
+                "per-frame guard changed immutable completed-render geometry");
+        }
         public static void Validate()
         {
             var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Additive);
@@ -57,12 +91,14 @@ namespace AvatarStroop.Unity.Editor
             {
                 cameraObject=Root(scene,"RawAvatarParticipantCamera");
                 var camera=cameraObject.AddComponent<Camera>();camera.cullingMask=0;
+                camera.transform.position=new Vector3(0,1.6f,0);
                 otherObject=Root(scene,"RawAvatarWrongCamera");var other=otherObject.AddComponent<Camera>();other.enabled=false;
                 viewObject=Root(scene,"RawAvatarView");var view=viewObject.AddComponent<WorldSpaceExperimentView>();
                 view.Initialize(camera,Actor.Participant);view.ConfigureViveDevelopmentPreview(ViveFixedTrackpadMapping.Create(),.5);
                 rigObject=Root(scene,"RawAvatarRig");rig=rigObject.AddComponent<ViveStroopPreviewRig>();
                 ownerObject=Root(scene,"RawAvatarOwner");owner=ownerObject.AddComponent<ViveStroopDevelopmentBootstrap>();owner.Configure(rig,view);
                 var clock=new MonotonicClock("synthetic-raw-avatar");
+                view.BindViveEyeAoiRenderClock(clock);
                 int sequence=0;worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(++sequence,clock.Now,true,true,Rotation.Identity),()=>client);
                 Require(worker.Start()&&client.Entered.WaitOne(3000),"synthetic worker unavailable");
                 var geometry=DevelopmentGeometry.FromLocalDirections(new Vec3(0,0,1),new Vec3(1,0,0),"raw-avatar-editor-geometry");
@@ -153,8 +189,29 @@ namespace AvatarStroop.Unity.Editor
                         Call(owner,"ClearRawAutomaticAvatar");
                         Require(!view.AvatarRoot.gameObject.activeInHierarchy,"hold left a stale automatic avatar");
                     }
+                    // Repeat the actual reveal/render/guard/reveal path for all
+                    // four conditions, retaining production classroom transforms
+                    // and automatic head/eye rotations (including nonuniform
+                    // ellipsoid scale). This catches condition-dependent gates.
+                    for(int cycle=0;cycle<2;cycle++)
+                    {
+                        reveal(visible);cameraPass(visible,visible);
+                        CheckAoiAfterRawGuard(view,rig,camera,clock,visible,order[block]);
+                    }
+                    // A fault present during the completed camera pass must
+                    // remain invalid even after the current warning is cleared.
+                    reveal(visible);view.SetFaults(new[]{"Synthetic presentation fault before render"});
+                    cameraPass(visible,visible);
+                    view.SetFaults(new string[0]);
+                    Require(!(bool)Get(view,"hasPresentationFault"),"fault control did not restore current presentation");
+                    var board=view.transform.Find("WorldSpaceContent/ClassroomEnvironment/Whiteboard/WritingArea");
+                    var faulted=view.CaptureViveEyeAoi(Eye(camera,board.position,clock),clock);
+                    Require(faulted.Category=="invalid"&&faulted.Reason=="rendered_scene_unavailable",
+                        "fault-before-render scene was accepted after current warning cleared in "+order[block]+": "+faulted.Reason);
+                    reveal(visible);cameraPass(visible,visible);
+                    CheckAoiAfterRawGuard(view,rig,camera,clock,visible,order[block]);
                 }
-                Debug.Log("VIVE_RAW_AUTOMATIC_AVATAR_FIXTURE_PASSED: real raw scene reveals BCAD; B updates, C/A fixed, D/Practice hidden; software renderer seam only.");
+                Debug.Log("VIVE_RAW_AUTOMATIC_AVATAR_FIXTURE_PASSED: real BCAD raw reveal/render/guard/reveal AOI; render-time fault rejected, later mask retained; B updates, C/A fixed, D/Practice hidden; software renderer seam only.");
             }
             finally
             {

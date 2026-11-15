@@ -65,6 +65,9 @@ namespace AvatarStroop.Runtime
             internal readonly ManualResetEvent CompleteEntered=new ManualResetEvent(false),CompleteRelease=new ManualResetEvent(false);
             internal bool Block=false,Reject=false,BlockComplete=false,CompleteResult=false,ThrowComplete=false,ExitConsumerUnexpectedlyForTest=false;
             internal Action AfterRevokeForTest=null,AfterCompletionClaimForTest=null,AfterUnexpectedRevokeForTest=null;
+#if STROOP_TEST_BUILD && !UNITY_5_3_OR_NEWER
+            internal Action BeforeIdleWaitForTest;
+#endif
             internal int Calls,CleanupCalls,CompleteCalls;
             internal SyntheticWriter(ViveNamedSessionFrameAdmission admission){this.admission=admission;}
             internal bool BelongsTo(ViveNamedSessionFrameAdmission value){return Object.ReferenceEquals(admission,value);}
@@ -776,7 +779,14 @@ namespace AvatarStroop.Runtime
                     if(!admission.TryReserveConsumer(out receipt)){if(Volatile.Read(ref terminal)==0)Fail();break;}
                     if(receipt==null)
                     {
-                        if(Volatile.Read(ref finishRequested)==0){Thread.Sleep(20);continue;}
+                        if(Volatile.Read(ref finishRequested)==0)
+                        {
+#if STROOP_TEST_BUILD && !UNITY_5_3_OR_NEWER
+                            if(admission.SyntheticOnly&&synthetic!=null)
+                            {var idle=synthetic.BeforeIdleWaitForTest;if(idle!=null)idle();}
+#endif
+                            Thread.Sleep(20);continue;
+                        }
                         long water,cursor;double at;
                         if(!admission.TryGetDrainedSealBoundary(out water,out cursor,out at)){Fail();break;}
                         Interlocked.Exchange(ref ioReserved,1);

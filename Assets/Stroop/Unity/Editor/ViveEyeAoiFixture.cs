@@ -81,6 +81,10 @@ namespace AvatarStroop.Unity.Editor
                 headCurrent=true;
 
                 Set(view,"currentView",Task(Phase.MainTask,true));view.AvatarRoot.gameObject.SetActive(true);
+                // This fixture supplies analytic geometry directly, including
+                // synthetic valid avatar input. The raw automatic-avatar fixture
+                // separately obtains that state through the production source.
+                Set(view,"poseWarning","");view.SetFaults(new string[0]);
                 view.AvatarRoot.position=new Vector3(.65f,.9f,3);view.AvatarRoot.rotation=Quaternion.Euler(0,180,0);view.AvatarHead.localRotation=Quaternion.identity;
                 var left=view.AvatarHead.Find("LeftEye/White");var head=view.AvatarHead.Find("HeadShape");
                 CameraPass(view,camera);var eye=view.CaptureViveEyeAoi(Eye(camera,left.position),clock);
@@ -92,6 +96,20 @@ namespace AvatarStroop.Unity.Editor
                 var invalid=view.CaptureViveEyeAoi(Eye(camera,left.position,false),clock);
                 Require(invalid.Category=="invalid"&&invalid.Reason=="invalid_combined_ray","invalid origin silently assigned other or camera-origin fallback");
 
+                // Current warnings and rendered-scene validity are independent.
+                // Clearing a render-time fault cannot rehabilitate its snapshot.
+                view.SetFaults(new[]{"Synthetic fault present during render"});CameraPass(view,camera);
+                view.SetFaults(new string[0]);
+                Require(!(bool)typeof(WorldSpaceExperimentView).GetField("hasPresentationFault",Private).GetValue(view),
+                    "synthetic input state left another fault after clearing the render-time fault control");
+                Require(view.CaptureViveEyeAoi(Eye(camera,left.position),clock).Reason=="rendered_scene_unavailable",
+                    "current warning recovery rehabilitated a faulted completed render");
+                CameraPass(view,camera);
+                camera.enabled=false;
+                Require(view.CaptureViveEyeAoi(Eye(camera,left.position),clock).Reason=="camera_pose_unavailable",
+                    "disabled current camera inherited valid prior camera pose authority");
+                camera.enabled=true;
+
                 // Reproduce the new-frame readiness gate and real guard after
                 // a render: neither a failed post-render nor later mutation may
                 // replace completed geometry with disabled/new-frame geometry.
@@ -99,7 +117,8 @@ namespace AvatarStroop.Unity.Editor
                 view.AvatarRoot.position+=Vector3.right*4;
                 headCurrent=false;view.BindViveEyeAoiRenderClock(clock);CameraPass(view,camera);
                 var afterMask=view.CaptureViveEyeAoi(cachedEye,clock);
-                Require(afterMask.Category=="eyes"&&afterMask.Geometry[2].Enabled,"new-frame readiness or mask destroyed completed-render geometry");
+                Require(afterMask.Category=="eyes"&&afterMask.Geometry[2].Enabled,
+                    "new-frame readiness or mask destroyed completed-render geometry: "+afterMask.Category+"/"+afterMask.Reason);
                 Require(afterMask.Geometry[2].PositionWorld.X==eye.Geometry[2].PositionWorld.X,"cached geometry mutated after capture");
                 Set(view,"presentationRevision",afterMask.TaskRevision+1);
                 Require(view.CaptureViveEyeAoi(cachedEye,clock).Reason=="scene_task_context_changed","changed task revision reused old scene");
