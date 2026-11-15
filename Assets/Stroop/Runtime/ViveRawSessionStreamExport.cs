@@ -23,7 +23,7 @@ namespace AvatarStroop.Runtime
             return a.Status==ViveRawSessionReadStatus.VerifiedPrefix&&b.Status==a.Status&&
                 a.TrailingFrameTruncated==b.TrailingFrameTruncated&&a.VerifiedBytes==b.VerifiedBytes&&
                 a.VerifiedRecordCount==b.VerifiedRecordCount&&a.VerifiedTaskRecords==b.VerifiedTaskRecords&&
-                a.VerifiedObservationRecords==b.VerifiedObservationRecords&&a.VerifiedStatusRecords==b.VerifiedStatusRecords&&
+                a.VerifiedObservationRecords==b.VerifiedObservationRecords&&a.VerifiedStatusRecords==b.VerifiedStatusRecords&&a.VerifiedEyeQualityRecords==b.VerifiedEyeQualityRecords&&
                 a.CaptureTerminalObserved==b.CaptureTerminalObserved&&
                 a.VerifiedPrefixChainDigestHex==b.VerifiedPrefixChainDigestHex;
         }
@@ -95,6 +95,7 @@ namespace AvatarStroop.Runtime
                     Section(staged,"prepared_stimuli",report.PreparedStimuliCsv);Section(staged,"trials",report.TrialsCsv);
                     Section(staged,"ratings",report.RatingsCsv);Section(staged,"eye_statuses",report.StatusesCsv);
                     Section(staged,"safety_events",report.SafetyEventsCsv);
+                    Section(staged,"eye_quality",report.EyeQualityCsv);
                     Section(staged,"verified_vraw_prefix_base64",Convert.ToBase64String(snapshot,0,prefixLength));
                     long ordinal=0;var page=first;
                     while(true)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using AvatarStroop.Core;
 
@@ -12,10 +13,12 @@ namespace AvatarStroop.Runtime
         readonly ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp;
         readonly JournalEvent prepared;readonly ViveRawRevocation revocation;readonly Thread owner;
         readonly ViveLegacyWozTaskOwner wozOwner;readonly ViveLegacyWozTaskOwner.Binding wozBinding;
+        readonly ControlSelection? capturedSelection;readonly string capturedSourceOwner;readonly long capturedSourceGeneration;
         internal readonly long PlanEventSequence;
         internal readonly bool PracticeScope;
         ViveBlockPlanRequest(ViveDevelopmentParticipant p,MonotonicClock c,ViveDevelopmentParticipant.NamedRecordingTaskStamp s,JournalEvent e)
         {participant=p;clock=c;stamp=s;prepared=e;revocation=p.NamedRawRevocation;owner=Thread.CurrentThread;PlanEventSequence=e.Sequence;
+            capturedSelection=p.LockedControl;capturedSourceOwner=p.LegacyWozSourceOwner;capturedSourceGeneration=p.LegacyWozSourceGeneration;
             PracticeScope=String.Equals(e.Fields["plan_scope"],"PRACTICE",StringComparison.Ordinal);
             if(s.Context.IsLegacyWoz&&!PracticeScope&&p.LegacyWozRecording!=null)
             {wozOwner=p.LegacyWozRecording.TaskOwner;if(!wozOwner.TryCapture(out wozBinding))throw new InvalidOperationException("Current WoZ plan owner required");}}
@@ -38,29 +41,117 @@ namespace AvatarStroop.Runtime
             foreach(var pair in a.Fields){string value;if(!b.Fields.TryGetValue(pair.Key,out value)||!String.Equals(pair.Value,value,StringComparison.Ordinal))return false;}
             return true;
         }
+        static readonly HashSet<string> FocusFields=new HashSet<string>(StringComparer.Ordinal)
+        {"focus_schema","desktop_focused","xr_focused","actor","code","reason","detail","source","measurement_quality"};
+        bool FocusEvidenceMatches(JournalEvent item)
+        {
+            if(item==null||item.Kind!="focus_changed"||!stamp.Context.MatchesEvent(item)||item.SessionId!=stamp.Session||
+                item.ClockId!=clock.ClockId||item.BlockIndex!=stamp.Block||item.Segment!=stamp.Segment||item.TrialId!=stamp.TrialId||
+                !Object.ReferenceEquals(item.NamedOption,prepared.NamedOption)||!Object.ReferenceEquals(item.NamedBlock,prepared.NamedBlock))return false;
+            string desktop,xr,reason;
+            if(!item.Fields.TryGetValue("desktop_focused",out desktop)||(desktop!="True"&&desktop!="False")||
+                !item.Fields.TryGetValue("xr_focused",out xr)||(xr!="True"&&xr!="False")||
+                !item.Fields.TryGetValue("reason",out reason)||
+                (reason!="focus_baseline"&&reason!=(desktop=="True"&&xr=="True"?"focus_restored":"focus_lost")))return false;
+            string value;
+            if(!item.Fields.TryGetValue("focus_schema",out value)||value!="1"||
+                !item.Fields.TryGetValue("actor",out value)||value!="Owner"||
+                !item.Fields.TryGetValue("code",out value)||value!="focus_state"||
+                !item.Fields.TryGetValue("source",out value)||value!="owner_window_and_openxr_poll"||
+                !item.Fields.TryGetValue("measurement_quality",out value)||value!="NOT_ESTABLISHED"||
+                !item.Fields.TryGetValue("detail",out value)||value!="desktop_focused="+desktop+";xr_focused="+xr+
+                    ";task_input="+(xr=="True"?"requires_current_readiness":"blocked")+";sampling=physical_validity_required")return false;
+            // Only the known focus declaration and the unchanged preparation
+            // context may extend a pending receipt. Unknown extra metadata,
+            // invented context values or another semantic event are stale.
+            foreach(var pair in item.Fields)
+            {
+                if(FocusFields.Contains(pair.Key))continue;
+                if(!(pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))||
+                    !prepared.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value)return false;
+            }
+            foreach(var pair in prepared.Fields)
+                if((pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))&&
+                    (!item.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value))return false;
+            return true;
+        }
+        bool TrackingEvidenceMatches(JournalEvent item)
+        {
+            if(item==null||(item.Kind!="tracking_gap_begin"&&item.Kind!="tracking_gap_end")||
+                !stamp.Context.MatchesEvent(item)||item.SessionId!=stamp.Session||item.ClockId!=clock.ClockId||
+                item.BlockIndex!=stamp.Block||item.Segment!=stamp.Segment||item.TrialId!=stamp.TrialId||
+                !Object.ReferenceEquals(item.NamedOption,prepared.NamedOption)||!Object.ReferenceEquals(item.NamedBlock,prepared.NamedBlock))return false;
+            string reason,detail,schema,actor,code;
+            if(!item.Fields.TryGetValue("tracking_gap_schema",out schema)||schema!="1"||
+                !item.Fields.TryGetValue("actor",out actor)||actor!="Owner"||
+                !item.Fields.TryGetValue("code",out code)||code!="tracking_gap"||
+                !item.Fields.TryGetValue("reason",out reason)||(reason!="HeadPose"&&reason!="ControllerPose"&&reason!="EyeQuality"&&reason!="RecordingAuthority")||
+                !item.Fields.TryGetValue("detail",out detail)||detail!=(item.Kind=="tracking_gap_begin"?
+                    "task_input=blocked;missing_measurement=UNKNOWN":"task_input=revalidated;missing_measurement=UNKNOWN"))return false;
+            foreach(var pair in item.Fields)
+            {
+                if(pair.Key=="tracking_gap_schema"||pair.Key=="actor"||pair.Key=="code"||pair.Key=="reason"||pair.Key=="detail")continue;
+                string value;
+                if(!(pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))||
+                    !prepared.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value)return false;
+            }
+            foreach(var pair in prepared.Fields)
+            {
+                string value;
+                if((pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))&&
+                    (!item.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value))return false;
+            }
+            return true;
+        }
         bool MatchesCapturedOrEvidenceExtendedStamp(ViveDevelopmentParticipant.NamedRecordingTaskStamp value)
         {
-            if(wozOwner==null)return SameStamp(stamp,value);
-            if(wozBinding==null||value==null||!stamp.Context.IsLegacyWoz||PracticeScope||
+            if(participant.LockedControl!=capturedSelection||participant.LegacyWozSourceOwner!=capturedSourceOwner||
+                participant.LegacyWozSourceGeneration!=capturedSourceGeneration)return false;
+            if(wozOwner==null&&SameStamp(stamp,value))return true;
+            if(value==null||stamp==null||stamp.Context==null||
                 !Object.ReferenceEquals(stamp.Owner,value.Owner)||!Object.ReferenceEquals(stamp.Clock,value.Clock)||
                 !Object.ReferenceEquals(stamp.Context,value.Context)||!Object.ReferenceEquals(stamp.Configuration,value.Configuration)||
                 !Object.ReferenceEquals(stamp.Plan,value.Plan)||!Object.ReferenceEquals(stamp.Intent,value.Intent)||
                 stamp.Phase!=value.Phase||stamp.Block!=value.Block||stamp.Segment!=value.Segment||stamp.Session!=value.Session||stamp.TrialId!=value.TrialId||
-                value.Generation<stamp.Generation||value.EventCursor<stamp.EventCursor||value.EventCursor-stamp.EventCursor>256)return false;
-            ViveLegacyWozTaskOwner.Binding current;
-            if(!wozOwner.TryCapture(out current)||current.WireRevision!=wozBinding.WireRevision||current.SourceOwner!=wozBinding.SourceOwner||
-                current.SourceGeneration!=wozBinding.SourceGeneration||current.Selection!=wozBinding.Selection)return false;
+                stamp.Generation<0||value.Generation<stamp.Generation||value.EventCursor<stamp.EventCursor||value.EventCursor-stamp.EventCursor>256)return false;
+            if(wozOwner!=null)
+            {
+                ViveLegacyWozTaskOwner.Binding current;
+                if(wozBinding==null||!stamp.Context.IsLegacyWoz||PracticeScope||!wozOwner.TryCapture(out current)||
+                    current.WireRevision!=wozBinding.WireRevision||current.SourceOwner!=wozBinding.SourceOwner||
+                    current.SourceGeneration!=wozBinding.SourceGeneration||current.Selection!=wozBinding.Selection)return false;
+            }
+            if(SameStamp(stamp,value))return true;
             var tail=participant.ReadEventsAfter(stamp.EventCursor,257);
             if(tail.Count!=value.EventCursor-stamp.EventCursor)return false;
+            int focusCount=0;string openGap=null;double priorTime=prepared.Time,observed;
+            if(!clock.TryReadRecordingAdmissionTime(out observed))return false;
             for(int i=0;i<tail.Count;i++)
             {
                 var item=tail[i];string evidenceKind;
-                if(item.Sequence!=stamp.EventCursor+i+1||item.Kind!=ViveLegacyWozRecordingSchema.EventKind||
-                    !stamp.Context.MatchesEvent(item)||item.ClockId!=clock.ClockId||
+                if(item.Sequence!=stamp.EventCursor+i+1||Double.IsNaN(item.Time)||Double.IsInfinity(item.Time)||
+                    item.Time<priorTime||item.Time>observed)return false;
+                priorTime=item.Time;
+                if(item.Kind=="focus_changed")
+                {if(!FocusEvidenceMatches(item))return false;focusCount++;continue;}
+                if(item.Kind=="tracking_gap_begin"||item.Kind=="tracking_gap_end")
+                {
+                    if(!TrackingEvidenceMatches(item))return false;
+                    string cause=item.Fields["reason"];
+                    if(item.Kind=="tracking_gap_begin"){if(openGap!=null)return false;openGap=cause;}
+                    else {if(openGap!=cause)return false;openGap=null;}
+                    focusCount++;continue;
+                }
+                if(wozOwner==null||item.Kind!=ViveLegacyWozRecordingSchema.EventKind||!stamp.Context.MatchesEvent(item)||item.ClockId!=clock.ClockId||
                     !item.Fields.TryGetValue("woz_event",out evidenceKind)||(evidenceKind!="TaskReceipt"&&evidenceKind!="Preflight"))return false;
                 ViveLegacyWozRecordingSchema.Validate(item.Kind,item.Fields,item.ClockId,item.Time,true);
             }
-            return true;
+            // One RecordFocusState call is one named mutation (two generation
+            // increments) and one event. Unrelated no-op mutations cannot hide
+            // behind a legitimate focus event. Existing WoZ-only receipt/
+            // preflight behavior remains separately bound to its source owner.
+            if(focusCount>0)return value.Generation-stamp.Generation==2L*tail.Count;
+            return wozOwner!=null;
         }
         internal static bool TryCapture(ViveDevelopmentParticipant p,MonotonicClock c,JournalEvent plan,out ViveBlockPlanRequest request)
         {

@@ -8,7 +8,7 @@ namespace AvatarStroop.Runtime
     // Bounded, non-persistent candidate for the actual fixed-SDK worker path.
     // It has no file writer, consumer or public UI entry. The product's
     // recording gate remains closed until the complete path is reviewed.
-    internal sealed class ViveNamedSessionFrameAdmission
+    internal sealed partial class ViveNamedSessionFrameAdmission
     {
         // Copies the fields actually exposed by the installed adapter; it does
         // not infer absent pupil/image data or a hardware capture timestamp.
@@ -87,6 +87,7 @@ namespace AvatarStroop.Runtime
         // for the other. These are software FIFO ordinals, not gaze time.
         object[] ring;long firstOrdinal,nextOrdinal;bool taskChoice,eyeChoice,statusEnabled,statusSealed;long choiceGeneration,lastTaskSequence=-1,lastStatusSequence=-1;
         double lastChoice=-1,enabledAt=-1,lastCommit=-1,lastStatusTime=-1;
+        ViveRawEyeObservation lastEyeObservation;
         // P and C can coexist. R|F is an irreversible queue sentinel;
         // distinct terminal reasons are recorded in separate one-way flags.
         // No disk I/O occurs under locks.
@@ -393,6 +394,7 @@ namespace AvatarStroop.Runtime
             if(Thread.CurrentThread.ManagedThreadId!=owner||request==null||planned==null||ioFence.IsRevoked||
                 !request.BelongsToContext(task,clock,context,task.NamedRawRevocation)||!request.MatchesWriterPlannedEvent(planned)||
                 !request.TryValidateCurrentForReceipt(task,clock))return false;
+            if(statusEnabled)return worker.IsAttachedTaskRunCurrent(runIdentity)&&!ioFence.IsRevoked;
             object run;
             return worker.TryGetRecordingRunIdentity(out run)&&Object.ReferenceEquals(runIdentity,run)&&!ioFence.IsRevoked;
         }
@@ -404,6 +406,9 @@ namespace AvatarStroop.Runtime
         internal int State {get{int s=Volatile.Read(ref state);return Volatile.Read(ref withdrawTerminal)!=0?2:
             Volatile.Read(ref faultTerminal)!=0||ioFence.IsRevoked||(s&(R|F))!=0?3:(s&P)!=0?1:0;}}
         internal bool Sealed {get{return (Volatile.Read(ref state)&S)!=0;}}
+        internal bool AllowsUnacceptedPreparationPanelDiscard
+        {get{return State==0&&!Sealed&&!ioFence.IsRevoked&&Volatile.Read(ref ring)!=null&&
+            Volatile.Read(ref presentationSlot)==null&&Volatile.Read(ref countdownSlot)==null;}}
         internal enum SealResult { Pending, Sealed, Faulted }
         internal int Count
         {
@@ -595,8 +600,9 @@ namespace AvatarStroop.Runtime
         {
             double now;
             return ticket!=null&&maximumAge>0&&maximumAge<=1&&!Double.IsNaN(maximumAge)&&!Double.IsInfinity(maximumAge)&&
-                clock.TryReadRecordingAdmissionTime(out now)&&ticket.EyeObserved>=enabledAt&&ticket.HeadObserved>=enabledAt&&
-                now>=ticket.EyeObserved&&now>=ticket.HeadObserved&&now-ticket.EyeObserved<=maximumAge&&now-ticket.HeadObserved<=maximumAge&&
+                clock.TryReadRecordingAdmissionTime(out now)&&ticket.HeadObserved>=enabledAt&&now>=ticket.HeadObserved&&
+                now-ticket.HeadObserved<=maximumAge&&(ticket.TaskAuthority||
+                    ticket.EyeObserved>=enabledAt&&now>=ticket.EyeObserved&&now-ticket.EyeObserved<=maximumAge)&&
                 worker.TryCheckRecordingEpoch(ticket)==ViveProEyeWorker.RecordingEpochResult.Current&&!ioFence.IsRevoked;
         }
         // Reserves a real FIFO ordinal and a conservative encoded-size bound.
@@ -737,8 +743,12 @@ namespace AvatarStroop.Runtime
 #endif
             Interlocked.Exchange(ref state,R|F);
         }
-        void Fail()
+        string firstFault;
+        internal string FirstFault {get{return Volatile.Read(ref firstFault);}}
+        void Fail([System.Runtime.CompilerServices.CallerMemberName]string member=null,
+            [System.Runtime.CompilerServices.CallerLineNumber]int line=0)
         {
+            Interlocked.CompareExchange(ref firstFault,"admission_"+member+":"+line,null);
             ioFence.Abort();
             worker.RevokeStatusEvidence();
             SetTerminal(F);
@@ -958,7 +968,7 @@ namespace AvatarStroop.Runtime
         {
             if(Thread.CurrentThread.ManagedThreadId!=owner||seal==null||!Reserve()){Fail();return false;}
             if(!statusEnabled||statusSealed||!Object.ReferenceEquals(seal.RunIdentity,runIdentity)||
-                seal.FinalSequence!=lastStatusSequence||seal.FinalSequence<0||seal.SealLocalSeconds<lastStatusTime||
+                seal.FinalSequence!=lastStatusSequence||seal.FinalSequence< -1||(seal.FinalSequence<0&&lastEyeObservation==null)||seal.SealLocalSeconds<lastStatusTime||
                 Volatile.Read(ref pendingStatusProof)!=null||!seal.TryConsume(runIdentity))
             {Fail();return false;}
             statusSealed=true;
@@ -1047,29 +1057,53 @@ namespace AvatarStroop.Runtime
                 if(!ProducerLive()||Volatile.Read(ref ring)==null||!taskChoice||!eyeChoice){Fail();return false;}
                 expectedChoice=choiceGeneration;
                 var poll=Volatile.Read(ref ticket.Frame);
-                if(poll==null||poll.Eye==null||poll.Head==null||poll.Eye.Combined==null||!Object.ReferenceEquals(ticket.Owner,worker)||!Object.ReferenceEquals(ticket.RunIdentity,runIdentity)||
+                if(poll==null||poll.Head==null||(!ticket.HeadOnly&&(poll.Eye==null||poll.Eye.Combined==null))||
+                    ticket.HeadOnly&&!ticket.TaskAuthority||!Object.ReferenceEquals(ticket.Owner,worker)||!Object.ReferenceEquals(ticket.RunIdentity,runIdentity)||
                     (!syntheticOnly&&!ticket.InstalledPath)||!Object.ReferenceEquals(stamp.Owner,task)||!Object.ReferenceEquals(stamp.Clock,clock)||
                     !Object.ReferenceEquals(stamp.Context,context)||!Object.ReferenceEquals(stamp.Plan,plan)||!Object.ReferenceEquals(stamp.Intent,intent)||stamp.Phase==Phase.Ended){Fail();return false;}
-                var copy=new Frame(poll,stamp,ticket.LossGeneration,0);
+                var copy=ticket.HeadOnly?null:new Frame(poll,stamp,ticket.LossGeneration,0);
                 if(!Monitor.TryEnter(task.NamedRecordingGate)){Fail();return false;}
                 try
                 {
-                    if(!task.NamedRecordingStampCurrentUnderLock(stamp)||!Monitor.TryEnter(worker.RecordingTicketGate)){Fail();return false;}
+                    if(!task.NamedRecordingStampCurrentUnderLock(stamp)){Fail();return false;}
+                    bool gazeGateHeld=false;
+                    if(!ticket.IndependentTaskAuthority)
+                    {
+                        if(!Monitor.TryEnter(worker.RecordingTicketGate)){Fail();return false;}
+                        gazeGateHeld=true;
+                    }
                     try
                     {
                         target=Volatile.Read(ref ring);double now;
                         if(!ProducerLive()||target==null||!taskChoice||!eyeChoice||choiceGeneration!=expectedChoice||enabledAt<0||lastTaskSequence<stamp.EventCursor||
                             !clock.TryReadRecordingAdmissionTime(out now)||now<enabledAt||now<lastCommit||
-                            copy.EyeObserved<=enabledAt||copy.HeadObserved<=enabledAt||copy.EyeObserved>now||copy.HeadObserved>now||
-                            now-copy.EyeObserved>maximumAge||now-copy.HeadObserved>maximumAge){Fail();return false;}
+                            ticket.HeadObserved<=enabledAt||ticket.HeadObserved>now||now-ticket.HeadObserved>maximumAge||
+                            (ticket.HeadOnly?lastTaskSequence!=stamp.EventCursor:
+                                copy.EyeObserved<=enabledAt||copy.EyeObserved>now||now-copy.EyeObserved>maximumAge))
+                        {Fail();return false;}
                         ViveProEyePoll actual;
                         if(!worker.TryConsumeRecordingTicket(ticket,out actual)||!Object.ReferenceEquals(actual,poll)){Fail();return false;}
                         // Context is explicitly at software ingest. It does
                         // not prove sample/trial or eye/head synchronization.
-                        copy.SealCheckedAt(now);lastCommit=now;
-                        return Publish(target,copy);
+                        lastCommit=now;
+                        if(ticket.HeadOnly)
+                        {
+                            var cause=ticket.EyeUnavailable.Value;
+                            // A transition, new task context, or 1 s interval
+                            // heartbeat is explicit; no hardware drop count.
+                            var previous=lastEyeObservation;
+                            if(previous!=null&&previous.Cause==cause&&previous.TaskCursor==stamp.EventCursor&&
+                                now-previous.ObservedLocalSeconds<1.0)
+                            {if(!ClearBitIfLive(P)){Fail();return false;}return true;}
+                            var observation=new ViveRawEyeObservation(now,cause,stamp.EventCursor);
+                            if(!Publish(target,observation))return false;
+                            lastEyeObservation=observation;return true;
+                        }
+                        copy.SealCheckedAt(now);
+                        if(!Publish(target,copy))return false;
+                        lastEyeObservation=null;return true;
                     }
-                    finally{Monitor.Exit(worker.RecordingTicketGate);}
+                    finally{if(gazeGateHeld)Monitor.Exit(worker.RecordingTicketGate);}
                 }
                 finally{Monitor.Exit(task.NamedRecordingGate);}
             }

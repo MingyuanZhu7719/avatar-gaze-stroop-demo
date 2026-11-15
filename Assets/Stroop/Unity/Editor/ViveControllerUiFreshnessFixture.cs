@@ -137,13 +137,15 @@ namespace AvatarStroop.Unity.Editor
                 var setup=Setup();Set(owner,"recordingSetup",setup);Set(owner,"recordingSetupDesign",3);
                 HeadFlags(rig,false);owner.Poll(false);
                 Require(participant.InputReady,"display invalidation must not rewrite task/model input state");
-                Require(Property(setup,"Current").ToString()=="Cancelled","existing head-loss cancellation must remain effective");
-                Require(((string)Call(owner,"NextOwnerAction")).Contains("Recording setup expired"),"cancelled setup must explain its actual gate instead of asking for a replacement controller");
+                Require(Property(setup,"Current").ToString()=="Task"&&(bool)Property(setup,"TrackingSuspended")&&Property(setup,"DirectoryPath")!=null,"temporary head loss must retain the setup and folder while suspending input");
+                Require(((string)Call(owner,"NextOwnerAction")).Contains("Choices and folder are retained")&&
+                    !((string)Call(owner,"NextOwnerAction")).Contains("expired"),"temporary tracking hold must explain retained setup without claiming a timeout");
                 Require(!(bool)Property(owner,"ControllerUiReady")&&(string)Property(owner,"ControllerUiState")=="not checked","head-loss early return must not display cached ready");
                 string diagnostic=(string)Property(owner,"ControllerUiDiagnostic");
                 Require(diagnostic.Contains("headset tracking or focus is unavailable")&&!diagnostic.Contains("Right"),"head-loss early return leaked a prior controller diagnostic");
                 NoSources(owner,rig);
 
+                Call(setup,"Cancel"); // Explicit cancellation remains a separate freshness boundary.
                 HeadFlags(rig,true);
                 Require((string)Property(owner,"ControllerUiDiagnostic")=="Controller not checked in this update.","head recovery without a new controller poll must not report old head loss or cached controller status");
                 Call(owner,"RecordControllerUiPoll",true,true,stale);owner.Poll(true);
@@ -159,7 +161,9 @@ namespace AvatarStroop.Unity.Editor
                 Set(owner,"inputDiagnosticFrame",Time.frameCount-1);
                 Require(!(bool)Property(owner,"ControllerUiReady")&&(string)Property(owner,"ControllerUiState")=="not checked","cross-frame result was displayed as current");
                 Require((string)Property(owner,"ControllerUiDiagnostic")=="Controller not checked in this update.","cross-frame detailed status was not hidden");
-                Require(((string)Call(owner,"NextOwnerAction")).Contains("restore headset tracking"),"stale task InputReady still advertised Begin practice");
+                string next=(string)Call(owner,"NextOwnerAction");
+                Require(!next.Contains("Next: select Begin practice.")&&(next.Contains("tracking")||next.Contains("focus")),
+                    "stale task InputReady still advertised Begin practice instead of the current tracking/focus gate");
                 Call(owner,"RecordControllerUiPoll",true,false,"Synthetic current neutral wait");
                 Require((string)Property(owner,"ControllerUiState")=="not ready"&&(string)Property(owner,"ControllerUiDiagnostic")=="Synthetic current neutral wait","current unavailable result must remain visible");
                 Call(owner,"RecordControllerUiPoll",true,true,stale);HeadFlags(rig,false);

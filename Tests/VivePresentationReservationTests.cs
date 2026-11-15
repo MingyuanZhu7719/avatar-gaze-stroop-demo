@@ -96,6 +96,50 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("focus boundary abandons an uncommitted display without publishing an onset",()=>{
+                using(var f=new Fixture())
+                {
+                    var ticket=f.StageFreshEye();f.DrainQueue();var trial=f.Task.CurrentTrial;
+                    ViveNamedSessionFrameAdmission.PresentationReservation token;
+                    Check.True(Reserve(f,ticket,out token)&&f.Admission.State==1);
+                    Check.True(f.Admission.TryAbandonPresentationForFocus(token));
+                    Check.Equal(0,f.Admission.State);Check.Equal(0,f.Admission.Count);
+                    Check.True(!trial.Onset.HasValue&&trial.Outcome==TrialOutcome.Pending);
+                    bool staged;Check.True(f.Admission.TryStageNextTaskEvent(out staged)&&!staged);
+                    var fresh=f.StageFreshEye();f.DrainQueue();
+                    Check.True(Reserve(f,fresh,out token)&&Commit(f,token)&&trial.Onset.HasValue);
+                }
+            });
+            suite.Run("focus boundary cannot erase a committed display or roll back its onset",()=>{
+                using(var f=new Fixture())
+                {
+                    var ticket=f.StageFreshEye();f.DrainQueue();var trial=f.Task.CurrentTrial;
+                    ViveNamedSessionFrameAdmission.PresentationReservation token;
+                    Check.True(Reserve(f,ticket,out token)&&Commit(f,token));
+                    double onset=trial.Onset.Value;
+                    Check.True(!f.Admission.TryAbandonPresentationForFocus(token));
+                    Check.True(f.Admission.State!=0&&trial.Onset.HasValue&&trial.Onset.Value==onset);
+                }
+            });
+            suite.Run("focus boundary cannot silently clear an unknown outstanding reservation",()=>{
+                using(var f=new Fixture())
+                {
+                    var ticket=f.StageFreshEye();f.DrainQueue();var trial=f.Task.CurrentTrial;
+                    ViveNamedSessionFrameAdmission.PresentationReservation token;
+                    Check.True(Reserve(f,ticket,out token));
+                    Check.True(!f.Admission.TryAbandonPresentationForFocus(null));
+                    Check.True(f.Admission.State!=0&&!trial.Onset.HasValue);
+                }
+            });
+            suite.Run("focus boundary without a display reservation preserves an available admission",()=>{
+                using(var f=new Fixture())
+                {
+                    var ticket=f.StageFreshEye();f.DrainQueue();
+                    Check.True(f.Admission.TryAbandonPresentationForFocus(null)&&f.Admission.State==0);
+                    ViveNamedSessionFrameAdmission.PresentationReservation token;
+                    Check.True(Reserve(f,ticket,out token)&&Commit(f,token));
+                }
+            });
             suite.Run("presentation reservation commits the real task event to the shared FIFO",()=>{
                 using(var f=new Fixture())
                 {

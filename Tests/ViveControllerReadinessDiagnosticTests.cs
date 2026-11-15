@@ -13,6 +13,19 @@ namespace AvatarStroop.Tests
         {return new[]{Pose(),Pose(),Pose(),Pose(),Action(),Action(),Action(),Action()};}
         public static void Register(TestSuite suite)
         {
+            suite.Run("focus recovery distinguishes inactive actions from binding and query faults",()=>{
+                var states=Healthy();Check.True(!ViveControllerReadinessDiagnostic.OnlyActivationPending(states));
+                states[4]=Action(1,true,false);Check.True(ViveControllerReadinessDiagnostic.OnlyActivationPending(states));
+                foreach(int slot in new[]{0,3,5,7})
+                {
+                    var invalid=(ViveControllerActionDiagnostic[])states.Clone();
+                    invalid[slot]=slot<4?Pose(0):Action(0);
+                    Check.True(!ViveControllerReadinessDiagnostic.OnlyActivationPending(invalid));
+                    invalid[slot]=new ViveControllerActionDiagnostic(false,0,slot>=4,false,true);
+                    Check.True(!ViveControllerReadinessDiagnostic.OnlyActivationPending(invalid));
+                }
+                Check.True(!ViveControllerReadinessDiagnostic.OnlyActivationPending(null));
+            });
             suite.Run("VIVE readiness mirrors exact binding and active requirements",()=>{
                 Check.True(Pose().Ready);Check.True(Action().Ready);
                 Check.True(!Pose(0).Ready);Check.True(!Pose(2).Ready);Check.True(!Pose(1,false).Ready);

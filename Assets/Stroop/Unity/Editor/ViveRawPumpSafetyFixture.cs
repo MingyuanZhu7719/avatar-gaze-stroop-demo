@@ -54,6 +54,61 @@ namespace AvatarStroop.Unity.Editor
                 {ViveTrackpadDirection.Down,Colour.Blue},{ViveTrackpadDirection.Left,Colour.Yellow}};
             return new ViveDevelopmentParticipant(config,clock,geometry,map,.5,true);
         }
+        static void VerifyPreparationBusy(Scene scene,Camera camera,WorldSpaceExperimentView view)
+        {
+            GameObject ro=null,bo=null;ViveProEyeWorker worker=null;SyntheticClient client=null;object pump=null;
+            try
+            {
+                ro=Root("SyntheticBusyRig",scene);var rig=ro.AddComponent<ViveStroopPreviewRig>();
+                bo=Root("SyntheticBusyOwner",scene);var owner=bo.AddComponent<ViveStroopDevelopmentBootstrap>();owner.Configure(rig,view);
+                var clock=new MonotonicClock("synthetic-busy");client=new SyntheticClient();
+                worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                Require(worker.Start()&&client.Entered.WaitOne(3000),"busy fixture worker unavailable");
+                var task=Task(clock);var assembly=typeof(ViveDevelopmentParticipant).Assembly;
+                var admissionType=assembly.GetType("AvatarStroop.Runtime.ViveNamedSessionFrameAdmission",true);
+                var admission=admissionType.GetMethod("CreateSyntheticForTest",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{task,worker,clock,32});
+                Require((bool)Call(admission,"ConfirmTask")&&(bool)Call(admission,"ConfirmEye"),"busy fixture choices unavailable");
+                var pumpType=assembly.GetType("AvatarStroop.Runtime.ViveNamedRawRecordingPump",true);
+                var writer=Activator.CreateInstance(pumpType.GetNestedType("SyntheticWriter",BindingFlags.NonPublic),
+                    BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{admission},null);
+                pump=pumpType.GetMethod("StartSyntheticForTest",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{task,worker,clock,admission,writer});
+                Set(owner,"participant",task);Set(owner,"sharedClock",clock);Set(owner,"configured",true);Set(owner,"namedRawPump",pump);
+                Set(owner,"rawPracticeRequested",true);Set(owner,"rawSelectionProvenancePending",true);
+                Set(rig,"previewCamera",camera);Set(rig,"view",view);Set(rig,"development",owner);Set(rig,"worker",worker);Set(rig,"running",true);
+                var taskGate=typeof(ViveDevelopmentParticipant).GetProperty("NamedRecordingGate",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(task,null);
+                // Owner/admission contention is a real task boundary. The
+                // separate native fixture now proves eye-only lock contention
+                // does not enter this hold or its startup timeout.
+                foreach(var gate in new[]{taskGate})
+                {
+                    camera.cullingMask=-1;
+                    Hold(gate,()=>{
+                        Call(rig,"Update");
+                        Require(camera.cullingMask==0,"busy update did not mask the task camera");
+                        // Baseline bug: the actual camera callback revoked
+                        // the already-masked recording because no current
+                        // tracking guard was run in the skipped Update.
+                        Call(rig,"GuardRawSceneBeforeCull",camera);
+                    });
+                    Require(camera.cullingMask==0&&!owner.RecordingBlocked&&task.Phase==Phase.Preparation&&task.CurrentTrial==null&&
+                        (bool)Get(owner,"rawPracticeRequested")&&(bool)Get(owner,"rawSelectionProvenancePending"),
+                        "already-masked capture contention was incorrectly faulted by actual Rig pre-cull");
+                }
+                Set(rig,"rawBusyFrames",120);
+                Hold(taskGate,()=>Call(rig,"Update"));
+                Require(owner.RecordingBlocked&&task.CurrentTrial==null,"persistent contention did not fail closed");
+                var fault=pumpType.GetProperty("FirstFault",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(pump,null);
+                Require((string)fault=="startup_busy_timeout","first timeout reason lost after cleanup");
+            }
+            finally
+            {
+                if(pump!=null)Call(pump,"Stop");
+                if(client!=null)client.Release.Set();
+                if(worker!=null){worker.Stop(1000);worker.Dispose();}
+                if(bo!=null)UnityEngine.Object.DestroyImmediate(bo);
+                if(ro!=null)UnityEngine.Object.DestroyImmediate(ro);
+            }
+        }
         static void VerifyUnavailableBeforeTask(Scene scene,Camera camera,WorldSpaceExperimentView view,string mode)
         {
             GameObject rigObject=null,bootstrapObject=null;ViveStroopPreviewRig rig=null;
@@ -126,21 +181,55 @@ namespace AvatarStroop.Unity.Editor
                     const string diagnostic="Unity render-proxy callback and task content matched only";
                     Require(Get(bootstrap,"pendingRawPresentation")==null,"fixture must not hold a presentation reservation");
                     Set(bootstrap,"message","Synthetic raw callback fixture.");
-                    Call(bootstrap,"OnViveRawStimulusRendered",observe("other-"+trial.TrialId,word,inkColour));
-                    Call(bootstrap,"OnViveRawStimulusRendered",observe(trial.TrialId,"MISMATCH",inkColour));
-                    Call(bootstrap,"OnViveRawStimulusRendered",observe(trial.TrialId,word,inkColour.Equals(Color.red)?Color.green:Color.red));
+                    // This is a declared synthetic focus observation, not a
+                    // claim that the batch Editor owns native OpenXR focus.
+                    Call(bootstrap,"OnViveRawStimulusRenderedWithFocus",observe("other-"+trial.TrialId,word,inkColour),true);
+                    Call(bootstrap,"OnViveRawStimulusRenderedWithFocus",observe(trial.TrialId,"MISMATCH",inkColour),true);
+                    Call(bootstrap,"OnViveRawStimulusRenderedWithFocus",observe(trial.TrialId,word,inkColour.Equals(Color.red)?Color.green:Color.red),true);
                     Require(!((string)Get(bootstrap,"message")).Contains(diagnostic)&&!trial.Onset.HasValue&&!(bool)Get(bootstrap,"rawSafetyLatched"),
                         "mismatched raw callback must not claim a proxy or mutate the trial");
-                    Call(bootstrap,"OnViveRawStimulusRendered",observe(trial.TrialId,word,inkColour));
+                    Call(bootstrap,"OnViveRawStimulusRenderedWithFocus",observe(trial.TrialId,word,inkColour),true);
                     Require(((string)Get(bootstrap,"message")).Contains(diagnostic)&&!trial.Onset.HasValue&&!(bool)Get(bootstrap,"rawSafetyLatched"),
                         "matching raw callback must remain a non-mutating software proxy only");
+                    Set(bootstrap,"message","Synthetic unfocused raw callback fixture.");
+                    Call(bootstrap,"OnViveRawStimulusRenderedWithFocus",observe(trial.TrialId,word,inkColour),false);
+                    Require(!((string)Get(bootstrap,"message")).Contains(diagnostic)&&!trial.Onset.HasValue&&
+                        trial.Outcome==TrialOutcome.Pending&&!(bool)Get(bootstrap,"rawSafetyLatched")&&camera.cullingMask==0&&!staleStimulus.gameObject.activeSelf,
+                        "unfocused raw callback must mask without a proxy, onset, task mutation or recording stop; focus metadata waits for a fresh admitted frame");
+                    Set(bootstrap,"message","Synthetic unfocused generic callback fixture.");
+                    Call(bootstrap,"OnStimulusRenderedWithFocus",trial.TrialId,clock.Now,false);
+                    Require(!((string)Get(bootstrap,"message")).Contains(diagnostic)&&!trial.Onset.HasValue&&
+                        trial.Outcome==TrialOutcome.Pending&&!(bool)Get(bootstrap,"rawSafetyLatched")&&camera.cullingMask==0,
+                        "unfocused generic callback must remain a masked hold without recording stop or onset");
+                    Set(bootstrap,"message","Synthetic same-frame focus restored.");
+                    Call(bootstrap,"OnStimulusRenderedWithFocus",trial.TrialId,clock.Now,true);
+                    Require(!trial.Onset.HasValue&&!(bool)Get(bootstrap,"rawSafetyLatched")&&camera.cullingMask==0&&
+                        (bool)Get(bootstrap,"rawXrFocusLossUnrecorded"),
+                        "late same-frame callback revived an invalidated witness or revoked a focus-only hold");
+                    Require((bool)Call(bootstrap,"PrepareRawFocusBoundary",true)&&(bool)Get(bootstrap,"rawXrFocusLossUnrecorded"),
+                        "focus restoration erased the negative observation before current task/head admission");
+
+                    // This unguarded callback is a different frame than that
+                    // known focus cancellation, so its missing witness is real.
+                    Set(bootstrap,"rawFocusBoundaryFrame",-1);
                     Set(bootstrap,"message","Synthetic generic callback fixture.");
-                    Call(bootstrap,"OnStimulusRendered",trial.TrialId,clock.Now);
+                    Call(bootstrap,"OnStimulusRenderedWithFocus",trial.TrialId,clock.Now,true);
                     Require(!trial.Onset.HasValue&&(bool)Get(bootstrap,"rawMutationIntervalUnknown")&&(bool)Get(bootstrap,"rawSafetyLatched")&&
                         camera.cullingMask==0&&!staleStimulus.gameObject.activeSelf&&
                         ((string)Get(bootstrap,"message")).Contains("last status interval is unknown")&&
                         !((string)Get(bootstrap,"message")).Contains(diagnostic),
                         "unguarded generic callback must hide the stimulus, fail closed and mark the interval unknown");
+                }
+                else if(mode=="guard-visible"||mode=="guard-masked-pending")
+                {
+                    if(mode=="guard-masked-pending")
+                    {camera.cullingMask=0;Set(bootstrap,"pendingRawPanelFrame",Time.frameCount);}
+                    Call(rig,"GuardRawSceneBeforeCull",camera);
+                    string fault=(string)pumpType.GetProperty("FirstFault",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(pump,null);
+                    Require((bool)Get(bootstrap,"rawSafetyLatched")&&fault==(mode=="guard-visible"?
+                        "raw_precull_visible_tracking_invalid":"raw_precull_masked_pending_tracking_invalid"),
+                        "an unsafe raw visibility boundary must fail closed");
+                    Require(!trial.Onset.HasValue,"a rejected visibility boundary established onset");
                 }
                 else if(mode=="participant-menu")
                 {
@@ -214,7 +303,7 @@ namespace AvatarStroop.Unity.Editor
                 if(rigObject!=null)UnityEngine.Object.DestroyImmediate(rigObject);
             }
         }
-        static void VerifyWaitingBaseline(Scene scene,Camera camera,WorldSpaceExperimentView view)
+        static void VerifySilentEyeAfterAttach(Scene scene,Camera camera,WorldSpaceExperimentView view)
         {
             GameObject rigObject=null,bootstrapObject=null;ViveStroopPreviewRig rig=null;
             ViveStroopDevelopmentBootstrap bootstrap=null;ViveProEyeWorker worker=null;SyntheticClient client=null;object pump=null;
@@ -223,7 +312,8 @@ namespace AvatarStroop.Unity.Editor
                 rigObject=Root("SyntheticBaselineRig",scene);rig=rigObject.AddComponent<ViveStroopPreviewRig>();
                 bootstrapObject=Root("SyntheticBaselineBootstrap",scene);bootstrap=bootstrapObject.AddComponent<ViveStroopDevelopmentBootstrap>();bootstrap.Configure(rig,view);
                 var clock=new MonotonicClock("synthetic-baseline-clock");client=new SyntheticClient();
-                worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                long headSequence=0;
+                worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(++headSequence,clock.Now,true,true,Rotation.Identity),()=>client);
                 Require(worker.Start()&&client.Entered.WaitOne(3000),"synthetic baseline worker setup failed");
                 var task=Task(clock);var admissionType=typeof(ViveDevelopmentParticipant).Assembly.GetType("AvatarStroop.Runtime.ViveNamedSessionFrameAdmission",true);
                 var admission=admissionType.GetMethod("CreateSyntheticForTest",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{task,worker,clock,32});
@@ -305,20 +395,55 @@ namespace AvatarStroop.Unity.Editor
                 var pumpType=typeof(ViveDevelopmentParticipant).Assembly.GetType("AvatarStroop.Runtime.ViveNamedRawRecordingPump",true);
                 var writerType=pumpType.GetNestedType("SyntheticWriter",BindingFlags.NonPublic);
                 var writer=Activator.CreateInstance(writerType,BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{admission},null);
+                Require((bool)Call(admission,"TryBindQueueBudget",budget),"silent eye fixture needs bounded FIFO capacity");
                 pump=pumpType.GetMethod("StartSyntheticWithStatusForTest",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{task,worker,clock,admission,writer});
                 Set(bootstrap,"participant",task);Set(bootstrap,"configured",true);Set(bootstrap,"namedRawPump",pump);
                 Set(rig,"previewCamera",camera);Set(rig,"view",view);Set(rig,"development",bootstrap);Set(rig,"running",true);Set(rig,"worker",worker);camera.cullingMask=-1;
                 var staleStimulus=(TextMesh)Get(view,"stimulusText");staleStimulus.gameObject.SetActive(true);
                 var eyePumpType=typeof(ViveStroopPreviewRig).Assembly.GetType("AvatarStroop.Unity.ViveStroopEyePump",true);
                 Set(rig,"eyePump",Activator.CreateInstance(eyePumpType,BindingFlags.Instance|BindingFlags.NonPublic,null,new object[]{worker},null));
-                int before=task.ReadEventsAfter(-1,4096).Count;
-                Call(rig,"Update");
-                Require(camera.cullingMask==0&&!staleStimulus.gameObject.activeSelf&&task.Phase==Phase.Preparation&&task.ReadEventsAfter(-1,4096).Count==before,
-                    "initial baseline wait must block the camera without task input or Tick");
-                Require(((string)Get(rig,"status")).Contains("Waiting for initial eye status"),"baseline wait status is missing");
-                // Synthetic setup only: an active trial must not continue to
-                // wait silently when no provider baseline has been observed.
+                var independentPump=Get(rig,"eyePump");
+                var eyeGate=typeof(ViveProEyeWorker).GetProperty("RecordingTicketGate",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(worker,null);
+                Hold(eyeGate,()=>{
+                    var watch=Stopwatch.StartNew();
+                    Require((bool)Call(independentPump,"TryBeginRecordingFrame",worker)&&watch.ElapsedMilliseconds<500,
+                        "attached task snapshot waited for the optional eye lock");
+                    var capture=(ViveProEyePoll)Get(independentPump,"frame");
+                    Require(capture!=null&&capture.Eye==null&&capture.Head!=null&&capture.Head.DeviceConnected&&capture.Head.RotationReportedValid,
+                        "eye-lock contention fabricated gaze or lost independently measured head");
+                    Call(independentPump,"EndFrame");
+                    Require(!(bool)Get(independentPump,"active")&&Get(independentPump,"frame")==null,"owner frame retained stale data");
+                });
+                // Exercise the actual owner status/staging boundary while the
+                // synthetic SDK's first Poll remains blocked. No gaze or native
+                // status is available. The separate native fixture covers full
+                // camera/render and installed plan-receipt integration.
+                Action stageSilent=()=>{
+                    Require(Call(bootstrap,"PrepareNamedRawStatus").ToString()=="Ready","silent SDK must not gate a live authorized writer");
+                    var poll=new object[]{null};
+                    Require((bool)Call(worker,"TryPollForRecording",poll)&&((ViveProEyePoll)poll[0]).Eye==null,
+                        "expected an exact head-only worker observation without a vendor return");
+                    var stage=new object[]{poll[0],false};
+                    Require((bool)Call(bootstrap,"StageNamedRawFrame",stage)&&!(bool)stage[1]&&!bootstrap.RecordingBlocked,
+                        "live head-only owner boundary refused: "+pumpType.GetProperty("FirstFault",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(pump,null));
+                    var observation=Get(admission,"lastEyeObservation");
+                    Require(observation!=null&&Get(observation,"State").ToString()=="Missing"&&Get(observation,"Cause").ToString()=="NoEye",
+                        "missing gaze must be marked, never substituted");
+                };
+                stageSilent();
+                Require(task.Phase==Phase.Preparation&&task.CurrentTrial==null,"eye silence must not auto-start Practice");
+                Require((bool)pumpType.GetMethod("DrainTaskEvents",BindingFlags.Instance|BindingFlags.NonPublic,null,Type.EmptyTypes,null).Invoke(pump,null),"initial head-only epoch did not drain");
+                // Fixture-only phase setup; never substitutes for an actual
+                // plan receipt, which is covered by the native fixture.
                 task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));Call(task,"OwnerBeginPracticeCore",Actor.Owner);var trial=task.CurrentTrial;
+                stageSilent();
+                bool ran=false;
+                Require((bool)Call(bootstrap,"Mutate",new object[]{(Action)(()=>{ran=true;task.Tick();})})&&ran&&
+                    task.Phase==Phase.Practice&&object.ReferenceEquals(trial,task.CurrentTrial)&&trial.Outcome==TrialOutcome.Pending,
+                    "silent eye provider must not interrupt an already active trial");
+                Require((bool)pumpType.GetMethod("DrainTaskEvents",BindingFlags.Instance|BindingFlags.NonPublic,null,Type.EmptyTypes,null).Invoke(pump,null),"active head-only epoch did not drain");
+                // A revoked worker identity is not an absent gaze sample.
+                Require((bool)Call(worker,"TryRequestStop"),"synthetic worker stop request failed");
                 camera.cullingMask=-1;staleStimulus.gameObject.SetActive(true);
                 Call(rig,"Update");
                 // A technical loss has no owner/participant pause actor. The
@@ -330,7 +455,7 @@ namespace AvatarStroop.Unity.Editor
                 bool withdrawn=(bool)pumpType.GetProperty("WithdrawalRequested",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(pump,null);
                 Require(camera.cullingMask==0&&!staleStimulus.gameObject.activeSelf&&(bool)Get(bootstrap,"rawSafetyLatched")&&
                     bootstrap.RecordingBlocked&&task.Phase==Phase.Practice&&trial.Outcome==TrialOutcome.Pending&&!hasExplicitPause&&!withdrawn,
-                    "missing active baseline must block recording and presentation without inventing a voluntary pause; phase="+
+                    "revoked eye worker identity must block recording and presentation without inventing a voluntary pause; phase="+
                     task.Phase+", outcome="+trial.Outcome+", cameraMask="+camera.cullingMask+", explicitPause="+hasExplicitPause+", withdrawn="+withdrawn);
                 Require(bootstrap.RecordingStatus.Contains("unconfirmed tail remain unknown"),
                     "owner recording status must mark the unconfirmed tail unknown after the safety stop");
@@ -338,7 +463,7 @@ namespace AvatarStroop.Unity.Editor
                 bool ordinaryAccepted=(bool)Call(bootstrap,"Mutate",new object[]{(Action)(()=>{ordinaryRan=true;task.Tick();})});
                 Require(!ordinaryAccepted&&!ordinaryRan&&task.Phase==Phase.Practice&&trial.Outcome==TrialOutcome.Pending&&
                     task.ReadEventsAfter(-1,4096).Count==afterSafety,
-                    "ordinary task mutation must remain blocked after the baseline safety stop");
+                    "ordinary task mutation must remain blocked after the worker identity safety stop");
             }
             finally
             {
@@ -545,11 +670,14 @@ namespace AvatarStroop.Unity.Editor
                 VerifyRecordingSetup(scene,camera,view);
                 view.ConfigureViveDevelopmentPreview(new Dictionary<ViveTrackpadDirection,Colour>{{ViveTrackpadDirection.Up,Colour.Red},{ViveTrackpadDirection.Right,Colour.Green},
                     {ViveTrackpadDirection.Down,Colour.Blue},{ViveTrackpadDirection.Left,Colour.Yellow}},.5);
+                VerifyPreparationBusy(scene,camera,view);
                 VerifyUnavailableBeforeTask(scene,camera,view,"missing");
                 VerifyUnavailableBeforeTask(scene,camera,view,"stopping");
                 VerifyUnavailableBeforeTask(scene,camera,view,"unstarted");
                 VerifyUnavailableBeforeTask(scene,camera,view,"open");
                 VerifyUnavailableBeforeTask(scene,camera,view,"render");
+                VerifyUnavailableBeforeTask(scene,camera,view,"guard-visible");
+                VerifyUnavailableBeforeTask(scene,camera,view,"guard-masked-pending");
                 VerifyUnavailableBeforeTask(scene,camera,view,"participant-menu");
                 VerifyUnavailableBeforeTask(scene,camera,view,"owner-pause");
                 VerifyUnavailableBeforeTask(scene,camera,view,"owner-pause-busy");
@@ -557,7 +685,7 @@ namespace AvatarStroop.Unity.Editor
                 VerifyUnavailableBeforeTask(scene,camera,view,"stale-menu");
                 VerifyUnavailableBeforeTask(scene,camera,view,"technical-then-owner");
                 VerifyUnavailableBeforeTask(scene,camera,view,"technical-then-menu");
-                VerifyWaitingBaseline(scene,camera,view);
+                VerifySilentEyeAfterAttach(scene,camera,view);
                 VerifyBlockPlanTimeout(scene,camera,view);
                 VerifyOwnerCommandIsQueued(scene,camera,view);
                 VerifyInstallFailureLifetime(scene,camera,view);
@@ -572,8 +700,8 @@ namespace AvatarStroop.Unity.Editor
                 var workerGate=typeof(ViveProEyeWorker).GetField("gate",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(worker);
                 Hold(workerGate,()=>{
                     var watch=Stopwatch.StartNew();bool began=(bool)Call(cachedPump,"TryBeginRecordingFrame",worker);
-                    Require(!began&&watch.ElapsedMilliseconds<500,"busy worker snapshot blocked or was accepted");
-                    Require(!(bool)Get(cachedPump,"active")&&Get(cachedPump,"frame")==null,"failed worker snapshot left an active or stale frame");
+                    Require(!began&&watch.ElapsedMilliseconds<500,"unattached worker gained task recording authority");
+                    Require(!(bool)Get(cachedPump,"active")&&Get(cachedPump,"frame")==null,"unattached snapshot retained active or stale data");
                 });
                 var task=Task(clock);var trial=task.CurrentTrial;
                 var admissionType=typeof(ViveDevelopmentParticipant).Assembly.GetType("AvatarStroop.Runtime.ViveNamedSessionFrameAdmission",true);

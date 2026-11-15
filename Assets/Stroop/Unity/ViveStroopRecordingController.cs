@@ -27,13 +27,13 @@ namespace AvatarStroop.Unity
             var captured=upstream.Poll();
             frame=captured;active=true;
         }
-        // Named raw safety path only. Busy or invalid worker status never
-        // leaves a cached previous frame or marks a frame active.
+        // Named raw task path: a fresh owner-head snapshot is independent of
+        // the optional eye/status publication lock. No previous gaze is filled.
         internal bool TryBeginRecordingFrame(ViveProEyeWorker worker)
         {
             RequireOwner();if(closed||active||worker==null||!Object.ReferenceEquals(upstream,worker))return false;
             frame=null;ViveProEyePoll captured;
-            if(!worker.TryPollForRecording(out captured)||captured==null)return false;
+            if(!worker.TryPollTaskForRecording(out captured)||captured==null)return false;
             frame=captured;active=true;return true;
         }
         public ViveProEyePoll Poll()

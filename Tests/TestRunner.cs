@@ -212,6 +212,9 @@ namespace AvatarStroop.Tests
             ViveWorkerStatusEvidenceTests.Register(suite);
             VivePreSessionRecordingChoiceTests.Register(suite);
             ViveNamedRecordingSetupTests.Register(suite);
+            ViveFocusRuntimeTests.Register(suite);
+            ViveBlockPlanFocusEvidenceTests.Register(suite);
+            ViveFocusProjectionTests.Register(suite);
             ViveRawSessionJournalReaderTests.Register(suite);
             ViveRawSessionStreamingTests.Register(suite);
 #if VIVE_RAW_SYNTHETIC_TEST && !UNITY_5_3_OR_NEWER
@@ -244,6 +247,10 @@ namespace AvatarStroop.Tests
 #if VIVE_SYNTHETIC_BATCH_FIXTURE
             ViveSyntheticParticipantBatchFixtureTests.Register(suite);
             ViveNamedRawRecordingPumpTests.RegisterFrameBoundaryTests(suite);
+            ViveDuplicateEyeEpochTests.Register(suite);
+            ViveTaskAuthorityContentionTests.Register(suite);
+            ViveNamedRawRecordingPumpTests.RegisterFocusBoundaryTests(suite);
+            VivePresentationReservationTests.Register(suite);
 #endif
             ViveRawRelativeFileCapabilityTests.Register(suite);
             ViveRawDirectoryLeaseTests.Register(suite);
@@ -252,6 +259,7 @@ namespace AvatarStroop.Tests
             ViveNamedPlanTaskMemoryProjectionTests.Register(suite);
             ViveWozOperatorSourceFactoryTests.Register(suite);
             ViveProEyeWorkerTests.Register(suite);
+            ViveRecordingStartReadinessTests.Register(suite);
             VivePreviewDiagnosticsTests.Register(suite);
             VivePreviewMarkerContinuityTests.Register(suite);
             VivePreviewLaunchPlanTests.Register(suite);

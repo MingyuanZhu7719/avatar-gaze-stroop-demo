@@ -175,8 +175,17 @@ namespace AvatarStroop.Unity
         {get{return recordingSetup!=null&&ViveStroopRecordingScopePresentation.SetupEligible(selectedDesign,recordingSetupDesign,
             SelectedRecordingAvailable,ControlledRecordingNoticeCurrent,
             recordingSetup.Current==ViveNamedRecordingSetup.Step.Eye||recordingSetup.BothSelected,recordingSetup.BothSelected);}}
+#if UNITY_EDITOR
+        internal bool SyntheticRawOwnerForFixture;
+        internal bool SyntheticRawPumpForFixture {get{return SyntheticRawOwnerForFixture&&Application.isBatchMode&&!Application.isPlaying&&
+            namedRawPump!=null&&namedRawPump.SyntheticSceneFixtureOnly&&participant!=null&&participant.RawRecordingRequested&&!participant.LegacyWozRecordingDeclared;}}
+#endif
         internal bool RawRecordingDesignAvailable
-        {get{return participant==null?SelectedRecordingAvailable:
+        {get{
+#if UNITY_EDITOR
+            if(SyntheticRawPumpForFixture)return true;
+#endif
+            return participant==null?SelectedRecordingAvailable:
             participant.RawRecordingRequested&&RecordingKindAvailable(participant.LegacyRecordingRequested)&&
             (!participant.LegacyWozRecordingDeclared||ViveLegacyWozRecordingBuildPolicy.Available)&&
             MatchesRawRecordingKind(participant.LegacyRecordingRequested);}}
@@ -203,7 +212,31 @@ namespace AvatarStroop.Unity
                     (participant!=null&&participant.RawRecordingRequested&&participant.NamedRecordingAuthorityFaulted);
             }
         }
+        object rawPreparationGate;
+        internal bool EnterRawPreparationAuthority(out bool busy)
+        {
+            busy=false;
+            if(!CanWaitForNamedRawBaseline)return true;
+            var gate=participant.NamedRecordingGate;
+            if(!System.Threading.Monitor.TryEnter(gate)){busy=true;return false;}
+            rawPreparationGate=gate;return true;
+        }
+        internal void ExitRawPreparationAuthority()
+        {
+            var gate=rawPreparationGate;
+            if(gate==null)return;
+            rawPreparationGate=null;System.Threading.Monitor.Exit(gate);
+        }
+        internal ViveProEyeWorker.RecordingRunRead ReadRawWorkerRun(ViveProEyeWorker worker)
+        {return namedRawPump.ReadExactWorkerRun(worker);}
+        bool rawFirstFaultLogged;
+        internal void NoteRawFirstFault(string code){if(namedRawPump!=null)namedRawPump.NoteFirstFault(code);}
         internal bool NamedRawPumpAttached {get{return namedRawPump!=null;}}
+        internal bool RawPresentationBoundaryPending {get{return pendingRawPresentation!=null||NamedRawPanelPending||NamedRawPanelExposed;}}
+        internal bool RawSafetyNoticeActive
+        {get{var pump=namedRawPump;return rawInstallFailed||rawSafetyLatched||pump!=null&&(pump.WithdrawalRequested||
+            pump.State!=ViveNamedRawRecordingPump.Outcome.Running&&pump.State!=ViveNamedRawRecordingPump.Outcome.Finishing&&
+            pump.State!=ViveNamedRawRecordingPump.Outcome.CloseCallsReturned);}}
         internal bool NamedRawInstallFailed {get{return rawInstallFailed;}}
         internal bool NamedRawTrialActive {get{return namedRawPump!=null&&participant!=null&&participant.CurrentTrial!=null&&
             (participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask);}}
@@ -212,18 +245,18 @@ namespace AvatarStroop.Unity
         // a second camera later in the same frame must still fail closed.
         internal bool NamedRawPanelExposed {get{return namedRawPump!=null&&rawPanelExposed;}}
         internal void MarkRawPanelHidden(){rawPanelExposed=false;}
-        internal bool NamedRawInputBoundaryPending {get{return namedRawPump!=null&&suppressInputUntilReleased;}}
+        internal bool NamedRawInputBoundaryPending {get{return namedRawPump!=null&&suppressInputUntilReleased&&!FocusPlanPromptCurrent;}}
         internal ViveNamedRawRecordingPump.Preparation PrepareNamedRawStatus()
         {
             var pump=namedRawPump;
             if(pump==null||ServiceNamedRawSafety())return ViveNamedRawRecordingPump.Preparation.Faulted;
             var result=pump.PrepareStatus();
             if(result==ViveNamedRawRecordingPump.Preparation.Faulted||RecordingBlocked)
-            {rawSafetyLatched=true;ServiceNamedRawSafety();return ViveNamedRawRecordingPump.Preparation.Faulted;}
+            {NoteRawFirstFault("status_or_authority_fault");rawSafetyLatched=true;ServiceNamedRawSafety();return ViveNamedRawRecordingPump.Preparation.Faulted;}
             return result;
         }
         internal bool CanWaitForNamedRawBaseline
-        {get{return namedRawPump!=null&&participant!=null&&participant.Phase==Phase.Preparation;}}
+        {get{return namedRawPump!=null&&participant!=null&&participant.Phase==Phase.Preparation&&participant.CurrentTrial==null;}}
         public bool ObservationBlocked {get{return observationFaultLatched||(participant!=null&&participant.ObservationBlocked);}}
         public bool PresentationBlocked {get{return faultLatched||RecordingBlocked||ObservationBlocked||legacyWozMaskLatched;}}
         public bool RecordingUsable {get{return recording!=null&&recording.LastEyeUsable;}}
@@ -261,6 +294,10 @@ namespace AvatarStroop.Unity
             {
                 if(participant==null)return "VIVE input unavailable.";
                 if(RecordingBlocked)return "Use the desktop Withdraw task button; ask the operator to pause or stop.";
+                if(formalConfirmationRequest!=null)return FormalConfirmationStatus;
+                if(focusPlanConfirmationRequired||focusPlanTriggerAccepted)return FocusPlanAwaitNotice;
+                if(participant.Phase==Phase.Preparation)
+                {var automatic=ConsentAutoStartStatus;if(!String.IsNullOrEmpty(automatic))return automatic;}
                 if(participant.Phase==Phase.Questionnaire)
                     return "Trackpad UP: lower | DOWN: higher | Trigger: confirm\nSelected: "+participant.CandidateRating+" (not submitted)";
                 return "Trackpad: colour | Trigger: continue / resume\nEscape on desktop: withdraw development task";
@@ -441,17 +478,23 @@ namespace AvatarStroop.Unity
             }
             rawTaskChoicePollSeconds=taskPoll;rawEyeChoicePollSeconds=eyePoll;
             rawSelectionProvenancePending=true;namedRawPump=pump;
+            InitializeRawFocusObservations(Application.isFocused,rig!=null&&rig.XrFocused);
             if(participant.LegacyWozRecordingDeclared){legacyWozInstalledAdmission=admission;legacyWozInstalledWorker=installed;}
             return true;
         }
         bool IsViveRawObservationRequired(){return namedRawPump!=null;}
         public void DrawOwnerControls()
         {
+            if(Event.current!=null&&Event.current.type==EventType.Layout)ServiceSessionDirectoryPreparation();
             GUILayout.Space(8);
             if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
             GUILayout.Label(participant!=null&&participant.RawRecordingRequested?"PARTICIPANT  |  Local recording":
                 configured?"PARTICIPANT  |  Preview - no files":"PARTICIPANT  |  Setup");
             if(configured)GUILayout.Label(RecordingStatus,recordingWrap);
+            if(namedRawPump!=null&&!RecordingBlocked)
+                GUILayout.Label("Eye-only gaps do not pause this task. Excel-readable output marks NO_NEW_SAMPLE or MISSING at observed software times; it does not invent hardware dropped-frame counts.",recordingWrap);
+            if(namedRawPump!=null&&!String.IsNullOrEmpty(namedRawPump.FirstFault))
+                GUILayout.Label("Recording blocker: "+namedRawPump.FirstFault+". This attempt cannot resume; keep its files as incomplete evidence.",recordingWrap);
             if(configured||preSessionChoice!=null||recordingSetup!=null)rig.DrawSessionViewControls();
             if(preSessionChoice!=null)
             {
@@ -465,7 +508,7 @@ namespace AvatarStroop.Unity
             {
                 GUILayout.Label((recordingSetupDesign==0?"Legacy A/B/C/D":"Named multi-block")+" recording selection: "+recordingSetup.Current+". Recording has not started.");
                 GUILayout.Label("The participant must respond in the headset. Study consent is separate.");
-                if(GUILayout.Button("Cancel recording setup")){recordingSetup.Cancel();recordingSetup=null;recordingSetupDesign=-1;preSessionShownRevision=-1;message="Recording setup cancelled; no recording was started.";if(view!=null){view.SetViveLegacyPreviewNotice(LegacyPreviewSelected);view.SetViveUnconfiguredPreview(message);}}
+                if(GUILayout.Button("Cancel recording setup")){CancelRecordingChoices();recordingSetup=null;recordingSetupDesign=-1;preSessionShownRevision=-1;message="Recording setup cancelled; no recording was started.";if(view!=null){view.SetViveLegacyPreviewNotice(LegacyPreviewSelected);view.SetViveUnconfiguredPreview(message);}}
                 return;
             }
             if(!configured)
@@ -507,20 +550,25 @@ namespace AvatarStroop.Unity
                 DrawRecordingControls();
                 if(recordingSetup!=null&&participant.RawRecordingRequested&&namedRawPump==null)
                 {
-                    GUILayout.Label("Recording is off. Review the folder, then start recording explicitly.",recordingWrap);
+                    GUILayout.Label(ConsentAutoStartActive?"Recording is off. The armed start will proceed after the headset choices and neutral-input checks.":"Recording is off. Review the folder, then start recording explicitly.",recordingWrap);
                     GUILayout.Label("Selected local folder: "+recordingSetup.DirectoryPath,recordingWrap);
                     bool canStartRecording=CanStartSelectedRawRecording(participant.LegacyRecordingRequested);
                     DrawRecordingStartControls(canStartRecording);
                 }
                 if(ownerAdvanced)DrawPracticePreviewControls();
                 GUILayout.Space(6);
-                GUI.enabled=(!participant.RawRecordingRequested||namedRawPump!=null)&&!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&(participant.Phase==Phase.Preparation||participant.Phase==Phase.PracticeRetry);
-                if((participant.Phase==Phase.Preparation||participant.Phase==Phase.PracticeRetry)&&GUILayout.Button("Begin practice"))
-                {if(namedRawPump!=null)RequestNamedBlockPlanStart(true);else Run(()=>{participant.OwnerBeginPractice(Actor.Owner);if(practicePreview!=null)practicePreview.OnPracticeStarted();});}
-                GUI.enabled=!participant.LegacyWozRecordingDeclared&&!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockPreparation&&pendingRawOwnerAction==null;
-                bool noAvatar=participant.HasNamedOption&&participant.NamedPlan==null&&participant.NamedOption.Option==ViveNamedOption.NoAvatar;
-                if(participant.Phase==Phase.BlockPreparation&&!participant.LegacyWozRecordingDeclared&&!ownerPreviewWoz&&GUILayout.Button(participant.NamedPlan!=null?"Confirm complete plan":noAvatar?"Confirm No Avatar":"Confirm Automatic"))
-                    Run(()=>{if(participant.NamedPlan!=null)participant.OwnerConfirmNamedPlan(Actor.Owner,"local-development-owner");else if(noAvatar)participant.OwnerConfirmNamedNoAvatar(Actor.Owner,"local-development-owner");else participant.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"local-development-owner");});
+                bool practicePhase=participant.Phase==Phase.Preparation||participant.Phase==Phase.PracticeRetry;
+                if(practicePhase&&!ConsentAutoStartActive)
+                {
+                    var practiceGate=BeginPracticeBlocker();
+                    GUI.enabled=practiceGate==null;
+                    if(GUILayout.Button("Begin practice"))TryRequestBeginPractice();
+                    GUI.enabled=true;
+                    if(practiceGate!=null)GUILayout.Label(practiceGate,recordingWrap);
+                    if(rawPracticeRequested&&GUILayout.Button("Cancel pending practice start"))
+                    {ClearRawPracticeRequest();message="Pending practice start canceled. No trial started.";}
+                }
+                DrawFormalConfirmationControls();
                 GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz;
                 if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&GUILayout.Button("Begin first block"))
                 {if(namedRawPump!=null)RequestNamedBlockPlanStart(false);else Run(()=>participant.OwnerBeginBlock(Actor.Owner));}
@@ -669,19 +717,13 @@ namespace AvatarStroop.Unity
         internal void BeforeViewStart(){ClearSensitiveEvidence();ClearNamedRawLocalCandidate();showEvidenceSummary=false;}
         void OnApplicationFocus(bool focused)
         {
-            if(focused)return;
-            if(legacyWozStarted)CloseLegacyWozScene();else legacyWozOffer="";
-            // Only a safely closed output session survives focus loss. Review
-            // still requires an explicit one-time owner request after focus returns.
-            bool retain=NamedRawCandidateContextIsSafe();
-            if(namedRawPump!=null&&!retain)AbortRawScenePresentation();
-            ClearSensitiveEvidence();
-            if(!retain)ClearNamedRawLocalCandidate();
-            if(device!=null)device.ResetSafetyMenu();
-            if(preSessionChoice!=null)preSessionChoice.Cancel();
-            if(recordingSetup!=null)recordingSetup.Cancel();
+            // Desktop focus alone neither withdraws the software choices nor
+            // stops a tracked VR task, WoZ source or already-started recorder.
+            // The next raw frame records this observed state as metadata.
+            ObserveDesktopFocus(focused);
+            if(!focused)ClearSensitiveEvidence();
         }
-        void OnDisable(){CloseLegacyWozTaskBinding();if(namedRawPump!=null)AbortRawScenePresentation();ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)recordingSetup.Cancel();}
+        void OnDisable(){CancelFormalConfirmation("Formal confirmation canceled because the interface closed.");CancelSessionDirectoryPreparation("Folder preparation canceled because the interface closed. No recording was armed; an empty folder may remain.");CloseLegacyWozTaskBinding();if(namedRawPump!=null)AbortRawScenePresentation();ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)CancelRecordingChoices(ViveNamedRecordingSetup.CancellationCause.ComponentDisabled);}
         void DrawRecordingControls()
         {
             if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
@@ -924,17 +966,7 @@ namespace AvatarStroop.Unity
         void StartSelectedLegacyRecording(bool explicitOwnerOutputRequest)
         {StartSelectedRawRecording(true,explicitOwnerOutputRequest);}
         void StartSelectedRawRecording(bool legacy,bool explicitOwnerOutputRequest)
-        {
-            bool ready=CanStartSelectedRawRecording(legacy);
-            if(!CanStartWithOwnerOutput(ready,ViveRawExclusiveDestination.ProductionGateOpen,explicitOwnerOutputRequest))
-            {if(ready&&explicitOwnerOutputRequest)message="Local output remains unavailable; no recording was started.";return;}
-            if(!(legacy?TryCreateAndAttachLegacyRawInstalledWithOwnerOutput(recordingSetup.DirectoryPath,recordingSetup.Budget,true,true,explicitOwnerOutputRequest):
-                TryCreateAndAttachNamedRawInstalledWithOwnerOutput(recordingSetup.DirectoryPath,recordingSetup.Budget,true,true,explicitOwnerOutputRequest)))
-                message=rawInstallFailed?"Recording start failed; task is blocked and cleanup may be unconfirmed.":"Recording remains unavailable; no recording was started.";
-            else {suppressInputUntilReleased=true;message=explicitOwnerOutputRequest?
-                "Waiting to record participant software-choice observations. A local output was requested; storage and study authorization remain unverified.":
-                "Waiting to record participant software-choice observations; storage and study authorization remain unverified.";}
-        }
+        {RequestRawRecordingStart(legacy,explicitOwnerOutputRequest,false,0,0);}
         internal static bool TryParseCsvLimits(string sizeMiB,string seconds,out long bytes,out int timeoutMilliseconds)
         {
             bytes=0;timeoutMilliseconds=0;long size;int timeout;
@@ -948,15 +980,7 @@ namespace AvatarStroop.Unity
         void StartSelectedLegacyRecordingWithCsv(long csvBytes,int csvTimeoutMilliseconds)
         {StartSelectedRawRecordingWithCsv(true,csvBytes,csvTimeoutMilliseconds);}
         void StartSelectedRawRecordingWithCsv(bool legacy,long csvBytes,int csvTimeoutMilliseconds)
-        {
-            if(!CanStartWithOwnerOutput(CanStartSelectedRawRecording(legacy),ViveRawExclusiveDestination.ProductionGateOpen,true)||
-                !ViveRawReadableAnalysisCsv.ProductionGateOpen)return;
-            if(!(legacy?TryCreateAndAttachLegacyRawInstalledWithCsv(recordingSetup.DirectoryPath,recordingSetup.Budget,true,true,true,true,
-                csvBytes,csvTimeoutMilliseconds):TryCreateAndAttachNamedRawInstalledWithCsv(recordingSetup.DirectoryPath,recordingSetup.Budget,true,true,true,true,
-                csvBytes,csvTimeoutMilliseconds)))
-                message=rawInstallFailed?"Recording start failed; task is blocked and cleanup may be unconfirmed.":"Recording and CSV request remain unavailable; no recording was started.";
-            else {suppressInputUntilReleased=true;message="Recording and separate analysis CSV requested. Storage and study authorization remain unverified.";}
-        }
+        {RequestRawRecordingStart(legacy,true,true,csvBytes,csvTimeoutMilliseconds);}
         // UI action eligibility only. Neither button creates a permission,
         // and a participant's recording choices do not request an output.
         internal static bool CanStartWithOwnerOutput(bool recordingReady,bool outputGateOpen,bool explicitOwnerOutputRequest)
@@ -968,8 +992,9 @@ namespace AvatarStroop.Unity
             if(!RecordingSetupEligible||recordingSetupDesign!=(legacy?0:3)||
                 participant==null||!MatchesRawRecordingKind(legacy)||participant.Phase!=Phase.Preparation||participant.Completed||namedRawPump!=null||rig==null||
                 !RecordingKindAvailable(legacy)||!ViveRawRelativeFileCapability.ProductionGateOpen||
-                !Application.isFocused||recordingSelectionFreshFrame!=Time.frameCount)return false;
-            try{return recordingSetup.CanStart(true,true,rig.RawSceneTrackingCurrent(),rig.RecordingWorkerReady,recordingSelectionFreshFrame,Time.frameCount);}
+                !rig.XrFocused||recordingSelectionFreshFrame!=Time.frameCount)return false;
+            try{return RawStartInputsReady(recordingSetup,rig.XrFocused,rig.RawSceneTrackingCurrent(),rig.RecordingWorkerReady,
+                rig.RawStartReadiness,recordingSelectionFreshFrame,Time.frameCount);}
             catch(Exception){return false;}
         }
         void TryConfigure(){TryConfigure(false);}
@@ -1044,12 +1069,13 @@ namespace AvatarStroop.Unity
                 questionnaireGate=new ViveQuestionnaireTrackpadGate(entered);
                 view.SetQuestionnaireLanguage("en");view.SetPresentationAvailable(false);
                 view.SetPresentationAvailabilityCheck(()=>rig.HeadReady&&participant!=null&&participant.InputReady&&!PresentationBlocked&&
-                    (legacyWozScene==null||legacyWozScene.MayShowTask)&&
+                    (legacyWozScene==null||FocusHeldLiveWoz||legacyWozScene.MayShowTask)&&
                     (!participant.RawRecordingRequested||namedRawPump!=null)&&
                     (namedRawPump==null||rig.RawSceneTrackingCurrent())&&
                     (recording==null||(!recording.WaitingForFreshEye&&!recording.RecoveryPending)));
                 configured=true;if(selected)suppressInputUntilReleased=true;
-                message=selected?"Participant choices recorded in software. Enable eye preview, then start recording; task remains blocked until recording starts.":"Configured. Start classroom view; release all controls before an owner starts practice.";
+                message=selected?"Participant choices recorded in software. Recording and Practice wait for current tracking and released controls.":"Configured. Start classroom view; release all controls before an owner starts practice.";
+                if(selected)ConsentAutoStartConfigured();
                 CheckObservation(true);
                 Render();
             }
@@ -1076,7 +1102,7 @@ namespace AvatarStroop.Unity
             if(view==null)return;
             if(recordingSetup!=null&&!configured)
             {
-                if(!RecordingSetupDesignMatches||!SelectedRecordingAvailable||!ControlledRecordingNoticeCurrent)recordingSetup.Cancel();
+                if(!RecordingSetupDesignMatches||!SelectedRecordingAvailable||!ControlledRecordingNoticeCurrent)CancelRecordingChoices(ViveNamedRecordingSetup.CancellationCause.DesignChanged);
                 view.SetViveLegacyPreviewNotice(false);
                 if(preSessionShownRevision!=recordingSetup.Revision){preSessionShownRevision=recordingSetup.Revision;preSessionShownFrame=Time.frameCount;}
                 string recordingText;
@@ -1095,6 +1121,10 @@ namespace AvatarStroop.Unity
                 recordingText=(recordingSetupDesign==0?"Legacy A/B/C/D self-test. ":"Named multi-block self-test. ")+recordingText;
                 if(recordingSetupDesign==0&&legacyWozRecordingSelected)
                     recordingText="LiveWoZ local recording: files also store mapped operator head/eye poses and source times. "+recordingText;
+                if(ConsentAutoStartActive&&(recordingSetup.Current==ViveNamedRecordingSetup.Step.Task||recordingSetup.Current==ViveNamedRecordingSetup.Step.Eye))
+                    recordingText=ConsentAutoChoiceText(recordingSetup.Current==ViveNamedRecordingSetup.Step.Eye,recordingSetupDesign==0&&legacyWozRecordingSelected);
+                else if(!String.IsNullOrEmpty(consentAutoStartNotice))
+                    recordingText="Automatic start canceled/expired. Review the desktop. "+recordingText;
                 view.SetViveParticipantRecordingChoice(recordingText,recordingSetup.Revision);return;
             }
             if(preSessionChoice==null)return;
@@ -1119,7 +1149,7 @@ namespace AvatarStroop.Unity
         {
             RenderPreSessionChoice();
             if(preSessionChoice==null||preSessionChoice.Current==VivePreSessionRecordingChoice.Step.Declined||preSessionChoice.Current==VivePreSessionRecordingChoice.Step.Cancelled)return;
-            if(Input.GetKeyDown(KeyCode.Escape)){preSessionChoice.Cancel();RenderPreSessionChoice();return;}
+            if(Application.isPlaying&&Input.GetKeyDown(KeyCode.Escape)){preSessionChoice.Cancel();RenderPreSessionChoice();return;}
             if(device==null||!headReady)
             {if(preSessionChoice.IsTerminal)preSessionChoice.Cancel();else preSessionChoice.Observe(false,false,false,false,false,false);RenderPreSessionChoice();return;}
             var frame=device.Read(Phase.Preparation,headReady);
@@ -1130,18 +1160,25 @@ namespace AvatarStroop.Unity
             RenderPreSessionChoice();
         }
         void PollNamedRecordingSetup(bool headReady)
+        {PollNamedRecordingSetup(headReady,rig!=null&&rig.XrFocused);}
+        internal void PollNamedRecordingSetup(bool headReady,bool xrFocused)
         {
             RenderPreSessionChoice();
             if(recordingSetup==null||recordingSetup.Current==ViveNamedRecordingSetup.Step.Declined||recordingSetup.Current==ViveNamedRecordingSetup.Step.Cancelled)return;
-            bool wasConfirmed=recordingSetup.BothSelected;
-            if(Input.GetKeyDown(KeyCode.Escape)){recordingSetup.Cancel();RenderPreSessionChoice();return;}
+            // Temporary physical unavailability suspends pre-start input. Keep
+            // clock-bound choices and the folder; require current validation and
+            // a separate manual recording start after recovery.
             if(device==null||!headReady)
-            {recordingSetup.Observe(false,false,false,false,false,false,null);RenderPreSessionChoice();return;}
+            {recordingSetup.Observe(false,false,false,false,false,false,null);PublishRecordingChoiceCancellation();RenderPreSessionChoice();return;}
+            if(!xrFocused){recordingSelectionFreshFrame=-1;recordingSetup.SuspendInputForFocus();return;}
+            bool wasConfirmed=recordingSetup.BothSelected;
+            if(Application.isPlaying&&Input.GetKeyDown(KeyCode.Escape)){CancelRecordingChoices();RenderPreSessionChoice();return;}
             var frame=device.Read(Phase.Preparation,headReady);
             RecordControllerUiPoll(headReady,frame.InputReady,frame.Diagnostic);
+            if(frame.ActionActivationPending){recordingSetup.SuspendInputForFocus();return;}
             recordingSetup.Observe(frame.DeviceReady,Time.frameCount>preSessionShownFrame&&view.WasViveRecordingChoiceRendered(recordingSetup.Revision,Time.frameCount),
                 frame.TriggerHeld,frame.MenuHeld,frame.Trackpad.Pressed,frame.DeviceChanged,rig.ActiveViewClock);
-            RenderPreSessionChoice();
+            PublishRecordingChoiceCancellation();RenderPreSessionChoice();
             if(!wasConfirmed&&recordingSetup.BothSelected)TryConfigure(true);
         }
         static bool ObservationPausable(Phase phase)
@@ -1199,37 +1236,65 @@ namespace AvatarStroop.Unity
             return false;
         }
         public void Poll(bool headReady)
+        {PollWithFocus(headReady,rig!=null&&rig.XrFocused);}
+        // Explicit observation arguments also let isolated fixtures exercise
+        // the real lifecycle without querying an OpenXR runtime.
+        internal void PollWithFocus(bool headReady,bool xrFocused)
         {
-            BeginControllerUiPoll(headReady);
+            maskedLiveWozHoldFrame=-1;
+            BeginControllerUiPoll(headReady&&xrFocused);
+            ObserveConsentAutoStartFrame(headReady,xrFocused);
+            ObserveFormalConfirmationRequest();
+            PublishRecordingChoiceCancellation();
+            if(PollExplicitDesktopWithdrawal())return;
+            ExpireRawOwnerIntents();
             if(preSessionChoice!=null){PollPreSessionChoice(headReady);return;}
-            if(recordingSetup!=null&&!configured){PollNamedRecordingSetup(headReady);return;}
+            if(recordingSetup!=null&&namedRawPump==null&&
+                recordingSetup.Current!=ViveNamedRecordingSetup.Step.Cancelled&&recordingSetup.Current!=ViveNamedRecordingSetup.Step.Declined&&
+                (!headReady||device==null))
+            {HoldPreStartTracking(!headReady?"head_tracking_unavailable":"input_adapter_unavailable");return;}
+            if(recordingSetup!=null&&!configured){PollNamedRecordingSetup(headReady,xrFocused);return;}
             if(!configured)return;
             if(recordingSetup!=null&&namedRawPump==null)recordingSelectionFreshFrame=-1;
             if(recordingSetup!=null&&namedRawPump==null&&(!headReady||!recordingSetup.BothSelected||!RecordingSetupDesignMatches||!RawRecordingDesignAvailable))
             {
-                recordingSetup.Cancel();if(view!=null)view.SetPresentationAvailable(false);
+                CancelRecordingChoices(!headReady?ViveNamedRecordingSetup.CancellationCause.TrackingOrInputUnavailable:ViveNamedRecordingSetup.CancellationCause.DesignChanged);if(view!=null)view.SetPresentationAvailable(false);
                 message="Recording choices are no longer current; no recording was started. Close and reconfigure before trying again.";
                 return;
             }
+            ObservePreviewFocusState(xrFocused);
+            if(!xrFocused){HoldUnrecordedInputForXrFocus();return;}
             try
             {
-                if(Input.GetKeyDown(KeyCode.Escape)){if(recordingSetup!=null&&namedRawPump==null)recordingSetup.Cancel();WithdrawTask();return;}
                 ViveStroopDeviceFrame recordedWozFrame=null;
+                if(namedRawPump!=null)
+                {
+                    if(faultLatched||!headReady||device==null){FailNamedRawBeforeFrame();return;}
+                    recordedWozFrame=device.Read(participant.Phase,headReady);
+                    RecordControllerUiPoll(headReady,recordedWozFrame.InputReady,recordedWozFrame.Diagnostic);
+                    if(HandleActiveRawTrackingController(recordedWozFrame))return;
+                }
                 if(RecordedLegacyWoz&&namedRawPump!=null)
                 {
                     // Pairing/acquisition waits still poll the exact controller
                     // for loss/replacement before network or owner actions.
                     // This safety check takes no ordinary mutation capacity.
                     if(faultLatched||!headReady||device==null){FailNamedRawBeforeFrame();return;}
-                    recordedWozFrame=device.Read(participant.Phase,headReady);
-                    RecordControllerUiPoll(headReady,recordedWozFrame.InputReady,recordedWozFrame.Diagnostic);
+                    if(AwaitFocusActionActivation(recordedWozFrame))return;
+                    if(!recordedWozFrame.DeviceReady&&rig!=null&&!rig.XrFocused)
+                    {PrepareRawFocusBoundary(false);return;}
                     if(!recordedWozFrame.DeviceReady||!recordedWozFrame.Trackpad.Usable||recordedWozFrame.DeviceChanged)
                     {questionnaireGate.Reset();FailNamedRawBeforeFrame();return;}
                 }
                 if(pendingLegacyWozOffer!=null){var create=pendingLegacyWozOffer;pendingLegacyWozOffer=null;create();suppressInputUntilReleased=true;Render();return;}
                 if(RecordedLegacyWoz&&legacyWozScene!=null&&!legacyWozStarted)
                 {suppressInputUntilReleased=true;Render();return;}
-                if(legacyWozStarted&&!PollLegacyWozBeforeTask()){questionnaireGate.Reset();suppressInputUntilReleased=true;Render();return;}
+                if(legacyWozStarted)
+                {
+                    if(FocusHeldLiveWoz||focusRecoveryPending)
+                    {if(!MaintainLegacyWozDuringFocusGap()){if(namedRawPump!=null)FailNamedRawBeforeFrame();return;}}
+                    else if(!PollLegacyWozBeforeTask()){questionnaireGate.Reset();suppressInputUntilReleased=true;Render();return;}
+                }
                 if(!CheckObservation(true))
                 {
                     questionnaireGate.Reset();
@@ -1241,6 +1306,11 @@ namespace AvatarStroop.Unity
                     return;
                 }
                 if(RecordingBlocked){questionnaireGate.Reset();view.SetPresentationAvailable(false);return;}
+                // Recorded WoZ's current device was checked above, and the
+                // rig already admitted a real SDK/head frame. An expected
+                // negative source suspension cannot enter an old pending-plan
+                // deadline/receipt path or certify any further task panel.
+                if(HoldSuspendedLiveWozAfterCurrentGuards())return;
                 // Menu can cancel unstarted recording choices only. During the
                 // task it never pauses, consumes a response, or skips input-loss checks.
                 if(device!=null&&device.ReadSafetyMenu(headReady)&&HandleParticipantMenu())
@@ -1265,13 +1335,21 @@ namespace AvatarStroop.Unity
                 // Display this existing poll only. Never obtain an extra input
                 // sample for UI, which could consume a neutral/confirmation edge.
                 RecordControllerUiPoll(headReady,frame.InputReady,frame.Diagnostic);
-                if(recordingSetup!=null&&namedRawPump==null&&(!frame.DeviceReady||frame.DeviceChanged))
+                if(AwaitFocusActionActivation(frame))return;
+                if(!frame.DeviceReady&&rig!=null&&!rig.XrFocused)
                 {
-                    recordingSetup.Cancel();view.SetPresentationAvailable(false);
-                    message="Controller identity or tracking changed; recording choices were cancelled. Close and reconfigure before trying again.";return;
+                    // Focus may change after the outer observation. Do not
+                    // relabel an inactive action as physical disconnection.
+                    if(namedRawPump!=null)PrepareRawFocusBoundary(false);
+                    else HoldUnrecordedInputForXrFocus();
+                    return;
                 }
+                ObserveFocusControllerRecovery(frame);
+                if(HandlePreStartControllerFrame(frame,rig==null?null:rig.ActiveViewClock))return;
                 if(recordingSetup!=null&&namedRawPump==null&&frame.InputReady&&!frame.TriggerHeld&&!frame.MenuHeld&&!frame.Trackpad.Pressed&&
-                    Application.isFocused&&rig.RawSceneTrackingCurrent())recordingSelectionFreshFrame=Time.frameCount;
+                    rig.XrFocused&&rig.RawSceneTrackingCurrent())recordingSelectionFreshFrame=Time.frameCount;
+                ServiceConsentAutoStart();
+                if(ServiceRequestedRawRecordingStart())return;
                 if(namedRawPump!=null&&(!frame.DeviceReady||!frame.Trackpad.Usable||frame.DeviceChanged))
                 {questionnaireGate.Reset();FailNamedRawBeforeFrame();message+=" Controller input was lost or changed. Recording stopped; its unconfirmed tail is unknown and this recording cannot resume.";return;}
                 if(namedRawPump!=null&&rawSelectionProvenancePending)
@@ -1294,6 +1372,15 @@ namespace AvatarStroop.Unity
                     {questionnaireGate.Reset();Render();return;}
                     suppressInputUntilReleased=false;
                 }
+                if(FocusHeldLiveWoz)
+                {
+                    // The positive remote choice is revoked. Do not route a
+                    // no-op auxiliary/Tick through its old source authority.
+                    // Native capture and negative protocol maintenance remain
+                    // active, while this build offers no source-resume path.
+                    message=LiveWozFocusHoldNotice;Render();return;
+                }
+                ServiceFormalConfirmationRequest(frame);
                 if(namedRawPump!=null&&pendingRawOwnerAction!=null)
                 {
                     // Validate the queued command before *any* task mutation;
@@ -1320,7 +1407,15 @@ namespace AvatarStroop.Unity
                         !ViveStroopRecordingScopePresentation.ExactContextMatches(expectedContext,participant.RawContext)||!participant.InputReady)
                     {FailNamedRawAfterTask();message+=" The pending owner action no longer matches the task; it was not run.";return;}
                     if(!Mutate(requested)){message+=" The pending owner action did not complete safely; do not retry without review.";return;}
-                    message="Owner action accepted; the recording result remains unconfirmed.";Render();return;
+                    message="Owner action accepted; the recording result remains unconfirmed.";
+                    Debug.Log("VIVE_RAW_OWNER_ACTION_ACCEPTED: phase="+participant.Phase+"; durability remains unconfirmed. Begin first block is a separate action.");Render();return;
+                }
+                if(rawPracticeRequested&&PracticeExecutionBlocker()==null)
+                {
+                    bool automaticFirst=AutomaticFirstPracticeMayProceed();
+                    ClearRawPracticeRequest();
+                    RequestNamedBlockPlanStart(true);if(!automaticFirst)RequirePlanConfirmationAfterXrGap();
+                    ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;
                 }
                 bool displayReady=participant.Phase==Phase.Questionnaire?
                     (participant.QuestionnaireInstructionPending?view.QuestionnaireInstructionVisible:participant.QuestionnaireInputReady&&view.QuestionnaireResponseVisible):
@@ -1341,12 +1436,13 @@ namespace AvatarStroop.Unity
                     displayReady=witnessed;
                 }
                 int ratingDirection=questionnaireGate.Observe(frame.InputReady,participant.Phase==Phase.Questionnaire,displayReady,frame.Trackpad);
-                if(!Mutate(()=>participant.UpdateAuxiliary(frame.InputReady&&frame.TriggerHeld,false,false,ratingDirection,displayReady))){Render();return;}
+                bool allowResume=!FocusHeldLiveWoz;
+                if(!Mutate(()=>participant.UpdateAuxiliary(allowResume&&frame.InputReady&&frame.TriggerHeld,false,false,ratingDirection,displayReady))){Render();return;}
                 // Rest confirmation can enter BlockReady in this same Poll.
                 // Prepare before Tick's retained-source auto-countdown.
                 if(namedRawPump!=null&&participant.Phase==Phase.BlockReady&&participant.BlockIndex>0)
                 {RequestNamedBlockPlanStart(false);ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;}
-                if(!Mutate(()=>participant.Tick())){Render();return;}message=frame.Diagnostic;Render();
+                if(!Mutate(()=>participant.Tick())){Render();return;}message=FocusHeldLiveWoz?LiveWozFocusHoldNotice:frame.Diagnostic;Render();
             }
             catch(Exception error)
             {
@@ -1365,9 +1461,13 @@ namespace AvatarStroop.Unity
                     "Development input failed. A safe task stop could not be confirmed; keep presentation closed."});
             }
         }
+        internal static bool RawPlanStartPhaseMatches(bool practice,Phase phase)
+        {return practice?(phase==Phase.Preparation||phase==Phase.PracticeRetry):phase==Phase.BlockReady;}
         void RequestNamedBlockPlanStart(bool practice)
         {
             if(namedRawPump==null||participant==null||RecordingBlocked||rawSelectionProvenancePending||rawPlanStartRequested!=0||rawPendingBlockPlan!=null)return;
+            if(!RawPlanStartPhaseMatches(practice,participant.Phase))
+            {message="Block-plan request does not match the current task phase; no task or I/O was started.";return;}
             rawPlanStartRequested=practice?1:2;
             message="Preparing the actual block plan; task start waits for recording confirmation.";
         }
@@ -1377,14 +1477,31 @@ namespace AvatarStroop.Unity
         static bool MustWaitForRawPlanNeutral(bool neutralPending,bool triggerHeld,bool menuHeld,bool trackpadHeld)
         {return neutralPending||triggerHeld||menuHeld||trackpadHeld;}
         bool RawPlanDeadlineStillValid()
-        {double now;return sharedClock!=null&&sharedClock.TryReadRecordingAdmissionTime(out now)&&IsWithinRawPlanDeadline(rawPlanDeadline,now);}
+        {double now;return sharedClock!=null&&sharedClock.TryReadRecordingAdmissionTime(out now)&&
+            RawPlanWaitObservationAllows(rawPlanDeadline,now,ExactReadyPlanObserved,focusReadyPlanObserved);}
         // Owner-thread polling only: writer/flush remains on the writer thread.
-        // A late receipt is unusable after phase, generation, device or revoke
-        // changes. Any failure latches the existing stop path and stays UNKNOWN.
+        // Ready must actually be observed before the I/O deadline. Waiting for
+        // focus or neutral input after that does not make I/O pending again.
+        // Actual context, device and revocation checks remain authoritative;
+        // only schema-validated focus metadata may extend a prepared stamp.
         void ProcessNamedBlockPlanStart(bool headReady,ViveStroopDeviceFrame recordedWozFrame=null)
         {
             if(namedRawPump==null||participant==null||sharedClock==null||rawPlanStartRequested==0||RecordingBlocked)
             {FailNamedRawBeforeFrame();return;}
+            if(FocusHeldLiveWoz)
+            {
+                // Defense for a direct caller as well as the normal Poll
+                // dispatch: real input errors still stop, but an expected
+                // source suspension must never inspect/consume the old plan.
+                if(!headReady||device==null){FailNamedRawBeforeFrame();return;}
+                if(rig!=null&&!rig.XrFocused){PrepareRawFocusBoundary(false);return;}
+                var heldInput=recordedWozFrame??device.Read(participant.Phase,headReady);
+                RecordControllerUiPoll(headReady,heldInput.InputReady,heldInput.Diagnostic);
+                if(AwaitFocusActionActivation(heldInput))return;
+                if(!heldInput.DeviceReady||!heldInput.Trackpad.Usable||heldInput.DeviceChanged)
+                {FailNamedRawBeforeFrame();return;}
+                HoldSuspendedLiveWozAfterCurrentGuards();return;
+            }
             if(rawPendingBlockPlan!=null)
             {
                 if(!RawPlanDeadlineStillValid())
@@ -1393,6 +1510,10 @@ namespace AvatarStroop.Unity
             if(!headReady||device==null){FailNamedRawBeforeFrame();return;}
             var input=recordedWozFrame??device.Read(participant.Phase,headReady);
             RecordControllerUiPoll(headReady,input.InputReady,input.Diagnostic);
+            if(AwaitFocusActionActivation(input))return;
+            if(!input.DeviceReady&&rig!=null&&!rig.XrFocused)
+            {PrepareRawFocusBoundary(false);return;}
+            ObserveFocusControllerRecovery(input);
             if(!input.DeviceReady||!input.Trackpad.Usable||input.DeviceChanged)
             {FailNamedRawBeforeFrame();message+=" Input device readiness or identity changed while preparing the block plan.";return;}
             if(rawPendingBlockPlan==null)
@@ -1407,15 +1528,26 @@ namespace AvatarStroop.Unity
                 if(!sharedClock.TryReadRecordingAdmissionTime(out now)||Double.IsNaN(now)||Double.IsInfinity(now)||now<0||now>Double.MaxValue-RawPlanWaitLimitSeconds)
                 {FailNamedRawBeforeFrame();message+=" Block plan wait clock unavailable; in-flight I/O is unknown.";return;}
                 rawPlanDeadline=now+RawPlanWaitLimitSeconds;
+                ClearRawPlanReadyObservation();
                 message="Waiting for block-plan write and flush API confirmation; no task has started.";
                 return;
             }
-            if(!rawPendingBlockPlan.TryValidateCurrentForReceipt(participant,sharedClock))
-            {FailNamedRawBeforeFrame();message+=" Block plan changed while waiting; its outcome is unknown.";return;}
             ViveRawSessionJournalSink.BlockPlanWriteReceipt receipt;
-            var state=namedRawPump.TryGetBlockPlanReceipt(rawPendingBlockPlan,out receipt);
+            ViveRawSessionJournalSink.BlockPlanReceiptPoll state;
+            if(!TryPollPendingRawPlanReceipt(out state,out receipt))return;
             if(state==ViveRawSessionJournalSink.BlockPlanReceiptPoll.Pending)
             {message="Waiting for block-plan write and flush API confirmation; no task has started.";return;}
+            if(focusPlanConfirmationRequired||focusPlanTriggerAccepted)
+            {
+                if(!ObservePreparedPlanStartConfirmation(input))
+                {
+                    focusPlanPromptFrame=input.InputReady&&!input.NeutralPending?Time.frameCount:-1;
+                    message=FocusPlanAwaitNotice;Render();
+                    if(view!=null)view.SetViveDevelopmentStatus("Local recording: "+RecordingStatus,FocusPlanAwaitNotice);
+                    return;
+                }
+                suppressInputUntilReleased=true;
+            }
             // A held trigger across Rest -> BlockReady is not a device fault.
             // Keep the receipt unconsumed until every control is neutral.
             if(state==ViveRawSessionJournalSink.BlockPlanReceiptPoll.Ready&&
@@ -1432,7 +1564,8 @@ namespace AvatarStroop.Unity
                     participant.TryBeginLegacyRecordingWithPlan(Actor.Owner,rawPendingBlockPlan,receipt,practice):
                     participant.TryBeginNamedRecordingWithPlan(Actor.Owner,rawPendingBlockPlan,receipt,practice))||!started)
             {FailNamedRawAfterTask();message+=" Block start or recording confirmation is unavailable or unknown.";return;}
-            rawPendingBlockPlan=null;rawPlanStartRequested=0;rawPlanDeadline=-1;suppressInputUntilReleased=true;
+            rawPendingBlockPlan=null;rawPlanStartRequested=0;rawPlanDeadline=-1;ClearRawPlanReadyObservation();suppressInputUntilReleased=true;
+            if(practice)UnityEngine.Debug.Log("VIVE_RAW_PRACTICE_STARTED: plan receipt consumed; presentation remains pending.");
             message="Block plan write and flush APIs returned; input must be released before continuing. Recording remains development-only.";
             // Refresh the hidden model after the phase mutation. The rig keeps
             // it masked until a later neutral input sample clears the boundary.
@@ -1465,7 +1598,17 @@ namespace AvatarStroop.Unity
         {
             var pump=namedRawPump;if(pump==null)return false;
             if(!rawSafetyLatched&&!RecordingBlocked)return false;
+            CancelFormalConfirmation("Formal confirmation canceled because recording entered a safety stop. This session cannot continue.");
             rawSafetyLatched=true;
+            if(!rawFirstFaultLogged)
+            {
+                rawFirstFaultLogged=true;
+                // Snapshot before Stop adds its own revocation. An unattributed
+                // safety stop stays unknown instead of disappearing from logs.
+                UnityEngine.Debug.LogWarning("VIVE_RAW_FIRST_FAULT: "+(pump.FirstFault??"scene_safety_unattributed")+
+                    "; "+pump.FailureSnapshot+"; frame="+Time.frameCount+"; phase="+(participant==null?"none":participant.Phase.ToString()));
+            }
+            ClearRawPracticeRequest();
             ClearPendingRawOwnerAction();
             // Only an explicit pump.Withdraw() sets this flag; internal
             // stop/fault queue detachment is not a participant withdrawal.
@@ -1526,12 +1669,14 @@ namespace AvatarStroop.Unity
             try{requested=task.NamedRecordingWithdrawalRequested;return true;}
             finally{System.Threading.Monitor.Exit(task.NamedRecordingGate);}
         }
-        internal bool StageNamedRawFrame(ViveProEyePoll frame)
+        internal bool StageNamedRawFrame(ViveProEyePoll frame,out bool waiting)
         {
-            var pump=namedRawPump;if(pump==null)return true;
+            waiting=false;var pump=namedRawPump;if(pump==null)return true;
             if(ServiceNamedRawSafety())return false;
-            bool staged=pump.StageRigFrame(frame,1.0);
-            if(!staged||RecordingBlocked){rawSafetyLatched=true;ServiceNamedRawSafety();return false;}
+            bool staged=pump.StageRigFrame(frame,1.0,CanWaitForNamedRawBaseline,out waiting);
+            if(waiting&&!RecordingBlocked)return false;
+            waiting=false;
+            if(!staged||RecordingBlocked){NoteRawFirstFault("raw_frame_not_admitted");rawSafetyLatched=true;ServiceNamedRawSafety();return false;}
             return true;
         }
         internal void FailNamedRawBeforeFrame()
@@ -1545,6 +1690,14 @@ namespace AvatarStroop.Unity
             var pump=namedRawPump;if(pump==null)return true;
             if(ServiceNamedRawSafety())return false;
             if(!pump.VerifyStagedEpoch()||RecordingBlocked){rawSafetyLatched=true;ServiceNamedRawSafety();return false;}
+            return true;
+        }
+        internal bool VerifyNamedRawDisplayAuthority()
+        {
+            var pump=namedRawPump;if(pump==null)return true;
+            if(ServiceNamedRawSafety())return false;
+            if(!pump.VerifyTaskRunAuthorityForDisplay()||RecordingBlocked)
+            {rawSafetyLatched=true;ServiceNamedRawSafety();return false;}
             return true;
         }
         internal void FailNamedRawAfterTask()
@@ -1567,7 +1720,9 @@ namespace AvatarStroop.Unity
         // callbacks are never retried and cannot leave the FIFO producer bit held.
         internal bool ExpirePendingRawPresentation()
         {
+            if(NamedRawCompletionActive||participant!=null&&participant.Completed)return false;
             if(pendingRawPresentation==null&&pendingRawPanelFrame<0)return false;
+            if(rig!=null&&!rig.XrFocused)return !PrepareRawFocusBoundary(false);
             AbortRawScenePresentation();return true;
         }
         void AbortRawScenePresentation()
@@ -1591,8 +1746,8 @@ namespace AvatarStroop.Unity
             if(!RawRecordingDesignAvailable||namedRawPump==null||participant==null||view==null||rig==null||
                 pendingRawPresentation!=null||pendingRawPanelFrame>=0||PresentationBlocked||participant.Completed||!rig.RawSceneTrackingCurrent())return false;
             if(!WorldSpaceExperimentView.ViveRawPanelPhase(participant.Phase))return false;
-            if(legacyWozScene!=null&&!legacyWozScene.MayShowTask)return false;
-            if(!participant.InputReady||rawPlanStartRequested!=0||rawPendingBlockPlan!=null)
+            if(legacyWozScene!=null&&!FocusHeldLiveWoz&&!legacyWozScene.MayShowTask)return false;
+            if(!participant.InputReady||((rawPlanStartRequested!=0||rawPendingBlockPlan!=null)&&!FocusPlanPromptCurrent))
                 return namedRawPump.DrainTaskEvents();
             if(!namedRawPump.PrepareNonTrialPanelRender())return false;
             long revision;
@@ -1604,15 +1759,81 @@ namespace AvatarStroop.Unity
         }
         bool OnViveRawPanelRendered(WorldSpaceExperimentView.ViveRawPanelObservation rendered)
         {
-            if(namedRawPump==null)return false;
+            if(RawFocusBoundaryMasksThisFrame)return false;
+            if(rig!=null&&rig.TryHoldRawRenderHeadLoss())return false;
+            return OnViveRawPanelRenderedGuarded(rendered);
+        }
+        bool OnViveRawPanelRenderedGuarded(WorldSpaceExperimentView.ViveRawPanelObservation rendered)
+        {
+            if(!CanWaitForNamedRawBaseline)return CompleteRawPanelRender(rendered);
+            bool busy;
+            if(!EnterRawPreparationAuthority(out busy))
+            {
+                if(busy&&rendered!=null&&pendingRawPanelFrame==Time.frameCount&&rendered.Frame==pendingRawPanelFrame&&rendered.Revision==pendingRawPanelRevision)
+                    return SkipBusyPreparationPanel();
+                AbortRawScenePresentation();return false;
+            }
             try
             {
-                int answered=participant==null?0:Math.Min(Questionnaire.Count,Math.Max(0,participant.RatingCount-Math.Max(0,participant.BlockIndex)*Questionnaire.Count));
-                if(!RawRecordingDesignAvailable||participant==null||view==null||rig==null||rendered==null||
-                    pendingRawPanelFrame!=Time.frameCount||rendered.Frame!=pendingRawPanelFrame||rendered.Revision!=pendingRawPanelRevision||
-                    !participant.InputReady||PresentationBlocked||!rig.RawSceneTrackingCurrent()||!namedRawPump.VerifyStagedEpoch()||
-                    (legacyWozScene!=null&&!legacyWozScene.MayShowTask)||
-                    !view.MatchesViveRawPanel(rendered,participant.ParticipantView,participant.QuestionnaireInstructionPending,participant.CandidateRating,answered))
+                if(rig!=null&&!rig.XrFocused){PrepareRawFocusBoundary(false);return false;}
+                // Known owner, device, view and input failures take precedence
+                // over a healthy-metadata retry, exactly as in the strict path.
+                if(!RawPanelContextCurrent(rendered)){AbortRawScenePresentation();return false;}
+                // The initial, non-trial panel does not commit an onset or
+                // plan receipt. A healthy status publication between Update
+                // and rendering requires a fresh snapshot, not a fatal task.
+                // Keep all queued status evidence for the next owner frame.
+                if(rendered!=null&&pendingRawPresentation==null&&pendingRawPanelFrame==Time.frameCount&&
+                    rendered.Frame==pendingRawPanelFrame&&rendered.Revision==pendingRawPanelRevision)
+                {
+                    string reason;
+                    var epoch=namedRawPump.CheckPreparationPanelEpoch(out reason);
+                    if(epoch==ViveNamedRawRecordingPump.PreparationPanelEpochResult.Retry)
+                    {
+                        if(!namedRawPump.TryDiscardPreparationPanelEpoch())
+                        {NoteRawFirstFault("raw_panel_retry_revalidation_failed");AbortRawScenePresentation();return false;}
+                        pendingRawPanelFrame=-1;pendingRawPanelRevision=-1;
+                        rig.NotePreparationPanelRetry();
+                        return false;
+                    }
+                    if(epoch==ViveNamedRawRecordingPump.PreparationPanelEpochResult.Invalid)
+                    {NoteRawFirstFault("raw_panel_epoch_"+reason);AbortRawScenePresentation();return false;}
+                }
+                bool accepted=CompleteRawPanelRender(rendered);
+                if(accepted&&rig!=null)rig.CompletePreparationPanel();
+                return accepted;
+            }
+            catch(Exception){AbortRawScenePresentation();return false;}
+            finally
+            {
+                ExitRawPreparationAuthority();
+            }
+        }
+        bool SkipBusyPreparationPanel()
+        {
+            // This panel supplies no trial onset, response or plan receipt.
+            // Discard its unaccepted witness and its old frame ticket.
+            pendingRawPanelFrame=-1;pendingRawPanelRevision=-1;
+            namedRawPump.DiscardPreparationPanelEpoch();
+            rig.NoteBusyPreparationPanel();
+            return false;
+        }
+        bool RawPanelContextCurrent(WorldSpaceExperimentView.ViveRawPanelObservation rendered)
+        {
+            int answered=participant==null?0:Math.Min(Questionnaire.Count,Math.Max(0,participant.RatingCount-Math.Max(0,participant.BlockIndex)*Questionnaire.Count));
+            return RawRecordingDesignAvailable&&participant!=null&&view!=null&&rig!=null&&rendered!=null&&
+                pendingRawPanelFrame==Time.frameCount&&rendered.Frame==pendingRawPanelFrame&&rendered.Revision==pendingRawPanelRevision&&
+                participant.InputReady&&!PresentationBlocked&&rig.RawSceneTrackingCurrent()&&
+                (legacyWozScene==null||FocusHeldLiveWoz||legacyWozScene.MayShowTask)&&
+                view.MatchesViveRawPanel(rendered,participant.ParticipantView,participant.QuestionnaireInstructionPending,participant.CandidateRating,answered);
+        }
+        bool CompleteRawPanelRender(WorldSpaceExperimentView.ViveRawPanelObservation rendered)
+        {
+            if(namedRawPump==null)return false;
+            if(rig!=null&&!rig.XrFocused){PrepareRawFocusBoundary(false);return false;}
+            try
+            {
+                if(!RawPanelContextCurrent(rendered)||!namedRawPump.VerifyStagedEpoch())
                 {AbortRawScenePresentation();return false;}
                 // Start the existing 3-second countdown only after its first
                 // accepted software render. This is not an optical timestamp.
@@ -1659,6 +1880,8 @@ namespace AvatarStroop.Unity
                     (pendingRawPresentation!=null&&(pendingRawPresentation.WozEvidence==null||!pendingRawPresentation.WozEvidence.Applied)))
                 {AbortRawScenePresentation();return false;}
             }
+            if(!PrepareRawAutomaticAvatar())
+            {NoteRawFirstFault("raw_automatic_avatar_unavailable");AbortRawScenePresentation();return false;}
             if(!view.TryRevealViveRawTrial(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,revision))
             {AbortRawScenePresentation();return false;}
             view.SetPresentationAvailable(true);
@@ -1682,12 +1905,13 @@ namespace AvatarStroop.Unity
             return true;
         }
         internal bool NamedRawCompletionActive {get{return rawCompletionRequested;}}
+        internal bool NamedRawCompletionEyeMayStop {get{return rawCompletionRequested&&namedRawPump!=null&&namedRawPump.CompletionDrainSealed;}}
         // Owner-thread polling only; never wait for the writer or retry I/O.
         // Explicit withdrawal and stop retain their existing safety path.
         internal bool PollNamedRawCompletion()
         {
             var pump=namedRawPump;if(!rawCompletionRequested||pump==null)return false;
-            if(Input.GetKeyDown(KeyCode.Escape))
+            if(Application.isPlaying&&Input.GetKeyDown(KeyCode.Escape))
             {try{RequestNamedRawWithdrawal();}finally{ClearNamedTaskView();}return false;}
             bool participantWithdrawal;
             if(!TryReadNamedParticipantWithdrawal(out participantWithdrawal))
@@ -1695,6 +1919,8 @@ namespace AvatarStroop.Unity
             if(participantWithdrawal)rawWithdrawalRequested=true;
             if(rawSafetyLatched||rawWithdrawalRequested||pump.WithdrawalRequested)
             {ServiceNamedRawSafety();return false;}
+            if(!pump.CompletionDrainSealed&&!pump.PollRequestedCompletionDrain())
+            {rawSafetyLatched=true;ServiceNamedRawSafety();message="Recording completion seal is unconfirmed; the remaining tail is unknown.";return false;}
             var state=pump.State;
             if(state==ViveNamedRawRecordingPump.Outcome.Finishing||state==ViveNamedRawRecordingPump.Outcome.StopPending)
             {message="Task ended; recording drain or cleanup is pending. Coverage and durability are unknown.";return true;}
@@ -1753,7 +1979,7 @@ namespace AvatarStroop.Unity
             // has no in-task pause action; tracking faults, owner controls,
             // withdrawal and explicit Trigger resume retain their own paths.
             if(recordingSetup==null||namedRawPump!=null)return false;
-            recordingSetup.Cancel();if(view!=null)view.SetPresentationAvailable(false);
+            CancelRecordingChoices();if(view!=null)view.SetPresentationAvailable(false);
             message="Participant cancelled recording choices; no recording was started.";
             return true;
         }
@@ -1801,9 +2027,9 @@ namespace AvatarStroop.Unity
                     " Trial-open context or receipt unavailable. Stimulus remains blocked and validity is unknown.";
                 return;
             }
-            if(legacyWozScene!=null&&!legacyWozScene.MayShowTask)
+            if(legacyWozScene!=null&&!FocusHeldLiveWoz&&!legacyWozScene.MayShowTask)
             {legacyWozScene.Present();view.SetPresentationAvailable(false);view.SuppressViveRawStimulus();return;}
-            view.SetPresentationAvailable(participant.InputReady&&rig.HeadReady&&!PresentationBlocked&&
+            view.SetPresentationAvailable(participant.InputReady&&rig.HeadReady&&rig.XrFocused&&!PresentationBlocked&&
                 (!participant.RawRecordingRequested||namedRawPump!=null)&&
                 (recording==null||(!recording.WaitingForFreshEye&&!recording.RecoveryPending)));
             int answered=Math.Min(Questionnaire.Count,Math.Max(0,participant.RatingCount-Math.Max(0,participant.BlockIndex)*Questionnaire.Count));
@@ -1813,6 +2039,11 @@ namespace AvatarStroop.Unity
             view.ApplyTaskView(participant.ParticipantView);
             if(legacyWozScene!=null)
             {
+                if(FocusHeldLiveWoz)
+                {
+                    if(!legacyWozScene.ClearForSafety()&&namedRawPump!=null)FailNamedRawBeforeFrame();
+                    view.SetViveDevelopmentStatus(LiveWozFocusHoldNotice,legacyWozStatus);return;
+                }
                 legacyWozScene.Present();
                 if(!legacyWozScene.MayShowTask){view.SetPresentationAvailable(false);view.SuppressViveRawStimulus();}
                 view.SetViveDevelopmentStatus((RecordedLegacyWoz?"CONTROLLED LEGACY WOZ: local recording requested; coverage/durability unverified. ":
@@ -1832,11 +2063,18 @@ namespace AvatarStroop.Unity
                 "VIVE development task; local recording enabled. "+recording.Status,ControlsHint);
         }
         void OnStimulusRendered(string trialId,double renderProxySeconds)
+        {OnStimulusRenderedWithFocus(trialId,renderProxySeconds,rig!=null&&rig.XrFocused);}
+        // The real event adapter supplies the actual XR observation. Isolated
+        // fixtures can exercise both policy branches without starting OpenXR;
+        // commit, identity and tracking gates below remain independent.
+        internal void OnStimulusRenderedWithFocus(string trialId,double renderProxySeconds,bool xrFocused)
         {
             // Raw callback handling is separate so the same render never marks
             // a recorded trial through this unreserved preview-only route.
             if(namedRawPump!=null)
             {
+                if(rig!=null&&!xrFocused){PrepareRawFocusBoundary(false);return;}
+                if(RawTrackingMasksThisFrame||RawFocusBoundaryMasksThisFrame)return;
                 bool committed=rawGenericCallbackFrame==Time.frameCount&&String.Equals(rawGenericCallbackTrial,trialId,StringComparison.Ordinal);
                 rawGenericCallbackTrial=null;rawGenericCallbackFrame=-1;
                 if(!committed)FailNamedRawAfterTask();return;
@@ -1847,14 +2085,25 @@ namespace AvatarStroop.Unity
             {if(Mutate(()=>participant.MarkPresented(trialId))&&legacyWozScene!=null)legacyWozScene.NotePresented(trialId);}
         }
         void OnViveRawStimulusRendered(WorldSpaceExperimentView.StimulusRenderObservation render)
+        {OnViveRawStimulusRenderedWithFocus(render,rig!=null&&rig.XrFocused);}
+        internal void OnViveRawStimulusRenderedWithFocus(WorldSpaceExperimentView.StimulusRenderObservation render,bool xrFocused)
+        {
+            if(RawFocusBoundaryMasksThisFrame)return;
+            if(rig!=null&&rig.TryHoldRawRenderHeadLoss())return;
+            OnViveRawStimulusRenderedGuarded(render,xrFocused);
+        }
+        void OnViveRawStimulusRenderedGuarded(WorldSpaceExperimentView.StimulusRenderObservation render,bool xrFocused)
         {
             if(namedRawPump==null)return;
+            if(rig!=null&&!xrFocused){PrepareRawFocusBoundary(false);return;}
             var token=pendingRawPresentation;
             if(token!=null)
             {
                 pendingRawPresentation=null;
                 try
                 {
+                    if(!RawAutomaticAvatarCurrent())
+                    {NoteRawFirstFault("raw_automatic_avatar_changed_during_render");AbortRawScenePresentation();return;}
                     if(!RawRecordingDesignAvailable||render==null||rig==null||!rig.RawSceneTrackingCurrent()||
                         render.Frame!=Time.frameCount||render.Frame!=token.Frame||render.Revision!=token.Revision||
                         !String.Equals(render.TrialId,token.Stamp.TrialId,StringComparison.Ordinal)||!render.MatchesTask(token.Word,token.Ink)||
@@ -1882,6 +2131,7 @@ namespace AvatarStroop.Unity
         }
         public void BeforeXrStop()
         {
+            CancelFormalConfirmation("Formal confirmation canceled because the classroom view is stopping.");
             CloseLegacyWozScene();
             if(namedRawPump!=null){RequestNamedRawStopForViewClose();return;}
             if(questionnaireGate!=null)questionnaireGate.Reset();
@@ -1912,7 +2162,7 @@ namespace AvatarStroop.Unity
             finally{CapturePauseDiagnostic("Recording stopped; task safety pause.",before,"Owner or software safety request.");recordingTerminal=true;if(view!=null)view.SetPresentationAvailable(false);CheckObservation(true);}
         }
         public void AfterXrStop()
-        {BeginControllerUiPoll(false);if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)recordingSetup.Cancel();if(device!=null){device.Dispose();device=null;}}
+        {BeginControllerUiPoll(false);if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)CancelRecordingChoices(ViveNamedRecordingSetup.CancellationCause.ViewStopped);if(device!=null){device.Dispose();device=null;}}
         void OnDestroy()
         {
             CloseLegacyWozTaskBinding();
@@ -2038,6 +2288,7 @@ namespace AvatarStroop.Unity
                 pendingRawOwnerContext=stamp.Context;
                 pendingRawOwnerStamp=stamp;
                 pendingRawOwnerPhase=participant.Phase;
+                focusOwnerActionWasCancelled=false;
                 message="Owner action queued for the next healthy, neutral input frame.";
                 return;
             }

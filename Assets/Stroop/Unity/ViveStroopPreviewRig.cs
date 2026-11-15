@@ -13,7 +13,7 @@ namespace AvatarStroop.Unity
 {
     // Independent VIVE development preview. Optional local recording is owned
     // by the bootstrap and consumes the same worker as the eye diagnostic.
-    public sealed class ViveStroopPreviewRig : MonoBehaviour
+    public sealed partial class ViveStroopPreviewRig : MonoBehaviour
     {
         public static string ScopeNotice {get{return ViveStroopRecordingScopePresentation.BuildDesignScope(ViveControlledRecordingBuildPolicy.Available,ViveStroopDevelopmentBootstrap.LegacyRecordingAvailable);}}
         const string StoppedNotice="View and eye client stopped. A configured task may remain paused. Stopping the view does not save or export task results.";
@@ -32,11 +32,16 @@ namespace AvatarStroop.Unity
         ViveStroopEyePump eyePump;
         ViveProEyeHeadEyeSource source;
         bool starting, running, ownsLoader, referenceChanged, headReady, stopping, restartBlocked, xrCleanupUncertain, quitRequested;
+        bool sameReferenceHeadPoseLoss;
+        int recordingEyeFrame=-1;
+        internal bool CurrentRecordingEyeFrame {get{return recordingEyeFrame==Time.frameCount;}}
         bool rawInstallEyeStopUncertain,rawInstallFailureLatched;
         bool RawInstallFailure {get{return rawInstallFailureLatched||(development!=null&&development.NamedRawInstallFailed);}}
         internal void LatchRawInstallFailure(){rawInstallFailureLatched=true;}
         ViveStartupAlignmentGate startupGate;
         ViveStartupView startupView;
+        ViveRawHoldView rawHoldView;
+        bool rawHoldViewUnavailable;
         uint presenceEpoch;
         bool hasPresenceEpoch,hasHeadDevice;
         InputDevice headDevice;
@@ -76,11 +81,48 @@ namespace AvatarStroop.Unity
         public bool ViewRunning {get{return starting||running||stopping;}}
         public string Status {get{return status;}}
         public bool HeadReady {get{return running&&headReady;}}
+        // Focus controls interaction and render claims, not whether a real
+        // physical head sample exists for the recording stream.
+#if UNITY_EDITOR
+        internal bool SyntheticRawTrackingForFixture;
+        bool SyntheticRawTrackingCurrent {get{return SyntheticRawTrackingForFixture&&Application.isBatchMode&&!Application.isPlaying&&
+            development!=null&&development.SyntheticRawPumpForFixture&&previewCamera!=null&&previewCamera.isActiveAndEnabled;}}
+#endif
+        internal bool XrFocused {get{
+#if UNITY_EDITOR
+            if(SyntheticRawTrackingCurrent)return true;
+#endif
+            return OpenXRUtility.IsSessionFocused;}}
         internal MonotonicClock ActiveViewClock {get{return running&&!stopping?clock:null;}}
         public static Rect OwnerPanelBounds(float width,float height)
-        {return new Rect(12,12,Mathf.Max(0,Mathf.Min(1050,width-24)),Mathf.Max(0,Mathf.Min(700,height-24)));}
+        {return new Rect(12,12,Mathf.Max(0,Mathf.Min(1050,width-24)),Mathf.Max(0,height-24));}
         public bool RecordingWorkerReady {get{return running&&headReady&&worker!=null&&eyePump!=null&&worker.Started&&!stopping&&!restartBlocked&&
             development!=null&&development.Configured&&object.ReferenceEquals(clock,development.SharedClock)&&worker.UsesClock(clock);}}
+        // Diagnostic/preflight only. This does not authorize the installed
+        // worker, issue a recording ticket, or create a writer.
+        internal ViveProEyeWorker CurrentRawStartWorker {get{return running&&!stopping&&!restartBlocked?worker:null;}}
+        internal ViveProEyeWorker.RecordingStartReadiness? RawStartReadiness
+        {get{var active=CurrentRawStartWorker;return active==null?(ViveProEyeWorker.RecordingStartReadiness?)null:active.ReadRecordingStartReadiness();}}
+        internal static string DescribeRawStartReadiness(ViveProEyeWorker.RecordingStartReadiness? value)
+        {
+            if(value==null)return "Enable eye tracking and wait for the client.";
+            switch(value.Value.Reason)
+            {
+                case ViveProEyeWorker.RecordingStartReadinessReason.None:return "Eye status is stable; current head and controller checks are still required.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.CalibrationRequired:return "HTC reports calibration required. Complete eye calibration in the official HTC interface; recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.CalibrationUnavailable:return "HTC calibration status is unavailable. Recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.DirectionUnavailable:return "Eye direction is invalid. Check headset fit and eye visibility, then wait for stable tracking; recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.Stabilizing:return "Waiting for 0.5 seconds of continuous valid eye status and fresh distinct eye frames. Recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.Stale:
+                case ViveProEyeWorker.RecordingStartReadinessReason.FrameDiscontinuity:return "Eye frames are stale or discontinuous. Waiting for fresh, advancing samples; recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.LockBusy:return "Waiting for the current eye-client check. Recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.AwaitingObservation:return "Waiting for the first eye observation. Recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.EyeDataUnavailable:return "HTC eye data is unavailable. Check headset fit and eye visibility; recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.InvalidTime:return "Eye observation timing is invalid. Recording has not started; review diagnostics.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.NativeStatusInvalid:return "HTC eye runtime or read status is not ready. Recording has not started; review diagnostics.";
+                default:return "Eye client is unavailable. Recording has not started.";
+            }
+        }
         // This supplies only this rig's installed worker to the scene-owned
         // recording host. It neither creates a worker nor starts recording.
         internal bool TryGetNamedRawInstalledWorker(ViveStroopDevelopmentBootstrap requester,out ViveProEyeWorker result)
@@ -102,16 +144,47 @@ namespace AvatarStroop.Unity
         {
             if(previewCamera!=null)previewCamera.cullingMask=0;
             if((RawInstallFailure||(development!=null&&development.NamedRawPumpAttached))&&view!=null)
-            {view.SuppressViveRawStimulus();view.SuppressViveRawPanel();if(development!=null)development.MarkRawPanelHidden();}
+            {view.SuppressViveRawStimulus();view.SuppressViveRawPanel();if(development!=null){development.MarkRawPanelHidden();development.ClearRawAutomaticAvatar();}}
         }
         // A per-frame software readiness check only. It is not an assertion
         // about photon delivery or the physical accuracy of head tracking.
         internal bool RawSceneTrackingCurrent()
+        {return XrFocused&&RawScenePhysicalTrackingCurrent();}
+        bool RawScenePhysicalTrackingCurrent()
         {
-            if(development==null||!development.RawRecordingDesignAvailable||!running||!headReady||headReadyFrame!=Time.frameCount||
-                GraphicsSettings.currentRenderPipeline!=null||display==null||!display.running||!OpenXRUtility.IsSessionFocused||referenceChanged||input==null||!input.running||
-                input.GetTrackingOriginMode()!=alignedMode||previewCamera==null||!previewCamera.isActiveAndEnabled)return false;
-            var device=InputDevices.GetDeviceAtXRNode(XRNode.Head);bool tracked;InputTrackingState flags;Vector3 position;Quaternion rotation;
+#if UNITY_EDITOR
+            if(SyntheticRawTrackingCurrent)return true;
+#endif
+            // Same tracked device, origin, verified presence, running
+            // subsystems and real current owner head witness. Focus is a
+            // separate interaction/render observation, not device tracking.
+            return development!=null&&development.RawRecordingDesignAvailable&&headReady&&
+                headReadyFrame==Time.frameCount&&RawHoldPoseCurrent();
+        }
+        // Typed negative render observation: never recover identity/origin or
+        // subsystem changes merely because they also hide the tracked pose.
+        internal bool TryHoldRawRenderHeadLoss()
+        {
+            if(development==null||!development.NamedRawPumpAttached||!running||alignment==null||!alignment.Applied||
+                referenceChanged||!hasHeadDevice||GraphicsSettings.currentRenderPipeline!=null||previewCamera==null||!previewCamera.isActiveAndEnabled||
+                display==null||!display.running||input==null||!input.running||
+                input.GetTrackingOriginMode()!=alignedMode||Time.frameCount<=alignedFrame)return false;
+            var current=InputDevices.GetDeviceAtXRNode(XRNode.Head);
+            if(!current.isValid||!current.Equals(headDevice))return false;
+            var settings=OpenXRSettings.Instance;
+            var presence=settings==null?null:settings.GetFeature<ViveVerifiedPresenceFeature>();
+            if(presence!=null&&(!hasPresenceEpoch||presence.SessionEpoch!=presenceEpoch||
+                presence.enabled&&presence.CapabilityVerified&&!OpenXRUtility.IsUserPresent))return false;
+            bool tracked;InputTrackingState flags;
+            if(!current.TryGetFeatureValue(CommonUsages.isTracked,out tracked)||
+                !current.TryGetFeatureValue(CommonUsages.trackingState,out flags))return false;
+            if(tracked&&(flags&(InputTrackingState.Position|InputTrackingState.Rotation))==
+                (InputTrackingState.Position|InputTrackingState.Rotation))return false;
+            development.HoldRawRenderHeadTracking();return true;
+        }
+        static bool ValidTrackedHeadPose(InputDevice device)
+        {
+            bool tracked;InputTrackingState flags;Vector3 position;Quaternion rotation;
             return device.isValid&&device.TryGetFeatureValue(CommonUsages.isTracked,out tracked)&&tracked&&
                 device.TryGetFeatureValue(CommonUsages.trackingState,out flags)&&
                 (flags&(InputTrackingState.Position|InputTrackingState.Rotation))==(InputTrackingState.Position|InputTrackingState.Rotation)&&
@@ -141,16 +214,66 @@ namespace AvatarStroop.Unity
             Application.wantsToQuit+=WantsToQuit;
             if(view!=null)view.SetViveUnconfiguredPreview(status);
         }
-        void OnEnable(){Camera.onPreCull+=GuardRawSceneBeforeCull;}
+        void OnEnable(){Camera.onPreCull+=GuardRawSceneBeforeCull;Camera.onPostRender+=AfterRawHoldCameraRender;}
         void OnDisable()
         {
-            Camera.onPreCull-=GuardRawSceneBeforeCull;
-            HideGazeMarker();gazeContinuity.Reset();
+            autoEyeForView.Suppress();
+            HideTrackedWandVisual();
+            Camera.onPreCull-=GuardRawSceneBeforeCull;Camera.onPostRender-=AfterRawHoldCameraRender;
+            DisposeRawHoldView();HideGazeMarker();gazeContinuity.Reset();
             if(RawInstallFailure){ServiceRawInstallFailure();return;}
             if(development!=null&&development.NamedRawPumpAttached)
             {try{BlockTaskPresentation();}finally{development.FailNamedRawAfterTask();}}
         }
         void GuardRawSceneBeforeCull(Camera camera)
+        {
+            // Ensure an interrupted prior render cannot leave the neutral layer
+            // in a later task or other-camera render pass.
+            if(rawHoldView!=null)rawHoldView.EndRender();
+            GuardRawTaskBeforeCull(camera);
+            RefreshTrackedWandVisual(camera);
+            if(camera==null||camera!=previewCamera||camera.cullingMask!=0||rawHoldViewUnavailable||
+                !RawInstallFailure&&(development==null||!development.NamedRawPumpAttached)||
+                development!=null&&development.RawPresentationBoundaryPending)return;
+            try
+            {
+                if(!RawHoldPoseCurrent())return;
+                if(rawHoldView==null)rawHoldView=new ViveRawHoldView(camera);
+                rawHoldView.BeginRender(camera,true,RawInstallFailure||development!=null&&development.RawSafetyNoticeActive,
+                    ControllerVisualUnavailable);
+            }
+            catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
+            {
+                DisposeRawHoldView();rawHoldViewUnavailable=true;
+                // The neutral overlay is optional; failure must never admit
+                // task content or turn a storage fault into a success.
+                Debug.LogWarning("VIVE_RAW_HOLD_VIEW_UNAVAILABLE: "+error.GetType().Name);
+            }
+        }
+        void AfterRawHoldCameraRender(Camera camera)
+        {if(camera==previewCamera&&rawHoldView!=null)rawHoldView.EndRender();}
+        void DisposeRawHoldView()
+        {if(rawHoldView!=null){rawHoldView.Dispose();rawHoldView=null;}}
+        bool RawHoldPoseCurrent()
+        {
+            // A live render callback can also occur while the session is
+            // visible but unfocused. Optional instructions don't establish
+            // visual delivery, task readiness, eye coverage or input focus.
+            if(!running||alignment==null||!alignment.Applied||referenceChanged||!hasHeadDevice||
+                GraphicsSettings.currentRenderPipeline!=null||display==null||!display.running||input==null||!input.running||
+                input.GetTrackingOriginMode()!=alignedMode||previewCamera==null||!previewCamera.isActiveAndEnabled)return false;
+            var settings=OpenXRSettings.Instance;
+            var presence=settings==null?null:settings.GetFeature<ViveVerifiedPresenceFeature>();
+            if(presence!=null&&(!hasPresenceEpoch||presence.SessionEpoch!=presenceEpoch||
+                presence.enabled&&presence.CapabilityVerified&&!OpenXRUtility.IsUserPresent))return false;
+            var device=InputDevices.GetDeviceAtXRNode(XRNode.Head);
+            return device.Equals(headDevice)&&ValidTrackedHeadPose(device);
+        }
+        void GuardRawTaskBeforeCull(Camera camera)
+        {
+            GuardRawTaskBeforeCullGuarded(camera);
+        }
+        void GuardRawTaskBeforeCullGuarded(Camera camera)
         {
             // Any camera can render the shared marker; do not allow another
             // camera to draw it after the observation has expired.
@@ -164,45 +287,76 @@ namespace AvatarStroop.Unity
                 {
                     if(ViveRawPanelPolicy.RejectOtherCamera(true,development.RawRecordingDesignAvailable,false,
                         development.NamedRawTrialActive,development.NamedRawPanelExposed))
-                    {BlockTaskPresentation();development.FailNamedRawAfterTask();}
+                    {BlockTaskPresentation();development.NoteRawFirstFault("raw_precull_other_camera");development.FailNamedRawAfterTask();}
                     return;
                 }
-                if(!RawSceneTrackingCurrent())
-                {BlockTaskPresentation();development.FailNamedRawAfterTask();}
+                // Update deliberately masks the task on focus/tracking holds
+                // and while a first capture gate is busy. A camera rendering
+                // no task layers and holding no render evidence cannot show
+                // a trial; don't convert that safe hold into a false fault.
+                if(camera!=null&&camera.cullingMask==0&&!development.RawPresentationBoundaryPending)return;
+                if(!RawScenePhysicalTrackingCurrent())
+                {if(TryHoldRawRenderHeadLoss()){BlockTaskPresentation();return;}
+                    string fault=camera!=null&&camera.cullingMask==0?
+                    "raw_precull_masked_pending_tracking_invalid":"raw_precull_visible_tracking_invalid";
+                    BlockTaskPresentation();development.NoteRawFirstFault(fault);development.FailNamedRawAfterTask();return;}
+                if(!development.VerifyNamedRawDisplayAuthority())
+                {BlockTaskPresentation();development.NoteRawFirstFault("raw_precull_task_or_avatar_changed");development.FailNamedRawAfterTask();return;}
+                if(!XrFocused)
+                {
+                    // Mask before any render. An ordinary OpenXR focus exit
+                    // between Update and cull must not revoke healthy I/O.
+                    BlockTaskPresentation();
+                    if(development.PrepareRawFocusBoundary(false))SetStatus(development.RawFocusHoldStatus);
+                    return;
+                }
+                if(development.NamedRawTrialActive&&!development.RawAutomaticAvatarCurrent(camera))
+                {BlockTaskPresentation();development.NoteRawFirstFault("raw_precull_task_or_avatar_changed");development.FailNamedRawAfterTask();}
             }
             catch(Exception)
             {
                 try{if(previewCamera!=null)previewCamera.cullingMask=0;}catch(Exception){}
-                development.FailNamedRawAfterTask();
+                development.NoteRawFirstFault("raw_precull_exception");development.FailNamedRawAfterTask();
             }
         }
         void OnGUI()
         {
             using(var desktop=ViveOwnerDesktopLayout.Begin())
-            {
+                DrawOwnerDesktop(desktop.Width,desktop.Height);
+        }
+        internal void DrawOwnerDesktop(float width,float height)
+        {
             var previousSkin=GUI.skin;var previousColor=GUI.color;
             EnsureOwnerStyles();GUI.skin=ownerSkin;
             // IMGUI overlays the desktop mirror only. A fully opaque background
             // prevents classroom TextMesh geometry from leaking through the UI;
             // it does not change headset camera visibility or stimulus gates.
             GUI.color=new Color(.055f,.07f,.09f,1);
-            GUI.DrawTexture(new Rect(0,0,desktop.Width,desktop.Height),Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0,0,width,height),Texture2D.whiteTexture);
             GUI.color=Color.white;
-            GUILayout.BeginArea(OwnerPanelBounds(desktop.Width,desktop.Height),panel);
-            ownerScroll=GUILayout.BeginScrollView(ownerScroll);
+            var bounds=OwnerPanelBounds(width,height);
+            float contentWidth=Mathf.Max(80,bounds.width-panel.padding.horizontal-ownerSkin.verticalScrollbar.fixedWidth-12);
+            using(var content=ViveOwnerDesktopLayout.BeginContent(contentWidth))
+            {
+            GUILayout.BeginArea(bounds,panel);
+            ownerScroll.x=0;
+            ownerScroll=GUILayout.BeginScrollView(ownerScroll,false,true,GUIStyle.none,ownerSkin.verticalScrollbar);
+            GUILayout.BeginVertical(GUILayout.Width(contentWidth),GUILayout.ExpandWidth(false));
             if(development!=null)development.DrawOwnerControls();
             else
             {
                 GUILayout.Label("PARTICIPANT  |  Setup",label);
                 GUILayout.Label("The classroom task is not configured.",label);
             }
-            GUILayout.EndScrollView();
+            GUILayout.EndVertical();GUILayout.EndScrollView();
+            ViveOwnerDesktopLayout.Observe("desktop-scroll",GUILayoutUtility.GetLastRect());
             GUILayout.Space(10);
             if(development!=null)development.DrawOwnerSafetyControls();
             if(GUILayout.Button("Close application",button,GUILayout.Height(40)))RequestQuit();
+            ViveOwnerDesktopLayout.Observe("desktop-close",GUILayoutUtility.GetLastRect());
             GUILayout.EndArea();
-            GUI.skin=previousSkin;GUI.color=previousColor;
             }
+            GUI.skin=previousSkin;GUI.color=previousColor;
         }
         void EnsureOwnerStyles()
         {
@@ -219,37 +373,41 @@ namespace AvatarStroop.Unity
             button=new GUIStyle(ownerSkin.button){fontSize=17,wordWrap=true};
             panel=new GUIStyle(){padding=new RectOffset(20,20,18,18)};
         }
-        // Called only inside the configured owner panel. Starting XR/eye
-        // preview remains explicit and never begins task or file recording.
+        // Explicit classroom start arms eye diagnostics, not task or file
+        // recording. Manual retry/stop remain owner controls.
         public void DrawSessionViewControls()
         {
             EnsureOwnerStyles();
             GUILayout.Space(6);
             GUILayout.Label("Headset and eye tracking",label);
             GUILayout.Label(stopping?"Stopping headset view...":starting?"Starting headset view...":
-                !running?"Headset view is off.":!headReady?"Put on the headset and follow its prompt.":
-                worker==null?"Headset ready. Eye tracking is off.":"Headset ready. Eye tracking client is on.");
-            if(running&&!headReady)GUILayout.Label(CurrentHeadDiagnostic,label);
+                !running?"Headset view is off.":!headReady?"Put on the headset and follow its prompt.":!XrFocused?"Physical head pose ready. XR focus unavailable; task interaction is held.":
+                worker==null?(AutoEyeStartPending?"Headset ready. Eye tracking starts automatically.":"Headset ready. Eye tracking is off."):
+                worker.Starting?"Headset ready. Eye tracking client is starting.":"Headset ready. Eye tracking client is on.");
+            if(running&&(!headReady||!XrFocused))GUILayout.Label(CurrentHeadDiagnostic,label);
             if(!String.IsNullOrEmpty(lastEyeClientFailure))GUILayout.Label("Last eye-client failure: "+lastEyeClientFailure,label);
             bool previousEnabled=GUI.enabled;
-            GUILayout.BeginHorizontal();
-            GUI.enabled=previousEnabled&&!starting&&!running&&!stopping&&!xrCleanupUncertain&&!quitRequested&&(development==null||!development.RecordingBlocked);
+            bool stacked=ViveOwnerDesktopLayout.StackActions;
+            if(stacked)GUILayout.BeginVertical();else GUILayout.BeginHorizontal();
+            GUI.enabled=previousEnabled&&!starting&&!running&&!stopping&&!xrCleanupUncertain&&!quitRequested&&(development==null||(!development.RecordingBlocked&&!development.SessionDirectoryPreparationPending));
             if(GUILayout.Button("Start classroom view",button,GUILayout.Height(45)))BeginView();
             GUI.enabled=previousEnabled&&(starting||running);
             if(GUILayout.Button("Stop view",button,GUILayout.Height(45)))StopView();
-            GUILayout.EndHorizontal();
-            GUILayout.BeginHorizontal();
-            GUI.enabled=previousEnabled&&running&&headReady&&worker==null&&!stopping&&!restartBlocked&&(development==null||(!development.RecordingBlocked&&!development.PreSessionChoiceActive));
+            if(stacked)GUILayout.EndVertical();else GUILayout.EndHorizontal();
+            if(stacked)GUILayout.BeginVertical();else GUILayout.BeginHorizontal();
+            GUI.enabled=previousEnabled&&!AutoEyeStartPending&&EyeDiagnosticStartAllowed(false);
             if(GUILayout.Button("Enable eye tracking",button,GUILayout.Height(45)))BeginEye();
-            GUI.enabled=previousEnabled&&worker!=null&&!stopping&&(development==null||!development.NamedRawCompletionActive);
+            GUI.enabled=previousEnabled&&(worker!=null||AutoEyeStartPending)&&!stopping&&(development==null||!development.NamedRawCompletionActive);
             if(GUILayout.Button("Stop eye tracking",button,GUILayout.Height(45)))StopEye();
-            GUILayout.EndHorizontal();GUI.enabled=previousEnabled;
+            if(stacked)GUILayout.EndVertical();else GUILayout.EndHorizontal();GUI.enabled=previousEnabled;
             if(!String.IsNullOrEmpty(lastViewFailure))GUILayout.Label(lastViewFailure,label);
             if((xrCleanupUncertain||restartBlocked||RawInstallFailure||(!ViewRunning&&status!=StoppedNotice))&&status!=lastViewFailure)GUILayout.Label(status,label);
             GUILayout.Space(8);
         }
         public void BeginView()
         {
+            if(development!=null&&development.SessionDirectoryPreparationPending)
+            {SetStatus("Wait for the new session folder to finish preparing, then start the classroom view.");return;}
             if(starting||running||stopping||xrCleanupUncertain||quitRequested||(development!=null&&development.RecordingBlocked))return;
             if(!VivePreviewLaunchPlan.IsExpectedChildEnvironment(Environment.GetEnvironmentVariable(VivePreviewLaunchPlan.MarkerVariable),
                 Environment.GetEnvironmentVariable(VivePreviewLaunchPlan.RuntimeVariable)))
@@ -264,8 +422,10 @@ namespace AvatarStroop.Unity
                 if(development!=null){development.BeforeViewStart();development.PrepareInputBeforeXr();}
             }
             catch(Exception error){RememberViewFailure("VIVE input setup failed: "+error.GetType().Name,error);SetStatus(lastViewFailure);return;}
-            starting=true;visibleMask=previewCamera.cullingMask;previewCamera.cullingMask=0;
-            SetStatus("Starting the configured SteamVR OpenXR view. Eye capture has not started.");
+            autoEyeForView.BeginExplicitView();
+            if(restartBlocked)autoEyeForView.Suppress();
+            starting=true;visibleMask=previewCamera.cullingMask&~ViveRawHoldView.Mask;previewCamera.cullingMask=0;
+            SetStatus("Starting the SteamVR classroom. Eye diagnostics will start after the headset is ready; recording is separate.");
             StartCoroutine(InitializeView());
         }
         IEnumerator InitializeView()
@@ -298,13 +458,20 @@ namespace AvatarStroop.Unity
                     new MonotonicClock("vive-classroom-view-"+Guid.NewGuid().ToString("N"));
                 if(clock==null)throw new InvalidOperationException("Configured task clock is unavailable.");
                 headSequence=0;
-                starting=false;running=true;SetStatus("Put on the headset and follow the startup prompt. Eye capture is off.");
+                starting=false;running=true;SetStatus(AutoEyeStartPending?
+                    "Put on the headset and follow the startup prompt. Eye diagnostics will start automatically.":
+                    "Put on the headset and follow the startup prompt. Eye diagnostics are off.");
             }
             catch(Exception e){Fail("Classroom view unavailable: "+e.GetType().Name,e);}
         }
         void BeginEye()
         {
-            if(!running||!headReady||worker!=null||stopping||restartBlocked||(development!=null&&(development.RecordingBlocked||development.PreSessionChoiceActive)))return;
+            if(!EyeDiagnosticStartAllowed(false))return;
+            autoEyeForView.Suppress();
+            StartEyeDiagnostic();
+        }
+        void StartEyeDiagnostic()
+        {
             lastEyeClientFailure=null;
             try
             {
@@ -322,7 +489,7 @@ namespace AvatarStroop.Unity
         }
         ViveHeadFrame ReadHead()
         {
-            headDiagnosticFrame=-1;
+            headDiagnosticFrame=-1;sameReferenceHeadPoseLoss=false;
             var device=InputDevices.GetDeviceAtXRNode(XRNode.Head);bool tracked=false;InputTrackingState flags=InputTrackingState.None;
             if(device.isValid)
             {
@@ -339,7 +506,7 @@ namespace AvatarStroop.Unity
             var mode=input!=null&&input.running?input.GetTrackingOriginMode():TrackingOriginModeFlags.Unknown;
             bool supported=mode==TrackingOriginModeFlags.Device||mode==TrackingOriginModeFlags.Floor;
             bool pose=subsystems&&device.isValid&&tracked&&gotPosition&&Finite(rawPosition)&&validRotation&&
-                (flags&(InputTrackingState.Position|InputTrackingState.Rotation))==(InputTrackingState.Position|InputTrackingState.Rotation)&&focused;
+                (flags&(InputTrackingState.Position|InputTrackingState.Rotation))==(InputTrackingState.Position|InputTrackingState.Rotation);
             var presence=OpenXRSettings.Instance==null?null:OpenXRSettings.Instance.GetFeature<ViveVerifiedPresenceFeature>();
             bool capable=presence!=null&&presence.enabled&&presence.CapabilityVerified;
             bool present=capable&&OpenXRUtility.IsUserPresent;
@@ -352,10 +519,10 @@ namespace AvatarStroop.Unity
             if(alignment.Applied&&supported&&mode!=alignedMode)referenceChanged=true;
             if(!alignment.Applied)
             {
-                var controls=development==null?null:development.ReadStartupAlignmentInput(pose&&supported);
+                var controls=development==null?null:development.ReadStartupAlignmentInput(pose&&supported&&focused);
                 startupInputReady=controls!=null&&controls.DeviceReady;
                 startupInputDiagnostic=controls==null?"VIVE controller input is not configured.":controls.Diagnostic;
-                bool eligible=startupGate.Observe(Time.frameCount,subsystems,pose&&supported,capable,present,
+                bool eligible=startupGate.Observe(Time.frameCount,subsystems,pose&&supported&&focused,capable,present,
                     startupView!=null&&startupView.WasRenderedBefore(Time.frameCount),controls!=null&&controls.DeviceReady,
                     controls!=null&&controls.DeviceChanged,controls!=null&&controls.TriggerHeld,
                     controls!=null&&controls.Trackpad.Pressed,controls!=null&&controls.MenuHeld);
@@ -367,10 +534,14 @@ namespace AvatarStroop.Unity
             }
             headReady=pose&&alignment.Applied&&!referenceChanged&&mode==alignedMode&&Time.frameCount>alignedFrame&&(!capable||present);
             headReadyFrame=headReady?Time.frameCount:-1;
+            sameReferenceHeadPoseLoss=!headReady&&subsystems&&device.isValid&&hasHeadDevice&&device.Equals(headDevice)&&
+                alignment.Applied&&!referenceChanged&&supported&&mode==alignedMode&&Time.frameCount>alignedFrame&&
+                (!capable||present)&&(!tracked||(flags&(InputTrackingState.Position|InputTrackingState.Rotation))!=
+                    (InputTrackingState.Position|InputTrackingState.Rotation));
             if(pose)previewCamera.transform.SetLocalPositionAndRotation(rawPosition,rawRotation);
             ApplyTrackedMask(headReady);
             if(!subsystems)headStatus="Waiting for OpenXR display and input.";
-            else if(!focused)headStatus="OpenXR is not focused. Put on the headset and close the SteamVR dashboard.";
+            else if(!focused)headStatus="XR focus unavailable. Physical pose is checked separately; task interaction is held. Close the SteamVR dashboard to restore interaction.";
             else if(!device.isValid)headStatus="Headset input device is unavailable.";
             else if(!tracked)headStatus="Headset tracking is unavailable. Check visibility to the base stations.";
             else if((flags&(InputTrackingState.Position|InputTrackingState.Rotation))!=(InputTrackingState.Position|InputTrackingState.Rotation))headStatus="Headset position or rotation is not tracked.";
@@ -412,12 +583,56 @@ namespace AvatarStroop.Unity
             // so keep the physical camera masked for every raw-attached frame.
             bool rawOpenUnproven=development!=null&&development.NamedRawPumpAttached;
             if(rawOpenUnproven&&view!=null)view.SuppressViveRawStimulus();
-            previewCamera.cullingMask=trackedHeadReady&&!rawOpenUnproven&&(development==null||!development.PresentationBlocked)?visibleMask:0;
+            previewCamera.cullingMask=trackedHeadReady&&XrFocused&&!rawOpenUnproven&&(development==null||!development.PresentationBlocked)?visibleMask:0;
+        }
+        int rawBusyFrames;
+        double rawBusySince=-1;
+        internal void NoteBusyPreparationPanel(){HoldRawBusy();}
+        internal void NotePreparationPanelRetry()
+        {
+            if(HoldRawBusy())SetStatus("Refreshing the initial recording snapshot. No practice trial has started.");
+        }
+        internal void CompletePreparationPanel(){rawBusyFrames=0;rawBusySince=-1;}
+        bool HoldRawBusy()
+        {
+            double now=Time.realtimeSinceStartupAsDouble;
+            if(rawBusySince<0)rawBusySince=now;
+            if(!development.CanWaitForNamedRawBaseline)
+            {development.NoteRawFirstFault("task_authority_unavailable");development.FailNamedRawBeforeFrame();BlockTaskPresentation();return false;}
+            if(++rawBusyFrames>120||now-rawBusySince>=2.0)
+            {
+                development.NoteRawFirstFault(development.CanWaitForNamedRawBaseline?"startup_busy_timeout":"active_busy_interval_unknown");
+                development.FailNamedRawBeforeFrame();return false;
+            }
+            BlockTaskPresentation();
+            SetStatus("Recording attached; waiting briefly for the initial capture gate. No trial input was processed.");return true;
         }
         void Update()
         {
+            if(development!=null&&development.PollExplicitDesktopWithdrawal())
+            {BlockTaskPresentation();SetStatus("Explicit withdrawal requested; recording and native cleanup may still be pending.");return;}
+            var owner=development;bool busy;
+            if(owner!=null&&!owner.EnterRawPreparationAuthority(out busy))
+            {
+                if(busy)HoldRawBusy();
+                return;
+            }
+            try
+            {
+                // Recorded task/head authority is an exact revocable snapshot,
+                // not ownership of the eye publication lock. Optional eye lock
+                // contention is recorded separately and never pauses a trial.
+                UpdateRecordingFrame();
+            }
+            finally
+            {
+                if(owner!=null)owner.ExitRawPreparationAuthority();
+            }
+        }
+        void UpdateRecordingFrame()
+        {
             // No previous-frame marker may survive a skipped/blocked update.
-            HideGazeMarker();
+            HideGazeMarker();recordingEyeFrame=-1;
             // A partially initialized recorder cannot fall back to an
             // unrecorded task. Keep the scene masked and request worker stop
             // without waiting; the native outcome remains unconfirmed.
@@ -429,6 +644,10 @@ namespace AvatarStroop.Unity
             }
             // Before any new input, a missing prior-frame callback is a lost
             // presentation interval. Cancel rather than leave P held.
+            if(development!=null&&development.NamedRawPumpAttached&&!development.PrepareRawFocusBoundary(XrFocused))
+            {BlockTaskPresentation();SetStatus("Focus-boundary reservation was inconsistent; recording safety is pending.");return;}
+            if(development!=null&&development.ServicePendingRawRenderHeadTracking())
+            {BlockTaskPresentation();SetStatus(development.RawTrackingHoldNotice);return;}
             if(development!=null&&development.ExpirePendingRawPresentation())
             {BlockTaskPresentation();SetStatus("Render callback did not complete in its frame; task safety is pending.");return;}
             // Completion is not a recording fault. Keep presentation masked,
@@ -440,7 +659,7 @@ namespace AvatarStroop.Unity
                 {
                     BlockTaskPresentation();
                     bool finishing=development.PollNamedRawCompletion();
-                    if(finishing&&!rawCompletionEyeStopRequested)
+                    if(finishing&&development.NamedRawCompletionEyeMayStop&&!rawCompletionEyeStopRequested)
                         rawCompletionEyeStopRequested=TryStopEyeForRawSafety();
                     ObserveRawEyeCleanup();
                     SetStatus((finishing?"Task ended; recording I/O may still be pending.":
@@ -472,19 +691,21 @@ namespace AvatarStroop.Unity
             }
             if(development!=null&&development.NamedRawPumpAttached)
             {
-                object run;
-                if(worker==null||stopping||eyePump==null||!worker.TryGetRecordingRunIdentity(out run))
+                var run=worker==null||stopping||eyePump==null?ViveProEyeWorker.RecordingRunRead.Unavailable:
+                    development.ReadRawWorkerRun(worker);
+                if(run==ViveProEyeWorker.RecordingRunRead.Busy){HoldRawBusy();return;}
+                if(run!=ViveProEyeWorker.RecordingRunRead.Ready)
                 {
                     if(previewCamera!=null)previewCamera.cullingMask=0;
+                    development.NoteRawFirstFault("eye_worker_run_unavailable");
                     development.FailNamedRawBeforeFrame();
                     SetStatus("Eye input unavailable; recording and task safety are stopped or pending.");return;
                 }
-                // Status must be consumed before polling a new eye frame.
-                // Only initial Preparation can wait for the first baseline;
-                // active trials are interrupted instead of silently spanning
-                // a period whose eye status was not observed.
+                // Preserve ordered status records when available. A busy eye
+                // publication lock does not revoke fresh task/head authority;
+                // the optional observation is explicitly marked SnapshotBusy.
                 var preparation=development.PrepareNamedRawStatus();
-                if(preparation!=ViveNamedRawRecordingPump.Preparation.Ready)
+                if(preparation!=ViveNamedRawRecordingPump.Preparation.Ready&&preparation!=ViveNamedRawRecordingPump.Preparation.Busy)
                 {
                     if(previewCamera!=null)previewCamera.cullingMask=0;
                     if(preparation==ViveNamedRawRecordingPump.Preparation.WaitingBaseline&&development.CanWaitForNamedRawBaseline)
@@ -509,7 +730,14 @@ namespace AvatarStroop.Unity
                     previewCamera.cullingMask=0;
                     SetStatus("Recording stopped or faulted. Task presentation and restart are blocked; review the owner controls.");return;
                 }
-                if(worker==null){ReadHead();if(development!=null){development.Poll(headReady);development.ObservePracticeFrame(null);}SetStatus(headStatus);return;}
+                if(worker==null)
+                {
+                    ReadHead();
+                    bool attemptedAutomaticEye=TryStartAutomaticEyeDiagnostic();
+                    if(development!=null){development.Poll(headReady);development.ObservePracticeFrame(null);}
+                    if(!attemptedAutomaticEye)SetStatus(headStatus);
+                    return;
+                }
                 // Native cleanup may outlive the Stop action. Keep head view
                 // responsive and never dereference the now-cleared eye source.
                 if(stopping){ReadHead();if(development!=null)development.Poll(headReady);SetStatus("Stopping eye preview; waiting for native cleanup. No new samples are accepted.");return;}
@@ -532,10 +760,20 @@ namespace AvatarStroop.Unity
                         {headStatus="Head sample unavailable from the input pipeline.";headDiagnosticFrame=Time.frameCount;}
                         headReady=false;ApplyTrackedMask(false);
                         if(development!=null&&development.NamedRawPumpAttached)
-                        {development.FailNamedRawBeforeFrame();return;}
+                        {
+                            if(headDiagnosticFrame==Time.frameCount&&sameReferenceHeadPoseLoss&&
+                                development.TryHoldRawHeadTracking(currentPump.Poll()))
+                            {SetStatus(development.RawTrackingHoldNotice);return;}
+                            development.FailNamedRawBeforeFrame();return;
+                        }
                     }
-                    if(development!=null&&development.NamedRawPumpAttached&&!development.StageNamedRawFrame(currentPump.Poll()))
-                    {previewCamera.cullingMask=0;SetStatus("Eye or recording input unavailable; task safety is stopped or pending.");return;}
+                    bool waiting;
+                    if(development!=null&&development.NamedRawPumpAttached&&!development.StageNamedRawFrame(currentPump.Poll(),out waiting))
+                    {
+                        previewCamera.cullingMask=0;
+                        if(waiting){HoldRawBusy();return;}
+                        SetStatus("Eye or recording input unavailable; task safety is stopped or pending.");return;
+                    }
                     if(development!=null&&development.RecordingEnabled)
                     {
                         // Recording and diagnostics share this frame; the latter
@@ -552,16 +790,43 @@ namespace AvatarStroop.Unity
                     }
                     HeadEyeSample sample;bool emitted=source.TryRead(out sample);
                     bool usable=emitted&&sample!=null&&sample.EyeValid&&source.LastObservation.EyeUsable&&headReady;
+                    if(usable&&source.LastObservation.EyeDisposition==ViveFrameDisposition.Accepted)recordingEyeFrame=Time.frameCount;
                     UpdateGazeMarker(sample,source.LastObservation,usable);
-                    if(development!=null&&development.NamedRawPumpAttached&&!usable)
+                    if(development!=null&&development.NamedRawPumpAttached&&!usable&&!development.RawTaskEpochThisFrame)
                     {previewCamera.cullingMask=0;development.FailNamedRawBeforeFrame();SetStatus("Eye input unavailable; task safety is stopped or pending.");return;}
                     if(development!=null&&development.NamedRawPumpAttached&&!development.VerifyNamedRawEpoch())
                     {previewCamera.cullingMask=0;SetStatus("Eye status changed before task input; task safety is stopped or pending.");return;}
+                    if(development!=null&&development.NamedRawPumpAttached)
+                    {
+                        if(!development.ProcessRawFocusFrame(XrFocused))
+                        {previewCamera.cullingMask=0;SetStatus("Focus metadata or task hold could not be recorded; recording safety is pending.");return;}
+                        if(!XrFocused)
+                        {
+                            development.ObserveFocusLossDuringTracking();
+                            previewCamera.cullingMask=0;SetStatus(development.RawFocusHoldStatus);return;
+                        }
+                    }
+                    bool rawAttachedBeforePoll=development!=null&&development.NamedRawPumpAttached;
                     if(development!=null)development.Poll(headReady);
+                    if(!rawAttachedBeforePoll&&development!=null&&development.NamedRawPumpAttached)
+                    {
+                        // This Update started as preview, without status admission
+                        // or a staged raw frame. Start raw checks next Update.
+                        BlockTaskPresentation();SetStatus("Recording installed; waiting for the first admitted head/eye frame.");return;
+                    }
                     if(stopping||worker==null||!object.ReferenceEquals(eyePump,currentPump))
                     {if(development!=null&&development.NamedRawPumpAttached){previewCamera.cullingMask=0;development.FailNamedRawAfterTask();}SetStatus("Eye stop requested; native cleanup may still be pending.");return;}
+                    if(development!=null&&development.RawTrackingMasksThisFrame&&!development.RecordingBlocked)
+                    {previewCamera.cullingMask=0;SetStatus(development.RawTrackingHoldNotice);return;}
                     if(development!=null&&development.NamedRawPumpAttached&&development.PresentationBlocked)
                     {previewCamera.cullingMask=0;development.FailNamedRawAfterTask();SetStatus("Task input interval is unknown; presentation remains blocked.");return;}
+                    if(development!=null&&development.NamedRawFocusHoldMasked)
+                    {previewCamera.cullingMask=0;SetStatus(development.RawFocusHoldStatus);return;}
+                    if(development!=null&&development.NamedRawPumpAttached&&!XrFocused)
+                    {
+                        development.PrepareRawFocusBoundary(false);previewCamera.cullingMask=0;
+                        SetStatus("XR focus changed during input. Presentation is held; recording continues if physical samples remain valid.");return;
+                    }
                     if(development!=null&&development.WaitForLegacyWozRawAcquisition())
                     {
                         if(!development.PresentationBlocked&&!development.DrainNamedRawTaskEvents())development.FailNamedRawAfterTask();
@@ -597,7 +862,8 @@ namespace AvatarStroop.Unity
                         // Its renderer and post-render witness are required
                         // before ordinary input on the next owner update.
                         if(!development.PrepareRawNonTrialScene())
-                        {previewCamera.cullingMask=0;development.FailNamedRawAfterTask();SetStatus("Panel rendering is unconfirmed; task safety is stopped or pending.");}
+                        {previewCamera.cullingMask=0;development.NoteRawFirstFault("raw_panel_prepare_invalid");development.FailNamedRawAfterTask();SetStatus("Panel rendering is unconfirmed; task safety is stopped or pending.");}
+                        else if(!development.NamedRawPanelPending)CompletePreparationPanel();
                         return;
                     }
                     if(development!=null)development.ObservePracticeFrame(currentPump.Poll());
@@ -629,6 +895,7 @@ namespace AvatarStroop.Unity
         }
         void StopEye()
         {
+            autoEyeForView.Suppress();
             if(RawInstallFailure){ServiceRawInstallFailure();return;}
             // A recording owns this worker's observation and status stream.
             // Revoke that authority and mask presentation before requesting
@@ -659,6 +926,7 @@ namespace AvatarStroop.Unity
         // busy worker lock leaves the request pending for the next update.
         internal bool TryStopEyeForRawSafety()
         {
+            autoEyeForView.Suppress();
             if(worker==null)return true;
             if(!worker.TryRequestStop())return false;
             source=null;var oldPump=eyePump;eyePump=null;stopping=true;
@@ -701,7 +969,9 @@ namespace AvatarStroop.Unity
             if(RawInstallFailure){ServiceRawInstallFailure();SetStatus("Recording start failed; cleanup remains unconfirmed.");return;}
             if(development!=null&&development.NamedRawPumpAttached)
             {development.RequestNamedRawStopForViewClose();SetStatus("Stop requested; task, eye or recording cleanup may remain pending. Presentation is blocked.");return;}
+            autoEyeForView.EndView();
             StopAllCoroutines();starting=false;running=false;headReady=false;
+            DisposeRawHoldView();rawHoldViewUnavailable=false;
             if(startupView!=null){startupView.Dispose();startupView=null;}
             try{if(development!=null)development.BeforeXrStop();}catch(Exception error){RememberViewFailure("Task cleanup failed: "+error.GetType().Name,error);}
             StopEye();
@@ -739,8 +1009,10 @@ namespace AvatarStroop.Unity
         bool WantsToQuit(){if(RawInstallFailure){ServiceRawInstallFailure();return true;}if(development!=null&&development.NamedRawPumpAttached){development.RequestNamedRawStopForViewClose();return true;}if(worker==null&&!starting&&!running&&!stopping)return true;RequestQuit();return false;}
         void OnDestroy()
         {
+            autoEyeForView.EndView();
+            DisposeTrackedWandVisual();
             if(ownerSkin!=null){Destroy(ownerSkin);ownerSkin=null;}
-            HideGazeMarker();gazeContinuity.Reset();
+            DisposeRawHoldView();HideGazeMarker();gazeContinuity.Reset();
             if(startupView!=null){startupView.Dispose();startupView=null;}
             Application.wantsToQuit-=WantsToQuit;
             if(input!=null)input.trackingOriginUpdated-=OnTrackingOriginUpdated;

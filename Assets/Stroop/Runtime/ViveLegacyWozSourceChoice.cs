@@ -72,6 +72,24 @@ namespace AvatarStroop.Runtime
                 participant.LockedControl==ControlSelection.LiveWoz&&participant.LegacyWozSourceOwner==candidate.SourceOwner&&
                 participant.LegacyWozSourceGeneration==candidate.SourceGeneration&&participant.Phase!=Phase.Paused&&participant.Phase!=Phase.Ended;
         }
+        // A focus-held task has already revoked its positive source choice.
+        // Matching that exact revoked identity permits negative cleanup only;
+        // it never makes IsSourceChoiceCurrent true or grants a new epoch.
+        internal bool IsSourceChoiceForFocusSuspension(SourceChoice candidate)
+        {
+            return SourceChoiceIdentityForNegativeFocus(candidate)&&
+                (participant.IsFocusHoldPaused||participant.IsXrFocusInteractionHeld||participant.IsRawTrackingPaused||participant.RawTrackingInteractionHeld);
+        }
+        internal bool IsRevokedSourceChoiceForFocusSuspension(SourceChoice candidate)
+        {return SourceChoiceIdentityForNegativeFocus(candidate)&&candidate.Revoked;}
+        bool SourceChoiceIdentityForNegativeFocus(SourceChoice candidate)
+        {
+            return OnOwnerThread&&!terminal&&depth==0&&candidate!=null&&Object.ReferenceEquals(candidate,choice)&&
+                Object.ReferenceEquals(candidate.Owner,this)&&participant.OwnsLegacyWoz(this)&&
+                participant.LockedControl==ControlSelection.LiveWoz&&
+                participant.LegacyWozSourceOwner==candidate.SourceOwner&&participant.LegacyWozSourceGeneration==candidate.SourceGeneration&&
+                (!participant.RawRecordingRequested||(RecordingBinding!=null&&RecordingBinding.Current));
+        }
         internal void RevokeSourceChoice(SourceChoice candidate)
         {
             if(!OnOwnerThread)throw new InvalidOperationException("Local source revocation requires owner thread.");

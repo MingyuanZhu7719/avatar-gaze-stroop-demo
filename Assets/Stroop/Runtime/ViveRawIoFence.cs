@@ -355,8 +355,12 @@ namespace AvatarStroop.Runtime
             revocation.Revoke();
             if(Volatile.Read(ref active)!=0)Interlocked.Exchange(ref uncertain,1);
         }
-        internal void Abort()
+        string firstFault;
+        internal string FirstFault {get{return Volatile.Read(ref firstFault);}}
+        internal void Abort([System.Runtime.CompilerServices.CallerMemberName]string member=null,
+            [System.Runtime.CompilerServices.CallerLineNumber]int line=0)
         {
+            Interlocked.CompareExchange(ref firstFault,"io_"+member+":"+line,null);
             Revoke();
             Interlocked.Exchange(ref faulted,1);
         }

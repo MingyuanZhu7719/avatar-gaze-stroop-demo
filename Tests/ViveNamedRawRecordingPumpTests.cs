@@ -1,18 +1,20 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using AvatarStroop.Core;
 using AvatarStroop.Runtime;
 
 namespace AvatarStroop.Tests
 {
-    public static class ViveNamedRawRecordingPumpTests
+    public static partial class ViveNamedRawRecordingPumpTests
     {
+        static long testHeadSequence;
         sealed class Client : IViveProEyeClient
         {
             readonly MonotonicClock clock;
             internal readonly ManualResetEvent Entered=new ManualResetEvent(false),Release=new ManualResetEvent(false);
-            internal bool OneShot=false;internal int InvalidNext=0,PollCalls;
+            internal bool OneShot=false;internal int InvalidNext=0,NativeError=0,PollCalls;
             internal Client(MonotonicClock clock){this.clock=clock;}
             public string Diagnostic {get{return "synthetic";}}
             public bool Start(){return true;}
@@ -21,7 +23,7 @@ namespace AvatarStroop.Tests
                 Interlocked.Increment(ref PollCalls);Entered.Set();Release.WaitOne(3000);if(OneShot)Release.Reset();double now=clock.Now;
                 var ray=new ViveEyeRay(2,false,true,new Vec3(0,0,0),new Vec3(.6,0,.8));
                 return new ViveProEyePoll(new ViveHeadFrame(1,now,true,true,Rotation.Identity),
-                    new ViveEyeFrame(1,8,now,Volatile.Read(ref InvalidNext)!=0,null,null,ray),ViveEyeRuntimeState.Working,ViveEyeCalibrationState.ReportedReady,true,0,2);
+                    new ViveEyeFrame(1,8,now,Volatile.Read(ref InvalidNext)!=0,null,null,ray),ViveEyeRuntimeState.Working,ViveEyeCalibrationState.ReportedReady,true,Volatile.Read(ref NativeError),2);
             }
             public void Dispose(){}
         }
@@ -38,18 +40,21 @@ namespace AvatarStroop.Tests
         }
         public static void RegisterSceneInstallBoundaryTests(TestSuite suite)
         {
+            suite.Run("raw admission diagnostic retains first failure without payloads",()=>ExerciseDiagnostic(false));
+            suite.Run("raw pump diagnostic names missing epoch and preserves refusal",()=>ExerciseDiagnostic(true));
             suite.Run("scene install rejects an already withdrawn synthetic pump",()=>ExerciseInstallBoundary(true));
             suite.Run("technical install abort remains a fault, not withdrawal",()=>ExerciseInstallBoundary(false));
 #if VIVE_SYNTHETIC_BATCH_FIXTURE
             suite.Run("admission construction fault after publication is not a withdrawal",()=>ExerciseAdmissionConstructionFailure(false));
             suite.Run("participant withdrawal during admission construction remains a withdrawal",()=>ExerciseAdmissionConstructionFailure(true));
+            RegisterPreparationPanelEpochTests(suite);
 #endif
         }
 #if VIVE_SYNTHETIC_BATCH_FIXTURE
         static void ExerciseAdmissionConstructionFailure(bool withdraw)
         {
             var clock=new MonotonicClock("scene-construction-failure-test");var client=new Client(clock);
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             try
             {
                 Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
@@ -66,10 +71,42 @@ namespace AvatarStroop.Tests
             finally{client.Release.Set();worker.Stop(1000);worker.Dispose();}
         }
 #endif
+        static void ExerciseDiagnostic(bool pumpFailure)
+        {
+            var clock=new MonotonicClock("diagnostic-synthetic-clock");var client=new Client(clock);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
+            ViveNamedRawRecordingPump pump=null;
+            try
+            {
+                Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
+                var admission=ViveNamedSessionFrameAdmission.CreateSyntheticForTest(task,worker,clock,32);
+                Check.True(admission.ConfirmTask()&&admission.ConfirmEye());
+                if(!pumpFailure)
+                {
+                    admission.CancelPresentation(null);
+                    string first=admission.FirstFault;
+                    Check.True(first!=null&&first.StartsWith("admission_CancelPresentation:",StringComparison.Ordinal));
+                    admission.AbortForTechnicalFailure();Check.Equal(first,admission.FirstFault);
+                    Check.True(admission.State==3&&admission.IoFence.IsRevoked&&!task.NamedRawRevocation.ParticipantWithdrawalRequested);
+                    Check.True(!first.Contains("diagnostic-synthetic-clock")&&!first.Contains("C:\\"));
+                }
+                else
+                {
+                    var writer=new ViveNamedRawRecordingPump.SyntheticWriter(admission);
+                    pump=ViveNamedRawRecordingPump.StartSyntheticForTest(task,worker,clock,admission,writer);
+                    Check.True(!pump.PrepareNonTrialPanelRender());
+                    Check.True(pump.FirstFault.StartsWith("raw_PrepareNonTrialPanelRender:",StringComparison.Ordinal));
+                    string first=pump.FirstFault;pump.Stop();Check.Equal(first,pump.FirstFault);
+                    Check.True(pump.State!=ViveNamedRawRecordingPump.Outcome.Running&&!pump.WithdrawalRequested);
+                    Check.True(pump.FailureSnapshot.Contains("pump="+first)&&pump.FailureSnapshot.Contains("fence=Revoked"));
+                }
+            }
+            finally{if(pump!=null){pump.Stop();SpinWait.SpinUntil(()=>pump.HasExited,3000);}client.Release.Set();worker.Stop(1000);worker.Dispose();}
+        }
         static void ExerciseInstallBoundary(bool withdraw)
         {
             var clock=new MonotonicClock("scene-install-test");var client=new Client(clock);
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             ViveNamedRawRecordingPump pump=null;
             try
             {
@@ -107,10 +144,84 @@ namespace AvatarStroop.Tests
             internal void Release(){lock(values)values.Enqueue(null);Permit.Set();}
             public void Dispose(){}
         }
+        public static void RegisterPreparationPanelEpochTests(TestSuite suite)
+        {
+            suite.Run("ordinary epoch remains usable while bounded healthy metadata awaits admission",()=>ExercisePreparationPanelEpoch(0));
+            suite.Run("unaccepted initial panel permits head authority while healthy gaze status awaits admission",()=>ExercisePreparationPanelEpoch(1));
+            suite.Run("initial panel can proceed while invalid-then-healthy gaze status remains queued",()=>ExercisePreparationPanelEpoch(2));
+            suite.Run("initial panel discards bounded age expiry with healthy worker only",()=>ExercisePreparationPanelEpoch(3));
+            suite.Run("initial panel retries old head even while eye-only status is queued",()=>ExercisePreparationPanelEpoch(4));
+            suite.Run("initial panel cannot discard backward verification time",()=>ExercisePreparationPanelEpoch(5));
+        }
+        static void ExercisePreparationPanelEpoch(int scenario)
+        {
+            var clock=new MonotonicClock("panel-epoch-test");var client=new SequencedFrameBoundaryClient();
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
+            ViveNamedRawRecordingPump pump=null;
+            try
+            {
+                Check.True(worker.Start()&&client.Waiting.WaitOne(3000));var task=NewTask(clock);
+                var admission=ViveNamedSessionFrameAdmission.CreateSyntheticForTest(task,worker,clock,64);
+                Check.True(admission.ConfirmTask()&&admission.ConfirmEye());
+                Check.True(admission.TryBindQueueBudget(ViveRawByteBudget.SelectExplicit(33554432)));
+                var writer=new ViveNamedRawRecordingPump.SyntheticWriter(admission);
+                pump=ViveNamedRawRecordingPump.StartSyntheticWithStatusForTest(task,worker,clock,admission,writer);
+                Action<int,int> send=(i,mask)=>{
+                    var ray=new ViveEyeRay((ulong)mask,(mask&1)!=0,(mask&2)!=0,new Vec3(0,0,0),new Vec3(.6,0,.8));
+                    client.Send(new ViveProEyePoll(null,new ViveEyeFrame(i,i*8,clock.Now,false,null,null,ray),
+                        ViveEyeRuntimeState.Working,ViveEyeCalibrationState.ReportedReady,true,0,2));};
+                client.Send(null);send(1,3);
+                Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
+                ViveProEyePoll frame;Check.True(worker.TryPollForRecording(out frame));
+                Check.True(pump.StageRigFrame(frame,1)&&pump.PrepareNonTrialPanelRender());
+                send(2,3); // Advancing healthy frame with identical metadata is not a discontinuity.
+                Check.True(pump.VerifyStagedEpoch());
+                if(scenario<=1){send(3,2);send(4,3);} // Both queued transitions are healthy, including the origin bit.
+                if(scenario==2||scenario==4){send(3,1);send(4,3);} // Invalid direction cannot be hidden by subsequent recovery.
+                if(scenario==3||scenario==4)
+                    typeof(ViveNamedRawRecordingPump).GetField("stagedMaximumAge",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).SetValue(pump,1e-12);
+                if(scenario==5)
+                    typeof(ViveNamedRawRecordingPump).GetField("lastEpochVerification",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).SetValue(pump,clock.Now+10);
+                if(scenario==0)
+                {
+                    Check.True(pump.VerifyStagedEpoch()&&pump.FirstFault==null&&!admission.IoFence.IsRevoked);
+                    Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
+                    return;
+                }
+                string reason;
+                Check.Equal(ViveNamedRawRecordingPump.PreparationPanelEpochResult.Invalid,pump.CheckPreparationPanelEpoch(out reason));
+                Check.Equal("preparation_scope_invalid",reason);
+                bool retry=scenario==3||scenario==4;
+                lock(task.NamedRecordingGate)lock(worker.RecordingTicketGate)
+                {
+                    Check.Equal(retry?ViveNamedRawRecordingPump.PreparationPanelEpochResult.Retry:(scenario==1||scenario==2)?ViveNamedRawRecordingPump.PreparationPanelEpochResult.Current:ViveNamedRawRecordingPump.PreparationPanelEpochResult.Invalid,
+                        pump.CheckPreparationPanelEpoch(out reason));
+                    Check.Equal(scenario==3||scenario==4?"age_expired":scenario==5?"clock_invalid":"current",reason);
+                    Check.Equal(retry,pump.TryDiscardPreparationPanelEpoch());
+                    if(retry)
+                    {
+                        Check.Equal(ViveNamedRawRecordingPump.PreparationPanelEpochResult.Invalid,pump.CheckPreparationPanelEpoch(out reason));
+                        Check.Equal("missing_ticket",reason);
+                    }
+                }
+                Check.True(task.Phase==Phase.Preparation&&task.CurrentTrial==null&&!admission.IoFence.IsRevoked);
+                if(!retry)
+                {
+                    if(scenario==1||scenario==2){Check.True(pump.VerifyStagedEpoch()&&pump.PrepareStatus()==ViveNamedRawRecordingPump.Preparation.Ready&&!admission.IoFence.IsRevoked);}
+                    else Check.True(!pump.VerifyStagedEpoch()&&admission.IoFence.IsRevoked);
+                    return;
+                }
+                Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
+                send(5,3);Check.True(worker.TryPollForRecording(out frame));
+                Check.True(pump.StageRigFrame(frame,1)&&pump.PrepareNonTrialPanelRender()&&pump.FinishNonTrialPanelRender());
+                Check.True(!admission.IoFence.IsRevoked&&task.Phase==Phase.Preparation&&task.CurrentTrial==null);
+            }
+            finally{if(pump!=null)pump.Stop();worker.TryRequestStop();client.Release();worker.Stop(1000);worker.Dispose();}
+        }
         static void ExerciseFrameBoundary(bool closeFirstFrame)
         {
             var clock=new MonotonicClock("frame-boundary-clock");var client=new SequencedFrameBoundaryClient();
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             ViveNamedRawRecordingPump pump=null;
             try
             {
@@ -145,11 +256,143 @@ namespace AvatarStroop.Tests
             suite.Run("synthetic finished frame accepts a fresh next epoch",()=>ExerciseFrameBoundary(true));
             suite.Run("participant choice poll observations enter bounded task FIFO before practice",()=>ExerciseSoftwareChoices());
         }
+        public static void RegisterFocusBoundaryTests(TestSuite suite)
+        {
+            suite.Run("focus changes keep healthy raw capture running and do not automatically resume the task",()=>ExerciseFocusBoundary(0));
+            suite.Run("focus capture does not conceal a genuinely invalid physical head sample",()=>ExerciseFocusBoundary(1));
+            suite.Run("focus capture keeps same phase while SDK eye result is missing",()=>ExerciseFocusBoundary(2));
+            suite.Run("real owner head poll evidence can hold raw capture without an eye frame or duplicate gap",()=>ExerciseActiveTracking(0));
+            suite.Run("same-controller pose gap keeps active raw admission and retries the affected slot",()=>ExerciseActiveTracking(1));
+            suite.Run("eye SDK result cannot force termination nor prematurely resolve a genuine head tracking gap",()=>ExerciseActiveTracking(2));
+            suite.Run("tracking restoration never resumes an earlier explicit pause",()=>ExerciseActiveTracking(3));
+            suite.Run("withdrawal revokes recording during an open tracking gap",()=>ExerciseActiveTracking(4));
+            RegisterEyeQualityRecoveryTests(suite);
+        }
+        static void ExerciseActiveTracking(int mode)
+        {
+            var clock=new MonotonicClock("tracking-boundary-clock");var client=new SequencedFrameBoundaryClient();bool headValid=true;
+            long seq=0;
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(++seq,clock.Now,true,headValid,Rotation.Identity),()=>client);
+            ViveNamedRawRecordingPump pump=null;
+            try
+            {
+                Check.True(worker.Start()&&client.Waiting.WaitOne(3000));var task=NewTask(clock);
+                var admission=ViveNamedSessionFrameAdmission.CreateSyntheticForTest(task,worker,clock,256);
+                Check.True(admission.ConfirmTask()&&admission.ConfirmEye());
+                Check.True(admission.TryBindQueueBudget(ViveRawByteBudget.SelectExplicit(33554432)));
+                var writer=new ViveNamedRawRecordingPump.SyntheticWriter(admission);
+                pump=ViveNamedRawRecordingPump.StartSyntheticWithStatusForTest(task,worker,clock,admission,writer);
+                task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));
+                var engine=(Experiment)typeof(ViveDevelopmentParticipant).GetField("experiment",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).GetValue(task);
+                engine.PrepareNamedRecordingBlockPlan(Actor.Owner,true);engine.BeginFamiliarization(Actor.Owner);engine.BeginPractice(Actor.Owner);
+                if(mode==3)task.OwnerPause(Actor.Owner);
+                var trial=task.CurrentTrial;
+                Func<int,bool,ViveProEyePoll> next=(i,nativeFault)=>
+                {
+                    var ray=new ViveEyeRay(2,false,true,new Vec3(0,0,0),new Vec3(.6,0,.8));
+                    client.Send(new ViveProEyePoll(null,new ViveEyeFrame(i,i*8,clock.Now,false,null,null,ray),
+                        ViveEyeRuntimeState.Working,ViveEyeCalibrationState.ReportedReady,true,nativeFault?-1:0,2));
+                    ViveProEyePoll frame;Check.True(worker.TryPollForRecording(out frame));return frame;
+                };
+                client.Send(null);next(1,false);Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
+                if(mode==1)
+                    Check.True(pump.StageRigFrame(next(2,false),1)&&pump.ObserveTrackingControllerLoss(false));
+                else
+                {
+                    headValid=false;
+                    Check.True(pump.ObserveTrackingHeadLoss(next(2,false),false));
+                    Check.True(pump.ObserveTrackingHeadLoss(next(3,false),false));
+                }
+                Check.True(pump.TrackingGapOpen&&!admission.IoFence.IsRevoked);
+                Check.Equal(Phase.Paused,task.Phase);
+                Check.Equal(TrialOutcome.Interrupted,trial.Outcome);Check.True(!trial.ReactionSeconds.HasValue);
+                Check.Equal(1,task.ReadEventsAfter(-1,4096).Count(item=>item.Kind=="tracking_gap_begin"));
+                if(mode==2)
+                {
+                    next(4,true);Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
+                    Check.True(!admission.IoFence.IsRevoked&&pump.TrackingGapOpen&&task.Phase==Phase.Paused);
+                }
+                if(mode==4)
+                {
+                    pump.Withdraw();Check.True(admission.IoFence.IsRevoked&&!pump.EndTrackingGap());return;
+                }
+                headValid=true;
+                Check.True(pump.StageRigFrame(next(5,mode==2),1)&&pump.EndTrackingGap()&&pump.DrainTaskEvents());
+                Check.True(!pump.TrackingGapOpen&&!admission.IoFence.IsRevoked);
+                if(mode==3)
+                {
+                    Check.Equal(Phase.Paused,task.Phase);Check.True(Object.ReferenceEquals(trial,task.CurrentTrial));
+                }
+                else
+                {
+                    Check.Equal(Phase.Practice,task.Phase);
+                    Check.Equal(trial.PlannedIndex,task.CurrentTrial.PlannedIndex);
+                    Check.True(task.CurrentTrial.TrialId!=trial.TrialId&&!task.CurrentTrial.Onset.HasValue);
+                }
+            }
+            finally{if(pump!=null)pump.Stop();worker.TryRequestStop();client.Release();worker.Stop(1000);worker.Dispose();}
+        }
+        static void ExerciseFocusBoundary(int failure)
+        {
+            var clock=new MonotonicClock("focus-boundary-clock");var client=new SequencedFrameBoundaryClient();bool headValid=true;
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,headValid,Rotation.Identity),()=>client);
+            ViveNamedRawRecordingPump pump=null;
+            try
+            {
+                Check.True(worker.Start()&&client.Waiting.WaitOne(3000));var task=NewTask(clock);
+                var admission=ViveNamedSessionFrameAdmission.CreateSyntheticForTest(task,worker,clock,256);
+                Check.True(admission.ConfirmTask()&&admission.ConfirmEye());
+                Check.True(admission.TryBindQueueBudget(ViveRawByteBudget.SelectExplicit(33554432)));
+                var writer=new ViveNamedRawRecordingPump.SyntheticWriter(admission);
+                pump=ViveNamedRawRecordingPump.StartSyntheticWithStatusForTest(task,worker,clock,admission,writer);
+                task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));
+                // Build only the synthetic task phase; this is not an installed
+                // block-plan receipt or physical presentation/RT acceptance.
+                var engine=(Experiment)typeof(ViveDevelopmentParticipant).GetField("experiment",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).GetValue(task);
+                engine.PrepareNamedRecordingBlockPlan(Actor.Owner,true);engine.BeginFamiliarization(Actor.Owner);engine.BeginPractice(Actor.Owner);
+                var trial=task.CurrentTrial;
+                Action<int,bool> send=(i,nativeFault)=>
+                {
+                    var ray=new ViveEyeRay(2,false,true,new Vec3(0,0,0),new Vec3(.6,0,.8));
+                    client.Send(new ViveProEyePoll(null,new ViveEyeFrame(i,i*8,clock.Now,false,null,null,ray),
+                        ViveEyeRuntimeState.Working,ViveEyeCalibrationState.ReportedReady,true,nativeFault?-1:0,2));
+                };
+                client.Send(null);send(1,false);Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
+                Action<int,bool,bool> focusFrame=(i,desktop,xr)=>
+                {
+                    Check.True(pump.TryAbandonPresentationForFocus(null));
+                    send(i,false);ViveProEyePoll frame;Check.True(worker.TryPollForRecording(out frame));
+                    Check.True(pump.StageRigFrame(frame,1)&&pump.ProcessFocusState(desktop,xr)&&pump.DrainTaskEvents());
+                    Check.Equal(ViveNamedRawRecordingPump.Outcome.Running,pump.State);Check.True(!admission.IoFence.IsRevoked);
+                };
+                focusFrame(2,true,true);focusFrame(3,false,true);
+                Check.Equal(Phase.Practice,task.Phase);
+                focusFrame(4,false,false);
+                Check.Equal(Phase.Paused,task.Phase);Check.Equal(TrialOutcome.Interrupted,trial.Outcome);
+                Check.True(!trial.ReactionSeconds.HasValue);
+                focusFrame(5,true,true);
+                Check.Equal(Phase.Paused,task.Phase);Check.True(!trial.ReactionSeconds.HasValue);
+                Check.True(task.ReadEventsAfter(-1,4096).Count(item=>item.Kind=="focus_changed")==4);
+                Check.True(task.ReadEventsAfter(-1,4096).Count(item=>item.Kind=="focus_pause")==1);
+                if(failure==1)
+                {
+                    headValid=false;send(6,false);ViveProEyePoll frame;Check.True(worker.TryPollForRecording(out frame));
+                    Check.True(!pump.StageRigFrame(frame,1)&&admission.IoFence.IsFaulted);
+                }
+                else if(failure==2)
+                {
+                    send(6,true);Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
+                    ViveProEyePoll frame;Check.True(worker.TryPollForRecording(out frame)&&pump.StageRigFrame(frame,1));
+                    Check.True(!admission.IoFence.IsRevoked&&task.Phase==Phase.Paused);
+                }
+            }
+            finally{if(pump!=null)pump.Stop();worker.TryRequestStop();client.Release();worker.Stop(1000);worker.Dispose();}
+        }
         static void ExerciseSoftwareChoices()
         {
             var clock=new MonotonicClock("choice-fifo-clock");double taskAt=clock.Now,eyeAt=clock.Now;
             var client=new SequencedFrameBoundaryClient();
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             ViveNamedRawRecordingPump pump=null;
             try
             {
@@ -182,7 +425,7 @@ namespace AvatarStroop.Tests
         static void ExerciseCountdownWitnessBoundary(bool nested)
         {
             var clock=new MonotonicClock("countdown-boundary-clock");var client=new SequencedFrameBoundaryClient();
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             ViveNamedRawRecordingPump pump=null;
             try
             {
@@ -227,7 +470,7 @@ namespace AvatarStroop.Tests
         static void ExerciseOrdinaryEpochExpiry(bool duringMutation)
         {
             var clock=new MonotonicClock("ordinary-expiry-clock");var client=new Client(clock){OneShot=true};
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             ViveNamedRawRecordingPump pump=null;
             try
             {
@@ -237,7 +480,7 @@ namespace AvatarStroop.Tests
                 Check.True(admission.TryBindQueueBudget(ViveRawByteBudget.SelectExplicit(33554432)));
                 var writer=new ViveNamedRawRecordingPump.SyntheticWriter(admission);
                 pump=ViveNamedRawRecordingPump.StartSyntheticWithStatusForTest(task,worker,clock,admission,writer);
-                Check.Equal(ViveNamedRawRecordingPump.Preparation.WaitingBaseline,pump.PrepareStatus());
+                Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
                 client.Release.Set();Check.True(SpinWait.SpinUntil(()=>worker.CaptureDiagnostics.NativePolls>=1,3000));
                 client.Release.Set();Check.True(SpinWait.SpinUntil(()=>worker.CaptureDiagnostics.NativePolls>=2,3000));
                 Check.True(SpinWait.SpinUntil(()=>Volatile.Read(ref client.PollCalls)>=3,3000));
@@ -277,7 +520,7 @@ namespace AvatarStroop.Tests
         static void ExerciseSyntheticDrain(int mode)
         {
             var clock=new MonotonicClock("pump-normal-drain-"+mode);var client=new Client(clock){OneShot=true};
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             ViveNamedRawRecordingPump pump=null;ViveNamedRawRecordingPump.SyntheticWriter writer=null;
             try
             {
@@ -332,7 +575,7 @@ namespace AvatarStroop.Tests
         static void ExerciseCompletionLinearization(int mode)
         {
             var clock=new MonotonicClock("pump-completion-race-"+mode);var client=new Client(clock){OneShot=true};
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             var entered=new ManualResetEvent(false);var release=new ManualResetEvent(false);
             ViveNamedRawRecordingPump pump=null;ViveNamedRawRecordingPump.SyntheticWriter writer=null;Thread stop=null;
             try
@@ -382,7 +625,7 @@ namespace AvatarStroop.Tests
         static void ExerciseUnexpectedExitRace(int mode)
         {
             var clock=new MonotonicClock("pump-unexpected-exit-"+mode);var client=new Client(clock);
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             var entered=new ManualResetEvent(false);var release=new ManualResetEvent(false);
             ViveNamedRawRecordingPump pump=null;ViveNamedRawRecordingPump.SyntheticWriter writer=null;
             try
@@ -414,7 +657,7 @@ namespace AvatarStroop.Tests
         static void ExerciseTrialReceipt(bool withdrawAfterClaim)
         {
             var clock=new MonotonicClock("synthetic-planned-receipt");var client=new Client(clock);
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             try
             {
                 Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
@@ -449,7 +692,7 @@ namespace AvatarStroop.Tests
         static void ExerciseTrialReceiptPublicationRace(bool after,bool fault)
         {
             var clock=new MonotonicClock("synthetic-planned-publication");var client=new Client(clock);
-            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
             try
             {
                 Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
@@ -475,7 +718,7 @@ namespace AvatarStroop.Tests
                 foreach(bool attach in new[]{false,true})
                 {
                     var clock=new MonotonicClock("synthetic-rest-barrier");var client=new Client(clock);
-                    var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                    var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                     try
                     {
                         Check.True(worker.Start()&&client.Entered.WaitOne(3000));
@@ -531,9 +774,9 @@ namespace AvatarStroop.Tests
 #if VIVE_SYNTHETIC_BATCH_FIXTURE
             RegisterOrdinaryExpiryTests(suite);
 #endif
-            suite.Run("pump status Busy fails closed without treating queue as empty",()=>{
+            suite.Run("pump status Busy is not readiness and preserves initial recording authority",()=>{
                 var clock=new MonotonicClock("pump-status-busy-clock");var client=new Client(clock){OneShot=true};
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 var held=new ManualResetEvent(false);var releaseGate=new ManualResetEvent(false);ViveNamedRawRecordingPump pump=null;
                 try
                 {
@@ -544,15 +787,58 @@ namespace AvatarStroop.Tests
                     pump=ViveNamedRawRecordingPump.StartSyntheticWithStatusForTest(task,worker,clock,admission,writer);
                     var holder=new Thread(()=>{lock(worker.RecordingTicketGate){held.Set();releaseGate.WaitOne(3000);}});
                     holder.Start();Check.True(held.WaitOne(3000));
-                    Check.Equal(ViveNamedRawRecordingPump.Preparation.Faulted,pump.PrepareStatus());
-                    Check.True(pump.State!=ViveNamedRawRecordingPump.Outcome.Running&&!pump.WithdrawalRequested);
+                    Check.Equal(ViveNamedRawRecordingPump.Preparation.Busy,pump.PrepareStatus());
+                    Check.True(pump.State==ViveNamedRawRecordingPump.Outcome.Running&&!pump.WithdrawalRequested);
                     releaseGate.Set();Check.True(holder.Join(3000));
                 }
                 finally{releaseGate.Set();if(pump!=null)pump.Stop();client.Release.Set();worker.Stop(1000);worker.Dispose();}
             });
-            suite.Run("pump records invalid baseline only as admission then fail-stops",()=>{
-                var clock=new MonotonicClock("pump-invalid-baseline-clock");var client=new Client(clock){OneShot=true,InvalidNext=1};
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+            suite.Run("pump resumes exact staged status proof after ACK Busy, or rejects after withdrawal",()=>{
+                foreach(bool withdraw in new[]{false,true})
+                {
+                    var clock=new MonotonicClock("pump-pending-proof-clock");var client=new Client(clock){OneShot=true};
+                    var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
+                    var held=new ManualResetEvent(false);var releaseGate=new ManualResetEvent(false);ViveNamedRawRecordingPump pump=null;
+                    try
+                    {
+                        Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
+                        var admission=ViveNamedSessionFrameAdmission.CreateSyntheticForTest(task,worker,clock,16);
+                        Check.True(admission.ConfirmTask()&&admission.ConfirmEye());
+                        var writer=new ViveNamedRawRecordingPump.SyntheticWriter(admission);
+                        pump=ViveNamedRawRecordingPump.StartSyntheticWithStatusForTest(task,worker,clock,admission,writer);
+                        client.Release.Set();Check.True(SpinWait.SpinUntil(()=>worker.CaptureDiagnostics.NativePolls>=1,3000));
+                        client.Release.Set();Check.True(SpinWait.SpinUntil(()=>worker.CaptureDiagnostics.NativePolls>=2,3000));
+                        var flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+                        var run=typeof(ViveNamedRawRecordingPump).GetField("statusRun",flags).GetValue(pump);
+                        ViveProEyeWorker.StatusTicket ticket=null;
+                        Check.True(SpinWait.SpinUntil(()=>worker.TryReserveStatusEvidence(run,out ticket)==ViveProEyeWorker.StatusDisposition.Event,3000));
+                        ViveNamedSessionFrameAdmission.StatusAdmissionProof proof;
+                        Check.True(admission.TryStageStatus(ticket,out proof)&&proof!=null);
+                        // Seed the exact production pending state to interleave
+                        // after FIFO staging, before the first ACK attempt.
+                        var ticketField=typeof(ViveNamedRawRecordingPump).GetField("pendingStatusTicket",flags);
+                        var proofField=typeof(ViveNamedRawRecordingPump).GetField("pendingStatusProof",flags);
+                        ticketField.SetValue(pump,ticket);proofField.SetValue(pump,proof);
+                        var holder=new Thread(()=>{lock(worker.RecordingTicketGate){held.Set();releaseGate.WaitOne(3000);}});
+                        holder.Start();Check.True(held.WaitOne(3000));
+                        Check.Equal(ViveNamedRawRecordingPump.Preparation.Busy,pump.PrepareStatus());
+                        Check.True(Object.ReferenceEquals(ticket,ticketField.GetValue(pump))&&Object.ReferenceEquals(proof,proofField.GetValue(pump)));
+                        if(withdraw)pump.Withdraw();
+                        releaseGate.Set();Check.True(holder.Join(3000));
+                        Check.Equal(withdraw?ViveNamedRawRecordingPump.Preparation.Faulted:ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
+                        if(!withdraw)
+                        {
+                            Check.True(ticketField.GetValue(pump)==null&&proofField.GetValue(pump)==null);
+                            Check.Equal(ViveProEyeWorker.StatusAckResult.Invalid,worker.TryAcknowledgeStatusEvidenceResult(ticket,proof));
+                        }
+                        else Check.True(admission.IoFence.IsRevoked);
+                    }
+                    finally{releaseGate.Set();if(pump!=null)pump.Stop();client.Release.Set();worker.Stop(1000);worker.Dispose();}
+                }
+            });
+            suite.Run("pump admits native-error metadata at its initial baseline without losing recording authority",()=>{
+                var clock=new MonotonicClock("pump-invalid-baseline-clock");var client=new Client(clock){OneShot=true,NativeError=-1};
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 ViveNamedRawRecordingPump pump=null;
                 try
                 {
@@ -564,17 +850,16 @@ namespace AvatarStroop.Tests
                     client.Release.Set();Check.True(SpinWait.SpinUntil(()=>worker.CaptureDiagnostics.NativePolls>=1,3000));
                     client.Release.Set();Check.True(SpinWait.SpinUntil(()=>worker.CaptureDiagnostics.NativePolls>=2,3000));
                     Check.True(SpinWait.SpinUntil(()=>Volatile.Read(ref client.PollCalls)>=3,3000));
-                    Check.Equal(ViveNamedRawRecordingPump.Preparation.Faulted,pump.PrepareStatus());
-                    Check.True(pump.State!=ViveNamedRawRecordingPump.Outcome.Running);
+                    Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
+                    ViveProEyePoll frame;Check.True(worker.TryPollForRecording(out frame)&&pump.StageRigFrame(frame,1));
+                    Check.True(pump.State==ViveNamedRawRecordingPump.Outcome.Running&&!admission.IoFence.IsRevoked);
                     Check.True(!pump.WithdrawalRequested);
-                    // FIFO admission/ACK does not prove the invalid status was
-                    // written before the fail-stop detached its queue.
                 }
                 finally{if(pump!=null)pump.Stop();client.Release.Set();worker.Stop(1000);worker.Dispose();}
             });
-            suite.Run("pump admits status baseline before frame and detects later invalidation",()=>{
+            suite.Run("pump admits invalid gaze status after a raw frame without stopping the task",()=>{
                 var clock=new MonotonicClock("pump-status-epoch-clock");var client=new Client(clock){OneShot=true};
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 ViveNamedRawRecordingPump pump=null;
                 try
                 {
@@ -583,7 +868,7 @@ namespace AvatarStroop.Tests
                     Check.True(admission.ConfirmTask()&&admission.ConfirmEye());
                     var writer=new ViveNamedRawRecordingPump.SyntheticWriter(admission);
                     pump=ViveNamedRawRecordingPump.StartSyntheticWithStatusForTest(task,worker,clock,admission,writer);
-                    Check.Equal(ViveNamedRawRecordingPump.Preparation.WaitingBaseline,pump.PrepareStatus());
+                    Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,pump.PrepareStatus());
                     // The first native call began before enable and must not
                     // count as an authorized status baseline.
                     client.Release.Set();Check.True(SpinWait.SpinUntil(()=>worker.CaptureDiagnostics.NativePolls>=1,3000));
@@ -594,18 +879,17 @@ namespace AvatarStroop.Tests
                     Check.True(pump.StageRigFrame(frame,1)&&pump.VerifyStagedEpoch());
                     Volatile.Write(ref client.InvalidNext,1);client.Release.Set();
                     Check.True(SpinWait.SpinUntil(()=>worker.CaptureDiagnostics.NativePolls>=3,3000));
-                    // A status change after the recorded frame makes the task
-                    // interval unknown, not continuously valid.
-                    Check.True(!pump.DrainTaskEvents());
-                    Check.True(pump.State!=ViveNamedRawRecordingPump.Outcome.Running);
+                    // A change during the current task epoch remains genuine
+                    // status evidence and is not proof of gaze quality.
+                    Check.True(pump.DrainTaskEvents()&&pump.PrepareStatus()==ViveNamedRawRecordingPump.Preparation.Ready);
+                    Check.True(pump.State==ViveNamedRawRecordingPump.Outcome.Running&&!admission.IoFence.IsRevoked);
                     Check.True(!pump.WithdrawalRequested);
-                    Check.True(pump.TryStopStatusOnOwner());
                 }
                 finally{if(pump!=null)pump.Stop();client.Release.Set();worker.Stop(1000);worker.Dispose();}
             });
             suite.Run("status FIFO requires bound enqueue proof before drain seal",()=>{
                 var clock=new MonotonicClock("pump-status-proof-clock");var client=new Client(clock){OneShot=true};
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 try
                 {
                     Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
@@ -657,7 +941,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("SPSC consumer defers an unpublished producer tail without fault",()=>{
                 var clock=new MonotonicClock("pump-interleave-clock");var client=new Client(clock);
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 var tailReady=new ManualResetEvent(false);var busy=new ManualResetEvent(false);var committed=new ManualResetEvent(false);Exception failure=null;
                 try
                 {
@@ -685,7 +969,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("SPSC FIFO survives concurrent producer consumer wraparound",()=>{
                 var clock=new MonotonicClock("pump-stress-clock");var client=new Client(clock);
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 Exception failure=null;const int total=12000;
                 try
                 {
@@ -723,7 +1007,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("SPSC withdrawal before producer commit detaches unpublished payload",()=>{
                 var clock=new MonotonicClock("pump-withdraw-publish-clock");var client=new Client(clock);
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 var withdrawn=new ManualResetEvent(false);
                 try
                 {
@@ -743,7 +1027,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("named raw pump stays closed before installed target authorization",()=>{
                 var clock=new MonotonicClock("pump-gate-clock");var client=new Client(clock);
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 try
                 {
                     Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
@@ -772,7 +1056,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("named raw pump withdrawal during reserved append is prompt and uncertain",()=>{
                 var clock=new MonotonicClock("pump-withdraw-clock");var client=new Client(clock);
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 ViveNamedRawRecordingPump.SyntheticWriter writer=null;
                 try
                 {
@@ -801,7 +1085,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("named raw stop remains revoked if subsequent presentation fails",()=>{
                 var clock=new MonotonicClock("pump-stop-before-view-clock");var client=new Client(clock);
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 ViveNamedRawRecordingPump.SyntheticWriter writer=null;
                 try
                 {
@@ -827,7 +1111,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("named raw pump idle stop is asynchronous and not a clean close",()=>{
                 var clock=new MonotonicClock("pump-stop-clock");var client=new Client(clock);
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 try
                 {
                     Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);
@@ -846,7 +1130,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("named raw pump fault does not invent withdrawal and later withdrawal is retained",()=>{
                 var clock=new MonotonicClock("pump-fault-clock");var client=new Client(clock);
-                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(1,clock.Now,true,true,Rotation.Identity),()=>client);
+                var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(Interlocked.Increment(ref testHeadSequence),clock.Now,true,true,Rotation.Identity),()=>client);
                 try
                 {
                     Check.True(worker.Start()&&client.Entered.WaitOne(3000));var task=NewTask(clock);

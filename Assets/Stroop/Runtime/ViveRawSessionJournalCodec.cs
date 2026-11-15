@@ -107,11 +107,11 @@ namespace AvatarStroop.Runtime
         // cursor and the admission's sealed waterline, never from owner/UI
         // input. A marker declares a drained capture only: it cannot certify
         // successful flush/OS close, durable storage, identity, or coverage.
-        internal static byte[] TerminalPayloadV3(long ordinal,long taskCursor,long tasks,long eyes,long statuses,long sealedWatermark,double localObserved)
+        internal static byte[] TerminalPayloadV3(long ordinal,long taskCursor,long tasks,long eyes,long statuses,long sealedWatermark,double localObserved,long eyeQualityRecords=0)
         {
-            if(ordinal<1||taskCursor< -1||tasks<0||eyes<0||statuses<0||sealedWatermark<0||!Finite(localObserved)||localObserved<0)
+            if(ordinal<1||taskCursor< -1||tasks<0||eyes<0||statuses<0||eyeQualityRecords<0||sealedWatermark<0||!Finite(localObserved)||localObserved<0)
                 throw new InvalidOperationException("Invalid capture terminal.");
-            long sum=checked(tasks+eyes+statuses);
+            long sum=checked(tasks+eyes+statuses+eyeQualityRecords);
             if(sum!=sealedWatermark||sum!=ordinal-1)throw new InvalidOperationException("Capture waterline differs from encoded records.");
             return Build(w=>{w.Write(ordinal);w.Write((byte)4);Text(w,"NORMAL_TASK_COMPLETION_DRAIN_DECLARED");w.Write(taskCursor);
                 w.Write(tasks);w.Write(eyes);w.Write(statuses);w.Write(sealedWatermark);w.Write(localObserved);});
@@ -125,6 +125,16 @@ namespace AvatarStroop.Runtime
                 OptionalInt(w,value.Runtime.HasValue?(int?)value.Runtime.Value:null);OptionalInt(w,value.Calibration.HasValue?(int?)value.Calibration.Value:null);
                 OptionalBool(w,value.EyeDeviceConnected);OptionalInt(w,value.NativeResultCode);OptionalInt(w,value.NativeRuntimeStatus);
                 OptionalBool(w,value.NoUser);OptionalUlong(w,value.CombinedValidityMask);OptionalBool(w,value.CombinedDirectionReportedValid);});
+        }
+        // Additive VRAW3+ kind 5: owner observations of unavailable fresh eye
+        // data, not native eye samples or measured lost-sample counts. Older
+        // readers reject kind 5; existing binary kinds are unchanged.
+        internal static byte[] EyeObservationPayload(long ordinal,ViveRawEyeObservation value)
+        {
+            if(ordinal<1||value==null||!ViveRawEyeObservation.Valid(value.State,value.Cause,value.ObservedLocalSeconds,value.TaskCursor))
+                throw new InvalidOperationException("Invalid owner eye observation.");
+            return Build(w=>{w.Write(ordinal);w.Write((byte)5);w.Write(value.ObservedLocalSeconds);
+                w.Write((int)value.State);w.Write((int)value.Cause);w.Write(value.TaskCursor);});
         }
         static bool Has(ulong flags,ulong bit){return (flags&bit)!=0;}
         internal static bool ValidStatus(ViveProEyeWorker.ObservedEyeStatus v)

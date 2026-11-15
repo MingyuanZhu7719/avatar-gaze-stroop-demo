@@ -48,7 +48,7 @@ namespace AvatarStroop.Runtime
         // ledger and independently check each encoded frame against its bound.
         internal sealed class QueueLedger
         {
-            const int EyeFixedUpper=352,StatusUpper=128,MaxTextBytes=32768;
+            const int EyeFixedUpper=352,StatusUpper=128,EyeObservationUpper=80,MaxTextBytes=32768;
             static readonly UTF8Encoding Utf8=new UTF8Encoding(false,true);
             readonly ViveRawByteBudget budget;readonly int owner;
             readonly ViveNamedSessionFrameAdmission.Manifest manifest;
@@ -81,6 +81,9 @@ namespace AvatarStroop.Runtime
                         if(text>MaxTextBytes)return false;bytes=checked(EyeFixedUpper+text);return true;
                     }
                     if(record is ViveProEyeWorker.ObservedEyeStatus){bytes=StatusUpper;return true;}
+                    var quality=record as ViveRawEyeObservation;
+                    if(quality!=null&&ViveRawEyeObservation.Valid(quality.State,quality.Cause,quality.ObservedLocalSeconds,quality.TaskCursor))
+                    {bytes=EyeObservationUpper;return true;}
                     return false;
                 }
                 catch(Exception e) when(e is EncoderFallbackException||e is OverflowException||e is ArgumentException)

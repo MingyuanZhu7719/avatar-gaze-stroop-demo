@@ -10,12 +10,12 @@ namespace AvatarStroop.Runtime
     // authorization/withdrawal fence and stale-result suppression are needed.
     internal sealed class ViveRawTrialReport
     {
-        internal readonly string ManifestCsv,BlocksCsv,PreparedStimuliCsv,TrialsCsv,RatingsCsv,StatusesCsv,SafetyEventsCsv;
+        internal readonly string ManifestCsv,BlocksCsv,PreparedStimuliCsv,TrialsCsv,RatingsCsv,StatusesCsv,SafetyEventsCsv,EyeQualityCsv;
         internal bool Saved {get{return false;}}
         internal bool CompleteSessionProven {get{return false;}}
         internal bool CurrentAccessAuthorized {get{return false;}}
-        ViveRawTrialReport(string manifest,string blocks,string prepared,string trials,string ratings,string statuses,string safety)
-        {ManifestCsv=manifest;BlocksCsv=blocks;PreparedStimuliCsv=prepared;TrialsCsv=trials;RatingsCsv=ratings;StatusesCsv=statuses;SafetyEventsCsv=safety;}
+        ViveRawTrialReport(string manifest,string blocks,string prepared,string trials,string ratings,string statuses,string safety,string eyeQuality)
+        {ManifestCsv=manifest;BlocksCsv=blocks;PreparedStimuliCsv=prepared;TrialsCsv=trials;RatingsCsv=ratings;StatusesCsv=statuses;SafetyEventsCsv=safety;EyeQualityCsv=eyeQuality;}
         sealed class Limit:Exception {}
         sealed class Output
         {
@@ -50,7 +50,7 @@ namespace AvatarStroop.Runtime
             try
             {
                 var p=source.TrialProjection;var count=new Count();var manifest=new Output(count);var blocks=new Output(count);var prepared=new Output(count);
-                var trials=new Output(count);var ratings=new Output(count);var statuses=new Output(count);var safety=new Output(count);
+                var trials=new Output(count);var ratings=new Output(count);var statuses=new Output(count);var safety=new Output(count);var eyeQuality=new Output(count);
                 manifest.Line("field","value");
                 manifest.Line("scope","state:selected_verified_prefix_only");manifest.Line("session",TextCell(p.DeclaredSessionId));
                 manifest.Line("clock",TextCell(p.DeclaredClockId));manifest.Line(p.DesignVariant=="LEGACY_ABCD"?"legacy_design":"plan",TextCell(p.DesignVariant=="LEGACY_ABCD"?p.DeclaredLegacyDesignId:p.DeclaredPlanId));
@@ -64,6 +64,9 @@ namespace AvatarStroop.Runtime
                 manifest.Line("capture_terminal_declared",Bool(source.CaptureTerminalObserved));manifest.Line("trailing_frame_truncated",Bool(source.TrailingFrameTruncated));
                 manifest.Line("verified_bytes",I64(source.VerifiedBytes));manifest.Line("task_records",I64(source.VerifiedTaskRecords));
                 manifest.Line("eye_observations",I64(source.VerifiedObservationRecords));manifest.Line("eye_statuses",I64(source.VerifiedStatusRecords));
+                manifest.Line("owner_eye_quality_records",I64(source.VerifiedEyeQualityRecords));
+                manifest.Line("eye_quality_semantics","state:owner_observations_not_native_missing_sample_counts_or_exact_intervals");
+                manifest.Line("eye_quality_legacy_absence","state:unknown_not_zero_missing_samples");
                 manifest.Line("pre_choice_coverage","state:unknown");manifest.Line("sampling_coverage","state:unknown");
                 manifest.Line("complete_session_proven","bool:false");manifest.Line("source_authenticated","bool:false");
                 manifest.Line("participant_consent_authenticated","bool:false");manifest.Line("current_access_authorized","state:unknown");
@@ -72,6 +75,10 @@ namespace AvatarStroop.Runtime
                 manifest.Line("trial_open_flush_evidence","state:unknown");manifest.Line("render_proxy_evidence","state:unknown");
                 manifest.Line("response_commit_evidence","state:unknown");manifest.Line("safety_event_fields","state:selected_only");
                 manifest.Line("phase_transitions","state:declared_events_in_selected_prefix_only");
+                manifest.Line("focus_events","state:see_focus_changed_and_focus_pause_safety_event_declarations_if_present");
+                manifest.Line("focus_event_fields","state:actor_code_reason_detail_only_raw_event_keeps_other_fields");
+                manifest.Line("focus_measurement_quality","state:focus_does_not_prove_pose_gaze_or_trial_validity");
+                manifest.Line("focus_recovery","state:restored_focus_does_not_revalidate_interrupted_trials");
                 manifest.Line("duration_fields","state:declared_strings_not_measurement_or_coverage");
                 manifest.Line("unassigned_trial_events",I32(p.UnassignedTrialEvents));
                 manifest.Line("prepared_plan_events",I32(p.PreparedPlans.Count));manifest.Line("unsupported_plan_events",I32(p.UnsupportedPreparedPlanEvents));
@@ -111,7 +118,10 @@ namespace AvatarStroop.Runtime
                     DeclaredTextCell(e.DetailPresent,e.Detail),DeclaredTextCell(e.OnsetAvailablePresent,e.OnsetAvailable),DeclaredTextCell(e.PausedSecondsPresent,e.PausedSeconds),DeclaredTextCell(e.ActiveSecondsPresent,e.ActiveSeconds),
                     DeclaredTextCell(e.PhaseFromPresent,e.PhaseFrom),DeclaredTextCell(e.PhaseToPresent,e.PhaseTo),
                     DeclaredTextCell(e.DurationSecondsPresent,e.DurationSeconds),DeclaredTextCell(e.RestSecondsPresent,e.RestSeconds));
-                report=new ViveRawTrialReport(manifest.Text.ToString(),blocks.Text.ToString(),prepared.Text.ToString(),trials.Text.ToString(),ratings.Text.ToString(),statuses.Text.ToString(),safety.Text.ToString());return true;
+                eyeQuality.Line("record_ordinal","owner_observed_local_f64bits","task_cursor","eye_observation","reason","native_missing_sample_count","gaze_filled");
+                foreach(var q in p.EyeQualityObservations)eyeQuality.Line(I64(q.RecordOrdinal),F64(q.OwnerObservedLocalSeconds),I64(q.TaskCursor),
+                    "state:"+ViveRawReadableAnalysisCsv.EyeObservationLabel(q.State),"state:"+ViveRawReadableAnalysisCsv.EyeReasonLabel(q.Reason),"state:unknown","bool:false");
+                report=new ViveRawTrialReport(manifest.Text.ToString(),blocks.Text.ToString(),prepared.Text.ToString(),trials.Text.ToString(),ratings.Text.ToString(),statuses.Text.ToString(),safety.Text.ToString(),eyeQuality.Text.ToString());return true;
             }
             catch(Exception e) when(e is Limit||e is EncoderFallbackException||e is OverflowException)
             {report=null;return false;}

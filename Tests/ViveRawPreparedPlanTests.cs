@@ -12,7 +12,7 @@ namespace AvatarStroop.Tests
     public static class ViveRawPreparedPlanTests
     {
         sealed class Clock:IClock {public double Now {get;set;}public string ClockId {get{return "synthetic-clock";}}internal void Advance(double n){Now+=n;}}
-        static byte[] Fixture(Func<JournalEvent,JournalEvent> alter=null,bool retry=false)
+        static byte[] Fixture(Func<JournalEvent,JournalEvent> alter=null,bool retry=false,bool tracking=false)
         {
             var a=ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.Automatic,2,"synthetic-geometry");
             var n=ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.NoAvatar,1,null);
@@ -21,6 +21,16 @@ namespace AvatarStroop.Tests
             var clock=new Clock();var e=new Experiment(SessionConfiguration.NamedRecordingDevelopment("synthetic-session",37,plan,intent),clock);
             e.BeginFamiliarization(Actor.Owner);var first=e.PrepareNamedRecordingBlockPlan(Actor.Owner,true);
             Check.True(Object.ReferenceEquals(first,e.PrepareNamedRecordingBlockPlan(Actor.Owner,true)));e.BeginPractice(Actor.Owner);
+            if(tracking)
+            {
+                var old=e.CurrentTrial;
+                e.MarkPresented(old.TrialId);clock.Advance(.4);
+                e.RecordRawTrackingGapStart(RawTrackingLoss.HeadPose,false);clock.Advance(2);
+                Check.Equal(Phase.Paused,e.Phase);Check.Equal(TrialOutcome.Interrupted,old.Outcome);
+                e.RecordRawTrackingGapEnd(RawTrackingLoss.HeadPose,true);
+                Check.Equal(old.PlannedIndex,e.CurrentTrial.PlannedIndex);Check.True(e.CurrentTrial.TrialId!=old.TrialId&&!e.CurrentTrial.Onset.HasValue);
+                Check.Equal(old.Stimulus.Ink,e.CurrentTrial.Stimulus.Ink);Check.Equal(1,e.CurrentTrial.Segment);
+            }
             for(int i=0;i<8;i++)
             {e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);var ink=e.CurrentTrial.Stimulus.Ink;var answer=retry?(Colour)(((int)ink+1)%4):ink;
                 Check.True(e.ButtonChanged(answer,true));e.ButtonChanged(answer,false);if(e.Phase==Phase.PracticeCorrection)e.ContinuePractice();}
@@ -33,6 +43,19 @@ namespace AvatarStroop.Tests
                 Check.Equal(Phase.BlockReady,e.Phase);var prepared=e.PrepareNamedRecordingBlockPlan(Actor.Owner,false);
                 Check.True(Object.ReferenceEquals(prepared,e.PrepareNamedRecordingBlockPlan(Actor.Owner,false)));
                 if(block==0)e.BeginCountdown(Actor.Owner,true);else Check.True(e.TryBeginRetainedBlockCountdown(true));clock.Advance(3);e.Tick();
+                if(block==0&&tracking)
+                {
+                    for(int gap=0;gap<2;gap++)
+                    {
+                        var old=e.CurrentTrial;e.MarkPresented(old.TrialId);clock.Advance(.3);
+                        e.RecordRawTrackingGapStart(RawTrackingLoss.ControllerPose,false);clock.Advance(1);
+                        Check.Equal(TrialOutcome.Interrupted,old.Outcome);
+                        e.RecordRawTrackingGapEnd(RawTrackingLoss.ControllerPose,true);clock.Advance(3);e.Tick();
+                        Check.Equal(old.PlannedIndex,e.CurrentTrial.PlannedIndex);
+                        Check.True(e.CurrentTrial.TrialId!=old.TrialId&&!e.CurrentTrial.Onset.HasValue);
+                        Check.Equal(old.Stimulus.Word,e.CurrentTrial.Stimulus.Word);
+                    }
+                }
                 if(block==1){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);e.Pause(Actor.Participant);clock.Advance(.3);e.Resume(true);clock.Advance(3);e.Tick();}
                 while(e.Phase==Phase.MainTask){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);var answer=e.CurrentTrial.Stimulus.Ink;Check.True(e.ButtonChanged(answer,true));e.ButtonChanged(answer,false);}
                 Check.Equal(Phase.Questionnaire,e.Phase);Check.True(e.AcknowledgeQuestionnaireInstruction());for(int q=0;q<Questionnaire.Count;q++)e.Rate(q+1);
@@ -73,6 +96,45 @@ namespace AvatarStroop.Tests
         {var result=new Dictionary<string,string>();foreach(var pair in item.Fields)result.Add(pair.Key,pair.Value);return result;}
         public static void Register(TestSuite suite)
         {
+            suite.Run("VRAW tracking retry keeps planned item, new identity and fresh RT through practice and main",()=>{
+                var r=Project(Fixture(tracking:true,retry:true));
+                Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,r.Status);
+                Check.True(r.CaptureTerminalObserved);
+                int retries=0,interruptions=0;
+                foreach(var row in r.TrialProjection.Trials)
+                {
+                    if(row.InterruptionReason=="tracking_gap"){interruptions++;Check.Equal(0,row.ResponseEvents);}
+                    if(!row.TrialId.Contains("/retry-s"))continue;
+                    retries++;
+                    if(row.ResponseEvents==1)
+                    {
+                        double rt=Double.Parse(row.DeclaredReactionSeconds,System.Globalization.CultureInfo.InvariantCulture);
+                        Check.True(Math.Abs(rt-.2)<.00001);
+                    }
+                }
+                Check.Equal(3,retries);Check.Equal(3,interruptions);
+                foreach(var plan in r.TrialProjection.PreparedPlans)Check.Equal(0,plan.SegmentAtDeclaration);
+            });
+            suite.Run("VRAW rejects tracking retries with forged predecessors, missing interruption or prior response",()=>{
+                for(int mode=0;mode<3;mode++)
+                {
+                    bool changed=false;
+                    var r=Project(Fixture(item=>{
+                        if(changed)return item;
+                        if(mode==0&&item.Kind=="trial_planned"&&item.Fields.ContainsKey("retry_of"))
+                        {changed=true;return Rewrite(item,f=>f["retry_of"]="forged");}
+                        if(mode!=0&&item.Kind=="trial_interrupted"&&item.Fields.ContainsKey("reason"))
+                        {
+                            changed=true;
+                            if(mode==1)return Rewrite(item,f=>f.Remove("reason"));
+                            return new JournalEvent(item.Sequence,item.Time,item.ClockId,item.SessionId,item.BlockIndex,item.Segment,item.TrialId,
+                                "first_response",CopyFields(item),item.NamedOption,item.NamedPlan,item.NamedBlock,item.NamedRecordingIntent);
+                        }
+                        return item;
+                    },tracking:true));
+                    Check.True(changed);Check.Equal(ViveRawSessionReadStatus.Invalid,r.Status);
+                }
+            });
             suite.Run("VRAW block plans project exact preparation declarations without inventing execution or confirmation",()=>{
                 var r=Project(Fixture());Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,r.Status);Check.True(r.CaptureTerminalObserved);
                 var p=r.TrialProjection;Check.Equal(5,p.PreparedPlans.Count);Check.Equal(0,p.UnsupportedPreparedPlanEvents);Check.Equal("UNKNOWN",p.WriterConfirmation);

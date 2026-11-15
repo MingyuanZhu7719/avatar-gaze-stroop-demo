@@ -157,6 +157,32 @@ namespace AvatarStroop.Unity.Editor
                     "explicit synthetic Right positive pose prerequisite is missing");
                 Require((bool)Call(input,"CommitCandidate",right)&&selection.IsCommitted&&selection.SelectedDeviceId==right.deviceId&&selection.SelectedRole==2,
                     "validated synthetic Right candidate did not acquire first ownership");
+                Require((bool)Call(input,"PhysicalCandidateCurrentForActivation"),"focused-action recovery lost a valid same-device physical pose");
+                using(StateEvent.From(right,out var lostTracking))
+                {right.trackingState.WriteValueIntoEvent(1,lostTracking);InputState.Change(right,lostTracking);}
+                Require(!(bool)Call(input,"PhysicalCandidateCurrentForActivation"),"genuine pose loss was mislabeled as action activation delay");
+                var last=typeof(ViveStroopDeviceInput).GetField("lastDevice",BindingFlags.Instance|BindingFlags.NonPublic);
+                Require(last!=null,"validated identity field missing");
+                last.SetValue(input,right);
+                Require((bool)Call(input,"IsEstablishedDevicePoseLoss",right,true,1),"established pose loss was not classified");
+                Call(input,"Unavailable","synthetic unavailable",false,false);
+                Require(object.ReferenceEquals(last.GetValue(input),right),"invalid frame erased established identity");
+                second=Add("RightHand");
+                Require(!(bool)Call(input,"IsEstablishedDevicePoseLoss",second,false,0),"replacement was classified as the same controller");
+                InputSystem.RemoveDevice(second);second=null;
+                Require(!(bool)Call(input,"IsEstablishedDevicePoseLoss",right,true,3),"good pose was classified as lost");
+                SetSyntheticTrackedPose(right);
+                var neutral=(ViveStroopNeutralGate)Get(input,"neutralGate");
+                neutral.Observe(true,false,false,false,false,false);
+                Require(neutral.Observe(true,false,false,false,true,false).TriggerDown,"synthetic pre-gap trigger edge missing");
+                Call(input,"ResetTaskInputForFocusGap");
+                Require(selection.IsCommitted&&selection.SelectedDeviceId==right.deviceId&&selection.SelectedRole==2,
+                    "focus input reset replaced an established controller identity");
+                Require(input.DiagnosticSnapshotFrame==-1,"focus reset retained a current input diagnostic");
+                var held=neutral.Observe(true,false,false,false,true,false);
+                Require(held.NeutralPending&&!held.TriggerDown,"held trigger across a focus gap became a response");
+                Require(!neutral.Observe(true,false,false,false,false,false).TriggerDown,"neutral release became a response");
+                Require(neutral.Observe(true,false,false,false,true,false).TriggerDown,"fresh trigger after focus release was lost");
                 Debug.Log("VIVE_AUTOMATIC_CONTROLLER_INPUT_SYNTHETIC_FIXTURE_PASSED: "+assertions+" assertions; both groups enabled, unready candidate unlocked, symmetric synthetic Left/Right commits, multiple-device and established-role guards; fixture-only derived layout, not native-profile parity; no XR or physical input.");
             }
             finally

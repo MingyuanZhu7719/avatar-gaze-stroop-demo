@@ -598,7 +598,7 @@ namespace AvatarStroop.Core
             BeginMutation("Pause");bool success=false;
             try{PauseCore(actor);success=true;}finally{EndMutation(success);}
         }
-        void PauseCore(Actor actor)
+        void PauseCore(Actor actor,string focusDetail=null,bool tracking=false)
         {
             if(Phase == Phase.Ended || Phase == Phase.Paused || Phase == Phase.NeedsProtocolDecision) return;
             if(!Enum.IsDefined(typeof(Actor),actor)) throw new ArgumentException("Unknown actor");
@@ -613,9 +613,13 @@ namespace AvatarStroop.Core
             if((Phase == Phase.MainTask || Phase == Phase.Practice) && current != null && current.Outcome == TrialOutcome.Pending)
             {
                 current.SetInterrupted(trialAuthority);TraceMutation();
-                Log("trial_interrupted", "actor", actor.ToString(), "onset_available", current.Onset.HasValue.ToString());
+                if(tracking)Log("trial_interrupted", "actor", actor.ToString(), "onset_available", current.Onset.HasValue.ToString(),"reason","tracking_gap");
+                else Log("trial_interrupted", "actor", actor.ToString(), "onset_available", current.Onset.HasValue.ToString());
             }
-            Log("explicit_pause", "actor", actor.ToString(), "active_seconds", Number(activeAccum));
+            if(tracking)Log("tracking_pause","actor",actor.ToString(),"code","tracking_gap","reason","tracking_unavailable","detail","task_input=blocked");
+            else if(focusDetail==null)Log("explicit_pause", "actor", actor.ToString(), "active_seconds", Number(activeAccum));
+            else Log("focus_pause", "actor", actor.ToString(), "code", "focus_hold", "reason", "xr_focus_lost",
+                "detail", focusDetail, "active_seconds", Number(activeAccum));
             Move(Phase.Paused);
         }
         public void Resume(bool sourceReady)
@@ -624,16 +628,16 @@ namespace AvatarStroop.Core
             BeginMutation("Resume");bool success=false;
             try{ResumeCore(sourceReady);success=true;}finally{EndMutation(success);}
         }
-        void ResumeCore(bool sourceReady)
+        void ResumeCore(bool sourceReady,bool tracking=false)
         {
             Require(Phase.Paused);
             if((beforePause == Phase.MainTask || beforePause == Phase.Countdown) && !sourceReady)
                 throw new InvalidOperationException("Reacquire the selected source before resumption");
             double duration=Time()-pausedAt;
-            Log("explicit_resume", "paused_seconds", Number(duration));
+            Log(tracking?"tracking_resume":"explicit_resume", "paused_seconds", Number(duration));
             if(beforePause == Phase.MainTask)
             {
-                Segment++;TraceMutation(); trialIndex++;TraceMutation();
+                Segment=checked(Segment+1);TraceMutation(); if(!tracking){trialIndex++;TraceMutation();}
                 if(trialIndex >= 24) BeginQuestionnaire();
                 else { resumeCountdown=true;TraceMutation(); countdownAt=Time();TraceMutation();
                     if(rawCountdownWitnessRequired){rawCountdownWitnessPending=true;rawCountdownRemaining=Configuration.CountdownSeconds;TraceMutation();}
@@ -650,8 +654,8 @@ namespace AvatarStroop.Core
                 // advances. The interrupted trial stays registered as Interrupted and
                 // still occupies one of the eight planned trials, so the 6/8 rule is
                 // unchanged after a pause and no trial is invented.
-                Log("practice_resume_next_planned_trial", "interrupted_trial", current.TrialId);
-                AdvancePractice();
+                if(tracking){Segment=checked(Segment+1);TraceMutation();Move(Phase.Practice);CreateTrial(true);}
+                else {Log("practice_resume_next_planned_trial", "interrupted_trial", current.TrialId);AdvancePractice();}
             }
             else
             {
@@ -735,7 +739,12 @@ namespace AvatarStroop.Core
         void CreateTrial(bool isPractice)
         {
             int listIndex=isPractice ? -1 : Configuration.IsNamedDesign ? CurrentNamedSelection.ListIndex : Configuration.Allocation.ListByBlock[BlockIndex];
-            current=new TrialRecord(trialAuthority,Configuration.SessionId+(isPractice?"/p"+PracticeAttempt:"/b"+BlockIndex)+"/t"+trialIndex,
+            string retryOf=Configuration.HasRawRecordingIntent&&current!=null&&current.Outcome==TrialOutcome.Interrupted&&
+                current.IsPractice==isPractice&&current.PracticeAttempt==(isPractice?PracticeAttempt:0)&&current.BlockIndex==(isPractice?-1:BlockIndex)&&
+                current.PlannedIndex==trialIndex&&current.Segment<Segment?current.TrialId:null;
+            string id=Configuration.SessionId+(isPractice?"/p"+PracticeAttempt:"/b"+BlockIndex)+"/t"+trialIndex;
+            if(retryOf!=null)id+="/retry-s"+Segment.ToString(CultureInfo.InvariantCulture);
+            current=new TrialRecord(trialAuthority,id,
                 Configuration.SessionId,isPractice?"practice-"+Configuration.Seed+"-"+PracticeAttempt:TrialPlans.MainListId(Configuration.Seed,listIndex),
                 isPractice,isPractice?PracticeAttempt:0,isPractice?-1:BlockIndex,trialIndex,Segment,isPractice||Configuration.IsNamedDesign?null:CurrentCondition,
                 isPractice?practice[trialIndex]:lists[listIndex][trialIndex],Configuration.NamedPlan==null?Configuration.NamedOption:null,
@@ -744,7 +753,11 @@ namespace AvatarStroop.Core
             // The named recording event captures the planned stimulus before
             // presentation. It is not evidence that the headset displayed it.
             // Preserve the existing Quest and earlier named event encodings.
-            if(Configuration.HasRawRecordingIntent)
+            if(retryOf!=null)
+                Log("trial_planned","list",current.ListId,"planned_index",trialIndex.ToString(CultureInfo.InvariantCulture),
+                    "planned_stimulus_schema","1","planned_word",current.Stimulus.Word.ToString(),"planned_ink",current.Stimulus.Ink.ToString(),
+                    "tracking_retry_schema","1","retry_of",retryOf);
+            else if(Configuration.HasRawRecordingIntent)
                 Log("trial_planned", "list", current.ListId, "planned_index", trialIndex.ToString(),
                     "planned_stimulus_schema", "1", "planned_word", current.Stimulus.Word.ToString(),
                     "planned_ink", current.Stimulus.Ink.ToString());
@@ -756,6 +769,7 @@ namespace AvatarStroop.Core
             if(trialIndex < 8) { Move(Phase.Practice); CreateTrial(true); return; }
             Log("practice_completed", "attempt", PracticeAttempt.ToString(), "correct_first", practiceCorrect.ToString(), "planned", "8");
             current=null;TraceMutation();
+            if(Configuration.HasRawRecordingIntent&&Segment!=0){Segment=0;TraceMutation();}
             if(practiceCorrect >= 6) { BlockIndex=0;TraceMutation(); Move(Phase.BlockPreparation); }
             else if(PracticeAttempt < 2) Move(Phase.PracticeRetry);
             else Finish(Core.EndReason.PracticeFailed, "two_practice_attempts_below_6_of_8");

@@ -23,6 +23,10 @@ namespace AvatarStroop.Unity
         internal bool WaitForLegacyWozRawAcquisition()
         {
             if(!RecordedLegacyWoz||namedRawPump==null)return false;
+            // A negative-only focus suspension is not source acquisition or a
+            // positive pose. Keep the true Paused status panel available.
+            if(FocusHeldLiveWoz&&legacyWozProcess!=null&&legacyWozProcess.FocusSuspendStarted)
+                return participant.Phase!=Phase.Paused;
             var state=ViveLegacyWozRawSceneAcquisition.Evaluate(participant,legacyWozScene,legacyWozStarted);
             if(state==ViveLegacyWozRawSceneAcquisition.State.Ready)return false;
             suppressInputUntilReleased=true;
@@ -40,9 +44,9 @@ namespace AvatarStroop.Unity
             readonly ViveStroopPreviewRig rig;
             internal OwnedLegacySink(ViveStroopDevelopmentBootstrap scene)
             {this.scene=scene;task=scene.participant;target=scene.view;rig=scene.rig;}
-            public bool LocallyReady {get{return scene!=null&&scene.isActiveAndEnabled&&Application.isFocused&&
+            public bool LocallyReady {get{return scene!=null&&scene.isActiveAndEnabled&&
                 System.Object.ReferenceEquals(scene.participant,task)&&System.Object.ReferenceEquals(scene.view,target)&&System.Object.ReferenceEquals(scene.rig,rig)&&
-                rig!=null&&rig.HeadReady&&task.InputReady&&!scene.PresentationBlocked&&scene.recording==null&&
+                rig!=null&&rig.HeadReady&&rig.XrFocused&&task.InputReady&&!scene.PresentationBlocked&&scene.recording==null&&
                 (!task.RawRecordingRequested||(scene.RecordedLegacyWozReady&&task.LegacyWozRecording!=null&&task.LegacyWozRecording.SceneAuthorityCurrent&&rig.RawSceneTrackingCurrent()));}}
             public void Clear()
             {
@@ -97,6 +101,7 @@ namespace AvatarStroop.Unity
         bool PollLegacyWozBeforeTask()
         {
             if(legacyWozScene==null||legacyWozProcess==null)return false;
+            if(FocusHeldLiveWoz)return MaintainLegacyWozDuringFocusGap();
             if(RecordedLegacyWoz&&participant.Completed){legacyWozScene.AfterTaskMutation();return true;}
             bool ready=legacyWozScene.PumpBeforeTask();
             if(legacyWozProcess.Terminal)
@@ -104,6 +109,34 @@ namespace AvatarStroop.Unity
                     "Stopped: "+legacyWozProcess.LastIssue+". No automatic resume.";
             else legacyWozStatus=ready?"Connected; current task ready.":"Waiting for current operator data; task hidden.";
             return ready;
+        }
+        bool MaintainLegacyWozDuringFocusGap()
+        {
+            if(!legacyWozStarted||legacyWozProcess==null)return true;
+            if(FocusHeldLiveWoz||participant!=null&&participant.IsXrFocusInteractionHeld||
+                legacyWozProcess.FocusSuspendStarted||legacyWozProcess.FocusForwardingSuspending||legacyWozProcess.FocusForwardingSuspended)
+            {
+                if(!legacyWozProcess.TickFocusHoldSuspension())return false;
+                if(namedRawPump!=null&&!legacyWozProcess.RecordFocusSuspensionMetadataForCurrentFrame())return false;
+                if(legacyWozScene!=null&&!legacyWozScene.ClearForSafety())return false;
+                legacyWozStatus=legacyWozProcess.FocusForwardingSuspended?
+                    (legacyWozProcess.FocusForwardingCleanupUnknown?"Remote forwarding suspended; acknowledgment or cleanup remains unknown.":"Remote forwarding suspension acknowledged."):
+                    "Requesting remote forwarding suspension; acknowledgment is pending.";
+                return true;
+            }
+            // Continue authenticated task/status renewal and incoming packets,
+            // without asking the scene to certify a hidden presentation. True
+            // source, clock or transport errors keep their terminal handling.
+            legacyWozProcess.TickMaintainedPreflight();
+            if(legacyWozScene!=null)
+            {
+                if(!legacyWozScene.ClearForSafety())return false;
+                legacyWozScene.AfterTaskMutation();
+            }
+            if(legacyWozProcess.Terminal)
+            {legacyWozStatus="Stopped: "+legacyWozProcess.LastIssue+". No automatic resume.";return false;}
+            legacyWozStatus="XR focus unavailable; protocol maintenance continues and task presentation is held.";
+            return true;
         }
         void RevokeLegacyWoz()
         {
@@ -121,7 +154,12 @@ namespace AvatarStroop.Unity
             if(legacyWozScene!=null)legacyWozScene.Dispose();else if(legacyWozProcess!=null)legacyWozProcess.Dispose();
         }
         void GuardLegacyWozCamera(Camera camera)
-        {if(legacyWozStarted&&legacyWozScene!=null&&view!=null&&camera==view.PresentationCamera)legacyWozScene.RecheckPresentation();}
+        {
+            if(!legacyWozStarted||legacyWozScene==null||view==null||camera!=view.PresentationCamera)return;
+            if(rig!=null&&(!rig.XrFocused||FocusHeldLiveWoz||focusRecoveryPending))
+            {if(!legacyWozScene.ClearForSafety()&&namedRawPump!=null)FailNamedRawBeforeFrame();return;}
+            legacyWozScene.RecheckPresentation();
+        }
         void DrawLegacyWozControls()
         {
             if(participant==null||participant.HasNamedOption||(participant.RawRecordingRequested?!RecordedLegacyWozReady:namedRawPump!=null)||recording!=null)return;
@@ -155,7 +193,7 @@ namespace AvatarStroop.Unity
             }
             if(!String.IsNullOrEmpty(legacyWozOffer))
             {GUILayout.Label("Private temporary offer: copy to operator, then start operator first.",recordingWrap);GUILayout.TextField(legacyWozOffer);}
-            if(RecordedLegacyWoz)GUILayout.Label("Keep this participant view focused. Transfer the offer to the separate operator PC; focus loss stops recording.",recordingWrap);
+            if(RecordedLegacyWoz)GUILayout.Label("Transfer the offer to the separate operator PC. Focus changes are recorded; healthy raw capture continues while an unfocused task is held.",recordingWrap);
             GUI.enabled=legacyWozProcess!=null&&!legacyWozClosed&&!legacyWozStarted;
             if(GUILayout.Button("Operator started: connect participant"))StartLegacyWoz();
             GUI.enabled=legacyWozStarted&&legacyWozScene!=null&&legacyWozScene.CanBeginCountdown;

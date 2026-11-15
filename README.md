@@ -1,6 +1,15 @@
 # avatar-gaze-stroop-demo
 VR avatar gaze and Stroop demo planning.
 
+## DQ18: responsive VIVE setup and recording preparation
+
+The desktop participant setup reflows for narrower windows and lets the owner scroll through the complete Named multi-block plan. Every block needs an explicit condition and stimulus list. The application identifies missing choices by block and will not confuse an incomplete plan with a folder I/O failure. It does not choose experimental conditions or record on your behalf.
+
+For a local development recording, review the proposed session folder, acknowledge the self-test notice and choose **Prepare raw + CSV and arm recording + Practice**. Start the classroom view. Eye diagnostics are automatic, but recording and Practice still depend on both separate headset choices, current tracking and released controls. Formal plan confirmation and first-block start remain separate. Existing data is not overwritten.
+
+See the [VIVE workflow](docs/vive-owner-workflow.md) and [local self-test guide](docs/controlled-recording-self-test-guide.txt). This repository distributes source only: no player binaries, private recordings, machine logs or vendor SDKs. Physical headset and two-PC validation remain separate from software checks.
+
+
 ## VIVE interface update - 12 November 2026
 
 Participant setup now separates **Preview (no files)** from **Record locally**, with explicit source/recording starts, output status and fixed pause/withdraw controls. Exactly one VIVE wand is identified automatically; a missing, ambiguous or replaced controller cannot silently supply responses. The fixed colour map and 0.5 threshold are retained.

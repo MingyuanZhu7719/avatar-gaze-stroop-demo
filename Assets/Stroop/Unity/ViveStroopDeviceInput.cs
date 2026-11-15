@@ -69,12 +69,30 @@ namespace AvatarStroop.Unity
         public bool MenuHeld { get; private set; }
         public bool MenuDown { get; private set; }
         public string Diagnostic { get; private set; }
+        // A narrow recovery hint, never input readiness: all bindings resolve
+        // to the same currently tracked physical candidate, but OpenXR has not
+        // activated its button actions after focus restoration.
+        public bool ActionActivationPending { get; private set; }
+        internal bool SameDevicePoseLoss {get;private set;}
         internal ViveStroopDeviceFrame(VivePreviewTrackpadSample trackpad,bool neutralPending,bool lostReady,
-            bool triggerHeld,bool triggerDown,bool menuHeld,bool menuDown,string diagnostic,bool deviceChanged=false)
+            bool triggerHeld,bool triggerDown,bool menuHeld,bool menuDown,string diagnostic,bool deviceChanged=false,bool actionActivationPending=false,bool sameDevicePoseLoss=false)
         {
             Trackpad=trackpad;NeutralPending=neutralPending;LostReady=lostReady;TriggerHeld=triggerHeld;TriggerDown=triggerDown;
             MenuHeld=menuHeld;MenuDown=menuDown;Diagnostic=diagnostic;DeviceChanged=deviceChanged;
+            ActionActivationPending=actionActivationPending;SameDevicePoseLoss=sameDevicePoseLoss;
         }
+    }
+
+    // Visual-only software snapshot of the already-validated position and
+    // orientation in the XR input tracking space. Not a task/readiness token.
+    internal readonly struct ViveStroopControllerPose
+    {
+        internal readonly int DeviceId,Frame;
+        internal readonly VivePreviewControllerHand Hand;
+        internal readonly Vector3 LocalPosition;
+        internal readonly Quaternion LocalRotation;
+        internal ViveStroopControllerPose(int deviceId,int frame,VivePreviewControllerHand hand,Vector3 position,Quaternion rotation)
+        {DeviceId=deviceId;Frame=frame;Hand=hand;LocalPosition=position;LocalRotation=rotation;}
     }
 
     // Development-only input adapter for the official Unity HTC Vive Controller
@@ -114,6 +132,76 @@ namespace AvatarStroop.Unity
         InputDevice lastDevice;
         InputDevice lastSafetyDevice;
         InputDevice lastStartupDevice;
+        InputDevice currentVisualPoseDevice,firstVisualPoseDevice;
+        ViveStroopControllerPose currentVisualPose;
+
+        void ClearVisualPose(){currentVisualPoseDevice=null;currentVisualPose=default;}
+        void TryCaptureVisualPose(InputDevice device,Vector3 positionValue,Quaternion rotationValue)
+        {
+            try{CaptureVisualPose(device,positionValue,rotationValue);}
+            catch(Exception){ClearVisualPose();}
+        }
+        void CaptureVisualPose(InputDevice device,Vector3 positionValue,Quaternion rotationValue)
+        {
+            // Explicit-role input can recover with the original behavior. The
+            // visual aid never silently transfers to a different device object.
+            if(firstVisualPoseDevice!=null&&!object.ReferenceEquals(firstVisualPoseDevice,device))return;
+            int role=ControllerRole(device);
+            if(role!=(int)Hand||role<1||role>2)return;
+            firstVisualPoseDevice=device;currentVisualPoseDevice=device;
+            currentVisualPose=new ViveStroopControllerPose(device.deviceId,Time.frameCount,Hand,positionValue,rotationValue);
+        }
+
+        // For visualization only. The OpenXR focus check remains independent
+        // of the tracking-space pose and its software observation frame.
+        internal bool TryGetCurrentControllerPose(out ViveStroopControllerPose pose)
+        {
+            pose=default;
+            if(disposed||System.Threading.Thread.CurrentThread.ManagedThreadId!=creatorThread)return false;
+            try{return OpenXRUtility.IsSessionFocused?TryGetValidatedVisualPose(out pose):RejectVisualPose();}
+            catch(Exception){return RejectVisualPose();}
+        }
+        bool TryGetValidatedVisualPose(out ViveStroopControllerPose pose)
+        {
+            pose=default;
+            if(disposed||System.Threading.Thread.CurrentThread.ManagedThreadId!=creatorThread)return false;
+            var device=currentVisualPoseDevice;var sampled=currentVisualPose;
+            if(device==null||sampled.Frame!=Time.frameCount||sampled.Hand!=Hand)return RejectVisualPose();
+            try
+            {
+                if(!device.added||!device.enabled||device.deviceId!=sampled.DeviceId||
+                    ControllerRole(device)!=(int)sampled.Hand||!BoundTo(position,device)||!BoundTo(rotation,device)||
+                    !BoundTo(tracked,device)||!BoundTo(trackingState,device)||!BoundTo(trackpad,device)||
+                    !BoundTo(trackpadClick,device)||!BoundTo(trigger,device)||!BoundTo(menu,device))return RejectVisualPose();
+                if(automatic)
+                {
+                    if(!selection.IsCommitted||selection.SelectedDeviceId!=sampled.DeviceId||
+                        selection.SelectedRole!=(int)sampled.Hand)return RejectVisualPose();
+                    int count=0;
+                    foreach(var item in InputSystem.devices)
+                    {
+                        if(!(item is HTCViveControllerProfile.ViveController)||!item.added||!item.enabled)continue;
+                        if(!object.ReferenceEquals(item,device)||++count>1)return RejectVisualPose();
+                    }
+                    if(count!=1)return RejectVisualPose();
+                }
+                // Before render, reject a same-frame tracking drop using only
+                // the exact selected device's tracked/position/rotation bits.
+                // Never sample buttons or refresh p/q here. Frame is the
+                // ordinary Unity observation, not a native capture timestamp.
+                var trackingControl=tracked.controls[0] as InputControl<float>;
+                var flagsControl=trackingState.controls[0] as InputControl<int>;
+                if(trackingControl==null||flagsControl==null)return RejectVisualPose();
+                float tracking=trackingControl.ReadValue();int flags=flagsControl.ReadValue();
+                if(!ValidButton(tracking)||tracking<=.5f||(flags&3)!=3)
+                return RejectVisualPose();
+                pose=sampled;return true;
+            }
+            catch(Exception){return RejectVisualPose();} // Decorative only: never change input outcomes.
+        }
+        bool RejectVisualPose(){ClearVisualPose();return false;}
+        static bool BoundTo(InputAction action,InputDevice device)
+        {return Bound(action)&&object.ReferenceEquals(action.controls[0].device,device);}
         public VivePreviewControllerHand Hand { get; private set; }
 
         public ViveStroopDeviceInput(VivePreviewControllerHand hand)
@@ -256,7 +344,7 @@ namespace AvatarStroop.Unity
             return text.ToString();
         }
         bool SafetyUnavailable()
-        {safetyMenuGate.Reset();lastSafetyDevice=null;CaptureLogicalDiagnostic();return false;}
+        {ClearVisualPose();safetyMenuGate.Reset();lastSafetyDevice=null;CaptureLogicalDiagnostic();return false;}
 
         InputAction Add(string name,string binding,string type)
         { return actions.AddAction(name,InputActionType.Value,binding,expectedControlLayout:type); }
@@ -304,11 +392,33 @@ namespace AvatarStroop.Unity
                 throw new InvalidOperationException("Read and dispose the VIVE device adapter on its creating Unity thread.");
             if(disposed)throw new ObjectDisposedException("ViveStroopDeviceInput");
         }
-        ViveStroopDeviceFrame Unavailable(string message)
+        ViveStroopDeviceFrame Unavailable(string message,bool actionActivationPending=false,bool sameDevicePoseLoss=false)
         {
-            var gate=neutralGate.Observe(false,false,false,false,false,false);lastDevice=null;
+            ClearVisualPose();
+            var gate=neutralGate.Observe(false,false,false,false,false,false);
             CaptureLogicalDiagnostic();
-            return new ViveStroopDeviceFrame(new VivePreviewTrackpadSample(false,false,0,0),false,gate.LostReady,false,false,false,false,message);
+            return new ViveStroopDeviceFrame(new VivePreviewTrackpadSample(false,false,0,0),false,gate.LostReady,false,false,false,false,message,false,actionActivationPending,sameDevicePoseLoss);
+        }
+
+        bool IsEstablishedDevicePoseLoss(InputDevice candidate,bool tracked,int trackingFlags)
+        {return candidate!=null&&candidate.added&&candidate.enabled&&lastDevice!=null&&object.ReferenceEquals(candidate,lastDevice)&&
+            (!tracked||(trackingFlags&3)!=3);}
+
+        bool PhysicalCandidateCurrentForActivation()
+        {
+            if(!Bound(position)||!Bound(rotation)||!Bound(tracked)||!Bound(trackingState)||!Bound(trackpad)||
+                !Bound(trackpadClick)||!Bound(trigger)||!Bound(menu))return false;
+            var candidate=position.controls[0].device;
+            if(!(candidate is HTCViveControllerProfile.ViveController)||!candidate.added||!candidate.enabled||!CandidateMatches(candidate)||
+                rotation.controls[0].device!=candidate||tracked.controls[0].device!=candidate||trackingState.controls[0].device!=candidate||
+                trackpad.controls[0].device!=candidate||trackpadClick.controls[0].device!=candidate||
+                trigger.controls[0].device!=candidate||menu.controls[0].device!=candidate)return false;
+            // Read only physical pose bits. No trigger/menu/trackpad value or
+            // edge is consumed while the action set is still inactive.
+            var p=position.ReadValue<Vector3>();var q=rotation.ReadValue<Quaternion>();
+            float tracking=tracked.ReadValue<float>();int flags=trackingState.ReadValue<int>();
+            poseBitsObserved=true;observedTracked=tracking>.5f;observedTrackingValid=ValidButton(tracking);observedTrackingFlags=flags;
+            return ValidPosition(p)&&ValidRotation(q)&&ValidButton(tracking)&&tracking>.5f&&(flags&3)==3;
         }
 
         // Independent device continuity for pre-placement confirmation. A
@@ -326,6 +436,16 @@ namespace AvatarStroop.Unity
 
         public void ResetSafetyMenu()
         {MainThread();safetyMenuGate.Reset();lastSafetyDevice=null;}
+
+        // A focus gap suppresses task input without replacing the established
+        // controller identity. Returning focus must observe a fresh neutral
+        // release; a trigger held across the gap is never a new response.
+        internal void ResetTaskInputForFocusGap()
+        {
+            MainThread();ClearVisualPose();neutralGate.Observe(false,false,false,false,false,false);
+            safetyMenuGate.Reset();lastSafetyDevice=null;hasPhase=false;
+            poseBitsObserved=false;DiagnosticSnapshotFrame=-1;snapshotAvailable=false;
+        }
 
         // Only the selected wand's menu and the minimum tracking/focus data
         // are read here. No trigger, trackpad, task response or eye sample is
@@ -350,6 +470,12 @@ namespace AvatarStroop.Unity
                 if(!ValidPosition(p)||!ValidRotation(q)||!ValidButton(tracking)||tracking<=.5f||(flags&3)!=3||!ValidButton(button))
                 {return SafetyUnavailable();}
                 if(!CommitCandidate(selected))return SafetyUnavailable();
+                // A valid safety poll may follow ordinary input in the same
+                // frame; its menu edge result does not decide pose freshness.
+                // Keep only that ordinary sample from this exact device.
+                if(currentVisualPoseDevice!=null&&(!object.ReferenceEquals(currentVisualPoseDevice,selected)||
+                    currentVisualPose.DeviceId!=selected.deviceId||currentVisualPose.Hand!=Hand||
+                    currentVisualPose.Frame!=Time.frameCount))ClearVisualPose();
                 bool changed=lastSafetyDevice!=null&&!object.ReferenceEquals(lastSafetyDevice,selected);
                 lastSafetyDevice=selected;CaptureLogicalDiagnostic();return safetyMenuGate.Observe(true,changed,button>.5f);
             }
@@ -362,7 +488,7 @@ namespace AvatarStroop.Unity
         // edge can be emitted. Never infer a press from reconnecting while held.
         public ViveStroopDeviceFrame Read(Phase phase,bool presentationReady)
         {
-            MainThread();
+            MainThread();ClearVisualPose();
             if(!Enum.IsDefined(typeof(Phase),phase))throw new ArgumentOutOfRangeException("phase");
             bool phaseChanged=!hasPhase||previousPhase!=phase;hasPhase=true;previousPhase=phase;
             poseBitsObserved=false;
@@ -377,8 +503,12 @@ namespace AvatarStroop.Unity
                 var triggerState=Inspect(trigger,true);var menuState=Inspect(menu,true);
                 if(!positionState.Ready||!rotationState.Ready||!trackedState.Ready||!trackingStateState.Ready||
                    !trackpadState.Ready||!clickState.Ready||!triggerState.Ready||!menuState.Ready)
-                    return Unavailable(ViveControllerReadinessDiagnostic.Bindings(Hand.ToString(),new[] {
-                        positionState,rotationState,trackedState,trackingStateState,trackpadState,clickState,triggerState,menuState })+(automatic?" "+ControllerStatus:DetectedWandHands()));
+                {
+                    var states=new[]{positionState,rotationState,trackedState,trackingStateState,trackpadState,clickState,triggerState,menuState};
+                    bool activationPending=ViveControllerReadinessDiagnostic.OnlyActivationPending(states)&&PhysicalCandidateCurrentForActivation();
+                    return Unavailable(ViveControllerReadinessDiagnostic.Bindings(Hand.ToString(),states)+
+                        (automatic?" "+ControllerStatus:DetectedWandHands()),activationPending);
+                }
                 InputDevice device=trackpad.controls[0].device;
                 if(!(device is HTCViveControllerProfile.ViveController))
                     return Unavailable(Hand+" input resolved to an unsupported controller profile.");
@@ -389,23 +519,30 @@ namespace AvatarStroop.Unity
                     trigger.controls[0].device!=device||menu.controls[0].device!=device||!CandidateMatches(device))
                     return Unavailable(Hand+" VIVE actions resolve to different devices; check the selected hand and bindings.");
                 bool deviceChanged=lastDevice!=null&&!object.ReferenceEquals(device,lastDevice);
-                lastDevice=device;
                 var p=position.ReadValue<Vector3>();var q=rotation.ReadValue<Quaternion>();
                 float tracking=tracked.ReadValue<float>();int flags=trackingState.ReadValue<int>();
                 poseBitsObserved=true;observedTracked=tracking>.5f;observedTrackingValid=ValidButton(tracking);observedTrackingFlags=flags;
                 var axis=trackpad.ReadValue<Vector2>();float click=trackpadClick.ReadValue<float>();
                 float triggerValue=trigger.ReadValue<float>(),menuValue=menu.ReadValue<float>();
-                if(!ValidPosition(p)||!ValidRotation(q))return Unavailable(Hand+" VIVE controller pose is invalid.");
                 if(!ValidButton(tracking))return Unavailable(Hand+" VIVE controller tracked value is invalid.");
-                if(tracking<=.5f||(flags&3)!=3)return Unavailable(Hand+" VIVE controller pose tracking is not ready (tracked="+(tracking>.5f?"yes":"no")+", position="+((flags&1)!=0?"yes":"no")+", rotation="+((flags&2)!=0?"yes":"no")+").");
+                if(!Finite(p.x)||!Finite(p.y)||!Finite(p.z)||!Finite(q.x)||!Finite(q.y)||!Finite(q.z)||!Finite(q.w))
+                    return Unavailable(Hand+" VIVE controller pose contains malformed values.");
                 if(!Finite(axis.x)||!Finite(axis.y)||axis.x< -1||axis.x>1||axis.y< -1||axis.y>1)
                     return Unavailable(Hand+" VIVE trackpad axis is invalid.");
                 if(!ValidButton(click)||!ValidButton(triggerValue)||!ValidButton(menuValue))
                     return Unavailable(Hand+" VIVE trackpad click, trigger or menu value is invalid.");
+                if(tracking<=.5f||(flags&3)!=3)
+                    return Unavailable("VIVE controller pose is temporarily unavailable.",false,
+                        IsEstablishedDevicePoseLoss(device,tracking>.5f,flags));
+                if(!ValidPosition(p)||!ValidRotation(q))return Unavailable(Hand+" VIVE controller pose is invalid.");
                 if(!CommitCandidate(device))return Unavailable("VIVE controller candidate changed during validation. Input remains blocked.");
+                lastDevice=device;
                 bool clicked=click>.5f,triggerHeld=triggerValue>.5f,menuHeld=menuValue>.5f;
                 var gate=neutralGate.Observe(true,phaseChanged,deviceChanged,clicked,triggerHeld,menuHeld);
                 CaptureLogicalDiagnostic();
+                // Visibility observes the existing accepted physical pose, even
+                // while the untouched input gate is waiting for neutral release.
+                TryCaptureVisualPose(device,p,q);
                 // During neutral waiting the real pressed level still reaches the
                 // trackpad router, so its held colour is released only on release.
                 return new ViveStroopDeviceFrame(new VivePreviewTrackpadSample(true,clicked,axis.x,axis.y),gate.NeutralPending,gate.LostReady,
@@ -423,7 +560,7 @@ namespace AvatarStroop.Unity
         public void Dispose()
         {
             if(disposed)return;
-            MainThread();disposed=true;actions.Disable();actions.Dispose();
+            MainThread();ClearVisualPose();firstVisualPoseDevice=null;disposed=true;actions.Disable();actions.Dispose();
         }
     }
 }

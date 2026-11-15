@@ -132,9 +132,12 @@ namespace AvatarStroop.Unity.Editor
                 Set(bootstrap,"recordingSetupDesign",-1);Set(bootstrap,"controlledRecordingNoticeAccepted",false);
                 Require(Get(rig,"worker")==null&&Get(bootstrap,"participant")==null,"notice fixture started hardware or task");
                 var choice=ConfigureRequest(bootstrap,rig,view);
+                string beforeDesktopFocus=Step(choice);
                 Call(bootstrap,"OnApplicationFocus",false);
-                Require(Step(choice)=="Cancelled","focus loss must cancel the rehearsal");
+                Require(Step(choice)==beforeDesktopFocus,"desktop focus alone must not cancel or advance the rehearsal");
                 Require(Get(bootstrap,"participant")==null&&Get(rig,"worker")==null,"focus loss must not create a task or worker");
+                Call(bootstrap,"OnApplicationFocus",true);
+                Require(Step(choice)==beforeDesktopFocus,"desktop focus restoration must not grant a rehearsal choice");
 
                 // The owner can explicitly clear a stopped rehearsal. Resetting
                 // just this fixture field creates a new independent attempt.

@@ -45,6 +45,7 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            ViveRawEyeQualityExportTests.Register(suite);
             suite.Run("readable analysis streams all verified four-block fields without changing original",()=>{
                 byte[] bytes=ViveRawTrialProjectionTests.FourBlocks();byte[] original=(byte[])bytes.Clone();
                 using(var input=new MemoryStream(bytes,false))using(var output=new MemoryStream())

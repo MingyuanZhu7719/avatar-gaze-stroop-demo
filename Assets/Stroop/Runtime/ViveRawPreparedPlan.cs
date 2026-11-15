@@ -32,6 +32,24 @@ namespace AvatarStroop.Runtime
         readonly Dictionary<string,ViveRawPreparedPlan> plans=new Dictionary<string,ViveRawPreparedPlan>(StringComparer.Ordinal);
         readonly HashSet<string> priorPracticeLists=new HashSet<string>(StringComparer.Ordinal);
         readonly bool[] priorMainTrials=new bool[4],priorPracticeAttempts=new bool[2];bool untrackedPriorPractice;
+        sealed class RetrySlot
+        {
+            internal string Trial;
+            internal int Segment;
+            internal bool TrackingInterrupted,Responded;
+        }
+        // At most 112 fixed slots (two practice attempts + four main blocks).
+        readonly RetrySlot[] retrySlots=new RetrySlot[112];
+        RetrySlot currentRetrySlot;
+        int currentRetryBlock;
+        internal void ObserveOutcome(string kind,IReadOnlyDictionary<string,string> fields,int block,int segment,string trialId)
+        {
+            var slot=currentRetrySlot;
+            if(slot==null||block!=currentRetryBlock||segment!=slot.Segment||String.IsNullOrEmpty(trialId)||trialId!=slot.Trial)return;
+            if(kind=="first_response"){slot.Responded=true;slot.TrackingInterrupted=false;return;}
+            string reason;
+            if(!slot.Responded&&fields.TryGetValue("reason",out reason)&&reason=="tracking_gap")slot.TrackingInterrupted=true;
+        }
         internal int UnsupportedEvents {get;private set;}
         static bool ColourName(string value)
         {Colour c;return value!=null&&Enum.TryParse<Colour>(value,false,out c)&&Enum.IsDefined(typeof(Colour),c)&&String.Equals(c.ToString(),value,StringComparison.Ordinal);}
@@ -59,6 +77,8 @@ namespace AvatarStroop.Runtime
             string prefix=session+"/p";if(!trialId.StartsWith(prefix,StringComparison.Ordinal))return false;
             int separator=trialId.IndexOf("/t",prefix.Length,StringComparison.Ordinal);if(separator<0)return false;
             string a=trialId.Substring(prefix.Length,separator-prefix.Length),i=trialId.Substring(separator+2);int index;
+            int retry=i.IndexOf("/retry-s",StringComparison.Ordinal);
+            if(retry>=0)i=i.Substring(0,retry);
             return Int32.TryParse(a,NumberStyles.None,CultureInfo.InvariantCulture,out attempt)&&(attempt==1||attempt==2)&&a==attempt.ToString(CultureInfo.InvariantCulture)&&
                 Int32.TryParse(i,NumberStyles.None,CultureInfo.InvariantCulture,out index)&&index>=0&&index<8&&i==index.ToString(CultureInfo.InvariantCulture);
         }
@@ -96,7 +116,7 @@ namespace AvatarStroop.Runtime
             string order=scope=="PRACTICE"&&untrackedPriorPractice?"UNKNOWN":"NO_CONTRADICTION_OBSERVED_IN_PREFIX";
             var result=new ViveRawPreparedPlan(scope,list,block,segment,attempt,sequence,time,values,order);plans.Add(key,result);return result;
         }
-        internal void ObserveTrial(IReadOnlyDictionary<string,string> fields,int block,string session,string trialId)
+        internal void ObserveTrial(IReadOnlyDictionary<string,string> fields,int block,string session,string trialId,int segment=0)
         {
             string list,indexText;
             bool hasList=fields.TryGetValue("list",out list)&&!String.IsNullOrEmpty(list);
@@ -124,20 +144,36 @@ namespace AvatarStroop.Runtime
             else if(block<4)
             {plans.TryGetValue(Key("MAIN",block,0),out selected);if(selected==null)priorMainTrials[block]=true;
                 else if(hasList&&!String.Equals(selected.List,list,StringComparison.Ordinal))throw new InvalidPlan();}
-            if(selected==null)return;
-            if(!hasList)return; // missing declaration remains unknown
-            if(!fields.TryGetValue("planned_index",out indexText))return; // missing is not backfilled
+            bool declaresRetry=fields.ContainsKey("tracking_retry_schema")||fields.ContainsKey("retry_of")||
+                (!String.IsNullOrEmpty(trialId)&&trialId.IndexOf("/retry-s",StringComparison.Ordinal)>=0);
+            if(selected==null||!hasList||!fields.TryGetValue("planned_index",out indexText))
+            {if(declaresRetry)throw new InvalidPlan();currentRetrySlot=null;return;}
             int index;if(!Int32.TryParse(indexText,NumberStyles.None,CultureInfo.InvariantCulture,out index)||indexText!=index.ToString(CultureInfo.InvariantCulture)||index<0||index>=selected.Items.Count)throw new InvalidPlan();
             // Verify an observed ID only when the plan, list and index are all
             // available. Never synthesize an ID for absent/partial trials.
-            if(!String.IsNullOrEmpty(trialId))
+            int slotIndex=selected.Scope=="PRACTICE"?(selected.Attempt-1)*8+index:16+block*24+index;
+            string expected=session+(selected.Scope=="PRACTICE"?"/p"+selected.Attempt.ToString(CultureInfo.InvariantCulture):"/b"+block.ToString(CultureInfo.InvariantCulture))+"/t"+index.ToString(CultureInfo.InvariantCulture);
+            var prior=retrySlots[slotIndex];
+            if(declaresRetry)
             {
-                string expected=session+(selected.Scope=="PRACTICE"?"/p"+selected.Attempt.ToString(CultureInfo.InvariantCulture):"/b"+block.ToString(CultureInfo.InvariantCulture))+"/t"+index.ToString(CultureInfo.InvariantCulture);
-                if(!String.Equals(trialId,expected,StringComparison.Ordinal))throw new InvalidPlan();
+                string version,predecessor;
+                if(!fields.TryGetValue("tracking_retry_schema",out version)||version!="1"||
+                    !fields.TryGetValue("retry_of",out predecessor)||prior==null||!Object.ReferenceEquals(prior,currentRetrySlot)||
+                    currentRetryBlock!=block||!prior.TrackingInterrupted||prior.Responded||predecessor!=prior.Trial||
+                    prior.Segment==Int32.MaxValue||segment!=prior.Segment+1||
+                    !String.Equals(trialId,expected+"/retry-s"+segment.ToString(CultureInfo.InvariantCulture),StringComparison.Ordinal))
+                    throw new InvalidPlan();
             }
+            else if(!String.IsNullOrEmpty(trialId)&&!String.Equals(trialId,expected,StringComparison.Ordinal))throw new InvalidPlan();
             string schema,word,ink;fields.TryGetValue("planned_stimulus_schema",out schema);fields.TryGetValue("planned_word",out word);fields.TryGetValue("planned_ink",out ink);
             string state=ViveRawTrialAccumulator.StimulusState(schema,word,ink);
-            if(state=="CONFLICT")throw new InvalidPlan();
+            if(state=="CONFLICT"||(declaresRetry&&state!="DECLARED_V1"))throw new InvalidPlan();
+            if(!String.IsNullOrEmpty(trialId))
+            {
+                retrySlots[slotIndex]=currentRetrySlot=new RetrySlot{Trial=trialId,Segment=segment};
+                currentRetryBlock=block;
+            }
+            else currentRetrySlot=null;
             if(state=="DECLARED_V1"&&(!String.Equals(word,selected.Items[index].Word,StringComparison.Ordinal)||!String.Equals(ink,selected.Items[index].Ink,StringComparison.Ordinal)))throw new InvalidPlan();
         }
     }

@@ -9,17 +9,45 @@ namespace AvatarStroop.Runtime
     internal sealed class ViveNamedRecordingSetup
     {
         internal enum Step { Task, Eye, Confirmed, Declined, Cancelled }
+        internal enum CancellationCause
+        { None, ExplicitCancellation, TrackingOrInputUnavailable, ControllerIdentityChanged, ClockChanged, TimingUnavailable, DesignChanged, ViewStopped, ComponentDisabled }
         internal string DirectoryPath { get; private set; }
         internal ViveRawByteBudget Budget { get; private set; }
         internal Step Current { get; private set; }
         internal int Revision { get; private set; }
+        internal CancellationCause Cancellation { get; private set; }
+        internal string CancellationMessage
+        {
+            get
+            {
+                switch(Cancellation)
+                {
+                    case CancellationCause.TrackingOrInputUnavailable:return "Headset or controller tracking became unavailable.";
+                    case CancellationCause.ControllerIdentityChanged:return "The controller identity changed.";
+                    case CancellationCause.ClockChanged:return "The headset session clock changed or became unavailable.";
+                    case CancellationCause.TimingUnavailable:return "A valid recording-choice observation time was unavailable.";
+                    case CancellationCause.DesignChanged:return "The recording design or local recording selection changed.";
+                    case CancellationCause.ViewStopped:return "The headset view was stopped.";
+                    case CancellationCause.ComponentDisabled:return "The recording interface was closed or disabled.";
+                    case CancellationCause.ExplicitCancellation:return "Recording choices were cancelled explicitly.";
+                    default:return "No recording-choice cancellation has been reported.";
+                }
+            }
+        }
         bool taskSelected,eyeSelected,armed,consumed;
+        internal bool TrackingSuspended {get;private set;}
         MonotonicClock selectionClock;
         double? taskPollSeconds,eyePollSeconds;
         internal bool IsTerminal { get { return Current==Step.Confirmed||Current==Step.Declined||Current==Step.Cancelled; } }
         internal bool BothSelected { get { return Current==Step.Confirmed&&taskSelected&&eyeSelected; } }
         internal bool CanStart(bool gate,bool focused,bool tracking,bool workerReady,int freshFrame,int currentFrame)
-        {return gate&&BothSelected&&focused&&tracking&&workerReady&&freshFrame>=0&&freshFrame==currentFrame;}
+        {return gate&&BothSelected&&!TrackingSuspended&&focused&&tracking&&workerReady&&freshFrame>=0&&freshFrame==currentFrame;}
+        // Focus changes preserve existing software choices and storage, but
+        // a held trigger must not become the next choice on restoration.
+        internal void SuspendInputForFocus(){armed=false;}
+        // Temporary tracking unavailability is not withdrawal of either choice.
+        // Keep the same clock-bound intent and folder, but never retain start readiness.
+        internal void SuspendInputForTracking(){armed=false;TrackingSuspended=true;}
 
         ViveNamedRecordingSetup(string directory,ViveRawByteBudget budget)
         { DirectoryPath=directory;Budget=budget;Current=Step.Task; }
@@ -52,19 +80,26 @@ namespace AvatarStroop.Runtime
         // requires its own visible frame and a fresh all-controls release.
         internal void Observe(bool ready,bool visible,bool trigger,bool menu,bool trackpad,bool changed,MonotonicClock clock)
         {
-            if(Current==Step.Confirmed&&(!ready||changed||clock==null||!Object.ReferenceEquals(clock,selectionClock))){Cancel();return;}
-            if(IsTerminal)return;
-            if(!ready||changed){Reset();return;}
-            // The view clock also becomes the configured task clock. A new
-            // view or unavailable clock cannot inherit an earlier decision.
+            if(Current==Step.Declined||Current==Step.Cancelled)return;
+            if(changed)
+            {if(Current==Step.Confirmed)Cancel(CancellationCause.ControllerIdentityChanged);else Reset();return;}
+            if(!ready){SuspendInputForTracking();return;}
+            if(Current==Step.Confirmed)
+            {
+                if(clock==null||!Object.ReferenceEquals(clock,selectionClock)){Cancel(CancellationCause.ClockChanged);return;}
+                if(!trigger&&!menu&&!trackpad)TrackingSuspended=false;
+                return;
+            }
+            // A different clock still cannot inherit a previous decision.
             if(clock==null||(selectionClock!=null&&!Object.ReferenceEquals(clock,selectionClock))){Reset();return;}
+            TrackingSuspended=false;
             if(!visible){armed=false;return;}
             if(!armed){if(!trigger&&!menu&&!trackpad)armed=true;return;}
             if(menu){ClearTimes();taskSelected=false;eyeSelected=false;DirectoryPath=null;Budget=null;Current=Step.Declined;armed=false;Revision++;return;}
             if(!trigger)return;
             double observed;
             if(!clock.TryReadRecordingAdmissionTime(out observed)||
-                (taskPollSeconds.HasValue&&observed<taskPollSeconds.Value)){Cancel();return;}
+                (taskPollSeconds.HasValue&&observed<taskPollSeconds.Value)){Cancel(CancellationCause.TimingUnavailable);return;}
             armed=false;
             if(Current==Step.Task){selectionClock=clock;taskPollSeconds=observed;taskSelected=true;Current=Step.Eye;}
             else if(Current==Step.Eye){eyePollSeconds=observed;eyeSelected=true;Current=Step.Confirmed;}
@@ -86,8 +121,15 @@ namespace AvatarStroop.Runtime
         }
         void ClearTimes(){selectionClock=null;taskPollSeconds=null;eyePollSeconds=null;}
         void Reset()
-        {if(!taskSelected&&!eyeSelected&&!armed&&Current==Step.Task)return;ClearTimes();taskSelected=false;eyeSelected=false;armed=false;Current=Step.Task;Revision++;}
-        internal void Cancel()
-        {if(Current==Step.Cancelled)return;ClearTimes();taskSelected=false;eyeSelected=false;armed=false;DirectoryPath=null;Budget=null;Current=Step.Cancelled;Revision++;}
+        {TrackingSuspended=false;if(!taskSelected&&!eyeSelected&&!armed&&Current==Step.Task)return;ClearTimes();taskSelected=false;eyeSelected=false;armed=false;Current=Step.Task;Revision++;}
+        internal void Cancel(){Cancel(CancellationCause.ExplicitCancellation);}
+        internal void Cancel(CancellationCause cause)
+        {
+            if(!Enum.IsDefined(typeof(CancellationCause),cause)||cause==CancellationCause.None)
+                throw new ArgumentOutOfRangeException("cause");
+            if(Current==Step.Cancelled)return;
+            Cancellation=cause;ClearTimes();taskSelected=false;eyeSelected=false;armed=false;TrackingSuspended=false;
+            DirectoryPath=null;Budget=null;Current=Step.Cancelled;Revision++;
+        }
     }
 }

@@ -149,6 +149,14 @@ namespace AvatarStroop.Unity
         int capturedAvatarFrame = -1;
         bool avatarObservedByCamera;
         AvatarPresentationObservation capturedAvatar;
+#if STROOP_XR_PREVIEW
+        TaskView rawAutomaticAvatarView;
+        AvatarOutput rawAutomaticAvatarOutput;
+        Renderer[] rawAutomaticAvatarRenderers;
+        int rawAutomaticAvatarFrame=-1;
+        long rawAutomaticAvatarTaskRevision=-1,rawAutomaticAvatarPoseRevision=-1;
+        AvatarPresentationObservation rawAutomaticAvatarCompleted;
+#endif
 
         // Subscribe only for the participant application. Validate the current engine
         // trial again at the receiving boundary before calling Experiment.MarkPresented.
@@ -706,9 +714,16 @@ namespace AvatarStroop.Unity
                 PositionBacking(footerBacking,frustum,new Rect(),false);
                 PositionBacking(worldMenuBacking,frustum,new Rect(0,0,1,1),true);
                 FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,"VIVE CLASSROOM PREVIEW | NOT A STUDY RUN"),frustum,new Rect(.04f,.03f,.92f,.08f),.034f,2);
-                FitHud(phaseText,"Input not configured",frustum,new Rect(.04f,.17f,.92f,.08f),.04f,2);
-                FitHud(messageText,"Classroom view only. No task or practice is running.",frustum,new Rect(.04f,.30f,.92f,.16f),.04f,3);
-                FitHud(previewStatusText,previewDiagnostic,frustum,new Rect(.04f,.52f,.92f,.14f),.034f,4);
+                bool recordingChoice=false;
+#if STROOP_XR_PREVIEW
+                recordingChoice=recordingChoiceRevision>=0&&recordingChoiceExpected!=null;
+#endif
+                FitHud(phaseText,recordingChoice?"Recording choices":"Input not configured",frustum,new Rect(.04f,.17f,.92f,.08f),.04f,2);
+                FitHud(messageText,recordingChoice?"":"Classroom view only. No task or practice is running.",frustum,new Rect(.04f,.30f,.92f,.16f),.04f,3);
+                // The full privacy/automatic-action disclosure owns the spare
+                // preview-message area. Controls remain below it, unchanged.
+                // The exact rendered-text witness still rejects any truncation.
+                FitHud(previewStatusText,previewDiagnostic,frustum,recordingChoice?new Rect(.04f,.28f,.92f,.38f):new Rect(.04f,.52f,.92f,.14f),.034f,recordingChoice?10:4);
                 FitHud(previewInputText,ViveStroopRecordingScopePresentation.Controls(ShowViveLegacyPreviewNotice,previewControls),frustum,new Rect(.04f,.69f,.92f,.14f),.034f,ShowViveLegacyPreviewNotice?100:4);
                 FitHud(faultText,faultCaption,frustum,new Rect(.04f,.84f,.92f,.12f),.03f,4);
                 FitHud(provisionalText,"",frustum,new Rect(),.02f,1);
@@ -1151,6 +1166,82 @@ namespace AvatarStroop.Unity
             return String.Join("\n",lines);
         }
 
+#if STROOP_XR_PREVIEW
+        static bool SameRawAvatarTrial(TaskView expected,TaskView actual)
+        {
+            return expected!=null&&actual!=null&&!String.IsNullOrEmpty(expected.TrialId)&&
+                expected.TrialId==actual.TrialId&&expected.Phase==actual.Phase&&
+                expected.BlockIndex==actual.BlockIndex&&expected.Segment==actual.Segment&&
+                expected.OperatorAvatarVisible==actual.OperatorAvatarVisible;
+        }
+        internal bool PrepareRawAutomaticAvatar(TaskView expected,AvatarOutput output)
+        {
+            if(!viveTaskPreview||role!=Actor.Participant||expected==null||
+                expected.Phase!=Phase.MainTask&&expected.Phase!=Phase.Practice||
+                !SameRawAvatarTrial(expected,currentView)||avatarRoot==null||avatarLabel==null)return false;
+            bool visible=expected.Phase==Phase.MainTask&&expected.OperatorAvatarVisible;
+            if(visible)
+            {
+                if(!ViveWozPresentationPolicy.IsAutomaticOnly(output)||!output.AvatarVisible)return false;
+                ApplyAvatarOutput(output);
+                if(rawAutomaticAvatarRenderers==null)rawAutomaticAvatarRenderers=avatarRoot.GetComponentsInChildren<Renderer>(true);
+            }
+            else
+            {
+                if(output!=null)return false;
+                if(currentOutput!=null||avatarRoot.gameObject.activeSelf||avatarLabel.gameObject.activeSelf)ClearAvatarOutput();
+            }
+            rawAutomaticAvatarView=expected;rawAutomaticAvatarOutput=output;
+            rawAutomaticAvatarFrame=Time.frameCount;rawAutomaticAvatarTaskRevision=presentationRevision;
+            rawAutomaticAvatarPoseRevision=avatarRevision;rawAutomaticAvatarCompleted=null;
+            return RawAutomaticAvatarCurrent(expected,null);
+        }
+        internal bool RawAutomaticAvatarCurrent(TaskView expected,Camera camera)
+        {
+            if(rawAutomaticAvatarFrame!=Time.frameCount||rawAutomaticAvatarTaskRevision!=presentationRevision||
+                rawAutomaticAvatarPoseRevision!=avatarRevision||!SameRawAvatarTrial(expected,currentView)||
+                !SameRawAvatarTrial(expected,rawAutomaticAvatarView)||avatarRoot==null||avatarLabel==null||
+                !object.ReferenceEquals(rawAutomaticAvatarOutput,currentOutput)||
+                camera!=null&&camera!=presentationCamera)return false;
+            if(rawAutomaticAvatarOutput==null)
+                return !avatarRoot.gameObject.activeSelf&&!avatarLabel.gameObject.activeSelf;
+            if(!ViveWozPresentationPolicy.IsAutomaticOnly(rawAutomaticAvatarOutput)||!rawAutomaticAvatarOutput.AvatarVisible||
+                !avatarRoot.gameObject.activeInHierarchy||HeadHeld||EyesHeld||avatarHead==null||
+                leftEye==null||rightEye==null||rawAutomaticAvatarRenderers==null||rawAutomaticAvatarRenderers.Length==0)
+                return false;
+            var expectedPose=rawAutomaticAvatarOutput.ActualPose.Value;
+            var rotation=expectedPose.HeadRotation;
+            var orientation=new Quaternion((float)rotation.X,(float)rotation.Y,(float)rotation.Z,(float)rotation.W);
+            var gaze=expectedPose.EyeDirection;
+            var expectedDirection=new Vector3((float)gaze.X,(float)gaze.Y,(float)gaze.Z);
+            var actualHead=avatarHead.localRotation;
+            if(!(Mathf.Abs(Quaternion.Dot(orientation,actualHead))>.99999f)||
+                !(Vector3.Dot(expectedDirection,actualHead*(leftEye.localRotation*Vector3.forward))>.99999f)||
+                !(Vector3.Dot(expectedDirection,actualHead*(rightEye.localRotation*Vector3.forward))>.99999f))return false;
+            foreach(var renderer in rawAutomaticAvatarRenderers)
+                if(renderer==null||!renderer.enabled||!renderer.gameObject.activeInHierarchy||
+                    camera!=null&&(camera.cullingMask&(1<<renderer.gameObject.layer))==0)return false;
+            return true;
+        }
+        internal bool RawAutomaticAvatarRendered(TaskView expected)
+        {
+            // Renderer evidence is optional telemetry, not proof of physical
+            // visibility and not an onset gate when the user looks away.
+            return rawAutomaticAvatarOutput!=null&&rawAutomaticAvatarCompleted!=null&&
+                rawAutomaticAvatarCompleted.AnyAvatarRendererObserved&&
+                RawAutomaticAvatarCurrent(expected,presentationCamera);
+        }
+        internal void ClearRawAutomaticAvatar()
+        {
+            if(rawAutomaticAvatarFrame<0)return; // No effect on preview or owned LiveWoZ.
+            var prepared=rawAutomaticAvatarOutput;
+            rawAutomaticAvatarView=null;rawAutomaticAvatarOutput=null;rawAutomaticAvatarCompleted=null;
+            rawAutomaticAvatarFrame=-1;rawAutomaticAvatarTaskRevision=rawAutomaticAvatarPoseRevision=-1;
+            if(object.ReferenceEquals(prepared,currentOutput)&&avatarRoot!=null&&
+                (currentOutput!=null||avatarRoot.gameObject.activeSelf||avatarLabel!=null&&avatarLabel.gameObject.activeSelf))ClearAvatarOutput();
+        }
+#endif
+
         // The same render entry point accepts automatic and incoming live/simulator
         // outputs. Reference trajectory is intentionally never used as a fallback.
         public void ApplyAvatarOutput(AvatarOutput output)
@@ -1322,9 +1413,27 @@ namespace AvatarStroop.Unity
             rawPanelSeen=accepted?observed:null;
         }
 
+#if STROOP_XR_PREVIEW
+        bool ExcludeViveNonTaskRender(Camera camera)
+        {
+            // Hold text is on a dedicated layer, not experiment evidence.
+            // Zero is also an intentional no-task pass in an attached raw
+            // scene. Callback order must not turn either mask into a witness.
+            if(camera!=null&&camera.cullingMask!=ViveRawHoldView.Mask&&
+                (camera.cullingMask!=0||!ViveRawAttached()))return false;
+            recordingChoiceCaptureFrame=-1;recordingChoiceObserved=0;
+            rawPanelCaptureFrame=-1;rawPanelObserved=rawPanelRequired=0;
+            ResetCapture();capturedAvatar=null;capturedAvatarFrame=-1;avatarObservedByCamera=false;
+            return true;
+        }
+#endif
         void BeforeCameraCull(Camera camera)
         {
             if(camera != presentationCamera) return;
+#if STROOP_XR_PREVIEW
+            rawAutomaticAvatarCompleted=null;
+            if(ExcludeViveNonTaskRender(camera))return;
+#endif
             LayoutHud();
 #if STROOP_XR_PREVIEW
             PrepareViveRecordingChoiceRender(camera);
@@ -1367,6 +1476,7 @@ namespace AvatarStroop.Unity
         {
             if(camera != presentationCamera) return;
 #if STROOP_XR_PREVIEW
+            if(ExcludeViveNonTaskRender(camera))return;
             FinishViveRecordingChoiceRender(camera);
 #endif
             FinishViveRawPanelRender(camera);
@@ -1377,6 +1487,10 @@ namespace AvatarStroop.Unity
             {
                 capturedAvatar.Complete(Time.frameCount, Time.realtimeSinceStartupAsDouble, avatarObservedByCamera);
                 var observation = capturedAvatar;
+#if STROOP_XR_PREVIEW
+                if(RawAutomaticAvatarCurrent(currentView,camera)&&object.ReferenceEquals(observation.CapturedOutput,rawAutomaticAvatarOutput))
+                    rawAutomaticAvatarCompleted=observation;
+#endif
                 capturedAvatar = null; capturedAvatarFrame = -1;
                 if(avatarCallback != null) avatarCallback(observation);
             }

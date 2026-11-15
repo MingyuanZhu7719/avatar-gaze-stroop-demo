@@ -27,6 +27,19 @@ namespace AvatarStroop.Runtime
     internal static class ViveControllerReadinessDiagnostic
     {
         static readonly string[] Names={"position","rotation","tracked","tracking state","trackpad","trackpad click","trigger","menu"};
+        internal static bool OnlyActivationPending(ViveControllerActionDiagnostic[] states)
+        {
+            if(states==null||states.Length!=8)return false;
+            bool inactive=false;
+            for(int i=0;i<states.Length;i++)
+            {
+                var state=states[i];
+                if(state.QueryFailed||!state.Enabled||state.ControlCount!=1)return false;
+                if(i<4){if(state.RequiresActive||!state.Ready)return false;}
+                else {if(!state.RequiresActive)return false;if(!state.IsActive)inactive=true;}
+            }
+            return inactive;
+        }
         internal static string Bindings(string hand,ViveControllerActionDiagnostic[] states)
         {
             if(states==null||states.Length!=Names.Length)throw new ArgumentException("Eight action states are required.","states");

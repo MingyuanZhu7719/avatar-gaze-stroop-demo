@@ -20,6 +20,7 @@ namespace AvatarStroop.Runtime
         internal long VerifiedTaskRecords {get;set;}
         internal long VerifiedObservationRecords {get;set;}
         internal long VerifiedStatusRecords {get;set;}
+        internal long VerifiedEyeQualityRecords {get;set;}
         internal long VerifiedRecordCount {get;set;}
         internal string VerifiedPrefixChainDigestHex {get;set;}
         internal long PageStartOrdinal {get;set;}
@@ -46,10 +47,10 @@ namespace AvatarStroop.Runtime
         // Previously returned strings cannot be recalled after withdrawal.
         internal sealed class PagePrefix
         {
-            readonly string digest; readonly long bytes,records,tasks,eyes,statuses; readonly bool terminal;
+            readonly string digest; readonly long bytes,records,tasks,eyes,statuses,eyeQuality; readonly bool terminal;
             PagePrefix(ViveRawSessionReadResult source)
             {digest=source.VerifiedPrefixChainDigestHex;bytes=source.VerifiedBytes;records=source.VerifiedRecordCount;
-                tasks=source.VerifiedTaskRecords;eyes=source.VerifiedObservationRecords;statuses=source.VerifiedStatusRecords;terminal=source.CaptureTerminalObserved;}
+                tasks=source.VerifiedTaskRecords;eyes=source.VerifiedObservationRecords;statuses=source.VerifiedStatusRecords;eyeQuality=source.VerifiedEyeQualityRecords;terminal=source.CaptureTerminalObserved;}
             internal static PagePrefix FromVerified(ViveRawSessionReadResult source)
             {
                 if(source==null||source.Status!=ViveRawSessionReadStatus.VerifiedPrefix||source.TrailingFrameTruncated||
@@ -59,7 +60,7 @@ namespace AvatarStroop.Runtime
             internal bool Matches(ViveRawSessionReadResult value)
             {return value.Status==ViveRawSessionReadStatus.VerifiedPrefix&&!value.TrailingFrameTruncated&&
                 value.VerifiedBytes==bytes&&value.VerifiedRecordCount==records&&value.VerifiedTaskRecords==tasks&&
-                value.VerifiedObservationRecords==eyes&&value.VerifiedStatusRecords==statuses&&
+                value.VerifiedObservationRecords==eyes&&value.VerifiedStatusRecords==statuses&&value.VerifiedEyeQualityRecords==eyeQuality&&
                 value.CaptureTerminalObserved==terminal&&String.Equals(value.VerifiedPrefixChainDigestHex,digest,StringComparison.Ordinal);}
         }
         const int MaxPayload=1048576, MaxText=2097152, MaxString=32768;
@@ -72,9 +73,9 @@ namespace AvatarStroop.Runtime
         sealed class Invalid:Exception {}
         sealed class SourceFailure:Exception {}
         sealed class Context
-        {internal bool Manifest,V3,V4,V5,Terminal,TaskEnded,TaskCompleted,EndedPhase,AfterEndedPhase;internal bool WithholdObservedWithdrawal=false;internal long LastTask,Tasks,Eyes;internal long Statuses=0;
+        {internal bool Manifest,V3,V4,V5,Terminal,TaskEnded,TaskCompleted,EndedPhase,AfterEndedPhase;internal bool WithholdObservedWithdrawal=false;internal long LastTask,Tasks,Eyes;internal long Statuses=0,EyeQuality=0;
             internal string AllocationId;internal int BInitialTarget;internal double TaskChoiceObserved,EyeChoiceObserved;internal bool SoftwareChoicesSeen,LegacyPassedPreparation;
-            internal int Blocks;internal string Session,Clock,Plan,Intent;internal double Choice,LatestLocal,LastStatusTime=-1;internal int[] Options,Lists;internal string[] Schedules,Geometries;
+            internal int Blocks;internal string Session,Clock,Plan,Intent;internal double Choice,LatestLocal,LastStatusTime=-1,LastEyeQualityTime=-1;internal int[] Options,Lists;internal string[] Schedules,Geometries;
             internal ViveRawTrialAccumulator TrialAccumulator;internal readonly ViveRawPreparedPlanAudit PreparedPlans=new ViveRawPreparedPlanAudit();}
         sealed class Bounded
         {
@@ -199,8 +200,8 @@ namespace AvatarStroop.Runtime
             using(var memory=new MemoryStream(payload,false))using(var r=new BinaryReader(memory,Utf8))
             {
                 if(r.ReadInt64()!=ordinal)throw new Invalid();int kind=r.ReadByte();
-                if((ordinal==0&&kind!=0)||(ordinal!=0&&kind==0)||kind>4||(!context.V3&&kind>2)||context.Terminal)throw new Invalid();
-                var rows=new Rows(ordinal,kind==0?"manifest":kind==1?"task":kind==2?"observation":kind==3?"eye_status":"capture_terminal");
+                if((ordinal==0&&kind!=0)||(ordinal!=0&&kind==0)||kind>5||(!context.V3&&kind>2)||context.Terminal)throw new Invalid();
+                var rows=new Rows(ordinal,kind==0?"manifest":kind==1?"task":kind==2?"observation":kind==3?"eye_status":kind==5?"eye_observation":"capture_terminal");
                 if(kind==0)
                 {
                     if(Text(r,rows,"schema",true)!=(context.V5?"VRAW0005":context.V4?"VRAW0004":context.V3?"VRAW0003":"VRAW0002"))throw new Invalid();
@@ -277,7 +278,8 @@ namespace AvatarStroop.Runtime
                         var prepared=context.PreparedPlans.Add(fields,trialId,block,segment,seq,eventTime,context.V4);
                         if(context.TrialAccumulator!=null)context.TrialAccumulator.ObservePreparedPlan(prepared);
                     }
-                    else if(eventKind=="trial_planned")context.PreparedPlans.ObserveTrial(fields,block,context.Session,trialId);
+                    else if(eventKind=="trial_planned")context.PreparedPlans.ObserveTrial(fields,block,context.Session,trialId,segment);
+                    else if(eventKind=="trial_interrupted"||eventKind=="first_response")context.PreparedPlans.ObserveOutcome(eventKind,fields,block,segment,trialId);
                     if(context.TrialAccumulator!=null||context.WithholdObservedWithdrawal)
                     {
                         string reason;
@@ -328,12 +330,21 @@ namespace AvatarStroop.Runtime
                     if(context.TrialAccumulator!=null)context.TrialAccumulator.ObserveStatus(value);
                     context.Statuses++;context.LastStatusTime=time;context.LatestLocal=Math.Max(context.LatestLocal,time);
                 }
+                else if(kind==5)
+                {
+                    double time=F64(r,rows,"owner_observed_local_seconds",true);
+                    int state=I32(r,rows,"eye_observation"),cause=I32(r,rows,"reason");long cursor=I64(r,rows,"task_cursor");
+                    if(context.TaskEnded||time<context.Choice||time<context.LastEyeQualityTime||cursor!=context.LastTask||
+                        !ViveRawEyeObservation.Valid((ViveRawEyeObservation.Disposition)state,(ViveRawEyeObservation.Reason)cause,time,cursor))throw new Invalid();
+                    if(context.TrialAccumulator!=null)context.TrialAccumulator.ObserveEyeQuality(ordinal,time,state,cause,cursor);
+                    context.EyeQuality++;context.LastEyeQualityTime=time;context.LatestLocal=Math.Max(context.LatestLocal,time);
+                }
                 else
                 {
                     if(Text(r,rows,"declaration",true)!="NORMAL_TASK_COMPLETION_DRAIN_DECLARED"||
                         I64(r,rows,"task_cursor")!=context.LastTask||I64(r,rows,"task_records")!=context.Tasks||
                         I64(r,rows,"eye_records")!=context.Eyes||I64(r,rows,"status_records")!=context.Statuses||
-                        I64(r,rows,"sealed_watermark")!=ordinal-1||ordinal-1!=checked(context.Tasks+context.Eyes+context.Statuses)||
+                        I64(r,rows,"sealed_watermark")!=ordinal-1||ordinal-1!=checked(context.Tasks+context.Eyes+context.Statuses+context.EyeQuality)||
                         F64(r,rows,"local_observed",true)<context.LatestLocal||(context.V4&&!context.SoftwareChoicesSeen)||!context.TaskEnded||!context.TaskCompleted||!context.EndedPhase||context.AfterEndedPhase)throw new Invalid();
                     context.Terminal=true;
                 }
@@ -475,7 +486,7 @@ namespace AvatarStroop.Runtime
                 cancellation.ThrowIfCancellationRequested();
                 if(!context.Manifest)throw new Invalid();result.Status=ViveRawSessionReadStatus.VerifiedPrefix;result.TrailingFrameTruncated=truncated;
                 result.VerifiedBytes=verifiedBytes;result.VerifiedTaskRecords=taskCount;result.VerifiedObservationRecords=observationCount;
-                result.VerifiedStatusRecords=context.Statuses;result.CaptureTerminalObserved=context.Terminal;
+                result.VerifiedStatusRecords=context.Statuses;result.VerifiedEyeQualityRecords=context.EyeQuality;result.CaptureTerminalObserved=context.Terminal;
                 result.VerifiedRecordCount=ordinal;result.VerifiedPrefixChainDigestHex=BitConverter.ToString(prior).Replace("-",String.Empty).ToLowerInvariant();
                 if(includeRows){result.PageStartOrdinal=pageStart;result.PageRecordCount=pageCount;result.PageHasMoreRecords=ordinal>pageStart&&ordinal-pageStart>pageCount;}
                 if(projectTrials)result.TrialProjection=context.TrialAccumulator.Finish();

@@ -9,7 +9,7 @@ namespace AvatarStroop.Runtime
     // The participant process holds ONLY its actual task owner/local clock.
     // Remote acquisition facts are authenticated assertions, never local hardware
     // evidence. Neither an imported token nor a packet creates local consent.
-    public sealed class ViveLegacyWozParticipantProcess : IDisposable
+    public sealed partial class ViveLegacyWozParticipantProcess : IDisposable
     {
         internal const double ControlledVisualAge=.15,ControlledObservationAge=.10,ControlledRenewalInterval=.05;
         readonly ViveLegacyWozTaskOwner owner;
@@ -144,6 +144,7 @@ namespace AvatarStroop.Runtime
         bool Active()
         {
             OwnerThread();if(terminal||locallyPaused)return false;
+            if(focusForwardingSuspending||FocusForwardingSuspended)return false;
             // Actual Completed has no positive network authority. Hold only
             // until the exact raw owner requests its final drain; other Ended
             // states still take the ordinary irrevocable safety path.
@@ -213,7 +214,8 @@ namespace AvatarStroop.Runtime
             if(revoke==null&&!Active())return;
             if(task!=null&&revoke==null&&transport.Now-task.ParticipantSentSeconds>maxAge){End("original_task_age_expired");return;}
             if(challenge!=null&&transport.Now-challengeIssued>maxAge){End("original_challenge_age_expired");return;}
-            if(revoke!=null&&transport.Now-revokeIssued>maxAge){End("source_revoke_ack_timeout");return;}
+            if(revoke!=null&&transport.Now-revokeIssued>maxAge)
+            {if(focusForwardingSuspending)FinishFocusSuspension(false);else End("source_revoke_ack_timeout");return;}
             for(int i=0;i<ViveLegacyWozProcessTransport.MaximumDrain&&!terminal;i++)
             {
                 ViveLegacyWozProcessTransport.Receipt receipt;
@@ -230,7 +232,7 @@ namespace AvatarStroop.Runtime
                 {
                     var m=receipt.Control.Message;
                     if(m.Kind==WozControlKind.SourceRevokeAck&&revoke!=null&&m.Challenge==revoke&&locallyPaused)
-                    {SourceRevokeAcknowledged=true;End("source_revoked_safe_ack");break;}
+                    {SourceRevokeAcknowledged=true;if(focusForwardingSuspending)FinishFocusSuspension(true);else End("source_revoked_safe_ack");break;}
                     if(m.Kind==WozControlKind.TaskReceipt&&m.Challenge==confirmChallenge&&Current())
                     {if(!RecordNetworkEvidence("TaskReceipt",receipt,null)){End("recording_evidence_failed");break;}
                         taskAcknowledged=true;if(!NeedsSource(task.Task))pendingCycle=false;continue;}
@@ -279,10 +281,19 @@ namespace AvatarStroop.Runtime
         void End(string reason)
         {
             if(terminal)return;OwnerThread();LastIssue=reason;
+            // A real stop/fault is not an expected focus-only suspension.
+            // Clear the exception before ordinary cleanup so callers cannot
+            // mistake the terminal process for permission to keep raw alive.
+            focusForwardingSuspending=false;focusSuspensionStarted=false;focusSuspensionMetadataPending=false;
             SafeLocal();terminal=true;transport.Dispose();
             if(transport.CleanupUncertain)owner.MarkCleanupUncertain();owner.Dispose();
         }
-        public void Dispose(){OwnerThread();End("disposed");}
+        public void Dispose()
+        {
+            OwnerThread();
+            if(FocusForwardingSuspended){LastIssue="disposed_after_focus_suspension";SafeLocal();owner.Dispose();return;}
+            End("disposed");
+        }
         internal bool CloseForRecordedCompletedDrain(ViveLegacyWozRecordingBinding recording)
         {
             OwnerThread();if(terminal||!Object.ReferenceEquals(recording,owner.RecordingBinding)||!recording.CompletedTaskObserved||!owner.Participant.Completed)return false;
@@ -356,6 +367,7 @@ namespace AvatarStroop.Runtime
         public void TickMaintainedPreflight()
         {Guard(()=>
         {
+            if(focusForwardingSuspending||FocusForwardingSuspended)return TickFocusHoldSuspension();
             if(terminal)return false;
             if(revoke!=null){TickCore();return !terminal;}
             if(!Active())return false;

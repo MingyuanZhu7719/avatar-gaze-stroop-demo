@@ -284,7 +284,7 @@ namespace AvatarStroop.Runtime
             {
                 source=result==null?null:new ViveRawSessionReadResult{Status=result.Status,TrailingFrameTruncated=result.TrailingFrameTruncated,
                     VerifiedBytes=result.VerifiedBytes,VerifiedRecordCount=result.VerifiedRecordCount,VerifiedTaskRecords=result.VerifiedTaskRecords,
-                    VerifiedObservationRecords=result.VerifiedObservationRecords,VerifiedStatusRecords=result.VerifiedStatusRecords,
+                    VerifiedObservationRecords=result.VerifiedObservationRecords,VerifiedStatusRecords=result.VerifiedStatusRecords,VerifiedEyeQualityRecords=result.VerifiedEyeQualityRecords,
                     CaptureTerminalObserved=result.CaptureTerminalObserved,VerifiedPrefixChainDigestHex=result.VerifiedPrefixChainDigestHex};
                 sinkMatched=matched;
             }
@@ -617,7 +617,7 @@ namespace AvatarStroop.Runtime
         static bool Same(ViveRawSessionReadResult a,ViveRawSessionReadResult b)
         {return b!=null&&b.Status==ViveRawSessionReadStatus.VerifiedPrefix&&!b.TrailingFrameTruncated&&
             a.VerifiedBytes==b.VerifiedBytes&&a.VerifiedRecordCount==b.VerifiedRecordCount&&a.VerifiedTaskRecords==b.VerifiedTaskRecords&&
-            a.VerifiedObservationRecords==b.VerifiedObservationRecords&&a.VerifiedStatusRecords==b.VerifiedStatusRecords&&
+            a.VerifiedObservationRecords==b.VerifiedObservationRecords&&a.VerifiedStatusRecords==b.VerifiedStatusRecords&&a.VerifiedEyeQualityRecords==b.VerifiedEyeQualityRecords&&
             a.CaptureTerminalObserved==b.CaptureTerminalObserved&&String.Equals(a.VerifiedPrefixChainDigestHex,b.VerifiedPrefixChainDigestHex,StringComparison.Ordinal);}
         void TargetOperation(Action action)
         {

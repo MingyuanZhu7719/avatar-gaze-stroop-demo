@@ -28,12 +28,12 @@ namespace AvatarStroop.Unity
             renderer.shadowCastingMode=ShadowCastingMode.Off;renderer.receiveShadows=false;
             root.SetActive(false);Camera.onPostRender+=Rendered;
         }
-        public bool WasRenderedBefore(int frame){return shown&&renderedFrame==frame-1;}
+        public bool WasRenderedBefore(int frame){return !disposed&&shown&&root!=null&&camera!=null&&renderedFrame==frame-1;}
         void Rendered(Camera rendered)
-        {if(!disposed&&shown&&rendered==camera&&root.activeInHierarchy&&camera.cullingMask==Mask)renderedFrame=Time.frameCount;}
+        {if(!disposed&&shown&&camera!=null&&rendered==camera&&root!=null&&root.activeInHierarchy&&camera.cullingMask==Mask)renderedFrame=Time.frameCount;}
         public void Show(bool tracked,string message)
         {
-            if(disposed)return;
+            if(disposed||camera==null||root==null||text==null){shown=false;renderedFrame=-1;return;}
             camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=new Color(.025f,.025f,.035f,1);
             if(text.text!=message){text.text=message;renderedFrame=-1;}
             shown=tracked;root.SetActive(tracked);camera.cullingMask=tracked?Mask:0;
@@ -42,8 +42,9 @@ namespace AvatarStroop.Unity
         public void Hide()
         {
             if(disposed)return;
-            shown=false;renderedFrame=-1;root.SetActive(false);
-            camera.clearFlags=oldClear;camera.backgroundColor=oldBackground;
+            shown=false;renderedFrame=-1;
+            if(root!=null)root.SetActive(false);
+            if(camera!=null){camera.clearFlags=oldClear;camera.backgroundColor=oldBackground;}
         }
         public void Dispose()
         {

@@ -30,6 +30,17 @@ namespace AvatarStroop.Runtime
             "head_connected","head_valid","head_rotation_x","head_rotation_y","head_rotation_z","head_rotation_w",
             "ingest_phase","ingest_block","ingest_segment","ingest_trial_id","task_cursor"};
         static readonly HashSet<string> EyeFieldSet=new HashSet<string>(EyeFields,StringComparer.Ordinal);
+        const int QualityColumns=5;
+        internal static string EyeObservationLabel(int value)
+        {if(value==0)return "NO_NEW_SAMPLE";if(value==1)return "MISSING";throw new InvalidDataException("Unknown eye observation.");}
+        internal static string EyeReasonLabel(int value)
+        {
+            switch(value){case 0:return "DUPLICATE";case 1:return "FROZEN_OR_STALE";case 2:return "INVALID_QUALITY";
+                case 3:return "NO_EYE";case 4:return "OUT_OF_ORDER";
+                // The optional snapshot was busy or changed before coherence
+                // revalidation. Neither case asserts physical sensor loss.
+                case 5:return "SNAPSHOT_BUSY";default:throw new InvalidDataException("Unknown eye observation reason.");}
+        }
         static readonly HashSet<string> WozBitFields=new HashSet<string>(new[]{
             "woz_task_issued_participant_time","woz_challenge_issued_participant_time","woz_receipt_participant_time",
             "woz_send_operator_time","woz_head_operator_time","woz_eye_operator_time",
@@ -70,17 +81,19 @@ namespace AvatarStroop.Runtime
         {
             var result=new StringBuilder("ordinal,record_kind,field,type,readable_value,raw_value,row_warning");
             foreach(string field in EyeFields)result.Append(',').Append(Csv("eye_"+field)).Append(',').Append(Csv("eye_"+field+"_raw"));
+            result.Append(",eye_observation,eye_observation_reason,eye_observation_owner_local_seconds,eye_observation_task_cursor,eye_observation_scope");
             return result.Append('\n').ToString();
         }
         static string Meta(string field,string value)
-        {return "-1,export,"+field+",text,"+value+",,"+new string(',',EyeFields.Length*2)+"\n";}
+        {return "-1,export,"+field+",text,"+value+",,"+new string(',',EyeFields.Length*2+QualityColumns)+"\n";}
         static string ExcelWarning(string human,string raw)
         {return human.Length>32767||raw.Length>32767?"EXCEL_CELL_TOO_LONG_USE_FULL_CSV_OR_VRAW":String.Empty;}
         static string ConvertFrame(string frame)
         {
             var result=new StringBuilder();int start=0;string ordinal=null,kind=null,payloadKey=null;bool woz=false;
             var eye=new Dictionary<string,string[]>(StringComparer.Ordinal);
-            string padding=new string(',',EyeFields.Length*2);
+            var quality=new Dictionary<string,string[]>(StringComparer.Ordinal);
+            string padding=new string(',',EyeFields.Length*2+QualityColumns);
             while(start<frame.Length)
             {
                 int end=frame.IndexOf('\n',start);if(end<0)throw new InvalidDataException("Incomplete verified row.");
@@ -92,6 +105,13 @@ namespace AvatarStroop.Runtime
                 {
                     if(!EyeFieldSet.Contains(columns[2])||eye.ContainsKey(columns[2]))throw new InvalidDataException("Unknown or repeated eye field.");
                     eye.Add(columns[2],columns);continue;
+                }
+                if(kind=="eye_observation")
+                {
+                    string field=columns[2];
+                    if((field!="owner_observed_local_seconds"&&field!="eye_observation"&&field!="reason"&&field!="task_cursor")||quality.ContainsKey(field))
+                        throw new InvalidDataException("Unknown or repeated owner eye observation field.");
+                    quality.Add(field,columns);continue;
                 }
                 string readable=Human(columns[3],columns[4]),raw="raw:"+columns[4];
                 if(kind=="manifest"&&columns[2]=="legacy_control_mode"&&readable=="OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING")woz=true;
@@ -122,7 +142,32 @@ namespace AvatarStroop.Runtime
                     }
                     else fields.Append(",\"MISSING\",\"raw:missing\"");
                 }
-                result.Append(Csv(ordinal)).Append(",\"observation\",\"eye_frame\",\"wide\",\"\",\"\",").Append(Csv(warning)).Append(fields).Append('\n');
+                // Historical kind 2 may contain invalid or non-finite rays.
+                // A recorded sample is not a declaration of valid coverage.
+                result.Append(Csv(ordinal)).Append(",\"observation\",\"eye_frame\",\"wide\",\"\",\"\",").Append(Csv(warning)).Append(fields)
+                    .Append(",\"SAMPLE_RECORDED\",\"\",\"\",\"\",\"RECORDED_SAMPLE_NOT_COVERAGE\"\n");
+            }
+            if(kind=="eye_observation")
+            {
+                if(quality.Count!=4||quality["owner_observed_local_seconds"][3]!="f64_bits_hex"||
+                    quality["eye_observation"][3]!="int"||quality["reason"][3]!="int"||quality["task_cursor"][3]!="int")
+                    throw new InvalidDataException("Incomplete or mistyped owner eye observation.");
+                int state=Int32.Parse(quality["eye_observation"][4],CultureInfo.InvariantCulture),reason=Int32.Parse(quality["reason"][4],CultureInfo.InvariantCulture);
+                long cursor=Int64.Parse(quality["task_cursor"][4],CultureInfo.InvariantCulture);
+                string time=Human("f64_bits_hex",quality["owner_observed_local_seconds"][4]);
+                double seconds=Double.Parse(time,CultureInfo.InvariantCulture);
+                if(!ViveRawEyeObservation.Valid((ViveRawEyeObservation.Disposition)state,(ViveRawEyeObservation.Reason)reason,seconds,cursor))
+                    throw new InvalidDataException("Invalid owner eye observation.");
+                string raw="state:int:"+quality["eye_observation"][4]+";reason:int:"+quality["reason"][4]+
+                    ";owner_time:f64_bits_hex:"+quality["owner_observed_local_seconds"][4]+";task_cursor:int:"+quality["task_cursor"][4];
+                // One filterable owner-marker row; every gaze/native-ID cell
+                // stays empty. Never forward-fill, fabricate samples, or infer
+                // exact missing-sample counts or physical gap endpoints.
+                result.Append(Csv(ordinal)).Append(",\"eye_observation\",\"eye_quality\",\"typed\",")
+                    .Append(Csv(EyeObservationLabel(state))).Append(',').Append(Csv(raw)).Append(",\"NO_GAZE_VALUES_NO_FILL\"")
+                    .Append(new string(',',EyeFields.Length*2)).Append(',').Append(Csv(EyeObservationLabel(state))).Append(',').Append(Csv(EyeReasonLabel(reason)))
+                    .Append(',').Append(Csv(time)).Append(',').Append(Csv(cursor.ToString(CultureInfo.InvariantCulture)))
+                    .Append(",\"OWNER_OBSERVATION_NOT_NATIVE_SAMPLE_COUNT_OR_INTERVAL\"\n");
             }
             if(woz){result.Append(Meta("remote_operator_cleanup","NOT_PROVEN_BY_PARTICIPANT_CAPTURE_TERMINAL"));
                 result.Append(Meta("network_time_alignment","INDEPENDENT_ROLE_CLOCKS_NO_SYNCHRONIZATION_OR_LATENCY_ESTIMATE"));}
@@ -151,6 +196,11 @@ namespace AvatarStroop.Runtime
                 append(Meta("native_timestamp","NATIVE_TIME_OPAQUE"));
                 append(Meta("eye_context","INGEST_NOT_SAMPLE_ALIGNMENT"));
                 append(Meta("eye_coverage","UNKNOWN"));
+                append(Meta("eye_quality_markers","OWNER_OBSERVATIONS_NOT_NATIVE_MISSING_SAMPLE_COUNTS_OR_EXACT_INTERVALS"));
+                append(Meta("eye_quality_legacy_absence","UNKNOWN_NOT_ZERO_MISSING_SAMPLES"));
+                append(Meta("eye_quality_fill","NONE_NO_FORWARD_FILL_OR_INTERPOLATION"));
+                append(Meta("eye_quality_reader_compatibility","NEW_READER_ACCEPTS_OLD_FILES_OLD_READERS_REJECT_UNKNOWN_KINDS_OR_REASONS"));
+                append(Meta("eye_snapshot_busy","OWNER_SNAPSHOT_CONTENTION_OR_COHERENCE_CHANGE_NOT_PHYSICAL_SENSOR_LOSS"));
                 append(Meta("source_and_consent","NOT_AUTHENTICATED"));
                 append(Meta("spreadsheet_formula_escape","LEADING_APOSTROPHE_RAW_VALUE_UNMODIFIED"));
                 append(Meta("raw_value_encoding","REMOVE_RAW_PREFIX_USE_TYPE_OR_EMBEDDED_TYPE"));
@@ -163,6 +213,7 @@ namespace AvatarStroop.Runtime
                     return started?Outcome.OutputUncertain:(scan.Status==ViveRawSessionReadStatus.Cancelled?Outcome.Cancelled:Outcome.Rejected);
                 append(Meta("verified_chain_sha256",scan.VerifiedPrefixChainDigestHex));
                 append(Meta("verified_record_count",scan.VerifiedRecordCount.ToString(CultureInfo.InvariantCulture)));
+                append(Meta("verified_owner_eye_quality_records",scan.VerifiedEyeQualityRecords.ToString(CultureInfo.InvariantCulture)));
                 append(Meta("writer_confirmation","UNKNOWN"));
                 append(Meta("complete_session_proven","false"));
                 // This row describes only the source scan. It is deliberately

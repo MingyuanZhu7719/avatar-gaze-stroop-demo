@@ -107,6 +107,12 @@ namespace AvatarStroop.Unity.Editor
             Require(ViveVerifiedPresenceFeature.HasExpectedWindowsX64Layout(),"presence interop layout mismatch");
             Require(!scene.GetRootGameObjects().SelectMany(x=>x.GetComponentsInChildren<Transform>(true)).Any(x=>x.gameObject.layer==ViveStartupView.Layer),"startup instruction layer must be reserved");
             var roots=scene.GetRootGameObjects();
+            var holdType=typeof(ViveStroopPreviewRig).Assembly.GetType("AvatarStroop.Unity.ViveRawHoldView",true);
+            var holdLayerField=holdType.GetField("Layer",System.Reflection.BindingFlags.Static|System.Reflection.BindingFlags.NonPublic);
+            Require(holdLayerField!=null&&holdLayerField.IsLiteral,"neutral hold layer constant is unavailable");
+            int holdLayer=(int)holdLayerField.GetRawConstantValue();
+            Require(holdLayer==29&&!roots.SelectMany(x=>x.GetComponentsInChildren<Transform>(true)).Any(x=>x.gameObject.layer==holdLayer),
+                "neutral hold layer 29 must be reserved");
             var views=roots.SelectMany(x=>x.GetComponentsInChildren<WorldSpaceExperimentView>(true)).ToArray();
             var rigs=roots.SelectMany(x=>x.GetComponentsInChildren<ViveStroopPreviewRig>(true)).ToArray();
             Require(views.Length==1&&views[0].Role==Actor.Participant&&rigs.Length==1&&rigs[0].gameObject==views[0].gameObject,"view/rig mismatch");

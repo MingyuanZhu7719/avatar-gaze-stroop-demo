@@ -39,7 +39,7 @@ namespace AvatarStroop.Tests
             internal ViveLegacyWozControlledScene Scene;internal readonly ViveLegacyWozControlledScene.MemorySink Sink=new ViveLegacyWozControlledScene.MemorySink();
             internal ViveLegacyWozObservationOwner.SyntheticObservations Remote;
             internal readonly ViveLegacyWozProcessTransport.MemorySocket PS=new ViveLegacyWozProcessTransport.MemorySocket(),OS=new ViveLegacyWozProcessTransport.MemorySocket();
-            int frame;long remoteSequence;
+            long headSequence;int frame;long remoteSequence;
             internal Fixture(bool downgrade=false,ViveRawSessionJournalSink.IntegrationFixtureScenario? nativeScenario=null)
             {
                 InitializationStage=1;
@@ -50,7 +50,7 @@ namespace AvatarStroop.Tests
                     design,ViveLegacyRecordingIntent.Select(Actor.Owner,"woz-raw-intent",true,true));
                 Task=new ViveDevelopmentParticipant(config,Clock,geometry,ViveFixedTrackpadMapping.Create(),.5,true);
                 double taskChoice=Clock.Now,eyeChoice=Clock.Now;
-                Worker=new ViveProEyeWorker(Clock,()=>new ViveHeadFrame(frame,Clock.Now,true,true,Rotation.Identity),()=>Source);
+                Worker=new ViveProEyeWorker(Clock,()=>new ViveHeadFrame(++headSequence,Clock.Now,true,true,Rotation.Identity),()=>Source);
                 Check.True(Worker.Start()&&Source.Waiting.WaitOne(3000));
                 Admission=ViveNamedSessionFrameAdmission.CreateLegacySyntheticForTest(Task,Worker,Clock,256,taskChoice,eyeChoice);
                 Check.True(Admission.ConfirmTask()&&Admission.ConfirmEye());InitializationStage=2;
@@ -187,8 +187,110 @@ namespace AvatarStroop.Tests
         }
         static ViveRawSessionReadResult Read(byte[] bytes)
         {using(var input=new MemoryStream(bytes,false))return ViveRawSessionJournalReader.ProjectTrials(input,true,true,16777216,20000,CancellationToken.None);}
+        internal static void RegisterFocusHoldTests(TestSuite suite)
+        {
+            suite.Run("WoZ pending plan XR focus hold revokes positives without consuming plan or stopping local raw",()=>{
+                using(var f=new Fixture())
+                {
+                    ViveNamedSessionFrameAdmission.SyntheticPlanProof proof;var request=f.PreparePlan(out proof);
+                    f.Stage();Check.True(f.Pump.ProcessFocusState(true,false));
+                    Check.True(f.Task.Phase==Phase.BlockReady&&f.Task.IsXrFocusInteractionHeld&&!f.Task.IsFocusHoldPaused);
+                    Check.True(f.P.TickFocusHoldSuspension()&&f.P.FocusSuspendStarted&&f.P.FocusForwardingSuspended);
+                    Check.True(f.P.FocusForwardingRevokeNotApplicable&&!f.P.SourceRevokeAcknowledged&&f.P.FocusForwardingCleanupUnknown);
+                    Check.True(f.P.RecordFocusSuspensionMetadataForCurrentFrame());
+                    Check.True(!request.TryValidateCurrentForReceipt(f.Task,f.Clock)&&!f.Admission.ConsumeSyntheticPlanProof(proof,request));
+                    Check.True(f.Recording.Current&&f.Admission.State==0&&f.Pump.State==ViveNamedRawRecordingPump.Outcome.Running);
+                    f.Stage();Check.True(f.Pump.ProcessFocusState(true,true)&&f.P.TickFocusHoldSuspension());
+                    Check.True(f.Task.Phase==Phase.BlockReady&&!f.P.LocalChoiceCurrent&&!f.Scene.CanBeginCountdown&&f.P.CurrentPose==null);
+                    Check.True(f.Pump.DrainTaskEvents());f.Drain();var result=Read(f.Writer.Snapshot());
+                    Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,result.Status);
+                    Check.True(result.TrialProjection.ObservedSafetyEvents.Any(item=>item.Kind=="focus_forwarding_suspended"&&
+                        item.Detail.Contains("NOT_APPLICABLE_NO_POSITIVE_GRANT")&&item.Detail.Contains("remote_physical_stop=NOT_ESTABLISHED")));
+                    Check.Equal(0,f.Writer.CompleteCalls);
+                }
+            });
+            suite.Run("WoZ pending plan retains strict source across desktop focus and typed evidence only",()=>{
+                using(var f=new Fixture())
+                {
+                    ViveNamedSessionFrameAdmission.SyntheticPlanProof proof;var request=f.PreparePlan(out proof);
+                    f.Grant();f.Preflight();
+                    f.Stage();Check.True(f.Pump.ProcessFocusState(false,true));
+                    f.Grant();f.Preflight();
+                    f.Stage();Check.True(f.Pump.ProcessFocusState(true,true));
+                    Check.True(request.TryValidateCurrentForReceipt(f.Task,f.Clock));
+                    f.P.RevokeSource();Check.True(!request.TryValidateCurrentForReceipt(f.Task,f.Clock));
+                }
+            });
+            suite.Run("WoZ focus hold revokes forwarding with real ack while local raw capture continues",()=>{
+                using(var f=new Fixture())
+                {
+                    f.BeginMain();f.Grant();f.Preflight();f.Pose();f.Stage();
+                    Check.True(f.Pump.ProcessFocusState(true,false));
+                    Check.True(f.Task.IsFocusHoldPaused&&f.Task.Phase==Phase.Paused&&!f.P.LocalChoiceCurrent);
+                    Check.True(f.P.TickFocusHoldSuspension()&&f.P.FocusForwardingSuspending&&!f.P.Terminal);
+                    Check.True(f.Recording.Current&&f.Pump.State==ViveNamedRawRecordingPump.Outcome.Running);
+                    f.O.Tick();Check.True(f.O.Terminal&&f.O.SourceRevokeAcknowledged);
+                    Check.True(f.P.TickFocusHoldSuspension()&&f.P.FocusForwardingSuspended&&f.P.Terminal);
+                    Check.True(f.P.SourceRevokeAcknowledged&&!f.P.FocusForwardingCleanupUnknown);
+                    Check.True(f.P.RecordFocusSuspensionMetadataForCurrentFrame());
+                    Check.True(f.P.CurrentPose==null&&f.P.CurrentPreflight==null&&!f.P.CurrentTaskAcknowledged&&!f.P.LocalChoiceCurrent);
+                    Check.True(f.Scene.ClearForSafety());Check.True(f.Sink.Output==null);
+                    f.Stage();Check.True(f.Pump.ProcessFocusState(true,true));
+                    Check.True(f.P.TickFocusHoldSuspension()&&f.Task.Phase==Phase.Paused&&f.Task.IsFocusHoldPaused);
+                    Check.True(f.Recording.Current&&f.Admission.State==0&&f.Pump.State==ViveNamedRawRecordingPump.Outcome.Running);
+                    Check.True(f.Pump.DrainTaskEvents());f.Drain();
+                    var result=Read(f.Writer.Snapshot());
+                    Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,result.Status);
+                    Check.True(result.TrialProjection.ObservedSafetyEvents.Any(item=>item.Kind=="focus_changed")&&!result.CaptureTerminalObserved);
+                    Check.True(result.TrialProjection.ObservedSafetyEvents.Any(item=>item.Kind=="focus_forwarding_suspended"&&
+                        item.Detail.Contains("remote_software_ack=RECEIVED")&&item.Detail.Contains("remote_physical_stop=NOT_ESTABLISHED")));
+                    Check.Equal(0,f.Writer.CompleteCalls);
+                }
+            });
+            suite.Run("WoZ focus revoke timeout marks remote cleanup unknown without stopping healthy local raw",()=>{
+                using(var f=new Fixture())
+                {
+                    f.BeginMain();f.Grant();f.Preflight();f.Pose();f.Stage();
+                    Check.True(f.Pump.ProcessFocusState(true,false));
+                    Check.True(f.P.TickFocusHoldSuspension()&&f.P.FocusForwardingSuspending);
+                    // Deliberately do not pump the remote peer; no ack exists.
+                    var waitUntil=DateTime.UtcNow.AddMilliseconds(5100);
+                    while(!f.P.FocusForwardingSuspended&&DateTime.UtcNow<waitUntil)
+                    {Thread.Sleep(20);f.Stage();Check.True(f.P.TickFocusHoldSuspension());}
+                    Check.True(f.P.FocusForwardingSuspended&&f.P.FocusForwardingCleanupUnknown&&!f.P.SourceRevokeAcknowledged);
+                    Check.True(f.P.RecordFocusSuspensionMetadataForCurrentFrame());
+                    Check.True(f.P.Terminal&&!f.P.LocalChoiceCurrent&&f.P.CurrentPose==null&&f.Sink.Output==null);
+                    Check.True(f.Recording.Current&&f.Admission.State==0&&f.Pump.State==ViveNamedRawRecordingPump.Outcome.Running);
+                    f.Stage();Check.True(f.Pump.ProcessFocusState(true,true));
+                    Check.True(f.Task.Phase==Phase.Paused&&f.P.TickFocusHoldSuspension());
+                    f.P.Dispose();Check.True(!f.Recording.Current&&f.Admission.State!=0);
+                }
+            });
+            suite.Run("WoZ ordinary pause cannot claim the negative focus suspension exception",()=>{
+                using(var f=new Fixture())
+                {
+                    f.BeginMain();f.Grant();f.Preflight();f.Mutate(()=>f.Task.OwnerPause(Actor.Owner));
+                    Check.True(f.Task.Phase==Phase.Paused&&!f.Task.IsFocusHoldPaused);
+                    Check.True(!f.P.TickFocusHoldSuspension()&&f.P.Terminal);
+                    Check.True(!f.Recording.Current&&f.Admission.State!=0);
+                }
+            });
+            suite.Run("WoZ authenticated operator stop during focus cleanup still stops local raw",()=>{
+                using(var f=new Fixture())
+                {
+                    f.BeginMain();f.Grant();f.Preflight();f.Pose();f.Stage();
+                    Check.True(f.Pump.ProcessFocusState(true,false)&&f.P.TickFocusHoldSuspension(),"start negative focus cleanup");
+                    Check.True(f.P.FocusForwardingSuspending&&f.Recording.Current,"pending cleanup retains local raw");
+                    Check.True(f.O.RequestSafetyStop(),"operator authenticated stop sent: "+f.O.LastIssue);
+                    bool held=f.P.TickFocusHoldSuspension();
+                    Check.True(!held&&f.P.Terminal&&f.P.SafetyStopAcknowledged,"actual stop receipt: held="+held+", terminal="+f.P.Terminal+", ack="+f.P.SafetyStopAcknowledged+", issue="+f.P.LastIssue);
+                    Check.True(!f.Recording.Current&&f.Admission.State!=0&&!f.P.FocusForwardingSuspended,"actual stop revokes raw binding");
+                }
+            });
+        }
         public static void Register(TestSuite suite)
         {
+            RegisterFocusHoldTests(suite);
             suite.Run("WoZ raw callback without owned apply cannot create onset or PoseUsed",()=>{
                 using(var f=new Fixture()){var token=f.ReserveFirstMain();Check.True(!token.WozEvidence.Applied&&!f.Commit(token));
                     Check.True(!token.Trial.Onset.HasValue);f.Scene.RecheckPresentation();Check.Equal(Phase.Paused,f.Task.Phase);Check.Equal(0,f.Writer.CompleteCalls);}

@@ -68,6 +68,14 @@ namespace AvatarStroop.Runtime
             ActiveSecondsPresent=activePresent;DurationSeconds=duration;DurationSecondsPresent=durationPresent;RestSeconds=rest;RestSecondsPresent=restPresent;
             ActorPresent=actorPresent;CodePresent=codePresent;ReasonPresent=reasonPresent;DetailPresent=detailPresent;OnsetAvailablePresent=onsetPresent;PausedSecondsPresent=pausedPresent;}
     }
+    internal sealed class ViveRawObservedEyeQuality
+    {
+        internal readonly long RecordOrdinal,TaskCursor;
+        internal readonly double OwnerObservedLocalSeconds;
+        internal readonly int State,Reason;
+        internal ViveRawObservedEyeQuality(long ordinal,double time,int state,int reason,long cursor)
+        {RecordOrdinal=ordinal;OwnerObservedLocalSeconds=time;State=state;Reason=reason;TaskCursor=cursor;}
+    }
     internal sealed class ViveRawTrialProjection
     {
         readonly ReadOnlyCollection<ViveRawObservedTrial> trials;readonly ReadOnlyCollection<ViveRawObservedRating> ratings;
@@ -75,6 +83,7 @@ namespace AvatarStroop.Runtime
         readonly ReadOnlyCollection<ViveProEyeWorker.ObservedEyeStatus> statuses;
         readonly ReadOnlyCollection<ViveRawObservedSafetyEvent> safetyEvents;
         readonly ReadOnlyCollection<ViveRawPreparedPlan> preparedPlans;
+        readonly ReadOnlyCollection<ViveRawObservedEyeQuality> eyeQuality;
         internal IReadOnlyList<ViveRawObservedTrial> Trials {get{return trials;}}
         internal IReadOnlyList<ViveRawObservedRating> Ratings {get{return ratings;}}
         internal IReadOnlyList<ViveRawObservedPlanBlock> DeclaredPlanBlocks {get{return blocks;}}
@@ -83,6 +92,7 @@ namespace AvatarStroop.Runtime
         internal IReadOnlyList<ViveProEyeWorker.ObservedEyeStatus> ObservedStatuses {get{return statuses;}}
         internal IReadOnlyList<ViveRawObservedSafetyEvent> ObservedSafetyEvents {get{return safetyEvents;}}
         internal IReadOnlyList<ViveRawPreparedPlan> PreparedPlans {get{return preparedPlans;}}
+        internal IReadOnlyList<ViveRawObservedEyeQuality> EyeQualityObservations {get{return eyeQuality;}}
         internal readonly string DeclaredSessionId,DeclaredClockId,DeclaredPlanId,DeclaredLegacyDesignId;
         internal readonly string DesignVariant;
         internal readonly bool OperatorWozRecordingDeclared;
@@ -96,9 +106,10 @@ namespace AvatarStroop.Runtime
         internal bool SamplesJoinedToTrials {get{return false;}}
         internal string WriterConfirmation {get{return "UNKNOWN";}}
         internal ViveRawTrialProjection(List<ViveRawObservedTrial> t,List<ViveRawObservedRating> r,List<ViveRawObservedPlanBlock> b,List<ViveProEyeWorker.ObservedEyeStatus> s,List<ViveRawObservedSafetyEvent> e,List<ViveRawPreparedPlan> prepared,
-            string session,string clock,string plan,int unassigned,int unsupported,bool legacy=false,bool woz=false)
+            string session,string clock,string plan,int unassigned,int unsupported,bool legacy=false,bool woz=false,List<ViveRawObservedEyeQuality> quality=null)
         {trials=new ReadOnlyCollection<ViveRawObservedTrial>(t);ratings=new ReadOnlyCollection<ViveRawObservedRating>(r);blocks=new ReadOnlyCollection<ViveRawObservedPlanBlock>(b);
             statuses=new ReadOnlyCollection<ViveProEyeWorker.ObservedEyeStatus>(s);safetyEvents=new ReadOnlyCollection<ViveRawObservedSafetyEvent>(e);preparedPlans=new ReadOnlyCollection<ViveRawPreparedPlan>(prepared);
+            eyeQuality=new ReadOnlyCollection<ViveRawObservedEyeQuality>(quality??new List<ViveRawObservedEyeQuality>());
             OperatorWozRecordingDeclared=woz;DesignVariant=legacy?"LEGACY_ABCD":"NAMED_OPTIONS";DeclaredSessionId=session;DeclaredClockId=clock;DeclaredPlanId=legacy?null:plan;DeclaredLegacyDesignId=legacy?plan:null;UnassignedTrialEvents=unassigned;UnsupportedPreparedPlanEvents=unsupported;}
     }
     // Internal reader-owned accumulator, never a caller callback. It retains at
@@ -125,6 +136,7 @@ namespace AvatarStroop.Runtime
         readonly List<ViveProEyeWorker.ObservedEyeStatus> statuses=new List<ViveProEyeWorker.ObservedEyeStatus>();
         readonly List<ViveRawObservedSafetyEvent> safetyEvents=new List<ViveRawObservedSafetyEvent>();
         readonly List<ViveRawPreparedPlan> preparedPlans=new List<ViveRawPreparedPlan>();
+        readonly List<ViveRawObservedEyeQuality> eyeQuality=new List<ViveRawObservedEyeQuality>();
         string session,clock,plan;int chars,unassigned,unsupportedPlans;bool legacy,woz;
         string Keep(string s)
         {if(s==null)return null;if(s.Length>MaxFieldChars||s.Length>MaxTotalChars-chars)throw new ProjectionLimit();chars+=s.Length;return s;}
@@ -158,7 +170,11 @@ namespace AvatarStroop.Runtime
         }
         internal void Observe(string kind,string id,int block,int segment,long sequence,double time,IReadOnlyDictionary<string,string> fields)
         {
-            if(kind=="trial_interrupted"||kind=="explicit_pause"||kind=="explicit_resume"||kind=="headset_removed"||kind=="technical_issue"||kind=="session_ended"||kind=="phase_changed"||
+            // Focus is a local software declaration. Preserve its selected
+            // fields without inferring gaze quality or changing a trial's
+            // already-recorded response/interruption outcome on focus recovery.
+            if(kind=="trial_interrupted"||kind=="explicit_pause"||kind=="explicit_resume"||kind=="headset_removed"||kind=="technical_issue"||kind=="session_ended"||kind=="phase_changed"||kind=="focus_forwarding_suspended"||
+                kind=="focus_changed"||kind=="focus_pause"||kind=="tracking_gap_begin"||kind=="tracking_gap_end"||kind=="tracking_pause"||kind=="tracking_resume"||
                 kind=="block_task_ended"||kind=="questionnaire_completed"||kind=="rest_ready")
             {
                 if(safetyEvents.Count>=MaxSafetyEvents)throw new ProjectionLimit();
@@ -226,11 +242,13 @@ namespace AvatarStroop.Runtime
         }
         internal void ObserveStatus(ViveProEyeWorker.ObservedEyeStatus status)
         {if(status==null||statuses.Count>=MaxStatuses)throw new ProjectionLimit();statuses.Add(status);}
+        internal void ObserveEyeQuality(long ordinal,double time,int state,int reason,long cursor)
+        {if(eyeQuality.Count>=MaxStatuses)throw new ProjectionLimit();eyeQuality.Add(new ViveRawObservedEyeQuality(ordinal,time,state,reason,cursor));}
         internal void ObservePreparedPlan(ViveRawPreparedPlan prepared)
         {if(prepared==null){checked{unsupportedPlans++;}return;}if(preparedPlans.Count>=6)throw new ProjectionLimit();preparedPlans.Add(prepared);}
         internal ViveRawTrialProjection Finish()
         {var observed=new List<ViveRawObservedTrial>(trials.Count);foreach(var t in trials)observed.Add(new ViveRawObservedTrial(t));
             return new ViveRawTrialProjection(observed,new List<ViveRawObservedRating>(ratings),new List<ViveRawObservedPlanBlock>(blocks),
-                new List<ViveProEyeWorker.ObservedEyeStatus>(statuses),new List<ViveRawObservedSafetyEvent>(safetyEvents),new List<ViveRawPreparedPlan>(preparedPlans),session,clock,plan,unassigned,unsupportedPlans,legacy,woz);}
+                new List<ViveProEyeWorker.ObservedEyeStatus>(statuses),new List<ViveRawObservedSafetyEvent>(safetyEvents),new List<ViveRawPreparedPlan>(preparedPlans),session,clock,plan,unassigned,unsupportedPlans,legacy,woz,new List<ViveRawObservedEyeQuality>(eyeQuality));}
     }
 }

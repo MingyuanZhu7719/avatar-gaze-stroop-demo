@@ -13,6 +13,47 @@ namespace AvatarStroop.Tests
         {setup.Observe(ready,visible,trigger,menu,trackpad,changed,SelectionClock);}
         public static void Register(TestSuite suite)
         {
+            suite.Run("focus suspension retains partial recording choices and requires fresh neutral",()=>{
+                var setup=Prepare();Input(setup);setup.SuspendInputForFocus();
+                Input(setup,trigger:true);Check.Equal(ViveNamedRecordingSetup.Step.Task,setup.Current);
+                Input(setup);Input(setup,trigger:true);Check.Equal(ViveNamedRecordingSetup.Step.Eye,setup.Current);
+                Input(setup);string directory=setup.DirectoryPath;object budget=setup.Budget;
+                setup.SuspendInputForFocus();Input(setup,trigger:true);
+                Check.Equal(ViveNamedRecordingSetup.Step.Eye,setup.Current);Check.True(!setup.BothSelected);
+                Check.Equal(directory,setup.DirectoryPath);Check.True(object.ReferenceEquals(budget,setup.Budget));
+                Input(setup);Input(setup,trigger:true);Check.True(setup.BothSelected);
+                setup.SuspendInputForFocus();Check.True(setup.BothSelected&&setup.DirectoryPath==directory);
+            });
+            suite.Run("recording cancellation retains its first explicit cause without a timeout claim",()=>{
+                var setup=Prepare();Input(setup);Input(setup,trigger:true);Input(setup);Input(setup,trigger:true);
+                setup.Cancel(ViveNamedRecordingSetup.CancellationCause.ControllerIdentityChanged);
+                string first=setup.CancellationMessage;setup.Cancel(ViveNamedRecordingSetup.CancellationCause.ViewStopped);
+                Check.Equal(ViveNamedRecordingSetup.CancellationCause.ControllerIdentityChanged,setup.Cancellation);
+                Check.Equal(first,setup.CancellationMessage);Check.True(first.Contains("identity"));
+                Check.True(!first.Contains("expired")&&!setup.BothSelected&&setup.DirectoryPath==null&&setup.Budget==null);
+                Check.True(!setup.CanStart(true,true,true,true,7,7));
+            });
+            suite.Run("temporary tracking holds confirmed choices until same-clock neutral revalidation",()=>{
+                var setup=Prepare();Input(setup);Input(setup,trigger:true);Input(setup);Input(setup,trigger:true);
+                string directory=setup.DirectoryPath;var budget=setup.Budget;
+                double beforeTask,beforeEye;Check.True(setup.TryGetObservedTimes(SelectionClock,out beforeTask,out beforeEye));
+                Input(setup,ready:false);Input(setup,ready:false);
+                Check.True(setup.BothSelected&&setup.TrackingSuspended&&setup.DirectoryPath==directory&&Object.ReferenceEquals(budget,setup.Budget));
+                Check.Equal(ViveNamedRecordingSetup.CancellationCause.None,setup.Cancellation);
+                Check.True(!setup.CanStart(true,true,true,true,7,7));
+                Input(setup,trigger:true);Check.True(setup.TrackingSuspended&&!setup.CanStart(true,true,true,true,7,7));
+                Input(setup);Check.True(!setup.TrackingSuspended&&setup.CanStart(true,true,true,true,7,7));
+                Check.True(!setup.CanStart(true,true,true,true,-1,7));
+                double task,eye;Check.True(setup.TryGetObservedTimes(SelectionClock,out task,out eye));
+                Check.Equal(beforeTask,task);Check.Equal(beforeEye,eye);
+            });
+            suite.Run("temporary tracking holds a partial choice without replaying held input",()=>{
+                var setup=Prepare();Input(setup);Input(setup,trigger:true);
+                Input(setup,ready:false);Check.Equal(ViveNamedRecordingSetup.Step.Eye,setup.Current);
+                Check.True(setup.TrackingSuspended&&!setup.BothSelected);
+                Input(setup,trigger:true);Check.Equal(ViveNamedRecordingSetup.Step.Eye,setup.Current);
+                Input(setup);Input(setup,trigger:true);Check.True(setup.BothSelected);
+            });
             suite.Run("recording setup closed gate avoids directory inspection",()=>{
                 bool inspected=false;string error;
                 var setup=ViveNamedRecordingSetup.TryPrepare(false,@"C:\Existing","128",_=>{inspected=true;return true;},out error);
@@ -34,8 +75,8 @@ namespace AvatarStroop.Tests
                 double task,eye;Check.True(setup.TryGetObservedTimes(SelectionClock,out task,out eye)&&task>=0&&eye>=task);
                 Check.True(!setup.TryGetObservedTimes(new MonotonicClock("other-selection-clock"),out task,out eye));
             });
-            suite.Run("recording choices decline cancel tracking and device change clear selection",()=>{
-                foreach(int mode in new[]{0,1,2})
+            suite.Run("recording decline cancel and device change remain distinct from temporary tracking",()=>{
+                foreach(int mode in new[]{1,2})
                 {
                     var setup=Prepare();Input(setup);Input(setup,trigger:true);
                     if(mode==0)Input(setup,ready:false);else if(mode==1)Input(setup,changed:true);else {Input(setup);Input(setup,trigger:true,menu:true);}
@@ -47,7 +88,7 @@ namespace AvatarStroop.Tests
                 double task,eye;Check.True(!confirmed.TryGetObservedTimes(SelectionClock,out task,out eye));
                 Input(confirmed);Input(confirmed,trigger:true);Check.Equal(ViveNamedRecordingSetup.Step.Cancelled,confirmed.Current);
                 var lost=Prepare();Input(lost);Input(lost,trigger:true);Input(lost);Input(lost,trigger:true);Input(lost,ready:false);
-                Check.True(!lost.BothSelected&&lost.Current==ViveNamedRecordingSetup.Step.Cancelled);
+                Check.True(lost.BothSelected&&lost.TrackingSuspended&&lost.Current==ViveNamedRecordingSetup.Step.Confirmed);
             });
             suite.Run("recording choice timing is cleared if the view clock changes",()=>{
                 var setup=Prepare();Input(setup);Input(setup,trigger:true);Check.Equal(ViveNamedRecordingSetup.Step.Eye,setup.Current);
@@ -60,7 +101,7 @@ namespace AvatarStroop.Tests
                 Check.True(setup.TryGetObservedTimes(other,out task,out eye)&&eye>=task);
             });
             suite.Run("confirmed recording choices are invalidated by clock or device changes",()=>{
-                foreach(int mode in new[]{0,1,2,3})
+                foreach(int mode in new[]{0,1,3})
                 {
                     var setup=Prepare();Input(setup);Input(setup,trigger:true);Input(setup);Input(setup,trigger:true);
                     var clock=mode==0?null:mode==1?new MonotonicClock("replaced"):SelectionClock;

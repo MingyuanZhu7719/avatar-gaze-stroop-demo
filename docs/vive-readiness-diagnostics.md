@@ -1,5 +1,7 @@
 # Participant readiness diagnostics
 
+The November 13 [focus-recording follow-up](vive-focus-recording-policy.md) supersedes the earlier focus-cancellation policy: focus loss alone retains setup and recording, while genuine tracking, identity and storage failures retain their error handling.
+
 This update defers initial controller ownership until the existing readiness checks pass and repairs misleading participant-owner status. The experiment protocol, input-edge semantics, native SDK, tracking origin, storage choices and recording safety gates remain unchanged.
 
 | Display | Meaning |

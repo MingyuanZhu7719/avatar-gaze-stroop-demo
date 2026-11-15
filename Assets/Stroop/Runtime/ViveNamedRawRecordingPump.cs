@@ -14,7 +14,9 @@ namespace AvatarStroop.Runtime
         // exit, or complete coverage. Withdrawal propagation and in-flight I/O
         // remain unverified. Production and completion gates must remain closed.
         internal enum Outcome { Running, Finishing, CloseCallsReturned, StopPending, StoppedWithoutClose, WithdrawnWithoutClose, Faulted, IoUncertain }
-        internal enum Preparation { Ready, WaitingBaseline, Faulted }
+        // Busy includes a contended metadata lock or a bounded status backlog;
+        // neither is a new task/head authority or proof that the FIFO is empty.
+        internal enum Preparation { Ready, WaitingBaseline, Busy, Faulted }
         internal abstract class Writer
         {
             internal abstract bool Append(ViveNamedSessionFrameAdmission.ConsumerReceipt receipt);
@@ -86,11 +88,47 @@ namespace AvatarStroop.Runtime
         readonly ViveDevelopmentParticipant participant;readonly ViveProEyeWorker worker;
         readonly MonotonicClock clock;readonly ViveNamedSessionFrameAdmission admission;
         readonly Writer writer;readonly int owner;readonly object statusRun;
-        bool statusBaseline;int waitingBaselinePolls,statusStopAttempted,statusStopConfirmed;
+        int statusStopAttempted,statusStopConfirmed;
+        ViveProEyeWorker.StatusTicket pendingStatusTicket;
+        ViveNamedSessionFrameAdmission.StatusAdmissionProof pendingStatusProof;
+        ViveProEyeWorker.StatusSeal pendingCompletionStatusSeal;
+        string firstFault;
+#if UNITY_EDITOR
+        // The headless render fixture can substitute tracking only for an
+        // in-memory synthetic writer, never an installed/native data source.
+        internal bool SyntheticSceneFixtureOnly {get{return admission.SyntheticOnly&&writer is SyntheticWriter&&!worker.UsesInstalledSdkPath;}}
+#endif
+        internal object InitialWorkerGate {get{return worker.RecordingTicketGate;}}
+        internal void DiscardPreparationPanelEpoch(){stagedEpoch=null;}
+        internal string FirstFault {get{return Volatile.Read(ref firstFault)??admission.FirstFault??admission.IoFence.FirstFault;}}
+        // Bounded software diagnostics only: no sample, path, native handle or secret.
+        internal string FailureSnapshot {get{return "pump="+(Volatile.Read(ref firstFault)??"none")+
+            "; admission="+(admission.FirstFault??"none")+"; io="+(admission.IoFence.FirstFault??"none")+
+            "; terminal="+Volatile.Read(ref terminal)+"; admissionState="+admission.State+
+            "; fence="+admission.IoFence.CompletionOutcome;}}
+        internal void NoteFirstFault(string code){Interlocked.CompareExchange(ref firstFault,code,null);}
+        internal ViveProEyeWorker.RecordingRunRead ReadExactWorkerRun(ViveProEyeWorker candidate)
+        {
+            if(!Object.ReferenceEquals(candidate,worker)||statusRun==null)return ViveProEyeWorker.RecordingRunRead.Unavailable;
+            return worker.IsAttachedTaskRunCurrent(statusRun)?ViveProEyeWorker.RecordingRunRead.Ready:
+                ViveProEyeWorker.RecordingRunRead.Unavailable;
+        }
+        // Render guard for an already-onset trial: the ordinary frame ticket
+        // may already have been drained. This is run/writer authority only,
+        // not head tracking, participant visibility, or a mutation receipt.
+        internal bool VerifyTaskRunAuthorityForDisplay()
+        {
+            return Thread.CurrentThread.ManagedThreadId==owner&&statusRun!=null&&
+                Volatile.Read(ref terminal)==0&&Volatile.Read(ref completionDrainRequested)==0&&
+                !admission.Sealed&&!admission.IoFence.IsRevoked&&admission.State<=1&&
+                worker.IsAttachedTaskRunCurrent(statusRun);
+        }
+
         ViveProEyeWorker.RecordingFrameTicket stagedEpoch;
         double stagedMaximumAge,lastEpochVerification=-1;
-        const int MaxBaselinePolls=120,MaxStatusPerPreparation=64;
-        readonly Thread thread;int terminal,ioReserved,uncertain,appendAttempted,withdrawalRequested,finishRequested;
+        internal bool RawTaskEpochThisFrame {get{return stagedEpoch!=null&&stagedEpoch.TaskAuthority;}}
+        const int MaxStatusPerPreparation=64;
+        readonly Thread thread;int terminal,ioReserved,uncertain,appendAttempted,withdrawalRequested,finishRequested,completionDrainRequested;
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
         string fixtureFirstFailure;
         void MarkFixtureFailure(string stage)
@@ -234,6 +272,7 @@ namespace AvatarStroop.Runtime
         {return Object.ReferenceEquals(participant,task)&&Object.ReferenceEquals(worker,source)&&Object.ReferenceEquals(clock,shared)&&
             Object.ReferenceEquals(admission,candidate)&&IsAvailableForSceneInstall(this);}
         internal bool HasReservedIo {get{return Volatile.Read(ref ioReserved)!=0;}}
+        internal bool CompletionDrainSealed {get{return Volatile.Read(ref finishRequested)!=0;}}
         // 4 = file close API returned; 6 = directory/ancestor cleanup
         // pending; 7 = reviewed close APIs returned. None proves durability.
         // -1 is synthetic fixture only.
@@ -262,7 +301,7 @@ namespace AvatarStroop.Runtime
                 if(kind==0)
                 {
                     if(admission.IoFence.CompletionOutcome==ViveRawRevocation.Outcome.Revoked)return Outcome.IoUncertain;
-                    if(Volatile.Read(ref finishRequested)==0)return Outcome.Running;
+                    if(Volatile.Read(ref finishRequested)==0&&Volatile.Read(ref completionDrainRequested)==0)return Outcome.Running;
                     return Outcome.Finishing;
                 }
                 if(thread.IsAlive)return Outcome.StopPending;
@@ -271,23 +310,27 @@ namespace AvatarStroop.Runtime
             }
         }
         // Called before obtaining the frame used for ordinary task input. An
-        // initial Empty is not a baseline. Busy/ACK failure is not safely
-        // distinguishable from invalidity with the current worker API and is
-        // conservatively terminal; no owner-thread wait or unbounded loop.
+        // Initial Empty is not a baseline. A precisely typed lock Busy can
+        // defer on the owner frame; invalid authority remains terminal.
         internal Preparation PrepareStatus()
         {
             if(Volatile.Read(ref terminal)!=0||Volatile.Read(ref finishRequested)!=0){
+                NoteFirstFault("status_already_terminal");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 MarkFixtureFailure("status_already_terminal");
 #endif
                 return Preparation.Faulted;}
             if(Thread.CurrentThread.ManagedThreadId!=owner||admission.State!=0){
+                NoteFirstFault("eye_status_authority_invalid");
+                NoteFirstFault("status_owner_or_admission");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 MarkFixtureFailure("status_owner_or_admission");
 #endif
                 Fail();return Preparation.Faulted;}
             if(statusRun==null)return admission.SyntheticOnly?Preparation.Ready:Preparation.Faulted;
-            if(!DrainTaskEvents()){
+
+            if(pendingStatusTicket==null&&!DrainTaskEvents()){
+                NoteFirstFault("status_task_drain");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 MarkFixtureFailure("status_task_drain");
 #endif
@@ -296,48 +339,52 @@ namespace AvatarStroop.Runtime
             {
                 for(int i=0;i<MaxStatusPerPreparation;i++)
                 {
-                    ViveProEyeWorker.StatusTicket ticket;
-                    var next=worker.TryReserveStatusEvidence(statusRun,out ticket);
-                    if(next==ViveProEyeWorker.StatusDisposition.Empty)
+                    var ticket=pendingStatusTicket;
+                    if(ticket==null)
                     {
-                        if(statusBaseline){waitingBaselinePolls=0;return Preparation.Ready;}
-                        if(++waitingBaselinePolls<=MaxBaselinePolls)return Preparation.WaitingBaseline;
-                        
-#if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
-                        MarkFixtureFailure("status_baseline_timeout");
-#endif
-                        Fail();return Preparation.Faulted;
+                        var next=worker.TryReserveStatusEvidence(statusRun,out ticket);
+                        if(next==ViveProEyeWorker.StatusDisposition.Busy)return Preparation.Busy;
+                        // No admitted SDK status yet is a measurement absence,
+                        // not a missing task authority after explicit start.
+                        if(next==ViveProEyeWorker.StatusDisposition.Empty)return Preparation.Ready;
+                        if(next!=ViveProEyeWorker.StatusDisposition.Event||ticket==null)
+                        {NoteFirstFault("eye_status_ticket_invalid");Fail();return Preparation.Faulted;}
+                        pendingStatusTicket=ticket;
                     }
-                    if(next!=ViveProEyeWorker.StatusDisposition.Event||ticket==null){
-#if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
-                        MarkFixtureFailure("status_ticket_"+next);
-#endif
-                        Fail();return Preparation.Faulted;}
-                    ViveNamedSessionFrameAdmission.StatusAdmissionProof proof;
-                    if(!admission.TryStageStatus(ticket,out proof)||proof==null||!worker.TryAcknowledgeStatusEvidence(ticket,proof))
+                    if(pendingStatusProof==null)
                     {
-#if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
-                        MarkFixtureFailure("status_admit_or_ack");
-#endif
-                        Fail();return Preparation.Faulted;}
-                    statusBaseline=true;
-                    // ACK means admitted to memory, not persisted. Invalid
-                    // state is fail-stop even if a later recovery is queued.
-                    if(ticket.Event.CauseFlags!=ViveProEyeWorker.EyeStatusCause.None){
-#if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
-                        MarkFixtureFailure("status_invalid_"+ticket.Event.CauseFlags);
-#endif
-                        Fail();return Preparation.Faulted;}
+                        // An unavailable lock is not an invalid ticket. Keep
+                        // the one reserved FIFO ticket, without enqueueing it.
+                        if(!Monitor.TryEnter(worker.RecordingTicketGate))return Preparation.Busy;
+                        try
+                        {
+                            if(!admission.TryStageStatus(ticket,out pendingStatusProof)||pendingStatusProof==null)
+                            {NoteFirstFault("eye_status_admission_invalid");Fail();return Preparation.Faulted;}
+                        }
+                        finally{Monitor.Exit(worker.RecordingTicketGate);}
+                    }
+                    var ack=worker.TryAcknowledgeStatusEvidenceResult(ticket,pendingStatusProof);
+                    if(ack==ViveProEyeWorker.StatusAckResult.Busy)return Preparation.Busy;
+                    if(ack!=ViveProEyeWorker.StatusAckResult.Acknowledged)
+                    {NoteFirstFault("eye_status_ack_invalid");Fail();return Preparation.Faulted;}
+                    pendingStatusTicket=null;pendingStatusProof=null;
+
+                    // Device status describes gaze, not behavioral authority.
                 }
-                // Hitting the bound cannot be treated as an empty queue.
-                
-#if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
-                MarkFixtureFailure("status_batch_limit");
-#endif
-                Fail();return Preparation.Faulted;
+                // The owner budget is not queue overflow. One nonblocking
+                // probe distinguishes a truly drained batch from more work.
+                // Do not reserve a 65th record: the next call must perform its
+                // ordinary task-event drain before reserving more metadata.
+                // Independent task authority continues while metadata waits.
+                var afterBatch=worker.ReadStatusBacklog(statusRun);
+                if(afterBatch==ViveProEyeWorker.StatusDisposition.Empty)return Preparation.Ready;
+                if(afterBatch==ViveProEyeWorker.StatusDisposition.Busy)return Preparation.Busy;
+                if(afterBatch==ViveProEyeWorker.StatusDisposition.Event)return Preparation.Busy;
+                NoteFirstFault("eye_status_ticket_invalid");Fail();return Preparation.Faulted;
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
             {
+                NoteFirstFault("status_exception_");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 MarkFixtureFailure("status_exception_"+error.GetType().Name);
 #endif
@@ -349,44 +396,64 @@ namespace AvatarStroop.Runtime
         // A false result requires the caller to block task presentation and
         // request participant safety handling; it is not a successful pause.
         internal bool StageRigFrame(ViveProEyePoll frame,double maximumAge)
+        {return StageRigFrame(frame,maximumAge,false,out _);}
+        internal bool StageRigFrame(ViveProEyePoll frame,double maximumAge,bool allowInitialWait,out bool waiting)
         {
+            waiting=false;
+            allowInitialWait=allowInitialWait&&participant.Phase==Phase.Preparation&&participant.CurrentTrial==null;
             // Admission detachment is also used by Stop and fault, so it is
             // never itself evidence of an explicit participant withdrawal.
             if(Volatile.Read(ref terminal)!=0||Volatile.Read(ref finishRequested)!=0){
+                NoteFirstFault("frame_already_terminal");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 MarkFixtureFailure("frame_already_terminal");
 #endif
                 return false;}
             if(Thread.CurrentThread.ManagedThreadId!=owner||admission.State!=0)
             {
+                NoteFirstFault("frame_owner_or_admission");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 MarkFixtureFailure("frame_owner_or_admission");
 #endif
                 Fail();return false;}
             try
             {
+                bool independent=statusRun!=null&&worker.IsIndependentTaskPoll(frame);
+                if(statusRun!=null&&worker.UsesInstalledSdkPath&&!independent)
+                {NoteFirstFault("installed_task_snapshot_not_bound");Fail();return false;}
+                bool statusDeferred=false;
                 if(statusRun!=null)
-                {if(PrepareStatus()!=Preparation.Ready){
+                {
+                    var preparation=PrepareStatus();
+                    if(preparation==Preparation.Busy&&independent)
+                    {
+                        // Status remains in its exact reservable/ACK state;
+                        // its lock may not pause behavioral input or render.
+                        statusDeferred=true;
+                        if(!DrainTaskEvents())return false;
+                    }
+                    else if(preparation!=Preparation.Ready)
+                    {
+                        if(allowInitialWait&&preparation==Preparation.Busy){waiting=true;return false;}
+                        NoteFirstFault("frame_status_not_ready");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
-                    MarkFixtureFailure("frame_status_not_ready");
+                        MarkFixtureFailure("frame_status_not_ready");
 #endif
-                    return false;}}
+                        return false;
+                    }
+                }
                 else if(!DrainTaskEvents())return false;
                 ViveProEyeWorker.RecordingFrameTicket ticket;
-                var disposition=worker.TryIssueRecordingTicket(frame,out ticket);
-                if(disposition==ViveProEyeWorker.RecordingTicketDisposition.Duplicate)
-                {
-                    // A duplicate has no new consumed ticket with which to
-                    // validate the action interval in status mode.
-                    if(statusRun!=null){
-#if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
-                        MarkFixtureFailure("frame_ticket_duplicate");
-#endif
-                        Fail();return false;}
-                    if(Volatile.Read(ref terminal)!=0||admission.State!=0){Fail();return false;}
-                    return true; // Caller must recheck safety before presentation.
-                }
+                double now;
+                if(!clock.TryReadRecordingAdmissionTime(out now)||now<lastEpochVerification)
+                {NoteFirstFault("raw_frame_clock_invalid");Fail();return false;}
+                var disposition=independent?worker.TryIssueIndependentTaskTicket(frame,now,maximumAge,statusDeferred,out ticket):
+                    statusRun!=null?worker.TryIssueRecordingTaskTicket(frame,now,maximumAge,out ticket):
+                    worker.TryIssueRecordingTicket(frame,out ticket);
+                if(statusRun==null&&disposition==ViveProEyeWorker.RecordingTicketDisposition.Duplicate)
+                    return Volatile.Read(ref terminal)==0&&admission.State==0;
                 if(disposition!=ViveProEyeWorker.RecordingTicketDisposition.Issued){
+                    NoteFirstFault("frame_ticket_"+disposition);
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                     MarkFixtureFailure("frame_ticket_"+disposition);
 #endif
@@ -394,11 +461,14 @@ namespace AvatarStroop.Runtime
                 ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp;
                 if(!participant.TryCaptureRawRecordingTaskStamp(clock,out stamp)||!admission.TryStage(stamp,ticket,maximumAge))
                 {
+                    NoteFirstFault("frame_stamp_or_admit");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                     MarkFixtureFailure("frame_stamp_or_admit");
 #endif
                     if(ticket!=null){Interlocked.Exchange(ref ticket.Consumed,1);Interlocked.Exchange(ref ticket.Frame,null);}Fail();return false;}
-                if(statusRun!=null){stagedEpoch=ticket;stagedMaximumAge=maximumAge;if(!VerifyStagedEpoch()){
+                if(statusRun!=null){stagedEpoch=ticket;stagedMaximumAge=maximumAge;
+                    if(!VerifyStagedEpoch()){
+                    NoteFirstFault("frame_epoch_verify");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                     MarkFixtureFailure("frame_epoch_verify");
 #endif
@@ -407,6 +477,7 @@ namespace AvatarStroop.Runtime
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
             {
+                NoteFirstFault("frame_exception_");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 MarkFixtureFailure("frame_exception_"+error.GetType().Name);
 #endif
@@ -463,11 +534,13 @@ namespace AvatarStroop.Runtime
                 do
                 {
                     if(!admission.TryStageNextTaskEvent(out staged)){
+                        NoteFirstFault("drain_task_event");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                         MarkFixtureFailure("drain_task_event");
 #endif
                         Fail();return false;}
                     if(staged&&++count>64){
+                        NoteFirstFault("drain_task_batch_limit");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                         MarkFixtureFailure("drain_task_batch_limit");
 #endif
@@ -509,14 +582,58 @@ namespace AvatarStroop.Runtime
         internal bool VerifyStagedEpoch()
         {
             if(statusRun==null)return admission.SyntheticOnly&&Volatile.Read(ref terminal)==0;
-            double now;
-            if(Thread.CurrentThread.ManagedThreadId!=owner||Volatile.Read(ref terminal)!=0||stagedEpoch==null||
-                !clock.TryReadRecordingAdmissionTime(out now)||
-                !EpochTimeFresh(now,lastEpochVerification,stagedEpoch.EyeObserved,stagedEpoch.HeadObserved,stagedMaximumAge)||
-                worker.TryCheckRecordingEpoch(stagedEpoch)!=ViveProEyeWorker.RecordingEpochResult.Current)
-            {Fail();return false;}
+            double now;string reason;
+            if(ReadEpoch(false,out now,out reason)!=PreparationPanelEpochResult.Current)
+            {NoteFirstFault("raw_VerifyStagedEpoch:"+reason);Fail();return false;}
             lastEpochVerification=now;
             return true;
+        }
+        internal enum PreparationPanelEpochResult { Current, Retry, Invalid }
+        PreparationPanelEpochResult ReadEpoch(bool preparation,out double now,out string reason)
+        {
+            now=0;
+            if(Thread.CurrentThread.ManagedThreadId!=owner){reason="wrong_owner";return PreparationPanelEpochResult.Invalid;}
+            if(Volatile.Read(ref terminal)!=0){reason="terminal";return PreparationPanelEpochResult.Invalid;}
+            var ticket=stagedEpoch;
+            if(ticket==null){reason="missing_ticket";return PreparationPanelEpochResult.Invalid;}
+            if(!clock.TryReadRecordingAdmissionTime(out now)||!WireCodec.Finite(now)||!WireCodec.Finite(lastEpochVerification)||
+                !WireCodec.Finite(ticket.HeadObserved)||!WireCodec.Finite(stagedMaximumAge)||stagedMaximumAge<=0||
+                stagedMaximumAge>1||now<lastEpochVerification||now<ticket.HeadObserved||
+                !ticket.TaskAuthority&&(!WireCodec.Finite(ticket.EyeObserved)||now<ticket.EyeObserved))
+            {reason="clock_invalid";return PreparationPanelEpochResult.Invalid;}
+            double age=ticket.TaskAuthority?now-ticket.HeadObserved:Math.Max(now-ticket.EyeObserved,now-ticket.HeadObserved);
+            // Keep the strict caller's prior short circuit on a stale sample.
+            if(!preparation&&age>stagedMaximumAge){reason="age_expired";return PreparationPanelEpochResult.Invalid;}
+            var workerEpoch=worker.ClassifyRecordingEpoch(ticket,true);
+            if(workerEpoch!=ViveProEyeWorker.RecordingEpochDetail.Current&&workerEpoch!=ViveProEyeWorker.RecordingEpochDetail.HealthyStatusPending&&
+                workerEpoch!=ViveProEyeWorker.RecordingEpochDetail.RecoverableStatusPending)
+            {reason="worker_"+workerEpoch;return PreparationPanelEpochResult.Invalid;}
+            if(age>stagedMaximumAge)
+            {
+                reason="age_expired";
+                return age<=stagedMaximumAge+1?PreparationPanelEpochResult.Retry:PreparationPanelEpochResult.Invalid;
+            }
+            if(preparation&&!ticket.TaskAuthority&&workerEpoch==ViveProEyeWorker.RecordingEpochDetail.HealthyStatusPending)
+            {reason="healthy_status_pending";return PreparationPanelEpochResult.Retry;}
+            reason="current";return PreparationPanelEpochResult.Current;
+        }
+        // Initial, unaccepted non-trial panel only. The owner holds both
+        // gates across the render decision. No producer, trial witness,
+        // countdown reservation, seal or revocation can be present.
+        internal PreparationPanelEpochResult CheckPreparationPanelEpoch(out string reason)
+        {
+            if(Thread.CurrentThread.ManagedThreadId!=owner||!Monitor.IsEntered(participant.NamedRecordingGate)||
+                (stagedEpoch!=null&&!stagedEpoch.IndependentTaskAuthority&&!Monitor.IsEntered(worker.RecordingTicketGate))||
+                participant.Phase!=Phase.Preparation||participant.CurrentTrial!=null||
+                statusRun==null||Volatile.Read(ref finishRequested)!=0||!admission.AllowsUnacceptedPreparationPanelDiscard)
+            {reason="preparation_scope_invalid";return PreparationPanelEpochResult.Invalid;}
+            double now;return ReadEpoch(true,out now,out reason);
+        }
+        internal bool TryDiscardPreparationPanelEpoch()
+        {
+            string reason;
+            if(CheckPreparationPanelEpoch(out reason)!=PreparationPanelEpochResult.Retry)return false;
+            stagedEpoch=null;return true;
         }
         internal static bool EpochTimeFresh(double now,double previous,double eye,double head,double maximumAge)
         {
@@ -528,7 +645,9 @@ namespace AvatarStroop.Runtime
         {var synthetic=writer as SyntheticWriter;if(admission.SyntheticOnly&&synthetic!=null){var hook=synthetic.AfterRevokeForTest;if(hook!=null)hook();}}
         internal void Stop(){admission.IoFence.Revoke();AfterSyntheticRevokeForTest();Terminate(1);}
         internal void Withdraw(){admission.IoFence.Revoke();AfterSyntheticRevokeForTest();Interlocked.Exchange(ref withdrawalRequested,1);Terminate(2);}
-        void Fail(){admission.IoFence.Abort();Terminate(3);}
+        void Fail([System.Runtime.CompilerServices.CallerMemberName]string member=null,
+            [System.Runtime.CompilerServices.CallerLineNumber]int line=0)
+        {NoteFirstFault("raw_"+member+":"+line);admission.IoFence.Abort();Terminate(3);}
         // Normal end is distinct from stop/withdraw/fault. Only the owner of
         // an already Completed task can freeze the same worker's status FIFO,
         // drain its previously registered records and seal the task cursor.
@@ -536,21 +655,46 @@ namespace AvatarStroop.Runtime
         internal bool RequestCompletedDrain()
         {
             if(Thread.CurrentThread.ManagedThreadId!=owner||statusRun==null||Volatile.Read(ref terminal)!=0||
-                Volatile.Read(ref finishRequested)!=0||!participant.Completed){Fail();return false;}
+                Volatile.Read(ref finishRequested)!=0||!participant.Completed||
+                Interlocked.CompareExchange(ref completionDrainRequested,1,0)!=0){Fail();return false;}
+            return PollRequestedCompletionDrain();
+        }
+
+        // Recording stays Finishing if the optional eye gate is busy or its
+        // bounded FIFO needs another owner poll. Freeze exactly once; no
+        // success/terminal frame is asserted before that same seal is drained.
+        internal bool PollRequestedCompletionDrain()
+        {
+            if(Thread.CurrentThread.ManagedThreadId!=owner||Volatile.Read(ref completionDrainRequested)==0||
+                !participant.Completed)return false;
+            int outcome=Volatile.Read(ref terminal);
+            if(Volatile.Read(ref finishRequested)!=0)return outcome==0||outcome==4;
+            if(outcome!=0)return false;
+            var gate=worker.RecordingTicketGate;
+            if(!Monitor.TryEnter(gate))return true;
             try
             {
                 if(!DrainTaskEvents()){Fail();return false;}
-                ViveProEyeWorker.StatusSeal seal;
-                if(!worker.TrySealStatusEvidence(statusRun,out seal)||seal==null){Fail();return false;}
-                if(PrepareStatus()!=Preparation.Ready||!admission.TryBindDrainedStatusSeal(seal)||
+                var seal=pendingCompletionStatusSeal;
+                if(seal==null)
+                {
+                    if(!worker.TrySealStatusEvidence(statusRun,out seal,true)||seal==null)
+                    {Fail();return false;}
+                    pendingCompletionStatusSeal=seal;
+                }
+                var preparation=PrepareStatus();
+                if(preparation==Preparation.Busy)return true;
+                if(preparation!=Preparation.Ready||!admission.TryBindDrainedStatusSeal(seal)||
                     admission.TrySealCompleted()!=ViveNamedSessionFrameAdmission.SealResult.Sealed)
                 {Fail();return false;}
+                pendingCompletionStatusSeal=null;
                 if(Volatile.Read(ref terminal)!=0||Interlocked.CompareExchange(ref finishRequested,1,0)!=0)
                 {Fail();return false;}
                 return true;
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
             {Fail();return false;}
+            finally{Monitor.Exit(gate);}
         }
         void Terminate(int reason)
         {
@@ -570,6 +714,8 @@ namespace AvatarStroop.Runtime
             admission.Withdraw();
             writer.RevokeBlockPlanReceipt();
             if(statusRun!=null)worker.RevokeStatusEvidence();
+            // Revocation above makes even a raced/retained seal unusable.
+            Interlocked.Exchange(ref pendingCompletionStatusSeal,null);
             if(Volatile.Read(ref ioReserved)!=0)Interlocked.Exchange(ref uncertain,1);
         }
         // The atomic revoke is immediate. This optional owner-thread attempt
@@ -629,6 +775,7 @@ namespace AvatarStroop.Runtime
                     Interlocked.Exchange(ref ioReserved,0);
                     if(Volatile.Read(ref terminal)!=0){Interlocked.Exchange(ref uncertain,1);break;}
                     if(!written){
+                        NoteFirstFault("writer_append_false");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                         MarkFixtureFailure("writer_append_false");
 #endif
@@ -637,6 +784,7 @@ namespace AvatarStroop.Runtime
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
             {
+                NoteFirstFault("writer_exception_");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 MarkFixtureFailure("writer_exception_"+error.GetType().Name);
 #endif

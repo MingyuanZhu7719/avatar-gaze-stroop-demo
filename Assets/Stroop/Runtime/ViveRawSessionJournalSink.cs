@@ -48,14 +48,14 @@ namespace AvatarStroop.Runtime
         int installedSourceCloseValidated;
         System.Diagnostics.Stopwatch installedCleanupClock;
         Thread writerThread;int failed,cleanupState,openAttempted,completionState,sourceCloseReturned;long expectedOrdinal,bytesWritten;
-        long confirmedTasks,confirmedEyes,confirmedStatuses,confirmedTaskCursor=-2,confirmedStatusSequence=-1;WriteProof issuedProof;
+        long confirmedTasks,confirmedEyes,confirmedStatuses,confirmedEyeQuality,confirmedTaskCursor=-2,confirmedStatusSequence=-1;WriteProof issuedProof;
         NativeAuthority issuedNativeAuthority;
         BlockPlanWriteReceipt issuedBlockPlanReceipt;
         // Invoked exclusively by the in-memory synthetic publication path.
         // Neither hook is reachable from the native writer or real receipt.
         internal Action BeforeSyntheticReceiptPublishForTest {get;set;}
         internal Action AfterSyntheticReceiptPublishForTest {get;set;}
-        double confirmedStatusAt=-1,latestObservedAt=-1;bool taskEnded,taskCompleted,endedPhase,extraTaskAfterEnd;
+        double confirmedStatusAt=-1,confirmedEyeQualityAt=-1,latestObservedAt=-1;bool taskEnded,taskCompleted,endedPhase,extraTaskAfterEnd;
         byte[] previous=new byte[32];
         // Build availability only. Exact directory authority, cleanup and
         // independent readback remain mandatory at their operation boundaries.
@@ -499,7 +499,8 @@ namespace AvatarStroop.Runtime
                 var taskRecord=record as JournalEvent;
                 var eyeRecord=record as ViveNamedSessionFrameAdmission.Frame;
                 var statusRecord=record as ViveProEyeWorker.ObservedEyeStatus;
-                if(taskRecord==null&&eyeRecord==null&&statusRecord==null)throw new InvalidOperationException("Unknown raw record.");
+                var qualityRecord=record as ViveRawEyeObservation;
+                if(taskRecord==null&&eyeRecord==null&&statusRecord==null&&qualityRecord==null)throw new InvalidOperationException("Unknown raw record.");
                 bool isBlockPlan=IsPrestartPlan(taskRecord);
                 if(isBlockPlan&&Volatile.Read(ref issuedBlockPlanReceipt)!=null)
                     throw new InvalidOperationException("Previous block plan receipt not consumed.");
@@ -509,11 +510,16 @@ namespace AvatarStroop.Runtime
                     statusRecord.Sequence!=confirmedStatusSequence+1||statusRecord.PollReturnLocalSeconds<manifest.ChoiceTime||
                     statusRecord.PollReturnLocalSeconds<confirmedStatusAt))
                     throw new InvalidOperationException("Status sequence unavailable.");
+                if(qualityRecord!=null&&(taskEnded||confirmedEyeQuality==Int64.MaxValue||
+                    !ViveRawEyeObservation.Valid(qualityRecord.State,qualityRecord.Cause,qualityRecord.ObservedLocalSeconds,qualityRecord.TaskCursor)||
+                    qualityRecord.TaskCursor!=confirmedTaskCursor||qualityRecord.ObservedLocalSeconds<manifest.ChoiceTime||
+                    qualityRecord.ObservedLocalSeconds<confirmedEyeQualityAt))throw new InvalidOperationException("Owner eye observation context unavailable.");
                 byte[] frame,digest;bool first=expectedOrdinal==0;int actualHeaderBytes=0;
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 if(IsNativeFixture)ViveSyntheticNativeTrace.Mark(ViveSyntheticNativeTrace.Stage.Encode);
 #endif
-                byte[] payload=statusRecord==null?ViveRawSessionJournalCodec.RecordPayload(checked(expectedOrdinal+1),record,manifest):
+                byte[] payload=qualityRecord!=null?ViveRawSessionJournalCodec.EyeObservationPayload(checked(expectedOrdinal+1),qualityRecord):
+                    statusRecord==null?ViveRawSessionJournalCodec.RecordPayload(checked(expectedOrdinal+1),record,manifest):
                     ViveRawSessionJournalCodec.StatusPayloadV3(checked(expectedOrdinal+1),statusRecord);
                 if(first)
                 {
@@ -581,6 +587,7 @@ namespace AvatarStroop.Runtime
                     {if(taskEnded)extraTaskAfterEnd=true;taskEnded=true;taskCompleted=taskRecord.Fields.TryGetValue("reason",out value)&&value=="Completed";}
                 }
                 else if(eyeRecord!=null){confirmedEyes++;latestObservedAt=Math.Max(latestObservedAt,eyeRecord.CheckedAt);}
+                else if(qualityRecord!=null){confirmedEyeQuality++;confirmedEyeQualityAt=qualityRecord.ObservedLocalSeconds;latestObservedAt=Math.Max(latestObservedAt,confirmedEyeQualityAt);}
                 else{confirmedStatuses++;confirmedStatusSequence=statusRecord.Sequence;confirmedStatusAt=statusRecord.PollReturnLocalSeconds;latestObservedAt=Math.Max(latestObservedAt,confirmedStatusAt);}
                 if(isBlockPlan)
                 {
@@ -626,9 +633,9 @@ namespace AvatarStroop.Runtime
                 long water,cursor;double at;
                 if(!admission.TryGetDrainedSealBoundary(out water,out cursor,out at)||water!=expectedOrdinal||cursor!=confirmedTaskCursor||
                     !taskEnded||!taskCompleted||!endedPhase||extraTaskAfterEnd||Volatile.Read(ref issuedBlockPlanReceipt)!=null||at<latestObservedAt||
-                    checked(confirmedTasks+confirmedEyes+confirmedStatuses)!=expectedOrdinal)throw new InvalidOperationException("Unverified terminal boundary.");
+                    checked(confirmedTasks+confirmedEyes+confirmedStatuses+confirmedEyeQuality)!=expectedOrdinal)throw new InvalidOperationException("Unverified terminal boundary.");
                 byte[] digest;byte[] payload=ViveRawSessionJournalCodec.TerminalPayloadV3(checked(expectedOrdinal+1),cursor,
-                    confirmedTasks,confirmedEyes,confirmedStatuses,water,at);
+                    confirmedTasks,confirmedEyes,confirmedStatuses,water,at,confirmedEyeQuality);
                 byte[] frame=FrameForDesign(payload,previous,false,out digest);
                 if(!budget.FitsTerminal(bytesWritten,frame.Length))throw new InvalidOperationException("Raw journal limit reached.");
                 long checkWater,checkCursor;double checkAt;
@@ -945,6 +952,9 @@ namespace AvatarStroop.Runtime
             return read.Status==ViveRawSessionReadStatus.VerifiedPrefix&&!read.TrailingFrameTruncated&&read.CaptureTerminalObserved&&
                 read.VerifiedBytes==bytes&&read.VerifiedRecordCount==records&&read.VerifiedTaskRecords==tasks&&
                 read.VerifiedObservationRecords==eyes&&read.VerifiedStatusRecords==statuses&&
+                // Exact writer total plus the old counters binds the new
+                // quality count without reclassifying missing data as gaze.
+                read.VerifiedEyeQualityRecords>=0&&records-2-tasks-eyes-statuses==read.VerifiedEyeQualityRecords&&
                 String.Equals(read.VerifiedPrefixChainDigestHex,expectedDigest,StringComparison.Ordinal);
         }
         internal bool DirectoryCleanupPending
