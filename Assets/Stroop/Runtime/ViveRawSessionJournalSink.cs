@@ -48,14 +48,15 @@ namespace AvatarStroop.Runtime
         int installedSourceCloseValidated;
         System.Diagnostics.Stopwatch installedCleanupClock;
         Thread writerThread;int failed,cleanupState,openAttempted,completionState,sourceCloseReturned;long expectedOrdinal,bytesWritten;
-        long confirmedTasks,confirmedEyes,confirmedStatuses,confirmedEyeQuality,confirmedTaskCursor=-2,confirmedStatusSequence=-1;WriteProof issuedProof;
+        long confirmedTasks,confirmedEyes,confirmedStatuses,confirmedEyeQuality,confirmedAcquisitions,confirmedAcquisitionSequence=-1,confirmedTaskCursor=-2,confirmedStatusSequence=-1;WriteProof issuedProof;
+        long confirmedAcquisitionPolls,confirmedAcquisitionDuplicates,confirmedAcquisitionGaps,confirmedAcquisitionDiscontinuities;
         NativeAuthority issuedNativeAuthority;
         BlockPlanWriteReceipt issuedBlockPlanReceipt;
         // Invoked exclusively by the in-memory synthetic publication path.
         // Neither hook is reachable from the native writer or real receipt.
         internal Action BeforeSyntheticReceiptPublishForTest {get;set;}
         internal Action AfterSyntheticReceiptPublishForTest {get;set;}
-        double confirmedStatusAt=-1,confirmedEyeQualityAt=-1,latestObservedAt=-1;bool taskEnded,taskCompleted,endedPhase,extraTaskAfterEnd;
+        double confirmedStatusAt=-1,confirmedEyeQualityAt=-1,confirmedAcquisitionAt=-1,latestObservedAt=-1;bool taskEnded,taskCompleted,endedPhase,extraTaskAfterEnd;
         byte[] previous=new byte[32];
         // Build availability only. Exact directory authority, cleanup and
         // independent readback remain mandatory at their operation boundaries.
@@ -500,7 +501,8 @@ namespace AvatarStroop.Runtime
                 var eyeRecord=record as ViveNamedSessionFrameAdmission.Frame;
                 var statusRecord=record as ViveProEyeWorker.ObservedEyeStatus;
                 var qualityRecord=record as ViveRawEyeObservation;
-                if(taskRecord==null&&eyeRecord==null&&statusRecord==null&&qualityRecord==null)throw new InvalidOperationException("Unknown raw record.");
+                var acquisitionRecord=record as ViveRawEyeAcquisition;
+                if(taskRecord==null&&eyeRecord==null&&statusRecord==null&&qualityRecord==null&&acquisitionRecord==null)throw new InvalidOperationException("Unknown raw record.");
                 bool isBlockPlan=IsPrestartPlan(taskRecord);
                 if(isBlockPlan&&Volatile.Read(ref issuedBlockPlanReceipt)!=null)
                     throw new InvalidOperationException("Previous block plan receipt not consumed.");
@@ -514,11 +516,17 @@ namespace AvatarStroop.Runtime
                     !ViveRawEyeObservation.Valid(qualityRecord.State,qualityRecord.Cause,qualityRecord.ObservedLocalSeconds,qualityRecord.TaskCursor)||
                     qualityRecord.TaskCursor!=confirmedTaskCursor||qualityRecord.ObservedLocalSeconds<manifest.ChoiceTime||
                     qualityRecord.ObservedLocalSeconds<confirmedEyeQualityAt))throw new InvalidOperationException("Owner eye observation context unavailable.");
+                if(acquisitionRecord!=null&&(confirmedAcquisitions==Int64.MaxValue||!ViveRawSessionJournalCodec.ValidAcquisition(acquisitionRecord)||
+                    acquisitionRecord.Sequence!=confirmedAcquisitionSequence+1||acquisitionRecord.Poll.Eye.ObservedLocalSeconds<=manifest.ChoiceTime||
+                    acquisitionRecord.WorkerPublishedLocalSeconds<confirmedAcquisitionAt||acquisitionRecord.EligiblePolls<=confirmedAcquisitionPolls||
+                    acquisitionRecord.DuplicatePolls<confirmedAcquisitionDuplicates||acquisitionRecord.NativeSequenceGapCount<confirmedAcquisitionGaps||
+                    acquisitionRecord.NativeSequenceDiscontinuities<confirmedAcquisitionDiscontinuities))throw new InvalidOperationException("Native acquisition sequence unavailable.");
                 byte[] frame,digest;bool first=expectedOrdinal==0;int actualHeaderBytes=0;
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
                 if(IsNativeFixture)ViveSyntheticNativeTrace.Mark(ViveSyntheticNativeTrace.Stage.Encode);
 #endif
-                byte[] payload=qualityRecord!=null?ViveRawSessionJournalCodec.EyeObservationPayload(checked(expectedOrdinal+1),qualityRecord):
+                byte[] payload=acquisitionRecord!=null?ViveRawSessionJournalCodec.AcquisitionPayload(checked(expectedOrdinal+1),acquisitionRecord):
+                    qualityRecord!=null?ViveRawSessionJournalCodec.EyeObservationPayload(checked(expectedOrdinal+1),qualityRecord):
                     statusRecord==null?ViveRawSessionJournalCodec.RecordPayload(checked(expectedOrdinal+1),record,manifest):
                     ViveRawSessionJournalCodec.StatusPayloadV3(checked(expectedOrdinal+1),statusRecord);
                 if(first)
@@ -588,6 +596,10 @@ namespace AvatarStroop.Runtime
                 }
                 else if(eyeRecord!=null){confirmedEyes++;latestObservedAt=Math.Max(latestObservedAt,eyeRecord.CheckedAt);}
                 else if(qualityRecord!=null){confirmedEyeQuality++;confirmedEyeQualityAt=qualityRecord.ObservedLocalSeconds;latestObservedAt=Math.Max(latestObservedAt,confirmedEyeQualityAt);}
+                else if(acquisitionRecord!=null){confirmedAcquisitions++;confirmedAcquisitionSequence=acquisitionRecord.Sequence;
+                    confirmedAcquisitionAt=acquisitionRecord.WorkerPublishedLocalSeconds;latestObservedAt=Math.Max(latestObservedAt,confirmedAcquisitionAt);
+                    confirmedAcquisitionPolls=acquisitionRecord.EligiblePolls;confirmedAcquisitionDuplicates=acquisitionRecord.DuplicatePolls;
+                    confirmedAcquisitionGaps=acquisitionRecord.NativeSequenceGapCount;confirmedAcquisitionDiscontinuities=acquisitionRecord.NativeSequenceDiscontinuities;}
                 else{confirmedStatuses++;confirmedStatusSequence=statusRecord.Sequence;confirmedStatusAt=statusRecord.PollReturnLocalSeconds;latestObservedAt=Math.Max(latestObservedAt,confirmedStatusAt);}
                 if(isBlockPlan)
                 {
@@ -633,9 +645,9 @@ namespace AvatarStroop.Runtime
                 long water,cursor;double at;
                 if(!admission.TryGetDrainedSealBoundary(out water,out cursor,out at)||water!=expectedOrdinal||cursor!=confirmedTaskCursor||
                     !taskEnded||!taskCompleted||!endedPhase||extraTaskAfterEnd||Volatile.Read(ref issuedBlockPlanReceipt)!=null||at<latestObservedAt||
-                    checked(confirmedTasks+confirmedEyes+confirmedStatuses+confirmedEyeQuality)!=expectedOrdinal)throw new InvalidOperationException("Unverified terminal boundary.");
+                    checked(confirmedTasks+confirmedEyes+confirmedStatuses+confirmedEyeQuality+confirmedAcquisitions)!=expectedOrdinal)throw new InvalidOperationException("Unverified terminal boundary.");
                 byte[] digest;byte[] payload=ViveRawSessionJournalCodec.TerminalPayloadV3(checked(expectedOrdinal+1),cursor,
-                    confirmedTasks,confirmedEyes,confirmedStatuses,water,at,confirmedEyeQuality);
+                    confirmedTasks,confirmedEyes,confirmedStatuses,water,at,confirmedEyeQuality,confirmedAcquisitions);
                 byte[] frame=FrameForDesign(payload,previous,false,out digest);
                 if(!budget.FitsTerminal(bytesWritten,frame.Length))throw new InvalidOperationException("Raw journal limit reached.");
                 long checkWater,checkCursor;double checkAt;
@@ -688,7 +700,7 @@ namespace AvatarStroop.Runtime
                     if(installedPrivateStage!=null)
                     {
                         var read=ViveRawSessionJournalReader.ScanWithPrivateStage(input,budget.MaximumBytes,(int)requiredRecords,CancellationToken.None,installedPrivateStage);
-                        bool matched=ReadbackMatches(read,bytesWritten,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous)&&!admission.IoFence.IsRevoked;
+                        bool matched=ReadbackMatches(read,bytesWritten,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous,confirmedAcquisitions)&&!admission.IoFence.IsRevoked;
                         installedPrivateStage.FinishScan(read,matched);
                         if(!matched)throw new InvalidOperationException("Same-file readback unconfirmed.");
                     }
@@ -697,7 +709,7 @@ namespace AvatarStroop.Runtime
                     if(IsNativeFixture && syntheticPrivateStage!=null)
                     {
                         var read=ViveRawSessionJournalReader.ScanWithPrivateStage(input,budget.MaximumBytes,(int)requiredRecords,CancellationToken.None,syntheticPrivateStage);
-                        bool matched=ReadbackMatches(read,bytesWritten,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous)&&!admission.IoFence.IsRevoked;
+                        bool matched=ReadbackMatches(read,bytesWritten,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous,confirmedAcquisitions)&&!admission.IoFence.IsRevoked;
                         syntheticPrivateStage.FinishScan(read,matched);
                         if(!matched)throw new InvalidOperationException("Same-file readback unconfirmed.");
                     }
@@ -708,9 +720,9 @@ namespace AvatarStroop.Runtime
                         using(var tee=new ViveSyntheticReadbackTee(input,bytesWritten,limit,hook))
                         {
                             var read=ViveRawSessionJournalReader.Scan(tee,true,true,budget.MaximumBytes,(int)requiredRecords,CancellationToken.None);
-                            if(!ReadbackMatches(read,bytesWritten,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous)||admission.IoFence.IsRevoked)
+                            if(!ReadbackMatches(read,bytesWritten,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous,confirmedAcquisitions)||admission.IoFence.IsRevoked)
                                 throw new InvalidOperationException("Same-file readback unconfirmed.");
-                            try { syntheticReadbackSnapshot=tee.SnapshotForTest(read,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous,false); }
+                            try { syntheticReadbackSnapshot=tee.SnapshotForTest(read,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous,false,confirmedAcquisitions); }
                             catch(OutOfMemoryException) { ClearSyntheticTeeForTest(); }
                         }
                     }
@@ -718,7 +730,7 @@ namespace AvatarStroop.Runtime
 #endif
                     {
                     var read=ViveRawSessionJournalReader.Scan(input,true,true,budget.MaximumBytes,(int)requiredRecords,CancellationToken.None);
-                    if(!ReadbackMatches(read,bytesWritten,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous)||admission.IoFence.IsRevoked)
+                    if(!ReadbackMatches(read,bytesWritten,requiredRecords,confirmedTasks,confirmedEyes,confirmedStatuses,previous,confirmedAcquisitions)||admission.IoFence.IsRevoked)
                         throw new InvalidOperationException("Same-file readback unconfirmed.");
                     }
                 }
@@ -945,16 +957,17 @@ namespace AvatarStroop.Runtime
         internal bool SourceCloseReturned {get{return Volatile.Read(ref sourceCloseReturned)!=0;}}
         // Strict consistency only: this is not a consent, source-authorization,
         // complete-sampling or power-loss durability assertion.
-        internal static bool ReadbackMatches(ViveRawSessionReadResult read,long bytes,long records,long tasks,long eyes,long statuses,byte[] digest)
+        internal static bool ReadbackMatches(ViveRawSessionReadResult read,long bytes,long records,long tasks,long eyes,long statuses,byte[] digest,long acquisitions=0)
         {
-            if(read==null||digest==null||digest.Length!=32||bytes<8||records<2||tasks<0||eyes<0||statuses<0)return false;
+            if(read==null||digest==null||digest.Length!=32||bytes<8||records<2||tasks<0||eyes<0||statuses<0||acquisitions<0)return false;
             string expectedDigest=BitConverter.ToString(digest).Replace("-",String.Empty).ToLowerInvariant();
             return read.Status==ViveRawSessionReadStatus.VerifiedPrefix&&!read.TrailingFrameTruncated&&read.CaptureTerminalObserved&&
                 read.VerifiedBytes==bytes&&read.VerifiedRecordCount==records&&read.VerifiedTaskRecords==tasks&&
                 read.VerifiedObservationRecords==eyes&&read.VerifiedStatusRecords==statuses&&
+                read.VerifiedAcquisitionRecords==acquisitions&&
                 // Exact writer total plus the old counters binds the new
                 // quality count without reclassifying missing data as gaze.
-                read.VerifiedEyeQualityRecords>=0&&records-2-tasks-eyes-statuses==read.VerifiedEyeQualityRecords&&
+                read.VerifiedEyeQualityRecords>=0&&records-2-tasks-eyes-statuses-acquisitions==read.VerifiedEyeQualityRecords&&
                 String.Equals(read.VerifiedPrefixChainDigestHex,expectedDigest,StringComparison.Ordinal);
         }
         internal bool DirectoryCleanupPending

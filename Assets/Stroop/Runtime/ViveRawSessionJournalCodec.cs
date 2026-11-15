@@ -9,7 +9,7 @@ namespace AvatarStroop.Runtime
 {
     // VRAW0002 candidate: schema-only encoding; not a writer, consent,
     // authentication, eye-coverage proof or research admission.
-    internal static class ViveRawSessionJournalCodec
+    internal static partial class ViveRawSessionJournalCodec
     {
         static readonly UTF8Encoding Utf8=new UTF8Encoding(false,true);
         internal static byte[] ManifestPayload(ViveNamedSessionFrameAdmission.Manifest manifest)
@@ -85,6 +85,7 @@ namespace AvatarStroop.Runtime
                 Ray(w,frame.Left);Ray(w,frame.Right);Ray(w,frame.Combined);Bool(w,frame.HeadDeviceConnected);Bool(w,frame.HeadRotationValid);
                 w.Write(frame.RawHeadRotation.X);w.Write(frame.RawHeadRotation.Y);w.Write(frame.RawHeadRotation.Z);w.Write(frame.RawHeadRotation.W);
                 w.Write((int)frame.PhaseAtIngest);w.Write(frame.Block);w.Write(frame.Segment);Text(w,frame.TrialAtIngest);w.Write(frame.TaskEventCursor);
+                if(frame.Aoi!=null)WriteAoi(w,frame.Aoi,frame.NativeFrame,frame.NativeTimestamp,frame.EyeObserved,frame.CheckedAt);
             });
         }
         internal static byte[] Frame(byte[] payload,byte[] previous,bool magic,out byte[] digest)
@@ -107,14 +108,17 @@ namespace AvatarStroop.Runtime
         // cursor and the admission's sealed waterline, never from owner/UI
         // input. A marker declares a drained capture only: it cannot certify
         // successful flush/OS close, durable storage, identity, or coverage.
-        internal static byte[] TerminalPayloadV3(long ordinal,long taskCursor,long tasks,long eyes,long statuses,long sealedWatermark,double localObserved,long eyeQualityRecords=0)
+        internal static byte[] TerminalPayloadV3(long ordinal,long taskCursor,long tasks,long eyes,long statuses,long sealedWatermark,double localObserved,long eyeQualityRecords=0,long acquisitionRecords=0)
         {
-            if(ordinal<1||taskCursor< -1||tasks<0||eyes<0||statuses<0||eyeQualityRecords<0||sealedWatermark<0||!Finite(localObserved)||localObserved<0)
+            if(ordinal<1||taskCursor< -1||tasks<0||eyes<0||statuses<0||eyeQualityRecords<0||acquisitionRecords<0||sealedWatermark<0||!Finite(localObserved)||localObserved<0)
                 throw new InvalidOperationException("Invalid capture terminal.");
-            long sum=checked(tasks+eyes+statuses+eyeQualityRecords);
+            long sum=checked(tasks+eyes+statuses+eyeQualityRecords+acquisitionRecords);
             if(sum!=sealedWatermark||sum!=ordinal-1)throw new InvalidOperationException("Capture waterline differs from encoded records.");
             return Build(w=>{w.Write(ordinal);w.Write((byte)4);Text(w,"NORMAL_TASK_COMPLETION_DRAIN_DECLARED");w.Write(taskCursor);
-                w.Write(tasks);w.Write(eyes);w.Write(statuses);w.Write(sealedWatermark);w.Write(localObserved);});
+                w.Write(tasks);w.Write(eyes);w.Write(statuses);w.Write(sealedWatermark);w.Write(localObserved);
+                // Versioned additive terminal extension. Updated readers also
+                // accept old terminals with no extension and zero acquisitions.
+                w.Write(1);w.Write(acquisitionRecords);});
         }
         // A status describes one provider return on the local clock, not a
         // hardware timestamp, lost-frame count, or interval duration.

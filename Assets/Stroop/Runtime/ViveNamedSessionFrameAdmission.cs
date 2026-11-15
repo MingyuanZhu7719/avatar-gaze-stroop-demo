@@ -21,6 +21,7 @@ namespace AvatarStroop.Runtime
         }
         internal sealed class Frame
         {
+            internal readonly ViveEyeAoiObservation Aoi;
             internal readonly int NativeFrame,NativeTimestamp,Block,Segment;
             internal readonly long HeadSequence,TaskEventCursor,LossGeneration;
             internal readonly double EyeObserved,HeadObserved;double checkedAt;
@@ -36,8 +37,9 @@ namespace AvatarStroop.Runtime
             internal readonly int? NativeResultCode,NativeRuntimeStatus;
             internal readonly Phase PhaseAtIngest;
             internal readonly string TrialAtIngest;
-            internal Frame(ViveProEyePoll poll,ViveDevelopmentParticipant.NamedRecordingTaskStamp task,long loss,double checkedAt)
+            internal Frame(ViveProEyePoll poll,ViveDevelopmentParticipant.NamedRecordingTaskStamp task,long loss,double checkedAt,ViveEyeAoiObservation aoi=null)
             {
+                Aoi=aoi;
                 NativeFrame=poll.Eye.FrameSequence;NativeTimestamp=poll.Eye.Timestamp;EyeObserved=poll.Eye.ObservedLocalSeconds;
                 HeadSequence=poll.Head.ObservationSequence;HeadObserved=poll.Head.ObservedLocalSeconds;
                 CombinedMask=poll.Eye.Combined.ValidityMask;RawCombinedDirection=poll.Eye.Combined.Direction;RawHeadRotation=poll.Head.RawTrackingRotation;
@@ -947,14 +949,14 @@ namespace AvatarStroop.Runtime
         }
         // This does not grant consent or start storage: it starts collecting
         // only provider-state metadata after both existing choices committed.
-        internal bool TryEnableWorkerStatus(int statusCapacity,out object statusRun)
+        internal bool TryEnableWorkerStatus(int statusCapacity,out object statusRun,bool captureAcquisitionForTest=false)
         {
             statusRun=null;
             if(Thread.CurrentThread.ManagedThreadId!=owner||!Reserve()){Fail();return false;}
             if(!taskChoice||!eyeChoice||enabledAt<0||statusEnabled||Volatile.Read(ref ring)==null)
             {Fail();return false;}
             object run;
-            if(!worker.TryEnableStatusEvidence(statusCapacity,task.NamedRawRevocation,out run)||!Object.ReferenceEquals(run,runIdentity))
+            if(!worker.TryEnableStatusEvidence(statusCapacity,task.NamedRawRevocation,out run,!syntheticOnly||captureAcquisitionForTest)||!Object.ReferenceEquals(run,runIdentity))
             {Fail();return false;}
             statusEnabled=true;
             if(!ClearBitIfLive(P)){Fail();return false;}
@@ -1045,7 +1047,7 @@ namespace AvatarStroop.Runtime
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException)){Fail();return false;}
         }
-        internal bool TryStage(ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp,ViveProEyeWorker.RecordingFrameTicket ticket,double maximumAge)
+        internal bool TryStage(ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp,ViveProEyeWorker.RecordingFrameTicket ticket,double maximumAge,ViveEyeAoiObservation aoi=null)
         {
             if(Thread.CurrentThread.ManagedThreadId!=owner||stamp==null||ticket==null||maximumAge<=0||maximumAge>1||
                 Double.IsNaN(maximumAge)||Double.IsInfinity(maximumAge)||!Reserve()){DiscardTicket(ticket);Fail();return false;}
@@ -1061,7 +1063,7 @@ namespace AvatarStroop.Runtime
                     ticket.HeadOnly&&!ticket.TaskAuthority||!Object.ReferenceEquals(ticket.Owner,worker)||!Object.ReferenceEquals(ticket.RunIdentity,runIdentity)||
                     (!syntheticOnly&&!ticket.InstalledPath)||!Object.ReferenceEquals(stamp.Owner,task)||!Object.ReferenceEquals(stamp.Clock,clock)||
                     !Object.ReferenceEquals(stamp.Context,context)||!Object.ReferenceEquals(stamp.Plan,plan)||!Object.ReferenceEquals(stamp.Intent,intent)||stamp.Phase==Phase.Ended){Fail();return false;}
-                var copy=ticket.HeadOnly?null:new Frame(poll,stamp,ticket.LossGeneration,0);
+                var copy=ticket.HeadOnly?null:new Frame(poll,stamp,ticket.LossGeneration,0,aoi);
                 if(!Monitor.TryEnter(task.NamedRecordingGate)){Fail();return false;}
                 try
                 {
@@ -1099,6 +1101,9 @@ namespace AvatarStroop.Runtime
                             if(!Publish(target,observation))return false;
                             lastEyeObservation=observation;return true;
                         }
+                        if(aoi!=null&&(aoi.NativeFrame!=copy.NativeFrame||aoi.NativeTimestamp!=copy.NativeTimestamp||
+                            aoi.EyeObservedLocalSeconds!=copy.EyeObserved||aoi.CaptureLocalSeconds<copy.EyeObserved||
+                            aoi.CaptureLocalSeconds>now)){Fail();return false;}
                         copy.SealCheckedAt(now);
                         if(!Publish(target,copy))return false;
                         lastEyeObservation=null;return true;

@@ -45,6 +45,7 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            ViveRawEyeEvidenceTests.Register(suite);
             ViveRawEyeQualityExportTests.Register(suite);
             suite.Run("readable analysis streams all verified four-block fields without changing original",()=>{
                 byte[] bytes=ViveRawTrialProjectionTests.FourBlocks();byte[] original=(byte[])bytes.Clone();
@@ -102,7 +103,9 @@ namespace AvatarStroop.Tests
             });
             suite.Run("readable analysis respects explicit output budget",()=>{
                 using(var input=new MemoryStream(ViveRawTrialProjectionTests.FourBlocks(),false))using(var output=new MemoryStream())
-                {Check.Equal(ViveRawReadableAnalysisCsv.Outcome.OutputUncertain,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,4194304,5000,8192,CancellationToken.None));}
+                // The fixed schema header now includes native timing/AOI
+                // columns. Allow it to start, then exhaust the output budget.
+                {Check.Equal(ViveRawReadableAnalysisCsv.Outcome.OutputUncertain,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,4194304,5000,65536,CancellationToken.None));}
             });
             suite.Run("readable analysis rejects property failure and respects closed scanner gate",()=>{
                 using(var input=new FailingProperty())using(var output=new MemoryStream())

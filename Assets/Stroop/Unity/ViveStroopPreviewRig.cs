@@ -678,7 +678,8 @@ namespace AvatarStroop.Unity
             }
             // Until raw trial-open receipts exist, hide any stale stimulus even
             // when a fault/worker-status branch returns before head polling.
-            if(development!=null&&development.NamedRawPumpAttached)BlockTaskPresentation();
+            if(development!=null&&development.NamedRawPumpAttached)
+            {try{development.CaptureRawEyeAoiSceneBeforeMask();}finally{BlockTaskPresentation();}}
             // This branch precedes FinishStop and all ordinary input or
             // worker polling. A contested task/worker lock must not block the
             // immediate camera mask or the next safety attempt.

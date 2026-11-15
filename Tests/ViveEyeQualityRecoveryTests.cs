@@ -25,7 +25,7 @@ namespace AvatarStroop.Tests
             internal bool HeadValid=true;
             long headSeq;
             int nativeSeq;
-            internal EyeQualityFixture(bool practice,bool frozenBeforeBaseline=false)
+            internal EyeQualityFixture(bool practice,bool frozenBeforeBaseline=false,bool acquisition=false)
             {
                 Worker=new ViveProEyeWorker(Clock,()=>new ViveHeadFrame(++headSeq,Clock.Now,true,HeadValid,Rotation.Identity),()=>client);
                 Check.True(Worker.Start()&&client.Waiting.WaitOne(3000));
@@ -35,7 +35,7 @@ namespace AvatarStroop.Tests
                 Check.True(Admission.ConfirmTask()&&Admission.ConfirmEye());
                 Check.True(Admission.TryBindQueueBudget(ViveRawByteBudget.SelectExplicit(33554432)));
                 Writer=new ViveNamedRawRecordingPump.SyntheticWriter(Admission){Block=true};
-                Pump=ViveNamedRawRecordingPump.StartSyntheticWithStatusForTest(Task,Worker,Clock,Admission,Writer);
+                Pump=ViveNamedRawRecordingPump.StartSyntheticWithStatusForTest(Task,Worker,Clock,Admission,Writer,acquisition);
                 if(practice)
                 {
                     Task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));
@@ -104,6 +104,26 @@ namespace AvatarStroop.Tests
         }
         public static void RegisterEyeQualityRecoveryTests(TestSuite suite)
         {
+            suite.Run("acquisition archives intermediate invalid frames independently of Unity admission",()=>{
+                using(var f=new EyeQualityFixture(false,acquisition:true))
+                {
+                    f.Send();f.Send(invalid:true);f.Send();f.Send(repeat:true);
+                    f.Stage();
+                    var records=f.Records.OfType<ViveRawEyeAcquisition>().OrderBy(x=>x.Sequence).ToArray();
+                    Check.Equal(3,records.Length);Check.Equal(1,f.EyeCount);
+                    Check.Equal(0L,records[0].Sequence);Check.Equal(2L,records[2].Sequence);
+                    Check.True(!records[1].Poll.Eye.Combined.DirectionReportedValid);
+                    Check.True(records.All(x=>x.Poll.Head==null));
+                    Check.True(f.Pump.FirstFault==null&&!f.Admission.IoFence.IsRevoked);
+                    f.Send(); // A sample not consumed by a Unity observation.
+                    ForceSyntheticCompleted(f.Task);
+                    f.Writer.CompleteResult=true;f.Writer.Release.Set();
+                    Check.True(f.Pump.RequestCompletedDrain());
+                    Check.True(f.Writer.CompleteEntered.WaitOne(3000));
+                    Check.True(SpinWait.SpinUntil(()=>f.Pump.HasExited,3000));
+                    Check.Equal(ViveNamedRawRecordingPump.Outcome.CloseCallsReturned,f.Pump.State);
+                }
+            });
             suite.Run("after install a hung first status poll never substitutes cached pre-start gaze or blocks onset",()=>{
                 using(var f=new EyeQualityFixture(true,frozenBeforeBaseline:true))
                 {

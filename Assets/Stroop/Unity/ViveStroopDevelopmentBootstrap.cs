@@ -31,7 +31,7 @@ namespace AvatarStroop.Unity
         ViveNamedRecordingSetup recordingSetup;
         int recordingSetupDesign=-1;
         string recordingDirectory="",recordingBudgetMiB="256";
-        string csvBudgetMiB="64",csvCleanupSeconds="300";
+        string csvBudgetMiB="256",csvCleanupSeconds="300";
         int recordingSelectionFreshFrame=-1;
         bool rawSelectionProvenancePending;
         double rawTaskChoicePollSeconds,rawEyeChoicePollSeconds;
@@ -476,6 +476,7 @@ namespace AvatarStroop.Unity
             }
             rawTaskChoicePollSeconds=taskPoll;rawEyeChoicePollSeconds=eyePoll;
             rawSelectionProvenancePending=true;namedRawPump=pump;
+            Debug.Log("VIVE_EYE_ACQUISITION: archivalFifo=2048; uniqueIdentityBudget=262144; highResolutionPollDelay="+installed.UsesHighResolutionPollDelay+"; pollDelayMs=5; nativeClock=opaque; softwareClock="+sharedClock.ClockId);
             InitializeRawFocusObservations(Application.isFocused,rig!=null&&rig.XrFocused);
             if(participant.LegacyWozRecordingDeclared){legacyWozInstalledAdmission=admission;legacyWozInstalledWorker=installed;}
             return true;
@@ -1630,11 +1631,38 @@ namespace AvatarStroop.Unity
             try{requested=task.NamedRecordingWithdrawalRequested;return true;}
             finally{System.Threading.Monitor.Exit(task.NamedRecordingGate);}
         }
+        bool rawAoiCaptureFailureLogged;
+        void NoteRawAoiCaptureFailure(Exception error)
+        {
+            if(rawAoiCaptureFailureLogged)return;
+            rawAoiCaptureFailureLogged=true;
+            Debug.LogWarning("VIVE_EYE_AOI_CAPTURE_UNAVAILABLE: "+error.GetType().Name+"; affected observations have no validated scene association.");
+        }
+        internal void CaptureRawEyeAoiSceneBeforeMask()
+        {
+            try
+            {
+                if(namedRawPump!=null&&view!=null&&sharedClock!=null&&!RecordingBlocked)
+                    view.CaptureViveEyeAoiSceneBeforeMask(sharedClock);
+            }
+            catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
+            {NoteRawAoiCaptureFailure(error);}
+        }
         internal bool StageNamedRawFrame(ViveProEyePoll frame,out bool waiting)
         {
             waiting=false;var pump=namedRawPump;if(pump==null)return true;
             if(ServiceNamedRawSafety())return false;
-            bool staged=pump.StageRigFrame(frame,1.0,CanWaitForNamedRawBaseline,out waiting);
+            // The scene/pose observation is explicitly current software time,
+            // independent of the native sample's opaque timestamp.
+            ViveEyeAoiObservation aoi=null;
+            try
+            {
+                if(frame!=null&&frame.Eye!=null&&view!=null&&sharedClock!=null)
+                    aoi=view.CaptureViveEyeAoi(frame.Eye,sharedClock);
+            }
+            catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
+            {NoteRawAoiCaptureFailure(error);}
+            bool staged=pump.StageRigFrame(frame,1.0,CanWaitForNamedRawBaseline,out waiting,aoi);
             if(waiting&&!RecordingBlocked)return false;
             waiting=false;
             if(!staged||RecordingBlocked){NoteRawFirstFault("raw_frame_not_admitted");rawSafetyLatched=true;ServiceNamedRawSafety();return false;}

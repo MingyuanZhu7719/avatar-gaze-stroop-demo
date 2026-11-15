@@ -48,7 +48,7 @@ namespace AvatarStroop.Runtime
         // ledger and independently check each encoded frame against its bound.
         internal sealed class QueueLedger
         {
-            const int EyeFixedUpper=352,StatusUpper=128,EyeObservationUpper=80,MaxTextBytes=32768;
+            const int EyeFixedUpper=352,StatusUpper=128,EyeObservationUpper=80,AcquisitionUpper=768,AoiFixedUpper=4096,MaxTextBytes=32768;
             static readonly UTF8Encoding Utf8=new UTF8Encoding(false,true);
             readonly ViveRawByteBudget budget;readonly int owner;
             readonly ViveNamedSessionFrameAdmission.Manifest manifest;
@@ -78,8 +78,16 @@ namespace AvatarStroop.Runtime
                     {
                         if(eye.TrialAtIngest!=null&&eye.TrialAtIngest.Length>MaxTextBytes)return false;
                         int text=eye.TrialAtIngest==null?0:Utf8.GetByteCount(eye.TrialAtIngest);
-                        if(text>MaxTextBytes)return false;bytes=checked(EyeFixedUpper+text);return true;
+                        if(text>MaxTextBytes)return false;bytes=checked(EyeFixedUpper+text);
+                        if(eye.Aoi!=null)
+                        {
+                            int aoiTrial=eye.Aoi.Trial==null?0:Utf8.GetByteCount(eye.Aoi.Trial);
+                            if(aoiTrial>MaxTextBytes)return false;bytes=checked(bytes+AoiFixedUpper+aoiTrial);
+                        }
+                        return true;
                     }
+                    var acquisition=record as ViveRawEyeAcquisition;
+                    if(acquisition!=null&&ViveRawSessionJournalCodec.ValidAcquisition(acquisition)){bytes=AcquisitionUpper;return true;}
                     if(record is ViveProEyeWorker.ObservedEyeStatus){bytes=StatusUpper;return true;}
                     var quality=record as ViveRawEyeObservation;
                     if(quality!=null&&ViveRawEyeObservation.Valid(quality.State,quality.Cause,quality.ObservedLocalSeconds,quality.TaskCursor))

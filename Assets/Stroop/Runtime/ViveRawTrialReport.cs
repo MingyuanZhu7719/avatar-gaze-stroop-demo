@@ -65,6 +65,7 @@ namespace AvatarStroop.Runtime
                 manifest.Line("verified_bytes",I64(source.VerifiedBytes));manifest.Line("task_records",I64(source.VerifiedTaskRecords));
                 manifest.Line("eye_observations",I64(source.VerifiedObservationRecords));manifest.Line("eye_statuses",I64(source.VerifiedStatusRecords));
                 manifest.Line("owner_eye_quality_records",I64(source.VerifiedEyeQualityRecords));
+                manifest.Line("native_acquisition_records",I64(source.VerifiedAcquisitionRecords));
                 manifest.Line("eye_quality_semantics","state:owner_observations_not_native_missing_sample_counts_or_exact_intervals");
                 manifest.Line("eye_quality_legacy_absence","state:unknown_not_zero_missing_samples");
                 manifest.Line("pre_choice_coverage","state:unknown");manifest.Line("sampling_coverage","state:unknown");

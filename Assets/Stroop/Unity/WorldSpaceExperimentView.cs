@@ -10,7 +10,7 @@ namespace AvatarStroop.Unity
 {
     // Development presentation only. Neither the primitive geometry nor the camera
     // render completion callback establishes headset visibility, latency or photon onset.
-    public sealed class WorldSpaceExperimentView : MonoBehaviour
+    public sealed partial class WorldSpaceExperimentView : MonoBehaviour
     {
         public const string RenderClockId = "unity-realtime-since-startup";
         public const string RenderTimestampMeaning = "camera-post-render-proxy-not-photon-onset";
@@ -1479,6 +1479,7 @@ namespace AvatarStroop.Unity
             if(ExcludeViveNonTaskRender(camera))return;
             FinishViveRecordingChoiceRender(camera);
 #endif
+            ObserveViveEyeAoiCameraRender(camera);
             FinishViveRawPanelRender(camera);
             var avatarCallback = AvatarPresented;
             if(PresentationIsAvailable() && capturedAvatar != null && capturedAvatarFrame == Time.frameCount && capturedAvatarRevision == avatarRevision &&

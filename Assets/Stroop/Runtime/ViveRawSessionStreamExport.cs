@@ -23,7 +23,7 @@ namespace AvatarStroop.Runtime
             return a.Status==ViveRawSessionReadStatus.VerifiedPrefix&&b.Status==a.Status&&
                 a.TrailingFrameTruncated==b.TrailingFrameTruncated&&a.VerifiedBytes==b.VerifiedBytes&&
                 a.VerifiedRecordCount==b.VerifiedRecordCount&&a.VerifiedTaskRecords==b.VerifiedTaskRecords&&
-                a.VerifiedObservationRecords==b.VerifiedObservationRecords&&a.VerifiedStatusRecords==b.VerifiedStatusRecords&&a.VerifiedEyeQualityRecords==b.VerifiedEyeQualityRecords&&
+                a.VerifiedObservationRecords==b.VerifiedObservationRecords&&a.VerifiedStatusRecords==b.VerifiedStatusRecords&&a.VerifiedEyeQualityRecords==b.VerifiedEyeQualityRecords&&a.VerifiedAcquisitionRecords==b.VerifiedAcquisitionRecords&&
                 a.CaptureTerminalObserved==b.CaptureTerminalObserved&&
                 a.VerifiedPrefixChainDigestHex==b.VerifiedPrefixChainDigestHex;
         }

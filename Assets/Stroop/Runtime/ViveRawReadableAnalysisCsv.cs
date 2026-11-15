@@ -21,7 +21,7 @@ namespace AvatarStroop.Runtime
         // Every recognized eye field has both a
         // human-readable column and an exact type-prefixed raw column. New
         // observation fields must be added here rather than silently dropped.
-        static readonly string[] EyeFields={
+        static readonly string[] BaseEyeFields={
             "native_frame","native_timestamp","eye_observed","head_sequence","head_observed","checked_at","loss_generation",
             "runtime","calibration","eye_connected","native_result_present","native_result","runtime_status_present","runtime_status","no_user",
             "left_present","left_mask","left_origin_valid","left_direction_valid","left_origin_x","left_origin_y","left_origin_z","left_direction_x","left_direction_y","left_direction_z",
@@ -29,7 +29,38 @@ namespace AvatarStroop.Runtime
             "combined_present","combined_mask","combined_origin_valid","combined_direction_valid","combined_origin_x","combined_origin_y","combined_origin_z","combined_direction_x","combined_direction_y","combined_direction_z",
             "head_connected","head_valid","head_rotation_x","head_rotation_y","head_rotation_z","head_rotation_w",
             "ingest_phase","ingest_block","ingest_segment","ingest_trial_id","task_cursor"};
+        static readonly string[] EyeFields=BuildEyeFields();
         static readonly HashSet<string> EyeFieldSet=new HashSet<string>(EyeFields,StringComparer.Ordinal);
+        static readonly HashSet<string> BaseEyeFieldSet=new HashSet<string>(BaseEyeFields,StringComparer.Ordinal);
+        static readonly HashSet<string> IngestOnlyFields=new HashSet<string>(new[]{"head_sequence","head_observed","checked_at","loss_generation",
+            "head_connected","head_valid","head_rotation_x","head_rotation_y","head_rotation_z","head_rotation_w",
+            "ingest_phase","ingest_block","ingest_segment","ingest_trial_id","task_cursor"},StringComparer.Ordinal);
+        static string[] BuildEyeFields()
+        {
+            var fields=new List<string>(BaseEyeFields);
+            fields.AddRange(new[]{"acquisition_version","acquisition_sequence","worker_published","eligible_polls","duplicate_polls","native_sequence_gaps","native_sequence_discontinuities",
+                "poll_diagnostics_present","provider_poll_sequence","poll_started","poll_returned",
+                "status_returned_present","status_returned","device_returned_present","device_returned","calibration_returned_present","calibration_returned",
+                "read_started_present","read_started","read_returned_present","read_returned","status_result_present","status_result",
+                "calibration_result_present","calibration_result","calibration_needed_present","calibration_needed","read_result_present","read_result",
+                "aoi_extension_version","aoi_policy","aoi_coordinate_basis","aoi_pose_time_meaning","aoi_classification_meaning",
+                "aoi_capture_local","aoi_capture_completed_local_present","aoi_capture_completed_local","aoi_unity_seconds","aoi_unity_frame",
+                "aoi_scene_capture_local_present","aoi_scene_capture_local","aoi_scene_capture_completed_local_present","aoi_scene_capture_completed_local",
+                "aoi_scene_unity_seconds_present","aoi_scene_unity_seconds","aoi_scene_unity_frame",
+                "aoi_task_revision","aoi_avatar_revision","aoi_last_render_frame","aoi_last_render_unity_seconds_present","aoi_last_render_unity_seconds",
+                "aoi_last_render_task_revision","aoi_last_render_avatar_revision","aoi_phase","aoi_block","aoi_trial","aoi_category","aoi_reason",
+                "aoi_active_task","aoi_avatar_applicable","aoi_origin_valid","aoi_direction_valid","aoi_geometry_count","aoi_eye_to_pose_seconds","aoi_eye_to_scene_seconds","aoi_unity_clock_offset_seconds","aoi_scene_unity_clock_offset_seconds"});
+            foreach(string name in new[]{"aoi_camera_position","aoi_world_origin","aoi_world_direction"})
+                foreach(string axis in new[]{"x","y","z"})fields.Add(name+"_"+axis);
+            foreach(string axis in new[]{"x","y","z","w"})fields.Add("aoi_camera_rotation_"+axis);
+            for(int i=0;i<8;i++)
+            {
+                string prefix="aoi_geometry_"+i;fields.Add(prefix+"_name");fields.Add(prefix+"_enabled");
+                foreach(string name in new[]{"position","scale"})foreach(string axis in new[]{"x","y","z"})fields.Add(prefix+"_"+name+"_"+axis);
+                foreach(string axis in new[]{"x","y","z","w"})fields.Add(prefix+"_rotation_"+axis);
+            }
+            return fields.ToArray();
+        }
         const int QualityColumns=5;
         internal static string EyeObservationLabel(int value)
         {if(value==0)return "NO_NEW_SAMPLE";if(value==1)return "MISSING";throw new InvalidDataException("Unknown eye observation.");}
@@ -101,7 +132,7 @@ namespace AvatarStroop.Runtime
                 string[] columns=line.Split(',');if(columns.Length!=5)throw new InvalidDataException("Invalid verified row.");
                 if(ordinal==null){ordinal=columns[0];kind=columns[1];}
                 if(columns[0]!=ordinal||columns[1]!=kind)throw new InvalidDataException("Mixed verified frame.");
-                if(kind=="observation")
+                if(kind=="observation"||kind=="eye_acquisition")
                 {
                     if(!EyeFieldSet.Contains(columns[2])||eye.ContainsKey(columns[2]))throw new InvalidDataException("Unknown or repeated eye field.");
                     eye.Add(columns[2],columns);continue;
@@ -128,7 +159,7 @@ namespace AvatarStroop.Runtime
                     .Append(Csv(columns[3])).Append(',').Append(Csv(readable)).Append(',').Append(Csv(raw)).Append(',')
                     .Append(Csv(ExcelWarning(readable,raw))).Append(padding).Append('\n');
             }
-            if(kind=="observation")
+            if(kind=="observation"||kind=="eye_acquisition")
             {
                 var fields=new StringBuilder();string warning=String.Empty;
                 foreach(string field in EyeFields)
@@ -140,12 +171,18 @@ namespace AvatarStroop.Runtime
                         if(ExcelWarning(readable,raw).Length>0)warning="EXCEL_CELL_TOO_LONG_USE_FULL_CSV_OR_VRAW";
                         fields.Append(',').Append(Csv(readable)).Append(',').Append(Csv(raw));
                     }
-                    else fields.Append(",\"MISSING\",\"raw:missing\"");
+                    // Unrelated domains have no value for this record kind.
+                    // Empty cells are structural absence, never filled from a
+                    // neighbouring native sample or rendered observation.
+                    else if(BaseEyeFieldSet.Contains(field)&&(kind=="observation"||!IngestOnlyFields.Contains(field)))
+                        fields.Append(",\"MISSING\",\"raw:missing\"");
+                    else fields.Append(",,");
                 }
                 // Historical kind 2 may contain invalid or non-finite rays.
                 // A recorded sample is not a declaration of valid coverage.
-                result.Append(Csv(ordinal)).Append(",\"observation\",\"eye_frame\",\"wide\",\"\",\"\",").Append(Csv(warning)).Append(fields)
-                    .Append(",\"SAMPLE_RECORDED\",\"\",\"\",\"\",\"RECORDED_SAMPLE_NOT_COVERAGE\"\n");
+                result.Append(Csv(ordinal)).Append(',').Append(Csv(kind)).Append(",\"eye_frame\",\"wide\",\"\",\"\",").Append(Csv(warning)).Append(fields)
+                    .Append(kind=="eye_acquisition"?",\"NATIVE_SAMPLE_RECORDED\",\"\",\"\",\"\",\"NATIVE_ACQUISITION_NO_HEAD_OR_TASK_ALIGNMENT\"\n":
+                        ",\"SAMPLE_RECORDED\",\"\",\"\",\"\",\"RECORDED_SAMPLE_NOT_COVERAGE\"\n");
             }
             if(kind=="eye_observation")
             {
@@ -201,6 +238,13 @@ namespace AvatarStroop.Runtime
                 append(Meta("eye_quality_fill","NONE_NO_FORWARD_FILL_OR_INTERPOLATION"));
                 append(Meta("eye_quality_reader_compatibility","NEW_READER_ACCEPTS_OLD_FILES_OLD_READERS_REJECT_UNKNOWN_KINDS_OR_REASONS"));
                 append(Meta("eye_snapshot_busy","OWNER_SNAPSHOT_CONTENTION_OR_COHERENCE_CHANGE_NOT_PHYSICAL_SENSOR_LOSS"));
+                append(Meta("native_acquisition","ONE_UNIQUE_NATIVE_ID_PER_WORKER_ACQUISITION_INCLUDING_INVALID_QUALITY"));
+                append(Meta("native_sequence_gaps","COUNTER_DELTAS_NOT_PROVEN_PHYSICAL_SENSOR_LOSS"));
+                append(Meta("native_clock_alignment","OPAQUE_NATIVE_TIMESTAMP_WITH_SAME_PROCESS_API_CALL_BRACKETS_NO_PHOTON_ONSET"));
+                append(Meta("aoi_association","CURRENT_UNITY_POSE_AND_DECLARED_SCENE_SOFTWARE_TIMES_NOT_NATIVE_CAPTURE_POSE"));
+                append(Meta("aoi_absence","MISSING_NOT_ZERO_DWELL_NO_FORWARD_FILL"));
+                append(Meta("blank_extension_cells","NOT_RECORDED_OR_NOT_APPLICABLE_FOR_THIS_RECORD_KIND_CHECK_PRESENT_FLAGS_AND_EXTENSION_VERSION"));
+                append(Meta("aoi_validity","SURFACE_PROXY_CLASSIFICATION_REQUIRES_APPARATUS_ACCURACY_AND_OCCLUSION_VALIDATION"));
                 append(Meta("source_and_consent","NOT_AUTHENTICATED"));
                 append(Meta("spreadsheet_formula_escape","LEADING_APOSTROPHE_RAW_VALUE_UNMODIFIED"));
                 append(Meta("raw_value_encoding","REMOVE_RAW_PREFIX_USE_TYPE_OR_EMBEDDED_TYPE"));
@@ -214,6 +258,7 @@ namespace AvatarStroop.Runtime
                 append(Meta("verified_chain_sha256",scan.VerifiedPrefixChainDigestHex));
                 append(Meta("verified_record_count",scan.VerifiedRecordCount.ToString(CultureInfo.InvariantCulture)));
                 append(Meta("verified_owner_eye_quality_records",scan.VerifiedEyeQualityRecords.ToString(CultureInfo.InvariantCulture)));
+                append(Meta("verified_native_acquisition_records",scan.VerifiedAcquisitionRecords.ToString(CultureInfo.InvariantCulture)));
                 append(Meta("writer_confirmation","UNKNOWN"));
                 append(Meta("complete_session_proven","false"));
                 // This row describes only the source scan. It is deliberately

@@ -21,6 +21,7 @@ namespace AvatarStroop.Runtime
         internal long VerifiedObservationRecords {get;set;}
         internal long VerifiedStatusRecords {get;set;}
         internal long VerifiedEyeQualityRecords {get;set;}
+        internal long VerifiedAcquisitionRecords {get;set;}
         internal long VerifiedRecordCount {get;set;}
         internal string VerifiedPrefixChainDigestHex {get;set;}
         internal long PageStartOrdinal {get;set;}
@@ -40,17 +41,17 @@ namespace AvatarStroop.Runtime
     // VRAW0002 is a proposed development-only format. All sources, including
     // ones declaring SYNTHETIC_ONLY, may contain sensitive data. No terminal
     // marker is defined: even frame-aligned EOF is only a selected prefix.
-    internal static class ViveRawSessionJournalReader
+    internal static partial class ViveRawSessionJournalReader
     {
         // A consistency marker for one completely framed prefix, not an
         // authorization, identity, consent, or complete-session assertion.
         // Previously returned strings cannot be recalled after withdrawal.
         internal sealed class PagePrefix
         {
-            readonly string digest; readonly long bytes,records,tasks,eyes,statuses,eyeQuality; readonly bool terminal;
+            readonly string digest; readonly long bytes,records,tasks,eyes,statuses,eyeQuality,acquisitions; readonly bool terminal;
             PagePrefix(ViveRawSessionReadResult source)
             {digest=source.VerifiedPrefixChainDigestHex;bytes=source.VerifiedBytes;records=source.VerifiedRecordCount;
-                tasks=source.VerifiedTaskRecords;eyes=source.VerifiedObservationRecords;statuses=source.VerifiedStatusRecords;eyeQuality=source.VerifiedEyeQualityRecords;terminal=source.CaptureTerminalObserved;}
+                tasks=source.VerifiedTaskRecords;eyes=source.VerifiedObservationRecords;statuses=source.VerifiedStatusRecords;eyeQuality=source.VerifiedEyeQualityRecords;acquisitions=source.VerifiedAcquisitionRecords;terminal=source.CaptureTerminalObserved;}
             internal static PagePrefix FromVerified(ViveRawSessionReadResult source)
             {
                 if(source==null||source.Status!=ViveRawSessionReadStatus.VerifiedPrefix||source.TrailingFrameTruncated||
@@ -61,6 +62,7 @@ namespace AvatarStroop.Runtime
             {return value.Status==ViveRawSessionReadStatus.VerifiedPrefix&&!value.TrailingFrameTruncated&&
                 value.VerifiedBytes==bytes&&value.VerifiedRecordCount==records&&value.VerifiedTaskRecords==tasks&&
                 value.VerifiedObservationRecords==eyes&&value.VerifiedStatusRecords==statuses&&value.VerifiedEyeQualityRecords==eyeQuality&&
+                value.VerifiedAcquisitionRecords==acquisitions&&
                 value.CaptureTerminalObserved==terminal&&String.Equals(value.VerifiedPrefixChainDigestHex,digest,StringComparison.Ordinal);}
         }
         const int MaxPayload=1048576, MaxText=2097152, MaxString=32768;
@@ -73,9 +75,10 @@ namespace AvatarStroop.Runtime
         sealed class Invalid:Exception {}
         sealed class SourceFailure:Exception {}
         sealed class Context
-        {internal bool Manifest,V3,V4,V5,Terminal,TaskEnded,TaskCompleted,EndedPhase,AfterEndedPhase;internal bool WithholdObservedWithdrawal=false;internal long LastTask,Tasks,Eyes;internal long Statuses=0,EyeQuality=0;
+        {internal bool Manifest,V3,V4,V5,Terminal,TaskEnded,TaskCompleted,EndedPhase,AfterEndedPhase;internal bool WithholdObservedWithdrawal=false;internal long LastTask,Tasks,Eyes;internal long Statuses=0,EyeQuality=0,Acquisitions=0,LastAcquisitionSequence=-1;
+            internal long AcquisitionEligiblePolls=0,AcquisitionDuplicatePolls=0,AcquisitionNativeGaps=0,AcquisitionDiscontinuities=0;
             internal string AllocationId;internal int BInitialTarget;internal double TaskChoiceObserved,EyeChoiceObserved;internal bool SoftwareChoicesSeen,LegacyPassedPreparation;
-            internal int Blocks;internal string Session,Clock,Plan,Intent;internal double Choice,LatestLocal,LastStatusTime=-1,LastEyeQualityTime=-1;internal int[] Options,Lists;internal string[] Schedules,Geometries;
+            internal int Blocks;internal string Session,Clock,Plan,Intent;internal double Choice,LatestLocal,LastStatusTime=-1,LastEyeQualityTime=-1,LastAcquisitionTime=-1;internal int[] Options,Lists;internal string[] Schedules,Geometries;
             internal ViveRawTrialAccumulator TrialAccumulator;internal readonly ViveRawPreparedPlanAudit PreparedPlans=new ViveRawPreparedPlanAudit();}
         sealed class Bounded
         {
@@ -200,8 +203,8 @@ namespace AvatarStroop.Runtime
             using(var memory=new MemoryStream(payload,false))using(var r=new BinaryReader(memory,Utf8))
             {
                 if(r.ReadInt64()!=ordinal)throw new Invalid();int kind=r.ReadByte();
-                if((ordinal==0&&kind!=0)||(ordinal!=0&&kind==0)||kind>5||(!context.V3&&kind>2)||context.Terminal)throw new Invalid();
-                var rows=new Rows(ordinal,kind==0?"manifest":kind==1?"task":kind==2?"observation":kind==3?"eye_status":kind==5?"eye_observation":"capture_terminal");
+                if((ordinal==0&&kind!=0)||(ordinal!=0&&kind==0)||kind>6||(!context.V3&&kind>2)||context.Terminal)throw new Invalid();
+                var rows=new Rows(ordinal,kind==0?"manifest":kind==1?"task":kind==2?"observation":kind==3?"eye_status":kind==5?"eye_observation":kind==6?"eye_acquisition":"capture_terminal");
                 if(kind==0)
                 {
                     if(Text(r,rows,"schema",true)!=(context.V5?"VRAW0005":context.V4?"VRAW0004":context.V3?"VRAW0003":"VRAW0002"))throw new Invalid();
@@ -308,12 +311,13 @@ namespace AvatarStroop.Runtime
                     // handled separately: status may be observed or drained
                     // later, and its timestamp is not capture time.
                     if(context.V3&&context.TaskEnded)throw new Invalid();
-                    I32(r,rows,"native_frame");I32(r,rows,"native_timestamp");double eye=F64(r,rows,"eye_observed",true);I64(r,rows,"head_sequence");double head=F64(r,rows,"head_observed",true);double check=F64(r,rows,"checked_at",true);if(eye<=context.Choice||head<=context.Choice||eye>check||head>check)throw new Invalid();I64(r,rows,"loss_generation");
+                    int nativeFrame=I32(r,rows,"native_frame"),nativeTimestamp=I32(r,rows,"native_timestamp");double eye=F64(r,rows,"eye_observed",true);I64(r,rows,"head_sequence");double head=F64(r,rows,"head_observed",true);double check=F64(r,rows,"checked_at",true);if(eye<=context.Choice||head<=context.Choice||eye>check||head>check)throw new Invalid();I64(r,rows,"loss_generation");
                     context.LatestLocal=Math.Max(context.LatestLocal,check);
                     int runtime=I32(r,rows,"runtime");if(runtime<0||runtime>3)throw new Invalid();int cal=I32(r,rows,"calibration");if(cal<0||cal>2)throw new Invalid();Flag(r,rows,"eye_connected");
                     NullableI32(r,rows,"native_result");NullableI32(r,rows,"runtime_status");Flag(r,rows,"no_user");Eye(r,rows,"left");Eye(r,rows,"right");Eye(r,rows,"combined");
                     Flag(r,rows,"head_connected");Flag(r,rows,"head_valid");foreach(string axis in new[]{"x","y","z","w"})F64(r,rows,"head_rotation_"+axis);
                     int phase=I32(r,rows,"ingest_phase");if(phase<0||phase>13)throw new Invalid();I32(r,rows,"ingest_block");I32(r,rows,"ingest_segment");Text(r,rows,"ingest_trial_id");if(I64(r,rows,"task_cursor")!=context.LastTask)throw new Invalid();
+                    if(memory.Position<memory.Length)ReadAoi(r,rows,nativeFrame,nativeTimestamp,eye,check);
                     context.Eyes++;
                 }
                 else if(kind==3)
@@ -339,13 +343,30 @@ namespace AvatarStroop.Runtime
                     if(context.TrialAccumulator!=null)context.TrialAccumulator.ObserveEyeQuality(ordinal,time,state,cause,cursor);
                     context.EyeQuality++;context.LastEyeQualityTime=time;context.LatestLocal=Math.Max(context.LatestLocal,time);
                 }
+                else if(kind==6)
+                {
+                    var acquisition=ReadAcquisition(r,rows);
+                    if(acquisition.Sequence!=context.LastAcquisitionSequence+1||acquisition.Poll.Eye.ObservedLocalSeconds<=context.Choice||
+                        acquisition.WorkerPublishedLocalSeconds<context.LastAcquisitionTime||acquisition.EligiblePolls<=context.AcquisitionEligiblePolls||
+                        acquisition.DuplicatePolls<context.AcquisitionDuplicatePolls||acquisition.NativeSequenceGapCount<context.AcquisitionNativeGaps||
+                        acquisition.NativeSequenceDiscontinuities<context.AcquisitionDiscontinuities)throw new Invalid();
+                    context.Acquisitions++;context.LastAcquisitionSequence=acquisition.Sequence;
+                    context.LastAcquisitionTime=acquisition.WorkerPublishedLocalSeconds;
+                    context.AcquisitionEligiblePolls=acquisition.EligiblePolls;context.AcquisitionDuplicatePolls=acquisition.DuplicatePolls;
+                    context.AcquisitionNativeGaps=acquisition.NativeSequenceGapCount;context.AcquisitionDiscontinuities=acquisition.NativeSequenceDiscontinuities;
+                    context.LatestLocal=Math.Max(context.LatestLocal,context.LastAcquisitionTime);
+                }
                 else
                 {
                     if(Text(r,rows,"declaration",true)!="NORMAL_TASK_COMPLETION_DRAIN_DECLARED"||
                         I64(r,rows,"task_cursor")!=context.LastTask||I64(r,rows,"task_records")!=context.Tasks||
                         I64(r,rows,"eye_records")!=context.Eyes||I64(r,rows,"status_records")!=context.Statuses||
-                        I64(r,rows,"sealed_watermark")!=ordinal-1||ordinal-1!=checked(context.Tasks+context.Eyes+context.Statuses+context.EyeQuality)||
+                        I64(r,rows,"sealed_watermark")!=ordinal-1||ordinal-1!=checked(context.Tasks+context.Eyes+context.Statuses+context.EyeQuality+context.Acquisitions)||
                         F64(r,rows,"local_observed",true)<context.LatestLocal||(context.V4&&!context.SoftwareChoicesSeen)||!context.TaskEnded||!context.TaskCompleted||!context.EndedPhase||context.AfterEndedPhase)throw new Invalid();
+                    long acquisitions=0;
+                    if(memory.Position<memory.Length)
+                    {if(I32(r,rows,"acquisition_extension_version")!=1)throw new Invalid();acquisitions=I64(r,rows,"acquisition_records");}
+                    if(acquisitions!=context.Acquisitions)throw new Invalid();
                     context.Terminal=true;
                 }
                 if(memory.Position!=memory.Length)throw new Invalid();return rows.Text;
@@ -486,7 +507,7 @@ namespace AvatarStroop.Runtime
                 cancellation.ThrowIfCancellationRequested();
                 if(!context.Manifest)throw new Invalid();result.Status=ViveRawSessionReadStatus.VerifiedPrefix;result.TrailingFrameTruncated=truncated;
                 result.VerifiedBytes=verifiedBytes;result.VerifiedTaskRecords=taskCount;result.VerifiedObservationRecords=observationCount;
-                result.VerifiedStatusRecords=context.Statuses;result.VerifiedEyeQualityRecords=context.EyeQuality;result.CaptureTerminalObserved=context.Terminal;
+                result.VerifiedStatusRecords=context.Statuses;result.VerifiedEyeQualityRecords=context.EyeQuality;result.VerifiedAcquisitionRecords=context.Acquisitions;result.CaptureTerminalObserved=context.Terminal;
                 result.VerifiedRecordCount=ordinal;result.VerifiedPrefixChainDigestHex=BitConverter.ToString(prior).Replace("-",String.Empty).ToLowerInvariant();
                 if(includeRows){result.PageStartOrdinal=pageStart;result.PageRecordCount=pageCount;result.PageHasMoreRecords=ordinal>pageStart&&ordinal-pageStart>pageCount;}
                 if(projectTrials)result.TrialProjection=context.TrialAccumulator.Finish();

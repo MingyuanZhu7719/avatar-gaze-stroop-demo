@@ -202,20 +202,20 @@ namespace AvatarStroop.Runtime
         // Separate synthetic-only route tests the installed status ordering;
         // the existing synthetic safety fixture never opens a status source.
         internal static ViveNamedRawRecordingPump StartSyntheticWithStatusForTest(ViveDevelopmentParticipant participant,ViveProEyeWorker worker,
-            MonotonicClock clock,ViveNamedSessionFrameAdmission admission,SyntheticWriter writer)
-        {if(admission==null||admission.IsLegacy)throw new InvalidOperationException("Named synthetic context required.");return StartRawSyntheticWithStatusForTest(participant,worker,clock,admission,writer);}
+            MonotonicClock clock,ViveNamedSessionFrameAdmission admission,SyntheticWriter writer,bool captureAcquisitionForTest=false)
+        {if(admission==null||admission.IsLegacy)throw new InvalidOperationException("Named synthetic context required.");return StartRawSyntheticWithStatusForTest(participant,worker,clock,admission,writer,captureAcquisitionForTest);}
 #if UNITY_EDITOR || (!UNITY_5_3_OR_NEWER && (STROOP_TEST_BUILD || VIVE_RAW_SYNTHETIC_TEST))
         internal static ViveNamedRawRecordingPump StartLegacySyntheticWithStatusForTest(ViveDevelopmentParticipant participant,ViveProEyeWorker worker,
             MonotonicClock clock,ViveNamedSessionFrameAdmission admission,SyntheticWriter writer)
         {if(admission==null||!admission.IsLegacy)throw new InvalidOperationException("Legacy synthetic context required.");return StartRawSyntheticWithStatusForTest(participant,worker,clock,admission,writer);}
 #endif
         static ViveNamedRawRecordingPump StartRawSyntheticWithStatusForTest(ViveDevelopmentParticipant participant,ViveProEyeWorker worker,
-            MonotonicClock clock,ViveNamedSessionFrameAdmission admission,SyntheticWriter writer)
+            MonotonicClock clock,ViveNamedSessionFrameAdmission admission,SyntheticWriter writer,bool captureAcquisitionForTest=false)
         {
             if(participant==null||worker==null||clock==null||admission==null||writer==null||!admission.SyntheticOnly||
                 !admission.UsesExactSources(participant,worker,clock)||!writer.BelongsTo(admission)||worker.UsesInstalledSdkPath)
                 throw new InvalidOperationException("Synthetic source required.");
-            object run;if(!admission.TryEnableWorkerStatus(128,out run))throw new InvalidOperationException("Synthetic status unavailable.");
+            object run;if(!admission.TryEnableWorkerStatus(128,out run,captureAcquisitionForTest))throw new InvalidOperationException("Synthetic status unavailable.");
             try{return new ViveNamedRawRecordingPump(participant,worker,clock,admission,writer,run);}
             catch{admission.Withdraw();worker.TryStopStatusEvidence(run);throw;}
         }
@@ -329,6 +329,8 @@ namespace AvatarStroop.Runtime
                 Fail();return Preparation.Faulted;}
             if(statusRun==null)return admission.SyntheticOnly?Preparation.Ready:Preparation.Faulted;
 
+            var acquisitionPreparation=DrainAcquisitions();
+            if(acquisitionPreparation!=Preparation.Ready)return acquisitionPreparation;
             if(pendingStatusTicket==null&&!DrainTaskEvents()){
                 NoteFirstFault("status_task_drain");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
@@ -390,6 +392,25 @@ namespace AvatarStroop.Runtime
 #endif
                 Fail();return Preparation.Faulted;}
         }
+        Preparation DrainAcquisitions()
+        {
+            // Bounded archival work; a backlog is not a fresh task authority.
+            // On completion the worker is sealed first, then this same FIFO
+            // must become empty before the terminal waterline is published.
+            for(int i=0;i<32;i++)
+            {
+                var next=admission.TryStageNextAcquisition();
+                if(next==ViveProEyeWorker.StatusDisposition.Empty)return Preparation.Ready;
+                if(next==ViveProEyeWorker.StatusDisposition.Busy)return Preparation.Busy;
+                if(next!=ViveProEyeWorker.StatusDisposition.Event)
+                {NoteFirstFault("acquisition_admission_invalid");Fail();return Preparation.Faulted;}
+            }
+            var remaining=worker.ReadAcquisitionBacklog(statusRun);
+            if(remaining==ViveProEyeWorker.StatusDisposition.Empty)return Preparation.Ready;
+            if(remaining==ViveProEyeWorker.StatusDisposition.Event||remaining==ViveProEyeWorker.StatusDisposition.Busy)
+                return Preparation.Busy;
+            NoteFirstFault("acquisition_backlog_invalid");Fail();return Preparation.Faulted;
+        }
         // Owner thread only; called after task processing, using the exact
         // cached Poll object from the rig's BeginFrame/EndFrame scope. Task
         // events are queued first, so frame context never precedes its cursor.
@@ -397,7 +418,7 @@ namespace AvatarStroop.Runtime
         // request participant safety handling; it is not a successful pause.
         internal bool StageRigFrame(ViveProEyePoll frame,double maximumAge)
         {return StageRigFrame(frame,maximumAge,false,out _);}
-        internal bool StageRigFrame(ViveProEyePoll frame,double maximumAge,bool allowInitialWait,out bool waiting)
+        internal bool StageRigFrame(ViveProEyePoll frame,double maximumAge,bool allowInitialWait,out bool waiting,ViveEyeAoiObservation aoi=null)
         {
             waiting=false;
             allowInitialWait=allowInitialWait&&participant.Phase==Phase.Preparation&&participant.CurrentTrial==null;
@@ -459,7 +480,7 @@ namespace AvatarStroop.Runtime
 #endif
                     Fail();return false;}
                 ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp;
-                if(!participant.TryCaptureRawRecordingTaskStamp(clock,out stamp)||!admission.TryStage(stamp,ticket,maximumAge))
+                if(!participant.TryCaptureRawRecordingTaskStamp(clock,out stamp)||!admission.TryStage(stamp,ticket,maximumAge,aoi))
                 {
                     NoteFirstFault("frame_stamp_or_admit");
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER

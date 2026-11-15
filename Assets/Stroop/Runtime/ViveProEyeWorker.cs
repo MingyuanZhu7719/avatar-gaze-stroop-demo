@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using AvatarStroop.Core;
 
@@ -77,9 +78,16 @@ namespace AvatarStroop.Runtime
             internal long NativePolls,SuccessfulEyeReads,SequenceChanges,TimestampChanges;
             internal bool HasSuccessfulEyeRead;
             internal int LastEyeSequence,LastEyeTimestamp;
+            internal bool AcquisitionEnabled,HasAcquisitionEye;
+            internal ViveRawEyeAcquisition[] AcquisitionQueue;
+            internal HashSet<ulong> AcquisitionSeen;
+            internal int AcquisitionHead,AcquisitionCount,LastAcquisitionFrame;
+            internal long AcquisitionSequence,AcquisitionPolls,AcquisitionDuplicates,AcquisitionNativeGaps,AcquisitionDiscontinuities;
+            internal bool HighResolutionPollDelay;
         }
 
         const int MinimumPollDelayMilliseconds=5;
+        const int AcquisitionCapacity=2048,MaximumAcquisitionIdentities=262144;
         static readonly ViveWorkerCaptureDiagnostics NoCaptureDiagnostics=new ViveWorkerCaptureDiagnostics(0,0,0,0);
         readonly object gate=new object();
         readonly Func<ViveHeadFrame> headReader;
@@ -247,7 +255,7 @@ namespace AvatarStroop.Runtime
         // The installed path must share the exact participant revocation bit
         // with admission and the I/O fence; a detached private bit is not an
         // authorization substitute. This is still only a software boundary.
-        internal bool TryEnableStatusEvidence(int capacity,ViveRawRevocation authority,out object runIdentity)
+        internal bool TryEnableStatusEvidence(int capacity,ViveRawRevocation authority,out object runIdentity,bool captureAcquisition=false)
         {
             runIdentity=null;
             if(!Object.ReferenceEquals(Thread.CurrentThread,headThread)||capacity<1||capacity>256||authority==null||!authority.MayReserve)return false;
@@ -259,6 +267,11 @@ namespace AvatarStroop.Runtime
                     !timebase.TryReadRecordingAdmissionTime(out now))return false;
                 current.StatusEverEnabled=true;current.StatusEnabled=true;current.StatusEnabledAt=now;
                 current.StatusAuthority=authority;current.StatusQueue=new ObservedEyeStatus[capacity];
+                if(captureAcquisition)
+                {
+                    current.AcquisitionEnabled=true;current.AcquisitionQueue=new ViveRawEyeAcquisition[AcquisitionCapacity];
+                    current.AcquisitionSeen=new HashSet<ulong>();
+                }
                 if(!authority.MayReserve){ClearStatusEvidence(current);return false;}
                 Volatile.Write(ref current.TaskCapability,new TaskRunCapability(current,authority));
                 runIdentity=current;return true;
@@ -375,7 +388,7 @@ namespace AvatarStroop.Runtime
                 if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,expectedRun)||
                     !Object.ReferenceEquals(seal.RunIdentity,current)||!Object.ReferenceEquals(current.StatusSeal,seal)||!current.StatusSealed||
                     !current.StatusEnabled||StatusAuthorityRevoked(current)||current.StatusFault||current.StopRequested||current.StatusCount!=0||current.StatusReserved!=null||
-                    current.StatusLastAcknowledged!=seal.FinalSequence||Interlocked.Exchange(ref seal.Consumed,1)!=0)return false;
+                    current.AcquisitionCount!=0||current.StatusLastAcknowledged!=seal.FinalSequence||Interlocked.Exchange(ref seal.Consumed,1)!=0)return false;
                 current.StatusSeal=null;return true;
             }
             finally{Monitor.Exit(gate);}
@@ -386,6 +399,7 @@ namespace AvatarStroop.Runtime
             run.StatusEnabled=false;run.StatusQueue=null;run.StatusCount=0;run.LastStatus=null;run.StatusSeal=null;
             if(run.StatusReserved!=null)Interlocked.Exchange(ref run.StatusReserved.Consumed,1);
             run.StatusReserved=null;InvalidateTicket(run);
+            ClearAcquisitionEvidence(run);
         }
         static bool StatusAuthorityRevoked(Run run)
         {return run==null||run.StatusAuthority==null||!run.StatusAuthority.MayReserve;}
@@ -395,6 +409,7 @@ namespace AvatarStroop.Runtime
             run.StatusFault=true;run.StatusQueue=null;run.StatusCount=0;run.LastStatus=null;
             if(run.StatusReserved!=null)Interlocked.Exchange(ref run.StatusReserved.Consumed,1);
             run.StatusReserved=null;InvalidateTicket(run);
+            ClearAcquisitionEvidence(run);
         }
         static ObservedEyeStatus ObserveEyeStatus(long sequence,double time,ViveProEyePoll poll)
         {
@@ -554,7 +569,7 @@ namespace AvatarStroop.Runtime
                 Reap();headDiagnostic=failure;
                 var latest=current==null||!Object.ReferenceEquals(current,observedRun)||!current.Ready||current.StopRequested||!GenerationLive(current)?null:current.Latest;
                 if(latest==null)return new ViveProEyePoll(head,null,ViveEyeRuntimeState.Unavailable,ViveEyeCalibrationState.Unknown,false);
-                var result=new ViveProEyePoll(head,latest.Eye,latest.Runtime,latest.Calibration,latest.EyeDeviceConnected,latest.NativeResultCode,latest.NativeRuntimeStatus);
+                var result=new ViveProEyePoll(head,latest.Eye,latest.Runtime,latest.Calibration,latest.EyeDeviceConnected,latest.NativeResultCode,latest.NativeRuntimeStatus,latest.NativeDiagnostics);
                 InvalidateTicket(current);
                 if(current.PollRevision==Int64.MaxValue){current.TicketOverflow=true;current.IssuedPoll=null;current.CurrentTicket=null;}
                 else{current.PollRevision++;current.IssuedPoll=result;current.IssuedLossGeneration=current.LossGeneration;
@@ -590,7 +605,7 @@ namespace AvatarStroop.Runtime
                 InvalidateTicket(observed);
                 if(observed.PollRevision==Int64.MaxValue){observed.TicketOverflow=true;return false;}
                 var result=latest==null?new ViveProEyePoll(head,null,ViveEyeRuntimeState.Unavailable,ViveEyeCalibrationState.Unknown,false):
-                    new ViveProEyePoll(head,latest.Eye,latest.Runtime,latest.Calibration,latest.EyeDeviceConnected,latest.NativeResultCode,latest.NativeRuntimeStatus);
+                    new ViveProEyePoll(head,latest.Eye,latest.Runtime,latest.Calibration,latest.EyeDeviceConnected,latest.NativeResultCode,latest.NativeRuntimeStatus,latest.NativeDiagnostics);
                 observed.PollRevision++;observed.IssuedPoll=result;observed.IssuedLossGeneration=observed.LossGeneration;
                 observed.IssuedStatusRevision=observed.StatusRevision;observed.IssuedStatusEnabled=observed.StatusEnabled;
                 observed.TicketIssued=false;observed.CurrentTicket=null;frame=result;return true;
@@ -901,7 +916,7 @@ namespace AvatarStroop.Runtime
 
         void RunClient(Run run)
         {
-            IViveProEyeClient client=null;string failure=null,finalDiagnostic=null;
+            IViveProEyeClient client=null;ViveNativePollDelay pollDelay=null;string failure=null,finalDiagnostic=null;
             try
             {
                 if(run.StopSignal.WaitOne(0))return;
@@ -914,6 +929,8 @@ namespace AvatarStroop.Runtime
                     if(!run.StopRequested){run.Ready=initialized;run.Diagnostic=diagnostic;}
                 }
                 if(!initialized){failure="Eye client initialization failed. "+diagnostic;return;}
+                pollDelay=new ViveNativePollDelay(run.StopSignal);
+                lock(gate){run.HighResolutionPollDelay=pollDelay.HighResolution;}
                 while(!run.StopSignal.WaitOne(0))
                 {
                     // The provider call itself must begin after software
@@ -944,7 +961,9 @@ namespace AvatarStroop.Runtime
                                 eye==null?0:eye.FrameSequence,eye==null?0:eye.Timestamp,eye==null?-1:eye.ObservedLocalSeconds);
                         }
                         if(Volatile.Read(ref statusRevoked)!=0||(run.StatusEverEnabled&&StatusAuthorityRevoked(run)))ClearStatusEvidence(run);
-                        else {if(statusPollEligible)RecordStatusEvidence(run,poll,statusTimeValid,statusObserved);
+                        else {if(statusPollEligible){RecordStatusEvidence(run,poll,statusTimeValid,statusObserved);
+                                double published=0;bool publicationTimeValid=statusClock!=null&&statusClock.TryReadRecordingAdmissionTime(out published);
+                                RecordAcquisitionEvidence(run,poll,publicationTimeValid,published);}
                             if(Volatile.Read(ref statusRevoked)!=0||(run.StatusEverEnabled&&StatusAuthorityRevoked(run)))ClearStatusEvidence(run);}
                         if(!EyeUsableForTicket(poll))
                         {
@@ -968,7 +987,8 @@ namespace AvatarStroop.Runtime
                             run.HasSuccessfulEyeRead=true;run.LastEyeSequence=poll.Eye.FrameSequence;run.LastEyeTimestamp=poll.Eye.Timestamp;
                         }
                     }
-                    if(run.StopSignal.WaitOne(MinimumPollDelayMilliseconds))break;
+                    if(pollDelay.Wait(MinimumPollDelayMilliseconds))break;
+                    lock(gate){run.HighResolutionPollDelay=pollDelay.HighResolution;}
                 }
             }
             catch(Exception error)
@@ -979,6 +999,7 @@ namespace AvatarStroop.Runtime
             }
             finally
             {
+                if(pollDelay!=null)pollDelay.Dispose();
                 Volatile.Write(ref run.TaskCapability,null);
                 // No client call, including Diagnostic and Dispose, occurs under gate.
                 bool clientDisposed=false;

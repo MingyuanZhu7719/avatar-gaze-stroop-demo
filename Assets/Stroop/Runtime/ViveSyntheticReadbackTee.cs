@@ -63,10 +63,10 @@ namespace AvatarStroop.Runtime
 
         // Test access only after the sink's own strict readback predicates.
         // This is not a real consent, source identity or publication receipt.
-        internal byte[] SnapshotForTest(ViveRawSessionReadResult result, long records, long tasks, long eyes, long statuses, byte[] digest, bool withdrawn)
+        internal byte[] SnapshotForTest(ViveRawSessionReadResult result, long records, long tasks, long eyes, long statuses, byte[] digest, bool withdrawn,long acquisitions=0)
         {
             if (disposed || withdrawn || failed || !eof || capture == null || read != expected ||
-                !ViveRawSessionJournalSink.ReadbackMatches(result, expected, records, tasks, eyes, statuses, digest)) return null;
+                !ViveRawSessionJournalSink.ReadbackMatches(result, expected, records, tasks, eyes, statuses, digest,acquisitions)) return null;
             return (byte[])capture.Clone();
         }
         protected override void Dispose(bool disposing) { if (!disposed) Abandon(); disposed = true; base.Dispose(disposing); }

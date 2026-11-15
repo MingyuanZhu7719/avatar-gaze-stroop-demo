@@ -1,0 +1,86 @@
+using System;
+using System.Threading;
+using AvatarStroop.Core;
+
+namespace AvatarStroop.Runtime
+{
+    public sealed partial class ViveProEyeWorker
+    {
+        public bool UsesHighResolutionPollDelay
+        {get{lock(gate){return current!=null&&current.HighResolutionPollDelay;}}}
+
+        // The caller must reserve downstream space before dequeuing. Production
+        // admission holds RecordingTicketGate across peek, reserve and dequeue,
+        // and still checks its participant revocation fence before publication.
+        internal StatusDisposition TryPeekAcquisition(object runIdentity,out ViveRawEyeAcquisition value)
+        {return ReadAcquisition(runIdentity,false,out value);}
+        internal StatusDisposition TryDequeueAcquisition(object runIdentity,out ViveRawEyeAcquisition value)
+        {return ReadAcquisition(runIdentity,true,out value);}
+        internal StatusDisposition ReadAcquisitionBacklog(object runIdentity)
+        {ViveRawEyeAcquisition ignored;return ReadAcquisition(runIdentity,false,out ignored);}
+        StatusDisposition ReadAcquisition(object runIdentity,bool dequeue,out ViveRawEyeAcquisition value)
+        {
+            value=null;
+            if(!Object.ReferenceEquals(Thread.CurrentThread,headThread)||runIdentity==null)return StatusDisposition.Unavailable;
+            if(!Monitor.TryEnter(gate))return StatusDisposition.Busy;
+            try
+            {
+                if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||
+                    !current.Ready||current.StopRequested||!GenerationLive(current)||!current.StatusEnabled||StatusAuthorityRevoked(current))
+                    return StatusDisposition.Unavailable;
+                if(current.StatusFault)return StatusDisposition.Faulted;
+                if(!current.AcquisitionEnabled||current.AcquisitionCount==0)return StatusDisposition.Empty;
+                value=current.AcquisitionQueue[current.AcquisitionHead];
+                if(value==null){FaultStatusEvidence(current);return StatusDisposition.Faulted;}
+                if(dequeue)
+                {
+                    current.AcquisitionQueue[current.AcquisitionHead]=null;
+                    current.AcquisitionHead=(current.AcquisitionHead+1)%current.AcquisitionQueue.Length;
+                    current.AcquisitionCount--;
+                }
+                return StatusDisposition.Event;
+            }
+            finally{Monitor.Exit(gate);}
+        }
+        static void ClearAcquisitionEvidence(Run run)
+        {
+            run.AcquisitionEnabled=false;run.AcquisitionQueue=null;run.AcquisitionSeen=null;
+            run.AcquisitionHead=run.AcquisitionCount=0;
+        }
+        static void RecordAcquisitionEvidence(Run run,ViveProEyePoll poll,bool timeValid,double time)
+        {
+            if(!run.AcquisitionEnabled||!run.StatusEnabled||StatusAuthorityRevoked(run)||run.StatusFault||run.StatusSealed)return;
+            if(!timeValid||time<run.StatusEnabledAt){FaultStatusEvidence(run);return;}
+            run.AcquisitionPolls++;
+            if(poll==null||poll.Eye==null||poll.NativeResultCode!=0)return;
+            var eye=poll.Eye;var timing=poll.NativeDiagnostics;
+            // The loop admission also excludes polls reserved before enable. A
+            // timed provider makes the API-start boundary explicit in the file.
+            if(timing!=null&&timing.PollStartedLocalSeconds<run.StatusEnabledAt)return;
+            if(!WireCodec.Finite(eye.ObservedLocalSeconds)||eye.ObservedLocalSeconds<run.StatusEnabledAt||eye.ObservedLocalSeconds>time)
+            {FaultStatusEvidence(run);return;}
+            ulong identity=((ulong)(uint)eye.FrameSequence<<32)|(uint)eye.Timestamp;
+            if(run.AcquisitionSeen.Contains(identity)){run.AcquisitionDuplicates++;return;}
+            if(run.AcquisitionQueue==null||run.AcquisitionCount==run.AcquisitionQueue.Length||
+                run.AcquisitionSeen.Count>=MaximumAcquisitionIdentities||run.AcquisitionSequence==Int64.MaxValue)
+            {
+                run.Diagnostic="Eye acquisition queue/identity budget exhausted; recording admission stopped without silently dropping samples.";
+                FaultStatusEvidence(run);return;
+            }
+            if(run.HasAcquisitionEye)
+            {
+                long delta=(long)eye.FrameSequence-run.LastAcquisitionFrame;
+                if(delta>1)run.AcquisitionNativeGaps+=delta-1;
+                else if(delta<=0)run.AcquisitionDiscontinuities++;
+            }
+            run.HasAcquisitionEye=true;run.LastAcquisitionFrame=eye.FrameSequence;run.AcquisitionSeen.Add(identity);
+            // The provider has no simultaneous main-thread head observation.
+            var eyeOnly=new ViveProEyePoll(null,eye,poll.Runtime,poll.Calibration,poll.EyeDeviceConnected,
+                poll.NativeResultCode,poll.NativeRuntimeStatus,poll.NativeDiagnostics);
+            var value=new ViveRawEyeAcquisition(run.AcquisitionSequence++,time,eyeOnly,run.AcquisitionPolls,
+                run.AcquisitionDuplicates,run.AcquisitionNativeGaps,run.AcquisitionDiscontinuities);
+            run.AcquisitionQueue[(run.AcquisitionHead+run.AcquisitionCount)%run.AcquisitionQueue.Length]=value;
+            run.AcquisitionCount++;
+        }
+    }
+}

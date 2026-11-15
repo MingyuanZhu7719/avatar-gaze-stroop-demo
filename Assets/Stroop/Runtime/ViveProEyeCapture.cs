@@ -62,9 +62,10 @@ namespace AvatarStroop.Runtime
         public bool EyeDeviceConnected {get;private set;}
         public int? NativeResultCode {get;private set;}
         public int? NativeRuntimeStatus {get;private set;}
+        public ViveNativePollDiagnostics NativeDiagnostics {get;private set;}
         public ViveProEyePoll(ViveHeadFrame head,ViveEyeFrame eye,ViveEyeRuntimeState runtime,ViveEyeCalibrationState calibration,
-            bool eyeDeviceConnected,int? nativeResultCode=null,int? nativeRuntimeStatus=null)
-        {Head=head;Eye=eye;Runtime=runtime;Calibration=calibration;EyeDeviceConnected=eyeDeviceConnected;NativeResultCode=nativeResultCode;NativeRuntimeStatus=nativeRuntimeStatus;}
+            bool eyeDeviceConnected,int? nativeResultCode=null,int? nativeRuntimeStatus=null,ViveNativePollDiagnostics nativeDiagnostics=null)
+        {Head=head;Eye=eye;Runtime=runtime;Calibration=calibration;EyeDeviceConnected=eyeDeviceConnected;NativeResultCode=nativeResultCode;NativeRuntimeStatus=nativeRuntimeStatus;NativeDiagnostics=nativeDiagnostics;}
     }
 
     public interface IViveProEyeProvider

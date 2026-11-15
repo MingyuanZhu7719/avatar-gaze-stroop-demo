@@ -396,7 +396,7 @@ namespace AvatarStroop.Unity.Editor
                 var writerType=pumpType.GetNestedType("SyntheticWriter",BindingFlags.NonPublic);
                 var writer=Activator.CreateInstance(writerType,BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{admission},null);
                 Require((bool)Call(admission,"TryBindQueueBudget",budget),"silent eye fixture needs bounded FIFO capacity");
-                pump=pumpType.GetMethod("StartSyntheticWithStatusForTest",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{task,worker,clock,admission,writer});
+                pump=pumpType.GetMethod("StartSyntheticWithStatusForTest",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{task,worker,clock,admission,writer,false});
                 Set(bootstrap,"participant",task);Set(bootstrap,"configured",true);Set(bootstrap,"namedRawPump",pump);
                 Set(rig,"previewCamera",camera);Set(rig,"view",view);Set(rig,"development",bootstrap);Set(rig,"running",true);Set(rig,"worker",worker);camera.cullingMask=-1;
                 var staleStimulus=(TextMesh)Get(view,"stimulusText");staleStimulus.gameObject.SetActive(true);

@@ -19,13 +19,14 @@ namespace AvatarStroop.Tests
         sealed class NativeFake : ISrAnipalNativeClient
         {
             public string ThrowAt;
+            public Action<string> OnCall;
             public int InitResult,StatusResult,CalibrationResult,ReadResult,ReleaseResult;
             public int State=2,Sequence;
             public bool Connected=true,Required;
             public byte NativeDataPresent=1;
             public ulong CombinedMask=2;
             public int Opens,Initializes,Statuses,Devices,Calibrations,Reads,Releases,Closes;
-            void Fail(string stage){if(ThrowAt==stage)throw new InvalidOperationException("Synthetic "+stage+" failure");}
+            void Fail(string stage){if(OnCall!=null)OnCall(stage);if(ThrowAt==stage)throw new InvalidOperationException("Synthetic "+stage+" failure");}
             public void Open(){Opens++;Fail("open");}
             public int Initialize(){Initializes++;Fail("initialize");return InitResult;}
             public int GetStatus(out int status){Statuses++;Fail("status");status=State;return StatusResult;}
@@ -46,6 +47,40 @@ namespace AvatarStroop.Tests
         {return new SrAnipalViveProEyeProvider(new ManualClock(),()=>null,native);}
         public static void Register(TestSuite t)
         {
+            ViveNativeAcquisitionTests.Register(t);
+            t.Run("SRanipal native C++ boolean outputs use the verified one-byte ABI",()=>{
+                var calibration=typeof(SrAnipalViveProEyeProvider).GetNestedType("CalibrationDelegate",BindingFlags.NonPublic);
+                var parameter=calibration.GetMethod("Invoke").GetParameters()[0];
+                var marshal=(MarshalAsAttribute)Attribute.GetCustomAttribute(parameter,typeof(MarshalAsAttribute));
+                Check.Equal(UnmanagedType.I1,marshal.Value);
+                var device=typeof(SrAnipalViveProEyeProvider).GetNestedType("DeviceDelegate",BindingFlags.NonPublic);
+                var returned=(MarshalAsAttribute)Attribute.GetCustomAttribute(device.GetMethod("Invoke").ReturnParameter,typeof(MarshalAsAttribute));
+                Check.Equal(UnmanagedType.I1,returned.Value);
+            });
+            t.Run("SRanipal native timing preserves each API bracket and calibration result without smoothing",()=>{
+                var clock=new ManualClock();var native=new NativeFake {OnCall=stage=>clock.Advance(.001)};
+                using(var provider=new SrAnipalViveProEyeProvider(clock,()=>null,native))
+                {
+                    Check.True(provider.Start());double begin=clock.Now;native.Required=true;
+                    var first=provider.Poll();var timing=first.NativeDiagnostics;
+                    Check.Equal(0L,timing.ProviderPollSequence);Check.Near(begin,timing.PollStartedLocalSeconds);
+                    Check.Near(begin+.001,timing.StatusReturnedLocalSeconds.Value);
+                    Check.Near(begin+.002,timing.DeviceReturnedLocalSeconds.Value);
+                    Check.Near(begin+.003,timing.CalibrationReturnedLocalSeconds.Value);
+                    Check.Near(begin+.003,timing.ReadStartedLocalSeconds.Value);
+                    Check.Near(begin+.004,timing.ReadReturnedLocalSeconds.Value);
+                    Check.Near(first.Eye.ObservedLocalSeconds,timing.ReadReturnedLocalSeconds.Value);
+                    Check.Near(begin+.004,timing.PollReturnedLocalSeconds);
+                    Check.Equal((int?)0,timing.CalibrationResult);Check.Equal((bool?)true,timing.CalibrationNeeded);
+                    Check.Equal(ViveEyeCalibrationState.Required,first.Calibration);
+                    native.Required=false;var second=provider.Poll();Check.Equal((bool?)false,second.NativeDiagnostics.CalibrationNeeded);
+                    Check.Equal(ViveEyeCalibrationState.ReportedReady,second.Calibration);Check.Equal(1L,second.NativeDiagnostics.ProviderPollSequence);
+                    native.CalibrationResult=1036;var failed=provider.Poll();Check.Equal(null,failed.Eye);
+                    Check.Equal((int?)1036,failed.NativeDiagnostics.CalibrationResult);
+                    Check.Equal((bool?)null,failed.NativeDiagnostics.CalibrationNeeded);
+                    Check.Equal((double?)null,failed.NativeDiagnostics.ReadStartedLocalSeconds);
+                }
+            });
             t.Run("SRanipal installed client separates eye status selector from v2 lifecycle selectors",()=>{
                 // Construct only the managed dispatch object. Never call Open or load
                 // a vendor DLL; each export delegate is replaced by managed test code.

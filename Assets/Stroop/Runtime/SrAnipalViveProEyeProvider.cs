@@ -35,6 +35,7 @@ namespace AvatarStroop.Runtime
         readonly bool actualNative;
         IntPtr buffer;
         bool initialized,disposed,opened,pollFault,quarantined,ownsNativeLease;
+        long pollSequence;
         static readonly object nativeGate=new object();
         static bool nativeOwned,nativeQuarantined;
         // Intentionally retained until process exit when native ownership is uncertain.
@@ -82,7 +83,7 @@ namespace AvatarStroop.Runtime
                     nativeOwned=ownsNativeLease=true;
                 }
             }
-            LastNativeResult=null;pollFault=false;
+            LastNativeResult=null;pollFault=false;pollSequence=0;
             bool initializationEntered=false;
             string stage="open installed client";
             try
@@ -113,38 +114,56 @@ namespace AvatarStroop.Runtime
             try{head=headReader();}catch(Exception){Diagnostic="Head observation failed; eye data cannot supply a head pose.";}
             if(!initialized)return new ViveProEyePoll(head,null,ViveEyeRuntimeState.Unavailable,ViveEyeCalibrationState.Unknown,false,LastNativeResult);
             if(pollFault)return Failure(head,null,null);
+            long sequence=pollSequence++;
+            double started=clock.Now;
+            double? statusReturned=null,deviceReturned=null,calibrationReturned=null,readStarted=null,readReturned=null;
+            int? statusResult=null,calibrationCode=null,readCode=null;bool? calibrationNeeded=null;
+            ViveProEyePoll Finish(ViveProEyePoll poll)
+            {
+                var timing=new ViveNativePollDiagnostics(sequence,started,clock.Now,statusReturned,deviceReturned,
+                    calibrationReturned,readStarted,readReturned,statusResult,calibrationCode,calibrationNeeded,readCode);
+                return new ViveProEyePoll(poll.Head,poll.Eye,poll.Runtime,poll.Calibration,poll.EyeDeviceConnected,
+                    poll.NativeResultCode,poll.NativeRuntimeStatus,timing);
+            }
             string stage="status";
             try
             {
                 int nativeStatus;
                 int result=client.GetStatus(out nativeStatus);LastNativeResult=result;
-                if(result!=Work){Diagnostic=NativeMessage("Status",result);return Failure(head,result,nativeStatus);}
+                statusReturned=clock.Now;statusResult=result;
+                if(result!=Work){Diagnostic=NativeMessage("Status",result);return Finish(Failure(head,result,nativeStatus));}
                 stage="device presence";
                 bool connected=client.IsViveProEye();
+                deviceReturned=clock.Now;
                 if(!connected||nativeStatus!=Working)
                 {
                     Diagnostic=!connected?"VIVE Pro Eye is not reported connected.":"HTC eye runtime is not working (status "+nativeStatus+").";
-                    return new ViveProEyePoll(head,null,ViveEyeRuntimeState.Unavailable,ViveEyeCalibrationState.Unknown,connected,result,nativeStatus);
+                    return Finish(new ViveProEyePoll(head,null,ViveEyeRuntimeState.Unavailable,ViveEyeCalibrationState.Unknown,connected,result,nativeStatus));
                 }
                 stage="calibration status";
                 bool needsCalibration=false;
                 int calibrationResult=client.NeedsCalibration(ref needsCalibration);LastNativeResult=calibrationResult;
+                calibrationReturned=clock.Now;calibrationCode=calibrationResult;
+                // Failed calls do not establish the meaning of their output bool.
+                if(calibrationResult==Work)calibrationNeeded=needsCalibration;
                 if(calibrationResult!=Work)
                 {
                     Diagnostic=NativeMessage("Calibration status",calibrationResult);
-                    return Failure(head,calibrationResult,nativeStatus);
+                    return Finish(Failure(head,calibrationResult,nativeStatus));
                 }
                 var calibrationState=needsCalibration?ViveEyeCalibrationState.Required:ViveEyeCalibrationState.ReportedReady;
                 // Zero unused/padding bytes; never inspect pupil, expression, eye images or serials.
                 for(int offset=0;offset<DataSize;offset+=8)Marshal.WriteInt64(buffer,offset,0);
                 stage="eye read";
+                readStarted=clock.Now;
                 result=client.Read(buffer);LastNativeResult=result;
                 double observed=clock.Now; // Local API-return observation, not device exposure time.
-                if(result!=Work){Diagnostic=NativeMessage("Eye read",result);return Failure(head,result,nativeStatus);}
+                readReturned=observed;readCode=result;
+                if(result!=Work){Diagnostic=NativeMessage("Eye read",result);return Finish(Failure(head,result,nativeStatus));}
                 var frame=DecodeEyeBuffer(buffer,observed);
                 Diagnostic=needsCalibration?"Calibration is required; complete it in the official HTC interface.":
                     frame.NoUser?"HTC reports no available eye data.":"HTC read succeeded; freshness and validity are checked separately.";
-                return new ViveProEyePoll(head,frame,ViveEyeRuntimeState.Working,calibrationState,true,result,nativeStatus);
+                return Finish(new ViveProEyePoll(head,frame,ViveEyeRuntimeState.Working,calibrationState,true,result,nativeStatus));
             }
             catch(Exception error)
             {
@@ -152,7 +171,7 @@ namespace AvatarStroop.Runtime
                 // explicitly stop it; only an acknowledged Release permits later restart.
                 pollFault=true;LastNativeResult=null;
                 Diagnostic=ExceptionMessage("HTC "+stage+" failed; polling stopped until explicit Stop",error);
-                return Failure(head,null,null);
+                return Finish(Failure(head,null,null));
             }
         }
 
@@ -300,8 +319,12 @@ namespace AvatarStroop.Runtime
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int ReleaseDelegate(int feature);
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int StatusDelegate(int feature,out int state);
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int EyeDelegate(IntPtr data);
-        [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int CalibrationDelegate([MarshalAs(UnmanagedType.Bool)] ref bool needed);
-        [UnmanagedFunctionPointer(CallingConvention.Winapi)] [return:MarshalAs(UnmanagedType.Bool)] delegate bool DeviceDelegate();
+        // The pinned ViveSR_GetParameterBool implementation writes one byte;
+        // these are C++ bool values, not four-byte Windows BOOL values. The old
+        // initialized-false ref buffer did not establish the cause of observed
+        // calibration transitions; retain each raw report without smoothing.
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int CalibrationDelegate([MarshalAs(UnmanagedType.I1)] ref bool needed);
+        [UnmanagedFunctionPointer(CallingConvention.Winapi)] [return:MarshalAs(UnmanagedType.I1)] delegate bool DeviceDelegate();
         [DllImport("kernel32.dll",EntryPoint="LoadLibraryExW",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr LoadLibraryEx(string path,IntPtr reserved,uint flags);
         [DllImport("kernel32.dll",CharSet=CharSet.Ansi,ExactSpelling=true)] static extern IntPtr GetProcAddress(IntPtr module,string name);
         [DllImport("kernel32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] static extern bool FreeLibrary(IntPtr module);
