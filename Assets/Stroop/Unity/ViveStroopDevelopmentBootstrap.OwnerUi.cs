@@ -32,6 +32,28 @@ namespace AvatarStroop.Unity
         string ControllerUiDiagnostic
         {get{return rig==null||!rig.HeadReady?ControllerHeadUnavailable:
             !inputDiagnosticHeadReady||inputDiagnosticFrame!=Time.frameCount?ControllerNotChecked:inputDiagnostic;}}
+        // These are the existing task actions and gates. Render them before
+        // status/output diagnostics so live updates cannot move a held button.
+        void DrawPrimaryTaskControls()
+        {
+            GUILayout.Space(6);
+            bool practicePhase=participant.Phase==Phase.Preparation||participant.Phase==Phase.PracticeRetry;
+            if(practicePhase&&!ConsentAutoStartActive)
+            {
+                var practiceGate=BeginPracticeBlocker();
+                GUI.enabled=practiceGate==null;
+                if(GUILayout.Button("Begin practice"))TryRequestBeginPractice();
+                GUI.enabled=true;
+                if(practiceGate!=null)GUILayout.Label(practiceGate,recordingWrap);
+                if(rawPracticeRequested&&GUILayout.Button("Cancel pending practice start"))
+                {ClearRawPracticeRequest();message="Pending practice start canceled. No trial started.";}
+            }
+            DrawFormalConfirmationControls();
+            GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz;
+            if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&GUILayout.Button("Begin first block"))
+            {if(namedRawPump!=null)RequestNamedBlockPlanStart(false);else Run(()=>participant.OwnerBeginBlock(Actor.Owner));}
+            GUI.enabled=true;
+        }
         // Kept outside the scrollable setup/status body by the desktop rig.
         // These call the same authoritative safety actions as before.
         public void DrawOwnerSafetyControls()

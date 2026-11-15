@@ -19,6 +19,8 @@ namespace AvatarStroop.Unity.Editor
         static object Get(object o,string n){return o.GetType().GetField(n,I).GetValue(o);}
         static void Set(object o,string n,object v){o.GetType().GetField(n,I).SetValue(o,v);}
         static object Call(object o,string n,params object[] args){return o.GetType().GetMethod(n,I).Invoke(o,args);}
+        static object CallOwnerStatic(string n,params object[] args)
+        {return typeof(ViveStroopDevelopmentBootstrap).GetMethod(n,BindingFlags.Static|BindingFlags.Public|BindingFlags.NonPublic).Invoke(null,args);}
         static void Require(bool v,string why){if(!v)throw new InvalidOperationException("Formal confirmation: "+why);assertions++;}
         static ViveDevelopmentParticipant Task(Clock clock,out ViveNamedSimulationPlan plan)
         {
@@ -48,6 +50,49 @@ namespace AvatarStroop.Unity.Editor
             Set(r,"Clock",clock);Set(r,"View",view);Set(r,"Block",task.BlockIndex);Set(r,"RequestedAt",clock.Now);
             Set(owner,"formalConfirmationRequest",r);return r;
         }
+        static ViveStroopDeviceFrame Input(bool ready=true,bool neutralPending=false,bool trigger=false,bool menu=false,bool trackpad=false)
+        {return (ViveStroopDeviceFrame)Activator.CreateInstance(typeof(ViveStroopDeviceFrame),I,null,
+            new object[]{new VivePreviewTrackpadSample(ready,trackpad,0,0),neutralPending,false,trigger,false,menu,false,"synthetic formal input",false,false,false},null);}
+        static string InputWait(ViveStroopDeviceFrame frame,bool ready)
+        {return (string)CallOwnerStatic("FormalConfirmationInputWait",frame,ready);}
+        static void ValidateDiagnostics(ViveStroopDevelopmentBootstrap owner,ViveDevelopmentParticipant task,object intent)
+        {
+            Require(InputWait(null,true)=="controller_not_polled","missing sample reason was hidden");
+            Require(InputWait(Input(ready:false),true)=="controller_unavailable","lost device was described as a held control");
+            Require(InputWait(Input(neutralPending:true),true)=="controller_neutral_pending","neutral arming reason was hidden");
+            Require(InputWait(Input(),false)=="task_input_not_ready","task readiness wait was hidden");
+            Require(InputWait(Input(trigger:true),true)=="trigger_held","held trigger did not prevent execution");
+            Require(InputWait(Input(menu:true),true)=="menu_held","held menu did not prevent execution");
+            Require(InputWait(Input(trackpad:true),true)=="trackpad_held","held trackpad did not prevent execution");
+            Require(InputWait(Input(),true)==null,"neutral sample gained a new execution blocker");
+            int waits=0,callbacks=0,refusals=0;
+            Application.LogCallback capture=(message,stack,type)=>
+            {if(message.StartsWith("VIVE_FORMAL_CONFIRM_WAITING:",StringComparison.Ordinal))waits++;
+                if(message.StartsWith("VIVE_FORMAL_CONFIRM_CALLBACK:",StringComparison.Ordinal))callbacks++;
+                if(message.StartsWith("VIVE_FORMAL_CONFIRM_NOT_REQUESTED:",StringComparison.Ordinal))refusals++;};
+            Application.logMessageReceived+=capture;
+            try
+            {
+                // Observe the same already-polled frame, including the path
+                // that returns before Service while neutral arming is held.
+                Call(owner,"ObserveFormalConfirmationInputs",Input(trigger:true));
+                Call(owner,"ObserveFormalConfirmationInputs",Input(trigger:true));
+                Require(waits==1&&(string)Get(intent,"WaitReason")=="trigger_held","stable input wait spammed logs or lost the held control");
+                for(int i=0;i<100;i++)Call(owner,"ObserveFormalConfirmationInputs",i%2==0?Input(menu:true):Input(trackpad:true));
+                Call(owner,"ReportFormalConfirmationWait",intent,"panel_not_witnessed");
+                Require(waits==32&&(int)Get(intent,"WaitLogCount")==32,"request wait diagnostics were not bounded");
+                Require((string)Get(intent,"WaitReason")=="panel_not_witnessed"&&(int)Get(intent,"WaitFrame")==Time.frameCount,
+                    "log cap stopped the live status from updating");
+                Require(((string)CallOwnerStatic("FormalConfirmationWaitNotice",(string)Get(intent,"WaitReason"))).Contains("plan panel"),
+                    "panel witness wait was not explained");
+                Call(owner,"RequestFormalConfirmation");
+                Require(callbacks==1&&refusals==1&&object.ReferenceEquals(intent,Get(owner,"formalConfirmationRequest")),
+                    "accepted desktop callback could not be distinguished from a refused duplicate request");
+                Require(Get(owner,"pendingRawOwnerAction")==null&&task.Phase==Phase.BlockPreparation,
+                    "diagnostic observation applied confirmation or advanced the task");
+            }
+            finally{Application.logMessageReceived-=capture;}
+        }
         public static void Validate()
         {
             assertions=0;ViveSyntheticFixtureIsolation.OpenKnownSavedAnchor();
@@ -76,6 +121,7 @@ namespace AvatarStroop.Unity.Editor
                 Set(owner,"rawInstallFailed",false);
                 var monotonic=new MonotonicClock("synthetic-formal-intent");Set(owner,"sharedClock",monotonic);
                 var intent=Intent(owner,task,monotonic,view);
+                ValidateDiagnostics(owner,task,intent);
                 Require((bool)Call(owner,"FormalConfirmationIdentityMatches",intent),"exact request identity did not match");
                 Call(owner,"RequestFormalConfirmation");Require(object.ReferenceEquals(intent,Get(owner,"formalConfirmationRequest")),"repeated click replaced/extended pending request");
                 Require(!(bool)Call(owner,"FormalConfirmationStillCurrent",intent),"identity alone granted recording authority without installed pump");
@@ -98,7 +144,7 @@ namespace AvatarStroop.Unity.Editor
                 Call(owner,"RequestFormalConfirmation");Require(task.Phase==Phase.BlockReady&&task.CurrentTrial==null,"repeat after success started formal task");
                 Require(Get(owner,"namedRawPump")==null&&Get(owner,"namedRawDestination")==null&&Get(rig,"worker")==null&&!rig.ViewRunning,
                     "fixture started recording, eye service or XR");
-                Debug.Log("VIVE_FORMAL_CONFIRMATION_FIXTURE_PASSED: "+assertions+" assertions; explicit formal boundary, exact intent identity, missing authority, repeated click, fault/cancel and no automatic first block. No XR or files.");
+                Debug.Log("VIVE_FORMAL_CONFIRMATION_FIXTURE_PASSED: "+assertions+" assertions; explicit formal boundary, exact intent identity, missing authority, repeated click, fault/cancel, bounded wait diagnostics and no automatic first block. No XR or files.");
             }
             finally
             {

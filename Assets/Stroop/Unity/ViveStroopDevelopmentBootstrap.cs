@@ -488,6 +488,10 @@ namespace AvatarStroop.Unity
             if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
             GUILayout.Label(participant!=null&&participant.RawRecordingRequested?"PARTICIPANT  |  Local recording":
                 configured?"PARTICIPANT  |  Preview - no files":"PARTICIPANT  |  Setup");
+            // Keep click targets ahead of live diagnostics. A status line can
+            // appear between MouseDown and MouseUp and otherwise move the
+            // pressed button away from a stationary mouse pointer.
+            if(configured)DrawPrimaryTaskControls();
             if(configured)GUILayout.Label(RecordingStatus,recordingWrap);
             if(namedRawPump!=null&&!RecordingBlocked)
                 GUILayout.Label("Eye-only gaps do not pause this task. Excel-readable output marks NO_NEW_SAMPLE or MISSING at observed software times; it does not invent hardware dropped-frame counts.",recordingWrap);
@@ -554,23 +558,6 @@ namespace AvatarStroop.Unity
                     DrawRecordingStartControls(canStartRecording);
                 }
                 if(ownerAdvanced)DrawPracticePreviewControls();
-                GUILayout.Space(6);
-                bool practicePhase=participant.Phase==Phase.Preparation||participant.Phase==Phase.PracticeRetry;
-                if(practicePhase&&!ConsentAutoStartActive)
-                {
-                    var practiceGate=BeginPracticeBlocker();
-                    GUI.enabled=practiceGate==null;
-                    if(GUILayout.Button("Begin practice"))TryRequestBeginPractice();
-                    GUI.enabled=true;
-                    if(practiceGate!=null)GUILayout.Label(practiceGate,recordingWrap);
-                    if(rawPracticeRequested&&GUILayout.Button("Cancel pending practice start"))
-                    {ClearRawPracticeRequest();message="Pending practice start canceled. No trial started.";}
-                }
-                DrawFormalConfirmationControls();
-                GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz;
-                if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&GUILayout.Button("Begin first block"))
-                {if(namedRawPump!=null)RequestNamedBlockPlanStart(false);else Run(()=>participant.OwnerBeginBlock(Actor.Owner));}
-                GUI.enabled=true;
                 if(participant.LegacyWozRecordingDeclared||ownerPreviewWoz)DrawLegacyWozControls();
                 if(participant.ObservationEnabled)
                     GUILayout.Label(observationFaultLatched?"Development observation failed. Presentation is blocked; review or withdraw the task.":
@@ -823,13 +810,14 @@ namespace AvatarStroop.Unity
             var destination=namedRawDestination;var receipt=namedCsvLocalCandidate;
             if(receipt!=null&&!NamedRawCandidateContextIsSafe())
             {ClearNamedRawLocalCandidate();receipt=null;}
-            if(!Application.isFocused)return;
             bool requested=destination!=null&&destination.CsvRequested;
             bool unknown=destination!=null&&destination.State==ViveRawExclusiveDestination.Outcome.Unknown;
             GUILayout.Label(CsvCandidateState(requested,namedCsvLocalCandidateAttempted,receipt!=null,unknown),recordingWrap);
             if(!requested)return;
             if(!String.IsNullOrEmpty(namedCsvCandidateNotice))GUILayout.Label(namedCsvCandidateNotice,recordingWrap);
-            bool ready=!unknown&&NamedRawCandidateContextIsSafe();
+            // Losing desktop focus disables this action without removing its
+            // controls and shifting other click targets during a mouse press.
+            bool ready=Application.isFocused&&!unknown&&NamedRawCandidateContextIsSafe();
             bool wasEnabled=GUI.enabled;
             GUI.enabled=wasEnabled&&ready&&(receipt!=null&&receipt.ReopenedIdentityVerified||
                 CanRequestNamedRawLocalCandidate(ViveRawExclusiveDestination.ProductionGateOpen&&
@@ -1307,6 +1295,7 @@ namespace AvatarStroop.Unity
                 // Display this existing poll only. Never obtain an extra input
                 // sample for UI, which could consume a neutral/confirmation edge.
                 RecordControllerUiPoll(headReady,frame.InputReady,frame.Diagnostic);
+                ObserveFormalConfirmationInputs(frame);
                 if(AwaitFocusActionActivation(frame))return;
                 if(!frame.DeviceReady&&rig!=null&&!rig.XrFocused)
                 {

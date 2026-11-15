@@ -711,7 +711,7 @@ namespace AvatarStroop.Unity
                     if(preparation==ViveNamedRawRecordingPump.Preparation.WaitingBaseline&&development.CanWaitForNamedRawBaseline)
                     {if(view!=null)view.SetPresentationAvailable(false);SetStatus("Waiting for initial eye status; no task input is processed.");}
                     else
-                    {development.FailNamedRawBeforeFrame();SetStatus("Eye status unavailable; task safety is stopped or pending.");}
+                    {development.NoteRawFirstFault("rig_eye_status_unavailable_"+preparation);development.FailNamedRawBeforeFrame();SetStatus("Eye status unavailable; task safety is stopped or pending.");}
                     return;
                 }
             }
@@ -747,7 +747,7 @@ namespace AvatarStroop.Unity
                 if(development!=null&&development.NamedRawPumpAttached)
                 {
                     if(!currentPump.TryBeginRecordingFrame(worker))
-                    {previewCamera.cullingMask=0;development.FailNamedRawBeforeFrame();SetStatus("Eye snapshot unavailable; task safety is stopped or pending.");return;}
+                    {previewCamera.cullingMask=0;development.NoteRawFirstFault("rig_eye_snapshot_unavailable");development.FailNamedRawBeforeFrame();SetStatus("Eye snapshot unavailable; task safety is stopped or pending.");return;}
                 }
                 else currentPump.BeginFrame();
                 try
@@ -761,9 +761,12 @@ namespace AvatarStroop.Unity
                         headReady=false;ApplyTrackedMask(false);
                         if(development!=null&&development.NamedRawPumpAttached)
                         {
-                            if(headDiagnosticFrame==Time.frameCount&&sameReferenceHeadPoseLoss&&
-                                development.TryHoldRawHeadTracking(currentPump.Poll()))
+                            bool holdCandidate=headDiagnosticFrame==Time.frameCount&&sameReferenceHeadPoseLoss;
+                            if(holdCandidate&&development.TryHoldRawHeadTracking(currentPump.Poll()))
                             {SetStatus(development.RawTrackingHoldNotice);return;}
+                            development.NoteRawFirstFault(holdCandidate?"rig_head_tracking_hold_rejected":"rig_head_readiness_unavailable");
+                            Debug.LogWarning("VIVE_RAW_HEAD_REJECTED: frame="+Time.frameCount+"; sameReferencePoseLoss="+holdCandidate+
+                                "; "+CurrentHeadDiagnostic);
                             development.FailNamedRawBeforeFrame();return;
                         }
                     }
@@ -793,7 +796,7 @@ namespace AvatarStroop.Unity
                     if(usable&&source.LastObservation.EyeDisposition==ViveFrameDisposition.Accepted)recordingEyeFrame=Time.frameCount;
                     UpdateGazeMarker(sample,source.LastObservation,usable);
                     if(development!=null&&development.NamedRawPumpAttached&&!usable&&!development.RawTaskEpochThisFrame)
-                    {previewCamera.cullingMask=0;development.FailNamedRawBeforeFrame();SetStatus("Eye input unavailable; task safety is stopped or pending.");return;}
+                    {previewCamera.cullingMask=0;development.NoteRawFirstFault("rig_no_usable_eye_or_task_epoch");development.FailNamedRawBeforeFrame();SetStatus("Eye input unavailable; task safety is stopped or pending.");return;}
                     if(development!=null&&development.NamedRawPumpAttached&&!development.VerifyNamedRawEpoch())
                     {previewCamera.cullingMask=0;SetStatus("Eye status changed before task input; task safety is stopped or pending.");return;}
                     if(development!=null&&development.NamedRawPumpAttached)

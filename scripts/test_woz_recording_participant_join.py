@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MAIN = (ROOT / 'Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.cs').read_text(encoding='utf-8-sig')
 SCENE = (ROOT / 'Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.LegacyWozScene.cs').read_text(encoding='utf-8-sig')
 FORMAL = (ROOT / 'Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.FormalConfirm.cs').read_text(encoding='utf-8-sig')
+OWNER_UI = (ROOT / 'Assets/Stroop/Unity/ViveStroopDevelopmentBootstrap.OwnerUi.cs').read_text(encoding='utf-8-sig')
 
 def part(text, start, end):
     return text[text.index(start):text.index(end, text.index(start))]
@@ -34,7 +35,9 @@ class ParticipantJoin(unittest.TestCase):
         self.assertIn('if(RecordedLegacyWoz)RequestNamedBlockPlanStart(false);else legacyWozScene.BeginCountdown()', SCENE)
         # The formal button moved into its own guarded helper. Recorded WoZ
         # must still use the separate source workflow, never this local plan.
-        self.assertIn('DrawFormalConfirmationControls();', MAIN)
+        self.assertIn('if(configured)DrawPrimaryTaskControls();', MAIN)
+        primary = part(OWNER_UI, 'void DrawPrimaryTaskControls()', 'public void DrawOwnerSafetyControls()')
+        self.assertIn('DrawFormalConfirmationControls();', primary)
         controls = FORMAL[FORMAL.index('void DrawFormalConfirmationControls()'):]
         self.assertIn('participant.LegacyWozRecordingDeclared||ownerPreviewWoz)return;', controls)
         reason = part(FORMAL, 'string FormalConfirmationUnavailableReason()', 'internal void RequestFormalConfirmation()')
