@@ -364,11 +364,11 @@ namespace AvatarStroop.Unity.Editor
                 var csvState=typeof(ViveStroopDevelopmentBootstrap).GetMethod("CsvCandidateState",BindingFlags.Static|BindingFlags.NonPublic);
                 Require(csvState!=null,"CSV state policy missing");
                 Require(((string)csvState.Invoke(null,new object[]{false,false,false,false})).Contains("not requested"),"unrequested CSV must be distinct");
-                Require(((string)csvState.Invoke(null,new object[]{true,false,false,false})).Contains("unconfirmed"),"raw close must not imply CSV success");
+                Require(((string)csvState.Invoke(null,new object[]{true,false,false,false})).Contains("after recording finishes"),"raw close must not imply CSV success");
                 Require(((string)csvState.Invoke(null,new object[]{true,false,false,true})).Contains("UNKNOWN")&&
                     ((string)csvState.Invoke(null,new object[]{true,true,false,false})).Contains("UNKNOWN")&&
                     ((string)csvState.Invoke(null,new object[]{true,true,true,true})).Contains("UNKNOWN"),"unknown and failed CSV review must stay unknown");
-                Require(((string)csvState.Invoke(null,new object[]{true,true,true,false})).Contains("unverified"),"CSV receipt must remain unverified");
+                Require(((string)csvState.Invoke(null,new object[]{true,true,true,false})).Contains("ready to open"),"CSV receipt enables opening without asserting data completeness");
                 var csvLimits=typeof(ViveStroopDevelopmentBootstrap).GetMethod("TryParseCsvLimits",BindingFlags.Static|BindingFlags.NonPublic);
                 Require(csvLimits!=null,"CSV explicit limits parser missing");
                 foreach(var limits in new[]{new[]{"","1"},new[]{"0","1"},new[]{"8193","1"},new[]{"1","0"},new[]{"1","3601"},new[]{"1.5","1"}})

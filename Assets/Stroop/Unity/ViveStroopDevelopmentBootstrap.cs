@@ -108,20 +108,18 @@ namespace AvatarStroop.Unity
         ViveRawExclusiveDestination namedRawDestination;
         // The path is a one-time, owner-requested local candidate only. Keep
         // the receipt (rather than a copied string) so withdrawal remains
-        // observable while it is displayed. An attempted claim is never
+        // observable before opening it. An attempted claim is never
         // silently replayed after focus loss or failure.
         ViveRawExclusiveDestination.LocalCandidateReceipt namedRawLocalCandidate;
         ViveRawExclusiveDestination.LocalCsvCandidateReceipt namedCsvLocalCandidate;
-        bool namedCsvLocalCandidateAttempted,namedCsvCandidateHidden;
+        bool namedCsvLocalCandidateAttempted;
         string namedCsvCandidateNotice;
         ViveDevelopmentParticipant candidateParticipant;
         ViveRawRevocation candidateAuthority;
         ViveNamedRawRecordingPump candidatePump;
         ViveRawExclusiveDestination candidateDestination;
         MonotonicClock candidateClock;
-        bool namedRawCandidateHidden;
         bool namedRawLocalCandidateAttempted;
-        string namedRawLocalCandidateNotice;
         // This is a background cleanup watchdog, not an experiment timer or
         // a promise that a slow or in-flight system call can be cancelled.
         const int RawOutputCleanupTimeoutMilliseconds=300000;
@@ -733,10 +731,8 @@ namespace AvatarStroop.Unity
                 if(namedRawDestination!=null)
                 {
                     GUILayout.Label("File writer: "+namedRawDestination.State,recordingWrap);
-                    if(recordingSetup!=null)GUILayout.Label("Folder: "+recordingSetup.DirectoryPath,recordingWrap);
-                    GUILayout.Label("After completion, review raw and CSV file paths below. Unconfirmed output is not a successful save.",recordingWrap);
+                    GUILayout.Label("After recording finishes, Open CSV opens the saved data in your default application.",recordingWrap);
                     if(ownerDiagnostics)GUILayout.Label("Software status does not establish consent, tracking accuracy, coverage or durable storage. Withdrawal cannot recall existing bytes.",recordingWrap);
-                    DrawNamedRawLocalCandidate();
                     DrawNamedCsvLocalCandidate();
                 }
                 return;
@@ -779,7 +775,6 @@ namespace AvatarStroop.Unity
                 String.IsNullOrEmpty(receipt.UnverifiedPath)||rawWithdrawalRequested||rawSafetyLatched||pump.WithdrawalRequested)
             {
                 namedRawLocalCandidate=null;
-                namedRawLocalCandidateNotice="Local candidate unavailable or unconfirmed. No path was accepted; this one-time request cannot be replayed.";
                 return false;
             }
             namedRawLocalCandidate=receipt;
@@ -788,54 +783,16 @@ namespace AvatarStroop.Unity
             if(!NamedRawCandidateContextIsSafe())
             {
                 ClearNamedRawLocalCandidate();
-                namedRawLocalCandidateNotice="Local candidate context changed; this one-time request cannot be replayed.";
                 return false;
             }
-            namedRawLocalCandidateNotice=null;
             return true;
-        }
-        void DrawNamedRawLocalCandidate()
-        {
-            var receipt=namedRawLocalCandidate;
-            if(receipt!=null&&!NamedRawCandidateContextIsSafe())
-            {ClearNamedRawLocalCandidate();receipt=null;}
-            // Hide while unfocused; recheck the original receipt and session
-            // on every draw without replaying the one-shot claim.
-            if(!Application.isFocused)return;
-            if(receipt!=null&&namedRawCandidateHidden)
-            {
-                if(GUILayout.Button("Show raw candidate path"))namedRawCandidateHidden=false;
-                return;
-            }
-            if(receipt!=null)
-            {
-                GUILayout.Label(receipt.ReopenedIdentityVerified?
-                    "Raw candidate: identity matched at the post-close check; a future path lookup remains unverified:":
-                    "Raw candidate: post-close identity is unconfirmed:",recordingWrap);
-                GUILayout.TextArea(receipt.UnverifiedPath,GUILayout.Height(45));
-                GUILayout.Label("This path is not proof of current authorization, complete coverage, publication or durable storage. Withdrawal cannot recall a path or bytes already shared.",recordingWrap);
-                if(GUILayout.Button("Hide raw candidate path"))namedRawCandidateHidden=true;
-                return;
-            }
-            if(!String.IsNullOrEmpty(namedRawLocalCandidateNotice))GUILayout.Label(namedRawLocalCandidateNotice,recordingWrap);
-            bool withdrawn=rawWithdrawalRequested||rawSafetyLatched||rawInstallFailed||participant==null||
-                participant.NamedRawRevocation.ParticipantWithdrawalRequested||namedRawPump==null||namedRawPump.WithdrawalRequested;
-            bool sourceClosed=namedRawPump!=null&&namedRawPump.State==ViveNamedRawRecordingPump.Outcome.CloseCallsReturned;
-            bool targetClosed=namedRawDestination!=null&&namedRawDestination.State==ViveRawExclusiveDestination.Outcome.CloseReturned;
-            GUI.enabled=Application.isFocused&&CanRequestNamedRawLocalCandidate(ViveRawExclusiveDestination.ProductionGateOpen,
-                true,namedRawLocalCandidateAttempted,withdrawn,sourceClosed,targetClosed)&&NamedRawCandidateContextIsSafe();
-            if(GUILayout.Button("Review raw candidate path (one attempt)"))TryRequestNamedRawLocalCandidate(true);
-            GUI.enabled=true;
-            if(!ViveRawExclusiveDestination.ProductionGateOpen)
-                GUILayout.Label("Local candidate review is unavailable until storage and withdrawal checks are complete.",recordingWrap);
         }
         internal static string CsvCandidateState(bool requested,bool attempted,bool hasReceipt,bool unknown)
         {
-            if(!requested)return "CSV not requested.";
-            if(unknown)return "CSV outcome UNKNOWN; no candidate path is available.";
-            if(hasReceipt)return "CSV candidate path obtained; future path identity and durability remain unverified.";
-            if(attempted)return "CSV outcome UNKNOWN; no candidate path is available.";
-            return "CSV requested; completion remains unconfirmed until independently reviewed.";
+            if(!requested)return "CSV not requested for this session.";
+            if(unknown||attempted&&!hasReceipt)return "CSV save status UNKNOWN; opening is unavailable.";
+            if(hasReceipt)return "CSV is ready to open.";
+            return "CSV will be available after recording finishes and the files have closed.";
         }
         bool TryRequestNamedCsvLocalCandidate(bool explicitOwnerReview)
         {
@@ -849,14 +806,14 @@ namespace AvatarStroop.Unity
                 String.IsNullOrEmpty(receipt.UnverifiedPath)||!NamedRawCandidateContextIsSafe())
             {
                 namedCsvLocalCandidate=null;
-                namedCsvCandidateNotice="CSV candidate unavailable or unconfirmed; this one-time request cannot be replayed.";
+                namedCsvCandidateNotice="The CSV could not be verified for this session.";
                 return false;
             }
             namedCsvLocalCandidate=receipt;
             if(!NamedRawCandidateContextIsSafe())
             {
                 ClearNamedRawLocalCandidate();
-                namedCsvCandidateNotice="CSV candidate context changed; this one-time request cannot be replayed.";
+                namedCsvCandidateNotice="This recording session is no longer available for opening CSV.";
                 return false;
             }
             namedCsvCandidateNotice=null;return true;
@@ -871,24 +828,40 @@ namespace AvatarStroop.Unity
             bool unknown=destination!=null&&destination.State==ViveRawExclusiveDestination.Outcome.Unknown;
             GUILayout.Label(CsvCandidateState(requested,namedCsvLocalCandidateAttempted,receipt!=null,unknown),recordingWrap);
             if(!requested)return;
-            if(receipt!=null&&namedCsvCandidateHidden)
-            {if(GUILayout.Button("Show CSV candidate path"))namedCsvCandidateHidden=false;return;}
-            if(receipt!=null)
-            {
-                GUILayout.Label(receipt.ReopenedIdentityVerified?
-                    "CSV candidate: identity matched at the post-close check; a future path lookup remains unverified:":
-                    "CSV candidate: post-close identity is unconfirmed:",recordingWrap);
-                GUILayout.TextArea(receipt.UnverifiedPath,GUILayout.Height(45));
-                GUILayout.Label("The CSV path does not prove consent, complete coverage or durable storage. Withdrawal cannot recall a path or bytes already shared.",recordingWrap);
-                if(GUILayout.Button("Hide CSV candidate path"))namedCsvCandidateHidden=true;
-                return;
-            }
             if(!String.IsNullOrEmpty(namedCsvCandidateNotice))GUILayout.Label(namedCsvCandidateNotice,recordingWrap);
-            bool ready=NamedRawCandidateContextIsSafe();
-            GUI.enabled=CanRequestNamedRawLocalCandidate(ViveRawExclusiveDestination.ProductionGateOpen&&
-                ViveRawReadableAnalysisCsv.ProductionGateOpen,true,namedCsvLocalCandidateAttempted,!ready,ready,ready);
-            if(GUILayout.Button("Review CSV candidate path (one attempt)"))TryRequestNamedCsvLocalCandidate(true);
-            GUI.enabled=true;
+            bool ready=!unknown&&NamedRawCandidateContextIsSafe();
+            bool wasEnabled=GUI.enabled;
+            GUI.enabled=wasEnabled&&ready&&(receipt!=null&&receipt.ReopenedIdentityVerified||
+                CanRequestNamedRawLocalCandidate(ViveRawExclusiveDestination.ProductionGateOpen&&
+                    ViveRawReadableAnalysisCsv.ProductionGateOpen,true,namedCsvLocalCandidateAttempted,!ready,ready,ready));
+            if(GUILayout.Button("Open CSV"))OpenNamedCsv();
+            GUI.enabled=wasEnabled;
+        }
+        void OpenNamedCsv()
+        {
+            if(!Application.isFocused||!NamedRawCandidateContextIsSafe())return;
+            if(namedCsvLocalCandidate==null&&!TryRequestNamedCsvLocalCandidate(true))return;
+            var receipt=namedCsvLocalCandidate;
+            if(receipt==null||!receipt.ReopenedIdentityVerified||!receipt.WithdrawalNotObserved||!NamedRawCandidateContextIsSafe())return;
+            try
+            {
+                string path=receipt.UnverifiedPath;
+                if(String.IsNullOrEmpty(path)||!System.IO.Path.IsPathRooted(path)||
+                    !String.Equals(System.IO.Path.GetExtension(path),".csv",StringComparison.OrdinalIgnoreCase)||!System.IO.File.Exists(path))
+                    throw new System.IO.FileNotFoundException("The saved CSV is no longer available.");
+                // Reuse this session's receipt for an explicit retry if Windows
+                // could not open the app. Never replay the one-shot file claim.
+                if(!receipt.WithdrawalNotObserved||!NamedRawCandidateContextIsSafe())return;
+                using(var opened=System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+                    {UseShellExecute=true,Verb="open",WorkingDirectory=System.IO.Path.GetDirectoryName(path)})){}
+                namedCsvCandidateNotice="CSV sent to your default application.";
+            }
+            catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
+            {
+                namedCsvCandidateNotice=error is System.IO.FileNotFoundException?
+                    "The saved CSV could not be found. It may have been moved or deleted.":
+                    "Could not open CSV. Check the default app for .csv files in Windows, then click Open CSV again.";
+            }
         }
         internal static bool SameCandidateContext(object savedTask,object task,object savedAuthority,object authority,
             object savedPump,object pump,object savedDestination,object destination,object savedClock,object clock,
@@ -917,9 +890,8 @@ namespace AvatarStroop.Unity
         }
         void ClearNamedRawLocalCandidate()
         {
-            namedRawLocalCandidate=null;namedRawLocalCandidateNotice=null;
-            namedCsvLocalCandidate=null;namedCsvCandidateNotice=null;namedCsvCandidateHidden=false;
-            namedRawCandidateHidden=false;
+            namedRawLocalCandidate=null;
+            namedCsvLocalCandidate=null;namedCsvCandidateNotice=null;
             candidateParticipant=null;candidateAuthority=null;candidatePump=null;candidateDestination=null;candidateClock=null;
         }
         // Preview, recording setup and the controller legend use one fixed map.
