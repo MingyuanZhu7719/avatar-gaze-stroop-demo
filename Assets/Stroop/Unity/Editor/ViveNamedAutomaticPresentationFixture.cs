@@ -211,8 +211,8 @@ namespace AvatarStroop.Unity.Editor
             {var option=i%2==0?ViveNamedOption.Automatic:ViveNamedOption.NoAvatar;
                 selections[i]=ViveNamedOptionProvenance.Select(Actor.Owner,option,i,option==ViveNamedOption.Automatic?geometry.Version:null);}
             var plan=ViveNamedSimulationPlan.Select(Actor.Owner,"synthetic-editor-plan-"+count,selections);
-            var clock=new FixtureClock();var task=new ViveDevelopmentParticipant(
-                SessionConfiguration.NamedPlanDevelopment("synthetic-plan-session-"+count,42,plan),clock,geometry,mapping,.5,true);
+            var config=SessionConfiguration.NamedPlanDevelopment("synthetic-plan-session-"+count,42,plan);
+            var clock=new FixtureClock();var task=new ViveDevelopmentParticipant(config,clock,geometry,mapping,.5,true);
             Neutral(task);task.OwnerBeginPractice(Actor.Owner);
             for(int i=0;i<8;i++)
             {Neutral(task);var trial=task.CurrentTrial;Require(trial!=null&&object.ReferenceEquals(trial.NamedPlan,plan)&&trial.NamedBlock==null,"practice gained a block option");
@@ -221,7 +221,7 @@ namespace AvatarStroop.Unity.Editor
             task.OwnerConfirmNamedPlan(Actor.Owner,"synthetic-owner");task.OwnerBeginBlock(Actor.Owner);
             for(int b=0;b<count;b++)
             {
-                clock.Value+=3;task.Tick();Neutral(task);Require(task.Phase==Phase.MainTask,"planned block did not start");
+                clock.Value+=config.CountdownSeconds;task.Tick();Neutral(task);Require(task.Phase==Phase.MainTask,"planned block did not start");
                 var block=plan.Blocks[b];var trial=task.CurrentTrial;
                 Require(object.ReferenceEquals(task.CurrentNamedPlanBlock,block)&&object.ReferenceEquals(trial.NamedBlock,block)&&object.ReferenceEquals(trial.NamedPlan,plan),"actual participant/trial selected wrong block");
                 Require(trial.ListId==TrialPlans.MainListId(42,block.Selection.ListIndex),"block stimulus list differs from plan");
@@ -246,7 +246,7 @@ namespace AvatarStroop.Unity.Editor
                     Layout(view);Require(!view.AvatarRoot.gameObject.activeInHierarchy,"avatar visible in pause");
                     clock.Value+=5;Require(task.CurrentAvatar==null||Math.Abs(task.CurrentAvatar.Reference.ActiveSeconds-3.25)<1e-9,"pause did not freeze clock");
                     Neutral(task);task.UpdateAuxiliary(false,false,false,0,true);task.UpdateAuxiliary(true,false,false,0,true);
-                    Require(task.Phase==Phase.Countdown,"explicit resume missing");clock.Value+=3;task.Tick();Neutral(task);
+                    Require(task.Phase==Phase.Countdown,"explicit resume missing");clock.Value+=config.CountdownSeconds;task.Tick();Neutral(task);
                 }
                 while(task.Phase==Phase.MainTask)
                 {trial=task.CurrentTrial;Require(object.ReferenceEquals(trial.NamedBlock,block),"trial block provenance changed");
@@ -325,7 +325,7 @@ namespace AvatarStroop.Unity.Editor
                 }
                 Require(task.Phase==Phase.BlockPreparation,"synthetic No Avatar practice did not pass");
                 task.OwnerConfirmNamedNoAvatar(Actor.Owner,"synthetic-owner");CheckNoAvatar(view,task,"block ready");
-                task.OwnerBeginBlock(Actor.Owner);clock.Value+=3;task.Tick();Neutral(task);
+                task.OwnerBeginBlock(Actor.Owner);clock.Value+=config.CountdownSeconds;task.Tick();Neutral(task);
                 Require(task.Phase==Phase.MainTask,"synthetic No Avatar block did not start");
                 var first=task.CurrentTrial;var expected=TrialPlans.MainList(42,2)[0];
                 Require(first.Stimulus.Word==expected.Word&&first.Stimulus.Ink==expected.Ink,"No Avatar changed the selected trial list");
@@ -335,7 +335,7 @@ namespace AvatarStroop.Unity.Editor
                 CheckNoAvatar(view,task,"paused");CheckEvent(task,"explicit_pause",1,selected);
                 if(images)Render(camera,output,"no-avatar","paused",false,null,null);
                 clock.Value+=10;Neutral(task);task.UpdateAuxiliary(false,false,false,0,true);task.UpdateAuxiliary(true,false,false,0,true);
-                Require(task.Phase==Phase.Countdown,"No Avatar explicit resume did not start countdown");clock.Value+=3;task.Tick();Neutral(task);
+                Require(task.Phase==Phase.Countdown,"No Avatar explicit resume did not start countdown");clock.Value+=config.CountdownSeconds;task.Tick();Neutral(task);
                 int answered=0;
                 while(task.Phase==Phase.MainTask)
                 {
@@ -417,7 +417,7 @@ namespace AvatarStroop.Unity.Editor
                 }
                 Require(task.Phase==Phase.BlockPreparation,"synthetic practice did not pass");
                 task.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"synthetic-owner");task.OwnerBeginBlock(Actor.Owner);
-                clock.Value+=3;task.Tick();Require(task.Phase==Phase.MainTask,"synthetic block did not start");
+                clock.Value+=config.CountdownSeconds;task.Tick();Require(task.Phase==Phase.MainTask,"synthetic block did not start");
                 Neutral(task);task.MarkPresented(task.CurrentTrial.TrialId);
                 var taskHead=UnityRotation(geometry.TaskPose.HeadRotation);var participantHead=UnityRotation(geometry.ParticipantPose.HeadRotation);
                 double previousTime=0;

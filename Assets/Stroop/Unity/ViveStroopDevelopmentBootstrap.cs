@@ -31,7 +31,7 @@ namespace AvatarStroop.Unity
         ViveNamedRecordingSetup recordingSetup;
         int recordingSetupDesign=-1;
         string recordingDirectory="",recordingBudgetMiB="256";
-        string csvBudgetMiB="256",csvCleanupSeconds="300";
+        string csvBudgetMiB="2048",csvCleanupSeconds="300";
         int recordingSelectionFreshFrame=-1;
         bool rawSelectionProvenancePending;
         double rawTaskChoicePollSeconds,rawEyeChoicePollSeconds;

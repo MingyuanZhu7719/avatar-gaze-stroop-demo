@@ -1,5 +1,7 @@
 #if UNITY_EDITOR && STROOP_XR_PREVIEW
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using AvatarStroop.Core;
 using UnityEditor.SceneManagement;
@@ -28,6 +30,38 @@ namespace AvatarStroop.Unity.Editor
         {
             var item=new GameObject(name);SceneManager.MoveGameObjectToScene(item,scene);
             item.hideFlags=HideFlags.HideAndDontSave;return item;
+        }
+        static void WriteRequestedPreviews(object hold,Camera camera)
+        {
+            var args=Environment.GetCommandLineArgs();string output=null;
+            for(int i=0;i<args.Length-1;i++)if(args[i]=="-stroopHoldPreviewOutput")output=Path.GetFullPath(args[i+1]);
+            if(output==null)return;
+            Directory.CreateDirectory(output);
+            float oldAspect=camera.aspect,oldFov=camera.fieldOfView;
+            var previousTarget=camera.targetTexture;var previousActive=RenderTexture.active;
+            RenderTexture target=null;Texture2D pixels=null;
+            try
+            {
+                camera.fieldOfView=70;camera.aspect=1.6f;
+                target=new RenderTexture(1440,900,24,RenderTextureFormat.ARGB32){antiAliasing=4};target.Create();
+                pixels=new Texture2D(target.width,target.height,TextureFormat.RGB24,false);
+                foreach(double elapsed in new[]{1.4,6.0})
+                {
+                    Call(hold,"SetTransition",true,elapsed,Double.NaN);
+                    Require((bool)Call(hold,"BeginRender",camera,true,false),"could not render requested completion preview");
+                    camera.targetTexture=target;camera.Render();RenderTexture.active=target;
+                    pixels.ReadPixels(new Rect(0,0,target.width,target.height),0,0);pixels.Apply();
+                    File.WriteAllBytes(Path.Combine(output,elapsed<6?"completion-fireworks.png":"completion-thank-you.png"),pixels.EncodeToPNG());
+                    camera.targetTexture=null;Call(hold,"EndRender");
+                }
+            }
+            finally
+            {
+                camera.targetTexture=previousTarget;camera.aspect=oldAspect;camera.fieldOfView=oldFov;
+                RenderTexture.active=previousActive;Call(hold,"EndRender");
+                if(pixels!=null)UnityEngine.Object.DestroyImmediate(pixels);
+                if(target!=null){target.Release();UnityEngine.Object.DestroyImmediate(target);}
+            }
         }
         public static void Validate()
         {
@@ -112,17 +146,38 @@ namespace AvatarStroop.Unity.Editor
                 var firstSpark=sparks.GetChild(0).localPosition;Call(hold,"EndRender");
                 Call(hold,"SetBlockCompletion",2.0);Call(hold,"BeginRender",camera,true,false);
                 Require(sparks.GetChild(0).localPosition!=firstSpark,"fireworks are not animated");
+                Require(sparks.childCount>=200,"celebration omitted the richer bursts and trails");
+                var palette=new HashSet<Color>();
                 foreach(var mesh in sparks.GetComponentsInChildren<Renderer>(true))
+                {
                     Require(mesh.gameObject.layer==display.layer,"fireworks escaped the isolated hold layer");
+                    var tint=mesh.sharedMaterial.color;tint.a=1;palette.Add(tint);
+                    Require(mesh.GetComponent<Collider>()==null,"a firework can intercept input or physics");
+                }
+                Require(palette.Count>=5,"celebration no longer has varied coloured bursts");
                 Call(hold,"EndRender");
+                for(int sample=0;sample<12;sample++)
+                {
+                    Call(hold,"SetTransition",true,sample*.5,Double.NaN);
+                    Call(hold,"BeginRender",camera,true,false);
+                    foreach(Transform spark in sparks)
+                    {
+                        float margin=Mathf.Abs(spark.localPosition.y)-Mathf.Max(spark.localScale.x,spark.localScale.y);
+                        Require(margin>.13f,"fireworks cross the central completion message");
+                    }
+                    Call(hold,"EndRender");
+                }
                 Call(hold,"SetTransition",true,1.0,Double.NaN);
-                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Thank you!")&&sparks.gameObject.activeSelf,
-                    "normal final completion has no thank-you fireworks after recording cleanup");
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("All blocks complete!")&&sparks.gameObject.activeSelf,
+                    "normal final completion has no completion fireworks");
+                Require(!text.text.Contains("saved")&&!text.text.Contains("recording"),"task celebration claims a recording outcome");
                 Call(hold,"EndRender");
                 Call(hold,"SetTransition",true,6.0,Double.NaN);
-                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Thank you!")&&!sparks.gameObject.activeSelf,
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Thank you for participating!")&&
+                    text.text.Contains("remove the headset")&&!sparks.gameObject.activeSelf,
                     "final fireworks do not settle to a static thank-you after six seconds");
                 Call(hold,"EndRender");
+                WriteRequestedPreviews(hold,camera);
                 Call(hold,"SetBlockCompletion",1.0);
                 Require((bool)Call(hold,"BeginRender",camera,true,true,true)&&text.text.Contains("Task blocked"),
                     "terminal stop was displayed as a routine hold");

@@ -30,13 +30,13 @@ namespace AvatarStroop.Tests
                 Action answer=()=>{Task.MarkPresented(Task.CurrentTrial.TrialId);clock.Now+=.25;var ink=Task.CurrentTrial.Stimulus.Ink;
                     Check.True(Task.ButtonChanged(ink,true));Task.ButtonChanged(ink,false);};
                 for(int i=0;i<8;i++)answer();
-                Task.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");Task.BeginCountdown(Actor.Owner,true);clock.Now+=3;Task.Tick();
+                Task.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");Task.BeginCountdown(Actor.Owner,true);clock.Now+=Task.Configuration.CountdownSeconds;Task.Tick();
                 for(int block=0;block<2;block++)
                 {
                     while(Task.Phase==Phase.MainTask)answer();
                     Check.Equal(Phase.Questionnaire,Task.Phase);Check.True(Task.AcknowledgeQuestionnaireInstruction());
                     for(int q=0;q<Questionnaire.Count;q++){clock.Now+=.125;Task.Rate(q+1);}
-                    if(block==0){clock.Now+=.375;Check.True(Task.Ready());Check.True(Task.TryBeginRetainedBlockCountdown(true));clock.Now+=3;Task.Tick();}
+                    if(block==0){clock.Now+=.375;Check.True(Task.Ready());Check.True(Task.TryBeginRetainedBlockCountdown(true));clock.Now+=Task.Configuration.CountdownSeconds;Task.Tick();}
                 }
                 Check.Equal(EndReason.Completed,Task.EndReason.Value);
                 var manifest=new ViveNamedSessionFrameAdmission.Manifest(Task.Configuration.SessionId,clock.ClockId,plan,intent,true);manifest.SealChoiceTime(0,0);

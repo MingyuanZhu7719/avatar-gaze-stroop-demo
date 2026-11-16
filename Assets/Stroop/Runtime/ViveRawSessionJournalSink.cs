@@ -824,6 +824,7 @@ namespace AvatarStroop.Runtime
         {get{return installedDestination!=null&&Volatile.Read(ref completionState)==8;}}
         // Independent diagnostic snapshots. Neither returned source close nor
         // target close is publication authority or a durability proof.
+        internal string OutputFailureDiagnostic {get{var value=installedPrivateStage;return value==null?"none":value.CsvFailureDiagnostic;}}
         internal int InstalledDestinationState
         {get{var value=Volatile.Read(ref installedDestination);return value==null?-1:(int)value.State;}}
         bool ContinueInstalledRelativeCleanup()

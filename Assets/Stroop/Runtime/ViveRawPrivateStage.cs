@@ -34,6 +34,9 @@ namespace AvatarStroop.Runtime
         // each claim against participant withdrawal and technical revocation.
         const int IoStopped=1,IoClaimed=2;
         int queuedBytes,queuedFrames,lifecycle,finished,ioState,ioThread,withdrawalRequested,completed,outputStarted;long offeredBytes;
+        int csvConversionOutcome=-1;
+        internal string CsvFailureDiagnostic {get{int value=Volatile.Read(ref csvConversionOutcome);
+            return value<0?"csv_not_finished":"csv_"+((ViveRawReadableAnalysisCsv.Outcome)value).ToString();}}
         ViveRawSessionReadResult source;bool sinkMatched;
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
         Func<ViveRawPrivateStage,Stream> syntheticAsyncTarget;
@@ -562,6 +565,7 @@ namespace AvatarStroop.Runtime
                     else
 #endif
                     result=ViveRawReadableAnalysisCsv.Write(input,output,maxBytes,25000000,csvLimit,revoked);
+                    Volatile.Write(ref csvConversionOutcome,(int)result);
                     if(result!=ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed||input.ReadBytes!=expected.VerifiedBytes||
                         !String.Equals(input.Digest,expected.VerifiedPrefixChainDigestHex,StringComparison.Ordinal)||
                         authority.PrivateStageStopped(authorityKey)||revoked.IsCancellationRequested)return false;

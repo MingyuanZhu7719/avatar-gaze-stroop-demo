@@ -30,6 +30,7 @@ namespace AvatarStroop.Runtime
             internal abstract bool DirectoryCleanupPending {get;}
             internal abstract bool SourceCloseReturned {get;}
             internal abstract int InstalledDestinationState {get;}
+            internal virtual string OutputFailureDiagnostic {get{return "none";}}
         }
         sealed class RawWriter : Writer
         {
@@ -51,6 +52,7 @@ namespace AvatarStroop.Runtime
             internal override bool DirectoryCleanupPending {get{return sink.DirectoryCleanupPending;}}
             internal override bool SourceCloseReturned {get{return sink.SourceCloseReturned;}}
             internal override int InstalledDestinationState {get{return sink.InstalledDestinationState;}}
+            internal override string OutputFailureDiagnostic {get{return sink.OutputFailureDiagnostic;}}
             internal bool InstalledRelativeCompletionPending {get{return sink.InstalledRelativeCompletionPending;}}
 #if VIVE_RAW_SYNTHETIC_TEST && VIVE_SYNTHETIC_BATCH_FIXTURE && !UNITY_5_3_OR_NEWER
             internal bool SyntheticRelativeCompletionPending {get{return sink.SyntheticRelativeCompletionPending;}}
@@ -108,7 +110,7 @@ namespace AvatarStroop.Runtime
         internal string FailureSnapshot {get{return "pump="+(Volatile.Read(ref firstFault)??"none")+
             "; admission="+(admission.FirstFault??"none")+"; io="+(admission.IoFence.FirstFault??"none")+
             "; terminal="+Volatile.Read(ref terminal)+"; admissionState="+admission.State+
-            "; fence="+admission.IoFence.CompletionOutcome;}}
+            "; fence="+admission.IoFence.CompletionOutcome+"; output="+writer.OutputFailureDiagnostic;}}
         internal void NoteFirstFault(string code){Interlocked.CompareExchange(ref firstFault,code,null);}
         internal ViveProEyeWorker.RecordingRunRead ReadExactWorkerRun(ViveProEyeWorker candidate)
         {

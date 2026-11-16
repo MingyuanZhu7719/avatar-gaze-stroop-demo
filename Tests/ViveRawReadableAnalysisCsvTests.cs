@@ -105,7 +105,14 @@ namespace AvatarStroop.Tests
                 using(var input=new MemoryStream(ViveRawTrialProjectionTests.FourBlocks(),false))using(var output=new MemoryStream())
                 // The fixed schema header now includes native timing/AOI
                 // columns. Allow it to start, then exhaust the output budget.
-                {Check.Equal(ViveRawReadableAnalysisCsv.Outcome.OutputUncertain,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,4194304,5000,65536,CancellationToken.None));}
+                {Check.Equal(ViveRawReadableAnalysisCsv.Outcome.OutputLimitExceeded,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,4194304,5000,65536,CancellationToken.None));}
+            });
+            suite.Run("readable analysis identifies a header budget failure without publishing bytes",()=>{
+                using(var input=new MemoryStream(ViveRawTrialProjectionTests.FourBlocks(),false))using(var output=new MemoryStream())
+                {
+                    Check.Equal(ViveRawReadableAnalysisCsv.Outcome.OutputLimitExceeded,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,4194304,5000,1024,CancellationToken.None));
+                    Check.Equal(0L,input.Position);Check.Equal(0L,output.Length);
+                }
             });
             suite.Run("readable analysis rejects property failure and respects closed scanner gate",()=>{
                 using(var input=new FailingProperty())using(var output=new MemoryStream())

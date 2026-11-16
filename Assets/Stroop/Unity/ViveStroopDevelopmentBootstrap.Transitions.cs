@@ -83,17 +83,19 @@ namespace AvatarStroop.Unity
             Run(()=>{participant.OwnerBeginPractice(Actor.Owner);if(practicePreview!=null)practicePreview.OnPracticeStarted();});
             return true;
         }
-        // Task completion is distinct from file durability. This only allows
-        // a thank-you animation on the isolated, input-free hold layer.
-        internal bool NormalRawCompletionReady
+        // A completed task can thank the wearer while CSV conversion and eye
+        // cleanup continue. This input-free hold-layer presentation makes no
+        // recording-success claim; the desktop keeps the actual I/O result.
+        // In particular, an export fault must not send a finished participant
+        // back to an actionless "Task on hold" screen.
+        internal bool CompletedTaskThankYouReady
         {
             get
             {
                 var task=participant;var pump=namedRawPump;
-                return task!=null&&task.Completed&&rawCompletionRequested&&pump!=null&&
-                    pump.State==ViveNamedRawRecordingPump.Outcome.CloseCallsReturned&&
-                    !rawInstallFailed&&!rawSafetyLatched&&!rawWithdrawalRequested&&!pump.WithdrawalRequested&&
-                    task.NamedRawRevocation!=null&&!task.NamedRawRevocation.IsRevoked&&
+                return task!=null&&task.Completed&&rawCompletionRequested&&
+                    !rawInstallFailed&&!rawWithdrawalRequested&&(pump==null||!pump.WithdrawalRequested)&&
+                    task.NamedRawRevocation!=null&&
                     !task.NamedRawRevocation.ParticipantWithdrawalRequested&&!RawPresentationBoundaryPending;
             }
         }

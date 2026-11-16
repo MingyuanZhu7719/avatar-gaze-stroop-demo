@@ -15,7 +15,12 @@ namespace AvatarStroop.Unity
         readonly GameObject root;
         readonly TextMesh text;
         readonly Transform completionSparks;
-        readonly Material coolSpark,warmSpark;
+        const int BurstCount=6,RaysPerBurst=16,TrailSegments=3;
+        readonly Material[] sparkMaterials=new Material[BurstCount*TrailSegments];
+        static readonly Vector2[] burstCentres={new Vector2(-.61f,.36f),new Vector2(.61f,.36f),
+            new Vector2(-.57f,-.36f),new Vector2(.57f,-.36f),new Vector2(-.24f,.64f),new Vector2(.24f,.64f)};
+        static readonly Color[] burstColours={new Color(.36f,.86f,.96f),new Color(1f,.80f,.36f),
+            new Color(1f,.49f,.52f),new Color(.77f,.60f,1f),new Color(.46f,.95f,.72f),new Color(.51f,.68f,1f)};
         bool completed;
         bool blockCompleted;
         double completionElapsed,practiceRemaining=Double.NaN;
@@ -43,14 +48,15 @@ namespace AvatarStroop.Unity
                 renderer.shadowCastingMode=ShadowCastingMode.Off;renderer.receiveShadows=false;
                 completionSparks=new GameObject("GentleCompletionFireworks").transform;
                 completionSparks.gameObject.layer=Layer;completionSparks.SetParent(root.transform,false);
-                coolSpark=new Material(Shader.Find("AvatarStroop/WorldSpaceOverlay")){color=new Color(.61f,.77f,.79f)};
-                warmSpark=new Material(Shader.Find("AvatarStroop/WorldSpaceOverlay")){color=new Color(.84f,.73f,.51f)};
-                for(int burst=0;burst<2;burst++)for(int ray=0;ray<10;ray++)
+                var shader=Shader.Find("AvatarStroop/WorldSpaceOverlay");
+                for(int burst=0;burst<BurstCount;burst++)for(int trail=0;trail<TrailSegments;trail++)
+                    sparkMaterials[burst*TrailSegments+trail]=new Material(shader){color=burstColours[burst]};
+                for(int burst=0;burst<BurstCount;burst++)for(int ray=0;ray<RaysPerBurst;ray++)for(int trail=0;trail<TrailSegments;trail++)
                 {
-                    var spark=GameObject.CreatePrimitive(PrimitiveType.Quad);spark.name="Spark"+burst+"_"+ray;
+                    var spark=GameObject.CreatePrimitive(PrimitiveType.Quad);spark.name="Spark"+burst+"_"+ray+"_"+trail;
                     spark.layer=Layer;spark.transform.SetParent(completionSparks,false);
                     var collider=spark.GetComponent<Collider>();if(collider!=null)UnityEngine.Object.DestroyImmediate(collider);
-                    var mesh=spark.GetComponent<MeshRenderer>();mesh.sharedMaterial=burst==0?coolSpark:warmSpark;
+                    var mesh=spark.GetComponent<MeshRenderer>();mesh.sharedMaterial=sparkMaterials[burst*TrailSegments+trail];
                     mesh.shadowCastingMode=ShadowCastingMode.Off;mesh.receiveShadows=false;
                 }
                 completionSparks.gameObject.SetActive(false);
@@ -71,12 +77,13 @@ namespace AvatarStroop.Unity
             bool celebrating=!stopped&&completed;
             bool practice=!stopped&&!controllerUnavailable&&!celebrating&&!Double.IsNaN(practiceRemaining)&&practiceRemaining>=0;
             text.text=stopped?"Task blocked.\nCheck recording status on the desktop.":
-                celebrating?(blockCompleted?"Block complete!\nWell done. A few questions are next.":"Thank you!\nYou have completed all blocks."):
+                celebrating?(blockCompleted?"Block complete!\nWell done. A few questions are next.":
+                    completionElapsed<6?"All blocks complete!\nWell done!":"Thank you for participating!\nYou may remove the headset."):
                 controllerUnavailable?"Controller view unavailable.\nCheck controller tracking and the desktop.":
                 practice?"Practice starts in\n"+Math.Max(1,Math.Ceiling(practiceRemaining))+"\n"+practiceInstruction:
                 "Task on hold.\nCheck the desktop for the next step.";
-            // The same muted, six-second radial animation as the ordinary
-            // completion panel; it never re-opens the task's camera layers.
+            // Staggered coloured bursts and short fading trails surround a
+            // clear text area. No full-screen flashes or task camera layers.
             LayoutCompletionFireworks(celebrating,completionElapsed);
             text.characterSize=practice?.015f*(1+.035f*Mathf.Sin((float)(practiceRemaining%1)*Mathf.PI)):.012f;
             oldClear=camera.clearFlags;oldBackground=camera.backgroundColor;active=true;
@@ -89,17 +96,31 @@ namespace AvatarStroop.Unity
         {
             bool visible=celebration&&elapsed>=0&&elapsed<6;
             completionSparks.gameObject.SetActive(visible);if(!visible)return;
-            for(int burst=0;burst<2;burst++)
+            for(int burst=0;burst<BurstCount;burst++)
             {
-                float age=(float)((elapsed+.45+burst*.7)%3)/3;
-                float radius=.025f+.135f*age,size=.016f*Mathf.Sin(age*Mathf.PI);
-                for(int ray=0;ray<10;ray++)
+                // Slow expansion/fade, a short quiet interval, and staggered
+                // onset avoid simultaneous flashes. The final fade reaches
+                // zero before the six-second presentation boundary.
+                double sinceStart=elapsed-burst*.22;
+                float age=sinceStart<0?-1:(float)(sinceStart%2.6)/2;
+                float envelope=age>=0&&age<=1?Mathf.Sin(age*Mathf.PI):0;
+                float ending=Mathf.Clamp01((float)(6-elapsed)/.55f);
+                for(int trail=0;trail<TrailSegments;trail++)
                 {
-                    float angle=(ray*36+burst*18)*Mathf.Deg2Rad;
-                    var spark=completionSparks.GetChild(burst*10+ray);
-                    spark.localPosition=new Vector3((burst==0?-.38f:.38f)+Mathf.Cos(angle)*radius,.13f+Mathf.Sin(angle)*radius-age*age*.025f,-.006f);
+                    var tint=burstColours[burst];tint.a=envelope*ending*(1-trail*.28f);
+                    sparkMaterials[burst*TrailSegments+trail].color=tint;
+                }
+                for(int ray=0;ray<RaysPerBurst;ray++)for(int trail=0;trail<TrailSegments;trail++)
+                {
+                    float angle=(ray*(360f/RaysPerBurst)+burst*13)*Mathf.Deg2Rad;
+                    float trailAge=Mathf.Clamp01(age-trail*.045f);
+                    float radius=.02f+.16f*(1-(1-trailAge)*(1-trailAge));
+                    float size=.024f*envelope*ending*(1-trail*.22f);
+                    var spark=completionSparks.GetChild((burst*RaysPerBurst+ray)*TrailSegments+trail);
+                    spark.localPosition=new Vector3(burstCentres[burst].x+Mathf.Cos(angle)*radius,
+                        burstCentres[burst].y+Mathf.Sin(angle)*radius-trailAge*trailAge*.02f,-.006f);
                     spark.localRotation=Quaternion.Euler(0,0,angle*Mathf.Rad2Deg-90);
-                    spark.localScale=new Vector3(size*.65f,size*1.5f,1);
+                    spark.localScale=new Vector3(size*.60f,size*1.4f,1);
                 }
             }
         }
@@ -117,7 +138,7 @@ namespace AvatarStroop.Unity
         public void Dispose()
         {
             if(disposed)return;EndRender();disposed=true;DestroyRoot();
-            foreach(var material in new[]{coolSpark,warmSpark})if(material!=null)
+            foreach(var material in sparkMaterials)if(material!=null)
             {if(Application.isPlaying)UnityEngine.Object.Destroy(material);else UnityEngine.Object.DestroyImmediate(material);}
         }
     }

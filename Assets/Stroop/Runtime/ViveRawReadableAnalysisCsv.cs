@@ -13,7 +13,8 @@ namespace AvatarStroop.Runtime
     // This component opens no paths and cannot grant any of those authorities.
     internal static class ViveRawReadableAnalysisCsv
     {
-        internal enum Outcome { WrittenAndFlushed, Rejected, Cancelled, OutputUncertain }
+        // OutputLimitExceeded also leaves an incomplete private candidate; it is never success.
+        internal enum Outcome { WrittenAndFlushed, Rejected, Cancelled, OutputUncertain, OutputLimitExceeded }
         internal static bool ProductionGateOpen {get{return ViveControlledRecordingBuildPolicy.Available;}}
         static readonly UTF8Encoding Utf8=new UTF8Encoding(false,true);
         // VRAW3/VRAW4 observation fields. Manifest/task rows preserve the
@@ -217,7 +218,7 @@ namespace AvatarStroop.Runtime
             long maximumOutputBytes,CancellationToken cancellation,bool syntheticFixture)
         {
             if(input==null||privateOutput==null||Object.ReferenceEquals(input,privateOutput)||maximumOutputBytes<1024)return Outcome.Rejected;
-            bool started=false,outputFailure=false;long outputBytes=0;
+            bool started=false,outputFailure=false,outputLimitReached=false;long outputBytes=0;
             try
             {
                 cancellation.ThrowIfCancellationRequested();
@@ -226,7 +227,7 @@ namespace AvatarStroop.Runtime
                 var writer=new StreamWriter(privateOutput,Utf8,16384,true);writer.NewLine="\n";
                 Action<string> append=value=>{
                     cancellation.ThrowIfCancellationRequested();
-                    long count=Utf8.GetByteCount(value);if(count>maximumOutputBytes-outputBytes)throw new IOException("Analysis staging limit reached.");
+                    long count=Utf8.GetByteCount(value);if(count>maximumOutputBytes-outputBytes){outputLimitReached=true;throw new IOException("Analysis staging limit reached.");}
                     try{started=true;writer.Write(value);outputBytes+=count;}
                     catch(Exception e) when(!Fatal(e)){outputFailure=true;throw;}
                 };
@@ -257,6 +258,7 @@ namespace AvatarStroop.Runtime
                 append(Meta("excel_limit","EXCEL_VIEW_MAY_TRUNCATE_USE_FULL_CSV_PARSER"));
                 var scan=ViveRawSessionJournalReader.ScanAnalysisRows(input,maximumInputBytes,maximumRecords,cancellation,
                     rows=>append(ConvertFrame(rows)),syntheticFixture);
+                if(outputLimitReached)return Outcome.OutputLimitExceeded;
                 if(outputFailure)return Outcome.OutputUncertain;
                 if(scan.Status!=ViveRawSessionReadStatus.VerifiedPrefix||scan.TrailingFrameTruncated||!scan.CaptureTerminalObserved)
                     return started?Outcome.OutputUncertain:(scan.Status==ViveRawSessionReadStatus.Cancelled?Outcome.Cancelled:Outcome.Rejected);
@@ -275,7 +277,7 @@ namespace AvatarStroop.Runtime
                 return Outcome.WrittenAndFlushed;
             }
             catch(OperationCanceledException){return started?Outcome.OutputUncertain:Outcome.Cancelled;}
-            catch(Exception e) when(!Fatal(e)){return started?Outcome.OutputUncertain:Outcome.Rejected;}
+            catch(Exception e) when(!Fatal(e)){return outputLimitReached?Outcome.OutputLimitExceeded:(started?Outcome.OutputUncertain:Outcome.Rejected);}
         }
     }
 }
