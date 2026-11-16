@@ -33,11 +33,36 @@ namespace AvatarStroop.Tests
                 string resolved=Path.GetFullPath(Root);
                 if(!resolved.StartsWith(parent+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)||Path.GetDirectoryName(resolved)!=parent)
                     throw new InvalidOperationException("Synthetic cleanup target escaped its test workspace.");
-                if(Directory.Exists(resolved))Directory.Delete(resolved,true);
+                if(Directory.Exists(resolved))Directory.Delete(Path.DirectorySeparatorChar=='\\'?@"\\?\"+resolved:resolved,true);
             }
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("study analysis opens long input paths without copying or changing source identity",()=>{
+                using(var files=new Files())
+                {
+                    string directory=files.Root;
+                    while(directory.Length<280)directory=Path.Combine(directory,"long-input-"+new string('x',48));
+                    string path=Path.Combine(directory,"original-participant-recording.csv");
+                    Func<string,string> native=value=>Path.DirectorySeparatorChar=='\\'?@"\\?\"+value:value;
+                    Directory.CreateDirectory(native(directory));byte[] original=File.ReadAllBytes(files.Csv);
+                    File.WriteAllBytes(native(path),original);Check.True(path.Length>260);
+                    string report=StudyAnalysisFiles.Run(new[]{path},files.Output,null,CancellationToken.None);
+                    string provenance=File.ReadAllText(Path.Combine(Path.GetDirectoryName(report),"sources.csv"));
+                    Check.True(provenance.Contains("original-participant-recording.csv"));
+                    Check.True(original.SequenceEqual(File.ReadAllBytes(native(path))));
+                    string baseline=StudyAnalysisFiles.Run(new[]{files.Csv},files.Output,null,CancellationToken.None);
+                    foreach(string table in new[]{"trials.csv","blocks.csv","contrasts.csv","ratings.csv","eye_quality.csv","aoi_observations.csv","event_counts.csv"})
+                        Check.Equal(File.ReadAllText(Path.Combine(Path.GetDirectoryName(baseline),table)),File.ReadAllText(Path.Combine(Path.GetDirectoryName(report),table)),table);
+                    if(Path.DirectorySeparatorChar=='\\')
+                    {
+                        int before=Directory.GetDirectories(files.Output).Length;
+                        using(var writer=new FileStream(native(path),FileMode.Open,FileAccess.ReadWrite,FileShare.None))
+                            Check.Throws<IOException>(()=>StudyAnalysisFiles.Run(new[]{path},files.Output,null,CancellationToken.None));
+                        Check.Equal(before,Directory.GetDirectories(files.Output).Length);
+                    }
+                }
+            });
             suite.Run("study file reports preserve sources and yield identical VRAW CSV analysis tables",()=>{
                 using(var files=new Files())
                 {

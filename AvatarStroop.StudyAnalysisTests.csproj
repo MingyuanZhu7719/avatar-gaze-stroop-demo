@@ -8,6 +8,7 @@
     <Nullable>disable</Nullable>
     <LangVersion>7.3</LangVersion>
     <DefineConstants>$(DefineConstants);STROOP_TEST_BUILD;VIVE_RAW_SYNTHETIC_TEST</DefineConstants>
+    <AppConfig>Apps/StudyAnalyzer.config</AppConfig>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Assets/Stroop/Core/**/*.cs" />

@@ -20,6 +20,15 @@ namespace AvatarStroop.Runtime
     public static class StudyAnalysisFiles
     {
         static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
+        // Keep the normalized original path in provenance and the UI. Windows
+        // extended paths are needed only at the file-open boundary: modern
+        // Framework normalization alone does not opt every host into long
+        // Win32 paths, and an 8.3 alias may expand back past MAX_PATH.
+        static string InputOpenPath(string fullPath)
+        {
+            if(System.IO.Path.DirectorySeparatorChar!='\\'||fullPath.StartsWith(@"\\?\",StringComparison.Ordinal))return fullPath;
+            return fullPath.StartsWith(@"\\",StringComparison.Ordinal)?@"\\?\UNC\"+fullPath.Substring(2):@"\\?\"+fullPath;
+        }
         public static string Run(IEnumerable<string> paths,string outputParent,Action<string> progress,CancellationToken token)
         {
             if(paths==null)throw new ArgumentNullException("paths");
@@ -32,7 +41,7 @@ namespace AvatarStroop.Runtime
                 var source=new StudyAnalysisSource{Path=path,Analysis=new StudyAnalysis()};
                 // FileShare.Read prevents opening an actively written recording
                 // and keeps the exact bytes stable through verification+hashing.
-                using(var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read,65536,FileOptions.SequentialScan))
+                using(var stream=new FileStream(InputOpenPath(path),FileMode.Open,FileAccess.Read,FileShare.Read,65536,FileOptions.SequentialScan))
                 {
                     source.Read=StudyDataReader.Read(stream,System.IO.Path.GetExtension(path),source.Analysis.Accept,token);
                     if(source.Read.Status=="Cancelled")throw new OperationCanceledException(token);

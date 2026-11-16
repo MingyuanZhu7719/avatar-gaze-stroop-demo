@@ -9,6 +9,7 @@
     <LangVersion>7.3</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <StartupObject>AvatarStroop.Apps.StudyAnalyzer</StartupObject>
+    <AppConfig>Apps/StudyAnalyzer.config</AppConfig>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Assets/Stroop/Core/**/*.cs" />

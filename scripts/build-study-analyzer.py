@@ -2,6 +2,7 @@
 """Build the local study analyzer using the installed Unity compiler and Windows CLR."""
 import argparse
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -26,6 +27,10 @@ def main():
     for name, target in (("AvatarStroopAnalyzer.exe", "winexe"), ("AvatarStroopAnalyzer.Cli.exe", "exe")):
         command = compiler_command(mono, csc) + ["-target:" + target, "-main:AvatarStroop.Apps.StudyAnalyzer", "-out:" + str(output / name)]
         subprocess.run(command + [str(p.relative_to(ROOT)) for p in sources], cwd=ROOT, check=True)
+        # The installed compiler does not generate an SDK target-framework
+        # configuration. Both entry points need modern Framework path handling
+        # before Path.GetFullPath and the Windows file picker are initialized.
+        shutil.copyfile(ROOT / "Apps/StudyAnalyzer.config", output / (name + ".config"))
     print(output)
     return 0
 

@@ -45,6 +45,8 @@ namespace AvatarStroop.Unity
             long bytes;int timeout;
             if(!TryParseCsvLimits(csvBudgetMiB,csvCleanupSeconds,out bytes,out timeout))
                 return "Enter a CSV maximum size from 1 to 8192 MiB and cleanup timeout from 1 to 3600 seconds under Advanced storage limits.";
+            if(!String.IsNullOrEmpty(recordingDirectory)&&!ViveCsvPathPolicy.FitsSessionDirectory(recordingDirectory))
+                return ViveCsvPathPolicy.PreparationNotice;
             if(observationOptIn)return "Disable preview observation before recording.";
             return null;
         }

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <StartupObject>AvatarStroop.Tests.StudyAnalyzerPathEntryTests</StartupObject>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>7.3</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DefineConstants>$(DefineConstants);STUDY_ANALYZER_UI_TEST</DefineConstants>
+    <AppConfig>Apps/StudyAnalyzer.config</AppConfig>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Assets/Stroop/Core/**/*.cs" />
+    <Compile Include="Assets/Stroop/Runtime/**/*.cs" />
+    <Compile Include="Apps/StudyAnalyzer.cs" />
+    <Compile Include="Tests/StudyAnalyzerPathEntryTests.cs" />
+  </ItemGroup>
+</Project>

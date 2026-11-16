@@ -19,7 +19,7 @@ namespace AvatarStroop.Tests
                 var b=ViveLocalSessionDirectory.Propose(missing);
                 Check.Equal(missing,a.ParentPath);
                 Check.Equal(missing,Path.GetDirectoryName(a.DirectoryPath));
-                Check.True(Regex.IsMatch(Path.GetFileName(a.DirectoryPath),@"^session-\d{8}T\d{6}Z-[a-f0-9]{32}$"));
+                Check.True(Regex.IsMatch(Path.GetFileName(a.DirectoryPath),@"^s-\d{8}T\d{6}Z-[a-f0-9]{32}$"));
                 Check.True(a.DirectoryPath!=b.DirectoryPath&&!a.Attempted&&!a.Created&&!Directory.Exists(missing));
             });
             suite.Run("two sessions create distinct empty folders without modifying historical outputs",()=>{

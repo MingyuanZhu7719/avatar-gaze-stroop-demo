@@ -25,7 +25,7 @@ namespace AvatarStroop.Runtime
         internal static ViveLocalSessionDirectory Propose(string parent)
         {
             string normalized=ViveRawDirectoryLease.NormalizeCandidate(parent);
-            string name="session-"+DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'",CultureInfo.InvariantCulture)+"-"+Guid.NewGuid().ToString("N");
+            string name="s-"+DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'",CultureInfo.InvariantCulture)+"-"+Guid.NewGuid().ToString("N");
             // Canonical fully qualified path and bounded lexical length,
             // including the generated leaf, before a GUI can arm it.
             string child=ViveRawDirectoryLease.NormalizeCandidate(normalized+"\\"+name);

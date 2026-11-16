@@ -34,6 +34,18 @@ jobs:
       - name: Compile local study data analyzer
         if: runner.os == 'Windows'
         run: dotnet build AvatarStroop.StudyAnalyzer.csproj --configuration Release
+      - name: Verify study analyzer long paths on Windows Framework CLR
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet build AvatarStroop.StudyAnalysisTests.csproj --configuration Release -p:TargetFramework=net48
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./build/dotnet/AvatarStroop.StudyAnalysisTests/Release/net48/AvatarStroop.StudyAnalysisTests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build AvatarStroop.StudyAnalyzerUiTests.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./build/dotnet/AvatarStroop.StudyAnalyzerUiTests/Release/net48/AvatarStroop.StudyAnalyzerUiTests.exe
+          exit $LASTEXITCODE
       - name: Compile Quest Link preview owner window
         if: runner.os == 'Windows'
         run: dotnet build AvatarStroop.DesktopPreview.csproj --configuration Release -p:DefineConstants=QUEST_PREVIEW_LAUNCHER

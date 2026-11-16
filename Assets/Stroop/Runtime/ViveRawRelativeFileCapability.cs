@@ -314,7 +314,7 @@ namespace AvatarStroop.Runtime
                 Interlocked.CompareExchange(ref csvSiblingAttempted,1,0)!=0)
                 throw new InvalidOperationException("Synthetic CSV sibling target is unavailable.");
             var slot=new SiblingSlot{Stage=stage};csvSibling=slot;Keep();
-            string name="vstage-"+Guid.NewGuid().ToString("N")+".partial.csv";
+            string name=ViveCsvPathPolicy.StageFileName(Guid.NewGuid());
             int status=0;ulong information=0;
             if(!stage.HasCurrentTargetClaim(admission,fence))throw new IOException("Synthetic CSV create reservation stopped.");
             Native.Open(name,directory,0x00100083,0,2,0x00200060,ref slot.Handle,out status,out information);

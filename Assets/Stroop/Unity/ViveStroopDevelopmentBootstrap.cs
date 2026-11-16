@@ -835,6 +835,7 @@ namespace AvatarStroop.Unity
             try
             {
                 string path=receipt.UnverifiedPath;
+                if(!ViveCsvPathPolicy.FitsExistingFile(path))throw new System.IO.PathTooLongException();
                 if(String.IsNullOrEmpty(path)||!System.IO.Path.IsPathRooted(path)||
                     !String.Equals(System.IO.Path.GetExtension(path),".csv",StringComparison.OrdinalIgnoreCase)||!System.IO.File.Exists(path))
                     throw new System.IO.FileNotFoundException("The saved CSV is no longer available.");
@@ -847,7 +848,8 @@ namespace AvatarStroop.Unity
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
             {
-                namedCsvCandidateNotice=error is System.IO.FileNotFoundException?
+                namedCsvCandidateNotice=error is System.IO.PathTooLongException?ViveCsvPathPolicy.OpenNotice:
+                    error is System.IO.FileNotFoundException?
                     "The saved CSV could not be found. It may have been moved or deleted.":
                     "Could not open CSV. Check the default app for .csv files in Windows, then click Open CSV again.";
             }

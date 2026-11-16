@@ -1,11 +1,13 @@
 # Local study data analyzer
 
-`AvatarStroopAnalyzer.exe` is a Windows desktop tool for completed participant-local **VRAW** recordings and their **readable analysis CSV** exports. It runs locally with the installed Windows .NET Framework; no account, Python installation or upload is needed. The separate fixed-target validation CSV is a different schema and is rejected with a message.
+`AvatarStroopAnalyzer.exe` is a Windows desktop tool for completed participant-local **VRAW** recordings and their **readable analysis CSV** exports. It runs locally with the installed Windows .NET Framework 4.8; no account, Python installation or upload is needed. The separate fixed-target validation CSV is a different schema and is rejected with a message.
+
+Keep each executable with its matching `.exe.config` file when moving the analyzer package. Both the GUI and CLI support original input paths longer than 260 characters without moving or copying recordings; Windows extended-path handling is confined to opening the original read-only stream, and source names and hashes remain unchanged.
 
 ## Use
 
 1. Finish the participant session and allow recording/export cleanup to complete.
-2. Open the analyzer, select one or more completed files, and choose an output parent directory. Select **one file per session**: VRAW is preferred because its record chain can be checked. Selecting both the VRAW and its CSV would duplicate a session and is rejected.
+2. Open the analyzer, select one or more completed files, and choose an output parent directory. If the Windows picker rejects a long path, paste the full path into **完整路径** and click **添加路径**; quoted paths copied from Explorer are accepted. Select **one file per session**: VRAW is preferred because its record chain can be checked. Selecting both the VRAW and its CSV would duplicate a session and is rejected.
 3. Click **开始分析**, then **打开报告**. Each successful run creates a new `StroopAnalysis-*` folder. Input files are opened read-only. Rejected, incomplete or cancelled reads do not publish a report.
 
 The report links to these tables:

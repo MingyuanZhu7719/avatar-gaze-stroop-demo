@@ -57,6 +57,8 @@ namespace AvatarStroop.Unity
         {
             if(rawStartIntent!=null||!RawStartCanBeRequested(legacy,output,csv))return;
             if(csv&&(csvBytes<1024||csvBytes>ViveRawByteBudget.MaximumSupportedBytes||csvTimeout<1||csvTimeout>3600000))return;
+            if(csv&&!ViveCsvPathPolicy.FitsSessionDirectory(recordingSetup.DirectoryPath))
+            {message=ViveCsvPathPolicy.PreparationNotice;return;}
             consentAutoStartNotice=null;
             double taskPoll,eyePoll,now;
             if(!recordingSetup.TryGetObservedTimes(sharedClock,out taskPoll,out eyePoll)||!sharedClock.TryReadRecordingAdmissionTime(out now))return;
