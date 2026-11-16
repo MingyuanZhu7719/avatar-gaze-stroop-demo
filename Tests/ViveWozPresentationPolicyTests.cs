@@ -48,7 +48,7 @@ namespace AvatarStroop.Tests
                 Input(participant,true,ink);Input(participant);
             }
             participant.OwnerConfirmNamedPlan(Actor.Owner,"test-owner");participant.OwnerBeginBlock(Actor.Owner);
-            clock.Now+=3;participant.Tick();Input(participant);
+            clock.Now+=participant.CountdownDurationSeconds;participant.Tick();Input(participant);
             Check.Equal(Phase.MainTask,participant.Phase);
             return participant;
         }

@@ -48,7 +48,7 @@ namespace AvatarStroop.Core
         {
             long values=512;foreach(var list in lists)values+=2L*list.Length;
             values+=practice==null?0:2L*practice.Length;
-            values+=18L*(trials.Count+1)+6L*ratings.Count;
+            values+=19L*(trials.Count+1)+6L*ratings.Count;
             return checked(8192+160*values);
         }
 
@@ -61,6 +61,7 @@ namespace AvatarStroop.Core
             vals.Add(Configuration.CountdownSeconds);vals.Add(Configuration.MinimumRestSeconds);vals.Add(Configuration.SkipFinalRest);
             vals.Add(Configuration.QuestionnaireInstructionSeconds);vals.Add(Configuration.QuestionnaireInstructionRequiresAcknowledgement);
             vals.Add(Configuration.ParticipantPacedRest);vals.Add(Configuration.RetainControlAcrossBlocks);
+            vals.Add(Configuration.ResponseRule);
             vals.Add(Configuration.Allocation.AllocationId);vals.Add(Configuration.Allocation.BInitialTarget);
             foreach(var allocationCondition in Configuration.Allocation.Order)vals.Add(allocationCondition);
             foreach(var list in Configuration.Allocation.ListByBlock)vals.Add(list);
@@ -92,6 +93,7 @@ namespace AvatarStroop.Core
             values.Add(trial.TrialId);values.Add(trial.SessionId);values.Add(trial.ListId);values.Add(trial.IsPractice);values.Add(trial.PracticeAttempt);
             values.Add(trial.BlockIndex);values.Add(trial.PlannedIndex);values.Add(trial.Segment);values.Add(trial.Condition.HasValue?(int?)(int)trial.Condition.Value:null);
             values.Add(trial.Stimulus==null?(int?)null:(int)trial.Stimulus.Word);values.Add(trial.Stimulus==null?(int?)null:(int)trial.Stimulus.Ink);
+            values.Add(trial.ResponseRule);
             values.Add(trial.Onset);values.Add(trial.ResponseAt);values.Add(trial.Response.HasValue?(int?)(int)trial.Response.Value:null);values.Add(trial.Correct);values.Add((int)trial.Outcome);values.Add(trial.TechnicalIssue);
         }
         // Compare against an immutable snapshot without reboxing/copying the
@@ -127,7 +129,7 @@ namespace AvatarStroop.Core
         internal bool MatchesMutationSnapshot(ExperimentMutationSnapshot snapshot)
         {
             if(snapshot==null)return false;
-            int baseline=13+4+4;foreach(var list in lists)baseline+=2*list.Length;
+            int baseline=14+4+4;foreach(var list in lists)baseline+=2*list.Length;
             var m=new MutationMatcher(snapshot,baseline);
             m.Check((int)Phase);m.Check(BlockIndex);m.Check(Segment);m.Check(PracticeAttempt);m.Check(practiceCorrect);
             m.Check(questionIndex);m.Check(trialIndex);m.Check((int)beforePause);m.Check(resumeCountdown);m.Check(questionnaireInstructionPending);
@@ -147,6 +149,7 @@ namespace AvatarStroop.Core
             m.Check(trial.TrialId);m.Check(trial.SessionId);m.Check(trial.ListId);m.Check(trial.IsPractice);m.Check(trial.PracticeAttempt);
             m.Check(trial.BlockIndex);m.Check(trial.PlannedIndex);m.Check(trial.Segment);m.Check(trial.Condition.HasValue?(int?)(int)trial.Condition.Value:null);
             m.Check(trial.Stimulus==null?(int?)null:(int)trial.Stimulus.Word);m.Check(trial.Stimulus==null?(int?)null:(int)trial.Stimulus.Ink);
+            m.Check(trial.ResponseRule);
             m.Check(trial.Onset);m.Check(trial.ResponseAt);m.Check(trial.Response.HasValue?(int?)(int)trial.Response.Value:null);m.Check(trial.Correct);m.Check((int)trial.Outcome);m.Check(trial.TechnicalIssue);
         }
     }

@@ -30,7 +30,9 @@ namespace AvatarStroop.Tests
                         writer.Write(e.BlockIndex);writer.Write(e.Segment);Text(writer,e.TrialId);Text(writer,e.Kind);
                         Text(writer,e.NamedOption==null?null:e.NamedOption.Option.ToString());
                         Text(writer,e.NamedPlan==null?null:e.NamedPlan.PlanId);writer.Write(e.NamedBlock==null?-1:e.NamedBlock.Index);
-                        var keys=new List<string>(e.Fields.Keys);keys.Sort(StringComparer.Ordinal);writer.Write(keys.Count);
+                        // Preserve the historical field subset. New sessions add
+                        // explicit rule/answer declarations, covered separately.
+                        var keys=new List<string>(e.Fields.Keys);keys.Remove("response_rule");keys.Remove("expected_response");keys.Sort(StringComparer.Ordinal);writer.Write(keys.Count);
                         foreach(var key in keys){Text(writer,key);Text(writer,e.Fields[key]);}
                     }
                 }
@@ -58,6 +60,9 @@ namespace AvatarStroop.Tests
                 config=SessionConfiguration.NamedPlanDevelopment("synthetic-named-v2",42,ViveNamedSimulationPlan.Select(Actor.Owner,"synthetic-plan",n,a));
             }
             else throw new ArgumentOutOfRangeException("fixture");
+            // Recreate the historical three-second schedule without changing
+            // the current product defaults or public immutable configuration.
+            typeof(SessionConfiguration).GetProperty("CountdownSeconds").SetValue(config,3d,null);
             var experiment=new Experiment(config,clock);experiment.BeginFamiliarization(Actor.Owner);experiment.BeginPractice(Actor.Owner);
             for(int i=0;i<8;i++)Answer(experiment,clock);
             if(fixture==2)experiment.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");else experiment.LockBlock(Actor.Owner,ControlSelection.Automatic,"synthetic-owner");

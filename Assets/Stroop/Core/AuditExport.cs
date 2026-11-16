@@ -295,12 +295,12 @@ namespace AvatarStroop.Core
                 Add(events,c,context,"session_engine",ev.Sequence,ev.Time,ev.ClockId,ev.Kind);
                 foreach(var field in ev.Fields) Add(fields,c,context,"session_engine",ev.Sequence,field.Key,field.Value);
             }
-            var trials=New(tables,"trials.csv","is_practice,practice_attempt,condition,list_id,seed,planned_index,word,ink,congruent,outcome,stimulus_onset_recorded,onset_seconds,response_seconds,response,correct,reaction_seconds,technical_issue,selected_control,stimulus_timestamp_semantics,response_timestamp_semantics");
+            var trials=New(tables,"trials.csv","is_practice,practice_attempt,condition,list_id,seed,planned_index,word,ink,congruent,outcome,stimulus_onset_recorded,onset_seconds,response_seconds,response,correct,reaction_seconds,technical_issue,selected_control,stimulus_timestamp_semantics,response_timestamp_semantics,response_rule,expected_response");
             foreach(var tr in e.Trials)
                 Add(trials,c,new AuditContext(tr.BlockIndex,tr.Segment,tr.TrialId),"task_response",tr.IsPractice,tr.PracticeAttempt,tr.Condition,tr.ListId,c.Seed,tr.PlannedIndex,
                     tr.Stimulus.Word,tr.Stimulus.Ink,tr.Stimulus.Congruent,tr.Outcome,tr.Onset.HasValue,tr.Onset,tr.ResponseAt,tr.Response,
                     tr.Outcome == TrialOutcome.Responded ? tr.Correct : null,tr.Outcome == TrialOutcome.Responded ? tr.ReactionSeconds : null,tr.TechnicalIssue,
-                    tr.IsPractice ? null : Selection(selected,tr.BlockIndex),provenance.StimulusTimestampSemantics,provenance.ResponseTimestampSemantics);
+                    tr.IsPractice ? null : Selection(selected,tr.BlockIndex),provenance.StimulusTimestampSemantics,provenance.ResponseTimestampSemantics,tr.ResponseRule,tr.ExpectedResponse);
             var ratings=New(tables,"ratings.csv","condition,item_id,value,time_seconds,language,item_version");
             foreach(var rating in e.Ratings)
             {

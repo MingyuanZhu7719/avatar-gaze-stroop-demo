@@ -155,6 +155,7 @@ namespace AvatarStroop.Runtime
                 RecordField(output,ref bytes,"trial",i,"practice_attempt",Int(t.Attempt));RecordField(output,ref bytes,"trial",i,"block_index",Int(t.Block));
                 RecordField(output,ref bytes,"trial",i,"planned_index",Int(t.Planned));RecordField(output,ref bytes,"trial",i,"segment",Int(t.Segment));
                 RecordField(output,ref bytes,"trial",i,"word",t.Word.ToString());RecordField(output,ref bytes,"trial",i,"ink",t.Ink.ToString());
+                RecordField(output,ref bytes,"trial",i,"response_rule",t.ResponseRule.ToString());RecordField(output,ref bytes,"trial",i,"expected_response",t.ExpectedResponse.ToString());
                 RecordField(output,ref bytes,"trial",i,"onset_local_seconds",Number(t.Onset));RecordField(output,ref bytes,"trial",i,"response_local_seconds",Number(t.ResponseAt));
                 RecordField(output,ref bytes,"trial",i,"response",t.Response.HasValue?t.Response.Value.ToString():null);
                 RecordField(output,ref bytes,"trial",i,"correct",t.Correct.HasValue?t.Correct.Value.ToString():null);

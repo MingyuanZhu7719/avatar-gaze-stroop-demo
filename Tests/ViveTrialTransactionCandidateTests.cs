@@ -321,7 +321,7 @@ namespace AvatarStroop.Tests
                         throw new InvalidOperationException("Synthetic practice did not advance at index "+i);
                 }
                 Check.Equal(Phase.BlockPreparation,participant.Phase);participant.OwnerConfirmNamedPlan(Actor.Owner,"synthetic-owner");
-                participant.OwnerBeginBlock(Actor.Owner);Thread.Sleep(3100);participant.Tick();Trackpad(participant,false);
+                participant.OwnerBeginBlock(Actor.Owner);Thread.Sleep((int)(participant.CountdownDurationSeconds*1000)+100);participant.Tick();Trackpad(participant,false);
                 Check.Equal(Phase.MainTask,participant.Phase);var trial=participant.CurrentTrial;ViveTrialOpenRequest request;
                 Check.True(ViveTrialOpenRequest.TryCapture(participant,clock,out request));
                 Check.Equal(trial.TrialId,request.Trial);Check.Equal(0,request.Block);Check.Equal(0,request.PlannedIndex);

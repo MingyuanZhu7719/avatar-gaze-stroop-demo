@@ -42,7 +42,7 @@ namespace AvatarStroop.Core
                 var c=experiment.Configuration;
                 if(!Append("session_configuration",Fields("seed",c.Seed,"allocation_id",c.Allocation.AllocationId,
                     "condition_order",String.Join("",Array.ConvertAll(c.Allocation.Order,x=>x.ToString())),"b_initial_target",c.Allocation.BInitialTarget,
-                    "list_by_block",String.Join(";",c.Allocation.ListByBlock),"countdown_seconds",c.CountdownSeconds,"questionnaire_language",c.QuestionnaireLanguage)))return false;
+                    "list_by_block",String.Join(";",c.Allocation.ListByBlock),"countdown_seconds",c.CountdownSeconds,"questionnaire_language",c.QuestionnaireLanguage,"response_rule",c.ResponseRule)))return false;
                 for(int block=0;block<4;block++)if(!Append("allocation",Fields("block_index",block,"condition",c.Allocation.Order[block],"list_index",c.Allocation.ListByBlock[block],
                     "list_id",TrialPlans.MainListId(c.Seed,c.Allocation.ListByBlock[block]),"seed",c.Seed)))return false;
                 var gaze=audit.ParticipantGaze;
@@ -71,7 +71,7 @@ namespace AvatarStroop.Core
                 TrialRecord tr;if(!trials.TryGetValue(id,out tr))continue;
                 var f=Context(tr.BlockIndex,tr.Segment,tr.TrialId);string selection;
                 Put(f,"is_practice",tr.IsPractice,"practice_attempt",tr.PracticeAttempt,"condition",tr.Condition,"list_id",tr.ListId,"seed",experiment.Configuration.Seed,
-                    "planned_index",tr.PlannedIndex,"word",tr.Stimulus.Word,"ink",tr.Stimulus.Ink,"congruent",tr.Stimulus.Congruent,"outcome",tr.Outcome,
+                    "planned_index",tr.PlannedIndex,"word",tr.Stimulus.Word,"ink",tr.Stimulus.Ink,"response_rule",tr.ResponseRule,"expected_response",tr.ExpectedResponse,"congruent",tr.Stimulus.Congruent,"outcome",tr.Outcome,
                     "stimulus_onset_recorded",tr.Onset.HasValue,"onset_seconds",tr.Onset,"response_seconds",tr.ResponseAt,"response",tr.Response,
                     "correct",tr.Outcome==TrialOutcome.Responded?tr.Correct:null,"reaction_seconds",tr.Outcome==TrialOutcome.Responded?tr.ReactionSeconds:null,
                     "technical_issue",tr.TechnicalIssue,"selected_control",!tr.IsPractice&&selected.TryGetValue(tr.BlockIndex,out selection)?selection:null,

@@ -58,7 +58,7 @@ namespace AvatarStroop.Core
         public double QuestionnaireInstructionRemainingSeconds { get { return Configuration.QuestionnaireInstructionRequiresAcknowledgement?0:Remaining(Phase.Questionnaire,ratingAt,Configuration.QuestionnaireInstructionSeconds); } }
         public bool QuestionnaireInstructionPending { get { return InPhaseOrPaused(Phase.Questionnaire)&&questionnaireInstructionPending&&
             (Configuration.QuestionnaireInstructionRequiresAcknowledgement||PhaseTime()<ratingAt+Configuration.QuestionnaireInstructionSeconds); } }
-        public bool QuestionnaireInputReady { get { return Phase==Phase.Questionnaire&&(Configuration.QuestionnaireInstructionRequiresAcknowledgement?
+        public bool QuestionnaireInputReady { get { return Phase==Phase.Questionnaire&&!BlockCelebrationPending&&(Configuration.QuestionnaireInstructionRequiresAcknowledgement?
             !questionnaireInstructionPending:Time()>=ratingAt+Configuration.QuestionnaireInstructionSeconds); } }
         public bool ReadyEnabled { get { return Phase == Phase.Rest && (Configuration.ParticipantPacedRest||Time() >= restAt + Configuration.MinimumRestSeconds); } }
         public bool RetainedSourceContinuationPending { get { return BlockIndex>0&&Phase==Phase.BlockReady&&((Configuration.NamedPlan!=null&&namedOptionConfirmed)||(Configuration.RetainControlAcrossBlocks&&LockedControl.HasValue)); } }
@@ -478,7 +478,7 @@ namespace AvatarStroop.Core
             TraceMutation();
             if((Phase != Phase.Practice && Phase != Phase.MainTask) || current == null || !current.Onset.HasValue || current.Outcome != TrialOutcome.Pending)
                 return false;
-            current.SetResponseAt(trialAuthority,Time());TraceMutation(); current.SetResponse(trialAuthority,colour);TraceMutation(); current.SetCorrect(trialAuthority,colour == current.Stimulus.Ink);TraceMutation();
+            current.SetResponseAt(trialAuthority,Time());TraceMutation(); current.SetResponse(trialAuthority,colour);TraceMutation(); current.SetCorrect(trialAuthority,colour == current.ExpectedResponse);TraceMutation();
             current.SetResponded(trialAuthority);TraceMutation();
             Log("first_response", "response", colour.ToString(), "correct", current.Correct.Value.ToString(),
                 "onset", Number(current.Onset.Value), "rt_seconds", Number(current.ReactionSeconds.Value));
@@ -512,6 +512,7 @@ namespace AvatarStroop.Core
         void RateCore(int value)
         {
             Require(Phase.Questionnaire);
+            if(BlockCelebrationPending)throw new InvalidOperationException("Wait for the block celebration before answering questions");
             if(value < 1 || value > 5) throw new ArgumentOutOfRangeException("value");
             double now=Time();
             if(Configuration.QuestionnaireInstructionRequiresAcknowledgement?questionnaireInstructionPending:now<ratingAt+Configuration.QuestionnaireInstructionSeconds)
@@ -520,9 +521,9 @@ namespace AvatarStroop.Core
                     "Wait for the questionnaire control instructions to finish before selecting a rating");
             CompleteQuestionnaireInstruction(now);
             var item=Questionnaire.Id(questionIndex);
-            ratings.Add(new RatingRecord(BlockIndex,item,value,now,Configuration.QuestionnaireLanguage,Questionnaire.Version));
+            ratings.Add(new RatingRecord(BlockIndex,item,value,now,Configuration.QuestionnaireLanguage,Questionnaire.VersionFor(Configuration.ResponseRule)));
             TraceMutation();
-            Log("rating", "item", item, "value", value.ToString(), "language", Configuration.QuestionnaireLanguage, "version", Questionnaire.Version);
+            Log("rating", "item", item, "value", value.ToString(), "language", Configuration.QuestionnaireLanguage, "version", Questionnaire.VersionFor(Configuration.ResponseRule));
             questionIndex++;TraceMutation();
             if(questionIndex == Questionnaire.Count)
             {
@@ -554,7 +555,7 @@ namespace AvatarStroop.Core
         }
         bool AcknowledgeQuestionnaireInstructionCore()
         {
-            if(Phase!=Phase.Questionnaire||!Configuration.QuestionnaireInstructionRequiresAcknowledgement||!questionnaireInstructionPending)return false;
+            if(Phase!=Phase.Questionnaire||BlockCelebrationPending||!Configuration.QuestionnaireInstructionRequiresAcknowledgement||!questionnaireInstructionPending)return false;
             questionnaireInstructionPending=false;TraceMutation();
             Log("questionnaire_instruction_completed","completion_policy","explicit_participant_acknowledgement",
                 "observed_elapsed_seconds",Number(Time()-ratingAt));
@@ -727,12 +728,14 @@ namespace AvatarStroop.Core
             return new TaskView {
                 Phase=Phase,BlockIndex=BlockIndex,Segment=Segment, TrialId=task && current != null ? current.TrialId : null,
                 Stimulus=task && current != null ? current.Stimulus : null,
+                ResponseRule=Configuration.ResponseRule,
                 OperatorAvatarVisible=actor == Actor.Participant && Phase == Phase.MainTask &&
                     (Configuration.IsNamedDesign ? CurrentNamedSelection!=null&&CurrentNamedSelection.Option!=ViveNamedOption.NoAvatar : CurrentCondition != Condition.D),
                 ParticipantAvatarVisible=actor == Actor.Operator && Phase == Phase.MainTask,
                 OperatorViewProvisional=actor == Actor.Operator && (Configuration.IsNamedDesign || Phase != Phase.MainTask || CurrentCondition == Condition.D),
-                PracticeCorrection=actor == Actor.Participant && Phase == Phase.PracticeCorrection ? "Select the font colour: " + current.Stimulus.Ink : null,
-                QuestionnaireItem=actor == Actor.Participant && Phase == Phase.Questionnaire ? Questionnaire.Item(questionIndex,Configuration.QuestionnaireLanguage) : null,
+                PracticeCorrection=actor == Actor.Participant && Phase == Phase.PracticeCorrection ?
+                    (Configuration.ResponseRule==ResponseRule.WordMeaning?"Select the colour named by the word: ":"Select the font colour: ")+current.ExpectedResponse : null,
+                QuestionnaireItem=actor == Actor.Participant && Phase == Phase.Questionnaire ? Questionnaire.Item(questionIndex,Configuration.QuestionnaireLanguage,Configuration.ResponseRule) : null,
                 ReadyEnabled=ReadyEnabled,
                 SourceContinuationPending=RetainedSourceContinuationPending,
                 SourceLabel=Configuration.IsNamedDesign&&CurrentNamedSelection!=null&&CurrentNamedSelection.Option==ViveNamedOption.NoAvatar ? "NO AVATAR - SOURCE NOT APPLICABLE" :
@@ -752,7 +755,7 @@ namespace AvatarStroop.Core
                 Configuration.SessionId,isPractice?"practice-"+Configuration.Seed+"-"+PracticeAttempt:TrialPlans.MainListId(Configuration.Seed,listIndex),
                 isPractice,isPractice?PracticeAttempt:0,isPractice?-1:BlockIndex,trialIndex,Segment,isPractice||Configuration.IsNamedDesign?null:CurrentCondition,
                 isPractice?practice[trialIndex]:lists[listIndex][trialIndex],Configuration.NamedPlan==null?Configuration.NamedOption:null,
-                Configuration.NamedPlan,isPractice?null:CurrentNamedPlanBlock);TraceMutation();
+                Configuration.NamedPlan,isPractice?null:CurrentNamedPlanBlock,Configuration.ResponseRule);TraceMutation();
             trials.Add(current);TraceMutation();
             // The named recording event captures the planned stimulus before
             // presentation. It is not evidence that the headset displayed it.
@@ -795,7 +798,7 @@ namespace AvatarStroop.Core
         }
         void CompleteQuestionnaireInstruction(double now)
         {
-            if(Configuration.QuestionnaireInstructionRequiresAcknowledgement||Phase!=Phase.Questionnaire||!questionnaireInstructionPending||now<ratingAt+Configuration.QuestionnaireInstructionSeconds)return;
+            if(Configuration.QuestionnaireInstructionRequiresAcknowledgement||Phase!=Phase.Questionnaire||BlockCelebrationPending||!questionnaireInstructionPending||now<ratingAt+Configuration.QuestionnaireInstructionSeconds)return;
             questionnaireInstructionPending=false;TraceMutation();
             Log("questionnaire_instruction_completed","duration_seconds",Number(Configuration.QuestionnaireInstructionSeconds),
                 "observed_elapsed_seconds",Number(now-ratingAt));
@@ -852,6 +855,9 @@ namespace AvatarStroop.Core
         void Log(string kind, params string[] fields)
         {
             var data=new Dictionary<string,string>(); for(int i=0;i<fields.Length;i+=2) data.Add(fields[i],fields[i+1]);
+            data.Add("response_rule",Configuration.ResponseRule.ToString());
+            if(current!=null&&(kind=="trial_planned"||kind=="stimulus_presented"||kind=="first_response"))
+                data.Add("expected_response",current.ExpectedResponse.ToString());
             double now=Time();
             if(Configuration.NamedPlan!=null)
             {

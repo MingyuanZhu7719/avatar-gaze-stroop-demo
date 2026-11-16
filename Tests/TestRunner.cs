@@ -84,6 +84,8 @@ namespace AvatarStroop.Tests
         {
             var suite=new TestSuite(); TrialPlanTests.Register(suite); ExperimentTests.Register(suite);
             PreviewFlowTests.Register(suite);
+            ResponseRuleTests.Register(suite);
+            StudyAnalysisTests.Register(suite);
             AppLanguageTests.Register(suite);
             GazeControlTests.Register(suite);
             FaultTransportTests.Register(suite);
@@ -125,6 +127,7 @@ namespace AvatarStroop.Tests
             VivePracticeJournalV3Tests.Register(suite);
             VivePracticeConsentAuthorityTests.Register(suite);
             VivePracticePreviewCoordinatorTests.Register(suite);
+            VivePracticeCountdownTests.Register(suite);
             VivePracticeWithdrawConsentTests.Register(suite);
             VivePracticeStartBatchTests.Register(suite);
             VivePracticeStartBindingTests.Register(suite);
@@ -221,6 +224,8 @@ namespace AvatarStroop.Tests
             ViveRawPrivateStageTests.Register(suite);
             VivePrivateTargetFactoryRaceTests.Register(suite);
             ViveRawReadableAnalysisCsvTests.Register(suite);
+            StudyDataReaderTests.Register(suite);
+            StudyAnalysisFilesTests.Register(suite);
 #endif
             ViveRawSessionPageTests.Register(suite);
             ViveRawPreparedPlanTests.Register(suite);

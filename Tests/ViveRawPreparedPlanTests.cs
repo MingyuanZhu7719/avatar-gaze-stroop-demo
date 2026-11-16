@@ -42,7 +42,7 @@ namespace AvatarStroop.Tests
             {
                 Check.Equal(Phase.BlockReady,e.Phase);var prepared=e.PrepareNamedRecordingBlockPlan(Actor.Owner,false);
                 Check.True(Object.ReferenceEquals(prepared,e.PrepareNamedRecordingBlockPlan(Actor.Owner,false)));
-                if(block==0)e.BeginCountdown(Actor.Owner,true);else Check.True(e.TryBeginRetainedBlockCountdown(true));clock.Advance(3);e.Tick();
+                if(block==0)e.BeginCountdown(Actor.Owner,true);else Check.True(e.TryBeginRetainedBlockCountdown(true));clock.Advance(e.Configuration.CountdownSeconds);e.Tick();
                 if(block==0&&tracking)
                 {
                     for(int gap=0;gap<2;gap++)
@@ -50,13 +50,13 @@ namespace AvatarStroop.Tests
                         var old=e.CurrentTrial;e.MarkPresented(old.TrialId);clock.Advance(.3);
                         e.RecordRawTrackingGapStart(RawTrackingLoss.ControllerPose,false);clock.Advance(1);
                         Check.Equal(TrialOutcome.Interrupted,old.Outcome);
-                        e.RecordRawTrackingGapEnd(RawTrackingLoss.ControllerPose,true);clock.Advance(3);e.Tick();
+                        e.RecordRawTrackingGapEnd(RawTrackingLoss.ControllerPose,true);clock.Advance(e.Configuration.CountdownSeconds);e.Tick();
                         Check.Equal(old.PlannedIndex,e.CurrentTrial.PlannedIndex);
                         Check.True(e.CurrentTrial.TrialId!=old.TrialId&&!e.CurrentTrial.Onset.HasValue);
                         Check.Equal(old.Stimulus.Word,e.CurrentTrial.Stimulus.Word);
                     }
                 }
-                if(block==1){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);e.Pause(Actor.Participant);clock.Advance(.3);e.Resume(true);clock.Advance(3);e.Tick();}
+                if(block==1){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);e.Pause(Actor.Participant);clock.Advance(.3);e.Resume(true);clock.Advance(e.Configuration.CountdownSeconds);e.Tick();}
                 while(e.Phase==Phase.MainTask){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);var answer=e.CurrentTrial.Stimulus.Ink;Check.True(e.ButtonChanged(answer,true));e.ButtonChanged(answer,false);}
                 Check.Equal(Phase.Questionnaire,e.Phase);Check.True(e.AcknowledgeQuestionnaireInstruction());for(int q=0;q<Questionnaire.Count;q++)e.Rate(q+1);
                 if(block<3)Check.True(e.Ready());

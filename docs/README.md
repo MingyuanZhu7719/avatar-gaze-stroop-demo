@@ -7,6 +7,7 @@ Use the operating guides for a current package, the development guide for source
 | Document | Use it for |
 | --- | --- |
 | [VIVE owner workflow](vive-owner-workflow.md) | Participant setup, practice, formal blocks, controller mapping and opening CSV. |
+| [Local study analyzer](study-analyzer.md) | Windows program for completed VRAW/CSV, behavioural summaries, individual ratings, eye quality and analysis rules. |
 | [Fixed-target eye validation](vive-gaze-validation.md) | Separate recorded accuracy check, target sequence, gaze/AOI summaries and limitations. |
 | [Local recording self-test](controlled-recording-self-test-guide.txt) | Recording choices, short withdrawal checks, complete-session output and storage limits. |
 | [WoZ participant-local recording](woz-participant-local-recording.md) | Separate participant/operator workflow and recording scope. |
@@ -40,6 +41,8 @@ Use the operating guides for a current package, the development guide for source
 | [Diagrams](diagrams.md) | Procedure and control/logging diagrams, with SVG versions in `assets/`. |
 
 Implementation, local development observations and research acceptance are separate. Calibration accuracy, eye/face localization, physical display timing and two-PC WoZ require their own validation.
+
+[TODO](TODO.md) tracks explicitly deferred work, including eye-tracking spatial accuracy.
 
 ## Historical material
 

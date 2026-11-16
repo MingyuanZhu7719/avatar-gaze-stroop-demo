@@ -93,7 +93,7 @@ namespace AvatarStroop.Runtime
                     throw new ArgumentException("Legacy raw recording requires the exact configured geometry and fixed controller mapping, without legacy observation.");
             }
             bool named=configuration.IsNamedDesign;
-            if(configuration.CountdownSeconds!=3||configuration.MinimumRestSeconds!=30||!configuration.SkipFinalRest||
+            if((configuration.CountdownSeconds!=3&&configuration.CountdownSeconds!=5)||configuration.MinimumRestSeconds!=30||!configuration.SkipFinalRest||
                 configuration.QuestionnaireInstructionSeconds!=0||!configuration.QuestionnaireInstructionRequiresAcknowledgement||
                 !configuration.ParticipantPacedRest||(named?configuration.RetainControlAcrossBlocks:!configuration.RetainControlAcrossBlocks))
                 throw new ArgumentException("Use the existing participant-paced preview timing and flow", "configuration");
@@ -1576,6 +1576,10 @@ namespace AvatarStroop.Runtime
         }
         public void Tick()
         {if(observation==null){RunNamedRecordingMutation(TickCore);return;}Observed(TickCore,false);}
+        internal void BeginBlockCelebration()
+        {if(observation==null){RunNamedRecordingMutation(experiment.BeginBlockCelebration);return;}Observed(experiment.BeginBlockCelebration,false);}
+        internal void EndBlockCelebration()
+        {if(observation==null){RunNamedRecordingMutation(experiment.EndBlockCelebration);return;}Observed(experiment.EndBlockCelebration,false);}
         void TickCore()
         {
             if(!inputReady)return;

@@ -5,6 +5,17 @@ using System.Collections.ObjectModel;
 namespace AvatarStroop.Core
 {
     public enum Colour { Red, Green, Blue, Yellow }
+    // Selected once before a session; the stimulus word and rendered ink never change meaning.
+    public enum ResponseRule { InkColor, WordMeaning }
+    public static class ResponseRuleInstructions
+    {
+        public static string Participant(ResponseRule rule)
+        {
+            if(rule==ResponseRule.WordMeaning)return "Read the word and choose the colour it names.";
+            if(rule==ResponseRule.InkColor)return "Choose the font colour; ignore the word's meaning.";
+            throw new ArgumentOutOfRangeException("rule");
+        }
+    }
     public enum Condition { A, B, C, D }
     public enum GazeTarget { Participant, Task }
     public enum Actor { Participant, Operator, Owner }
@@ -119,6 +130,7 @@ namespace AvatarStroop.Core
         internal bool RawEyeRequested {get{return NamedRecordingIntent!=null?NamedRecordingIntent.EyeRequested:LegacyRecordingIntent!=null&&LegacyRecordingIntent.EyeRequested;}}
         public bool IsNamedDesign {get{return namedOption!=null||NamedPlan!=null;}}
         public RunKind RunKind { get; private set; }
+        public ResponseRule ResponseRule { get; private set; }
         public string QuestionnaireLanguage { get; private set; }
         public double CountdownSeconds { get; private set; }
         public double MinimumRestSeconds { get; private set; }
@@ -135,7 +147,7 @@ namespace AvatarStroop.Core
             string questionnaireLanguage, double countdownSeconds, double minimumRestSeconds=30,
             bool skipFinalRest=false, double questionnaireInstructionSeconds=0,
             bool questionnaireInstructionRequiresAcknowledgement=false, bool participantPacedRest=false,
-            bool retainControlAcrossBlocks=false)
+            bool retainControlAcrossBlocks=false, ResponseRule responseRule=ResponseRule.InkColor)
         {
             if (String.IsNullOrWhiteSpace(sessionId) || allocation == null) throw new ArgumentException("Session identity required");
             if (questionnaireLanguage != "en") throw new ArgumentException("New sessions require the approved English questionnaire (en); historical language identifiers are not converted");
@@ -146,6 +158,8 @@ namespace AvatarStroop.Core
             if (Double.IsNaN(questionnaireInstructionSeconds) || Double.IsInfinity(questionnaireInstructionSeconds) || questionnaireInstructionSeconds < 0)
                 throw new ArgumentOutOfRangeException("questionnaireInstructionSeconds", "Questionnaire instruction duration must be finite and nonnegative");
             if (!Enum.IsDefined(typeof(RunKind), runKind)) throw new ArgumentException("Invalid run kind");
+            if (!Enum.IsDefined(typeof(ResponseRule), responseRule)) throw new ArgumentException("Invalid response rule");
+            ResponseRule=responseRule;
             SessionId = sessionId; Seed = seed; Allocation = allocation; RunKind = runKind;
             QuestionnaireLanguage = questionnaireLanguage; CountdownSeconds = countdownSeconds;
             MinimumRestSeconds = minimumRestSeconds; SkipFinalRest = skipFinalRest;
@@ -153,6 +167,13 @@ namespace AvatarStroop.Core
             QuestionnaireInstructionRequiresAcknowledgement = questionnaireInstructionRequiresAcknowledgement;
             ParticipantPacedRest = participantPacedRest;
             RetainControlAcrossBlocks = retainControlAcrossBlocks;
+        }
+        public static SessionConfiguration WithResponseRule(SessionConfiguration configuration,ResponseRule responseRule)
+        {
+            if(configuration==null)throw new ArgumentNullException("configuration");
+            if(!Enum.IsDefined(typeof(ResponseRule),responseRule))throw new ArgumentOutOfRangeException("responseRule");
+            var copy=(SessionConfiguration)configuration.MemberwiseClone();
+            copy.ResponseRule=responseRule;return copy;
         }
         // A copy is configured before Experiment starts. Existing legacy preview remains unchanged.
         public static SessionConfiguration LegacyRecordingDevelopment(SessionConfiguration legacyConfiguration,
@@ -165,7 +186,7 @@ namespace AvatarStroop.Core
             var c=legacyConfiguration;
             var result=new SessionConfiguration(c.SessionId,c.Seed,c.Allocation,c.RunKind,c.QuestionnaireLanguage,c.CountdownSeconds,
                 c.MinimumRestSeconds,c.SkipFinalRest,c.QuestionnaireInstructionSeconds,c.QuestionnaireInstructionRequiresAcknowledgement,
-                c.ParticipantPacedRest,c.RetainControlAcrossBlocks);
+                c.ParticipantPacedRest,c.RetainControlAcrossBlocks,c.ResponseRule);
             result.LegacyRecordingDesign=design;result.LegacyRecordingIntent=intent;return result;
         }
         // Single-block development preview only: it does not define a four-option
@@ -187,7 +208,7 @@ namespace AvatarStroop.Core
         {
             if(String.IsNullOrWhiteSpace(sessionId)||plan==null)throw new ArgumentException("Session and explicit named plan required");
             SessionId=sessionId;Seed=seed;NamedPlan=plan;NamedRecordingIntent=intent;RunKind=RunKind.Simulation;QuestionnaireLanguage="en";
-            CountdownSeconds=3;MinimumRestSeconds=30;SkipFinalRest=true;QuestionnaireInstructionSeconds=0;
+            CountdownSeconds=5;MinimumRestSeconds=30;SkipFinalRest=true;QuestionnaireInstructionSeconds=0;
             QuestionnaireInstructionRequiresAcknowledgement=true;ParticipantPacedRest=true;RetainControlAcrossBlocks=false;
         }
         SessionConfiguration(string sessionId,uint seed,ViveNamedOptionProvenance selection)
@@ -195,7 +216,7 @@ namespace AvatarStroop.Core
             if(String.IsNullOrWhiteSpace(sessionId)||selection==null)throw new ArgumentException("Session and explicit named-option selection required");
             if(selection.Option!=ViveNamedOption.Automatic&&selection.Option!=ViveNamedOption.NoAvatar)throw new InvalidOperationException("Named option unavailable");
             SessionId=sessionId;Seed=seed;NamedOption=selection;RunKind=RunKind.Simulation;QuestionnaireLanguage="en";
-            CountdownSeconds=3;MinimumRestSeconds=30;SkipFinalRest=true;QuestionnaireInstructionSeconds=0;
+            CountdownSeconds=5;MinimumRestSeconds=30;SkipFinalRest=true;QuestionnaireInstructionSeconds=0;
             QuestionnaireInstructionRequiresAcknowledgement=true;ParticipantPacedRest=true;RetainControlAcrossBlocks=false;
         }
     }
@@ -217,6 +238,8 @@ namespace AvatarStroop.Core
         public ViveNamedSimulationPlan NamedPlan {get;private set;}
         public ViveNamedSimulationBlock NamedBlock {get;private set;}
         public Stimulus Stimulus { get; private set; }
+        public ResponseRule ResponseRule { get; private set; }
+        public Colour ExpectedResponse { get { return ResponseRule==ResponseRule.WordMeaning?Stimulus.Word:Stimulus.Ink; } }
         public double? Onset { get; private set; }
         public double? ResponseAt { get; private set; }
         public Colour? Response { get; private set; }
@@ -233,9 +256,11 @@ namespace AvatarStroop.Core
         public TrialRecord(){authority=new object();}
         internal TrialRecord(object authority,string trialId,string sessionId,string listId,bool isPractice,int practiceAttempt,
             int blockIndex,int plannedIndex,int segment,Condition? condition,Stimulus stimulus,ViveNamedOptionProvenance namedOption=null,
-            ViveNamedSimulationPlan namedPlan=null,ViveNamedSimulationBlock namedBlock=null)
+            ViveNamedSimulationPlan namedPlan=null,ViveNamedSimulationBlock namedBlock=null,ResponseRule responseRule=ResponseRule.InkColor)
         {
             if(authority==null)throw new ArgumentNullException("authority");
+            if(!Enum.IsDefined(typeof(ResponseRule),responseRule))throw new ArgumentOutOfRangeException("responseRule");
+            ResponseRule=responseRule;
             if((namedOption!=null&&condition.HasValue)||(namedPlan==null&&namedBlock!=null))throw new ArgumentException("Invalid named-option trial provenance");
             if(namedPlan!=null&&(condition.HasValue||namedOption!=null||(!isPractice&&(namedBlock==null||!Object.ReferenceEquals(namedBlock.Plan,namedPlan)||namedBlock.Index!=blockIndex))||(isPractice&&namedBlock!=null)))
                 throw new ArgumentException("Named plan trial requires its actual block or an unassigned practice");
@@ -320,6 +345,7 @@ namespace AvatarStroop.Core
         public int Segment {get;internal set;}
         public string TrialId { get; internal set; }
         public Stimulus Stimulus { get; internal set; }
+        public ResponseRule ResponseRule { get; internal set; }
         public bool OperatorAvatarVisible { get; internal set; }
         public bool ParticipantAvatarVisible { get; internal set; }
         public bool OperatorViewProvisional { get; internal set; }

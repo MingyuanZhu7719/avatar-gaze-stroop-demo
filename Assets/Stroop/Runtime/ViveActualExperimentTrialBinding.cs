@@ -37,7 +37,7 @@ namespace AvatarStroop.Runtime
             // Reconstruct only from the immutable producer copy, never from
             // Experiment.CurrentTrial or other live mutable references.
             object key=new object();var record=new TrialRecord(key,value.TrialId,value.SessionId,value.ListId,value.IsPractice,value.PracticeAttempt,
-                value.BlockIndex,value.PlannedIndex,value.Segment,value.Condition,new Stimulus(value.Word,value.Ink));
+                value.BlockIndex,value.PlannedIndex,value.Segment,value.Condition,new Stimulus(value.Word,value.Ink),responseRule:value.ResponseRule);
             if(value.Onset.HasValue)record.SetOnset(key,value.Onset.Value);
             if(value.ResponseAt.HasValue)record.SetResponseAt(key,value.ResponseAt.Value);
             if(value.Response.HasValue)record.SetResponse(key,value.Response.Value);

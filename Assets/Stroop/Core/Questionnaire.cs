@@ -5,6 +5,7 @@ namespace AvatarStroop.Core
     public static class Questionnaire
     {
         public const string Version = "custom-five-items-2026-10-26";
+        public const string WordMeaningVersion = "custom-five-items-word-meaning-2026-11-16";
         static readonly string[] ids = { "focus", "distraction", "observed", "evaluated", "negative_evaluation_worry" };
         static readonly string[] en = {
             "During this block, I kept my attention on selecting the font colour.",
@@ -17,8 +18,18 @@ namespace AvatarStroop.Core
         public const int Count = 5;
         public static string Id(int index) { ValidateIndex(index); return ids[index]; }
         public static string Item(int index, string language)
+        {return Item(index,language,ResponseRule.InkColor);}
+        public static string VersionFor(ResponseRule rule)
         {
-            ValidateIndex(index); ValidateLanguage(language); return en[index];
+            if(rule==ResponseRule.WordMeaning)return WordMeaningVersion;
+            if(rule==ResponseRule.InkColor)return Version;
+            throw new ArgumentOutOfRangeException("rule");
+        }
+        public static string Item(int index,string language,ResponseRule rule)
+        {
+            ValidateIndex(index); ValidateLanguage(language);VersionFor(rule);
+            return rule==ResponseRule.WordMeaning&&index<2?
+                en[index].Replace("selecting the font colour","selecting the colour named by the word"):en[index];
         }
         public static string Instruction(string language)
         {

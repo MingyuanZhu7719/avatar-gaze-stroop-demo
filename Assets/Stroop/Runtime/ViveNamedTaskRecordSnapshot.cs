@@ -14,6 +14,8 @@ namespace AvatarStroop.Runtime
             internal readonly bool Practice,TechnicalIssue;
             internal readonly int Attempt,Block,Planned,Segment;
             internal readonly Colour Word,Ink;
+            internal readonly ResponseRule ResponseRule;
+            internal readonly Colour ExpectedResponse;
             internal readonly double? Onset,ResponseAt,ReactionSeconds;
             internal readonly Colour? Response;
             internal readonly bool? Correct;
@@ -25,6 +27,7 @@ namespace AvatarStroop.Runtime
                 if(r==null||r.Stimulus==null)throw new InvalidOperationException();
                 Id=r.TrialId;Session=r.SessionId;List=r.ListId;Practice=r.IsPractice;Attempt=r.PracticeAttempt;
                 Block=r.BlockIndex;Planned=r.PlannedIndex;Segment=r.Segment;Word=r.Stimulus.Word;Ink=r.Stimulus.Ink;
+                ResponseRule=r.ResponseRule;ExpectedResponse=r.ExpectedResponse;
                 Onset=r.Onset;ResponseAt=r.ResponseAt;ReactionSeconds=r.ReactionSeconds;Response=r.Response;Correct=r.Correct;
                 Outcome=r.Outcome;TechnicalIssue=r.TechnicalIssue;Named=r.NamedOption;Plan=r.NamedPlan;NamedBlock=r.NamedBlock;
             }

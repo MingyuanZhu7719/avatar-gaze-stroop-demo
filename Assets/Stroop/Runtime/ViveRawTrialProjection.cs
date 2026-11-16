@@ -9,6 +9,7 @@ namespace AvatarStroop.Runtime
     // verified prefix, not reconstructed true presentation or trial validity.
     internal sealed class ViveRawObservedTrial
     {
+        internal readonly string ResponseRule,ExpectedResponse;
         internal readonly string TrialId,PlannedList,PlannedIndex,PlannedStimulusSchema,PlannedWord,PlannedInk,PresentedList,PresentedIndex,Word,Ink,Response,DeclaredCorrect,DeclaredOnset,DeclaredReactionSeconds,InterruptionActor,InterruptionReason,InterruptionOnsetAvailable;
         // Declared software evidence, not a hardware onset or an inferred
         // replacement for an absent field in a legacy event.
@@ -35,6 +36,7 @@ namespace AvatarStroop.Runtime
             PlannedList=x.List;PlannedIndex=x.Index;PlannedStimulusSchema=x.StimulusSchema;PlannedWord=x.PlannedWord;PlannedInk=x.PlannedInk;
             PresentedList=x.PresentedList;PresentedIndex=x.PresentedIndex;Word=x.Word;Ink=x.Ink;Response=x.Response;
             DeclaredCorrect=x.Correct;DeclaredOnset=x.Onset;DeclaredReactionSeconds=x.Reaction;
+            ResponseRule=x.ResponseRule;ExpectedResponse=x.ExpectedResponse;
             DeclaredPresentationTaskOnset=x.PresentationTaskOnset;DeclaredPresentationTaskClock=x.PresentationTaskClock;DeclaredPresentationTaskBasis=x.PresentationTaskBasis;
             DeclaredUnityRenderSeconds=x.UnityRenderSeconds;DeclaredUnityRenderClock=x.UnityRenderClock;DeclaredUnityRenderFrame=x.UnityRenderFrame;
             DeclaredUnityRenderRevision=x.UnityRenderRevision;DeclaredUnityRenderBasis=x.UnityRenderBasis;
@@ -122,6 +124,7 @@ namespace AvatarStroop.Runtime
         internal sealed class ProjectionWithheld:Exception {}
         internal sealed class Trial
         {
+            internal string ResponseRule,ExpectedResponse;
             internal string Id,List,Index,StimulusSchema,PlannedWord,PlannedInk,PresentedList,PresentedIndex,Word,Ink,Response,Correct,Onset,Reaction,InterruptionActor,InterruptionReason,InterruptionOnsetAvailable;
             internal string PresentationTaskOnset,PresentationTaskClock,PresentationTaskBasis,UnityRenderSeconds,UnityRenderClock,UnityRenderFrame,UnityRenderRevision,UnityRenderBasis;
             internal int Block,Segment,Planned,Presented,Responded,Interrupted;
@@ -199,6 +202,14 @@ namespace AvatarStroop.Runtime
             if(!byId.TryGetValue(id,out trial))
             {if(trials.Count>=MaxTrials)throw new ProjectionLimit();trial=new Trial{Id=Keep(id),Block=block,Segment=segment};byId.Add(trial.Id,trial);trials.Add(trial);}
             else if(trial.Block!=block||trial.Segment!=segment)trial.Conflict=true;
+            string rule=Field(fields,"response_rule"),expectedResponse=Field(fields,"expected_response");
+            if(rule!=null)
+            {if((rule!="InkColor"&&rule!="WordMeaning")||(trial.ResponseRule!=null&&trial.ResponseRule!=rule))trial.Conflict=true;
+                if(trial.ResponseRule==null)trial.ResponseRule=rule;}
+            if(expectedResponse!=null)
+            {if((expectedResponse!="Red"&&expectedResponse!="Green"&&expectedResponse!="Blue"&&expectedResponse!="Yellow")||
+                    (trial.ExpectedResponse!=null&&trial.ExpectedResponse!=expectedResponse))trial.Conflict=true;
+                if(trial.ExpectedResponse==null)trial.ExpectedResponse=expectedResponse;}
             if(kind=="trial_planned")
             {if(trial.Planned++==0){trial.PlannedAt=time;trial.PlannedSequence=sequence;trial.List=Field(fields,"list");trial.Index=Field(fields,"planned_index");
                 trial.StimulusSchema=Field(fields,"planned_stimulus_schema");trial.PlannedWord=Field(fields,"planned_word");trial.PlannedInk=Field(fields,"planned_ink");}}
@@ -238,6 +249,9 @@ namespace AvatarStroop.Runtime
             {
                 if(trial.Word!=null&&!String.Equals(trial.PlannedWord,trial.Word,StringComparison.Ordinal))trial.Conflict=true;
                 if(trial.Ink!=null&&!String.Equals(trial.PlannedInk,trial.Ink,StringComparison.Ordinal))trial.Conflict=true;
+                if(trial.ExpectedResponse!=null&&
+                    ((trial.ResponseRule=="InkColor"&&trial.ExpectedResponse!=trial.PlannedInk)||
+                     (trial.ResponseRule=="WordMeaning"&&trial.ExpectedResponse!=trial.PlannedWord)))trial.Conflict=true;
             }
         }
         internal void ObserveStatus(ViveProEyeWorker.ObservedEyeStatus status)

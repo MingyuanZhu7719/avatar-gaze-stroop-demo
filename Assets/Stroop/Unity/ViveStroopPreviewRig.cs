@@ -42,6 +42,8 @@ namespace AvatarStroop.Unity
         ViveStartupView startupView;
         ViveRawHoldView rawHoldView;
         bool rawHoldViewUnavailable;
+        bool practiceCountdownRenderPending;
+        bool blockCelebrationRenderPending;
         uint presenceEpoch;
         bool hasPresenceEpoch,hasHeadDevice;
         InputDevice headDevice;
@@ -230,17 +232,29 @@ namespace AvatarStroop.Unity
             // Ensure an interrupted prior render cannot leave the neutral layer
             // in a later task or other-camera render pass.
             if(rawHoldView!=null)rawHoldView.EndRender();
+            practiceCountdownRenderPending=false;
+            blockCelebrationRenderPending=false;
             GuardRawTaskBeforeCull(camera);
             RefreshTrackedWandVisual(camera);
             if(camera==null||camera!=previewCamera||camera.cullingMask!=0||rawHoldViewUnavailable||
-                !RawInstallFailure&&(development==null||!development.NamedRawPumpAttached)||
+                !RawInstallFailure&&(development==null||!development.NamedRawPumpAttached&&!development.TransitionVisible)||
                 development!=null&&development.RawPresentationBoundaryPending)return;
             try
             {
                 if(!RawHoldPoseCurrent())return;
                 if(rawHoldView==null)rawHoldView=new ViveRawHoldView(camera);
-                rawHoldView.BeginRender(camera,true,RawInstallFailure||development!=null&&development.RawSafetyNoticeActive,
-                    ControllerVisualUnavailable);
+                bool celebration=development!=null&&development.NormalRawCompletionReady&&rawEyeCleanupObserved&&rawEyeCleanupSafe;
+                bool practice=development!=null&&development.PracticeCountdownVisible&&XrFocused&&!ControllerVisualUnavailable;
+                if(practice)rawHoldView.SetPracticeInstruction(development.PracticeResponseInstruction);
+                // Each block has already had its six-second celebration.
+                // Final cleanup shows the thank-you without repeating D.
+                rawHoldView.SetTransition(celebration,6,
+                    practice?development.PracticeCountdownRemaining:Double.NaN);
+                bool block=development!=null&&development.BlockCelebrationVisible&&XrFocused;
+                if(block)rawHoldView.SetBlockCompletion(development.BlockCelebrationElapsed);
+                bool stopped=RawInstallFailure||development!=null&&development.RawSafetyNoticeActive;
+                bool shown=rawHoldView.BeginRender(camera,true,stopped,ControllerVisualUnavailable);
+                practiceCountdownRenderPending=shown&&!stopped&&practice;blockCelebrationRenderPending=shown&&!stopped&&block;
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
             {
@@ -251,7 +265,14 @@ namespace AvatarStroop.Unity
             }
         }
         void AfterRawHoldCameraRender(Camera camera)
-        {if(camera==previewCamera&&rawHoldView!=null)rawHoldView.EndRender();}
+        {
+            if(camera!=previewCamera||rawHoldView==null)return;
+            if(practiceCountdownRenderPending&&camera.cullingMask==ViveRawHoldView.Mask&&development!=null)
+                development.ObservePracticeCountdownRender();
+            if(blockCelebrationRenderPending&&camera.cullingMask==ViveRawHoldView.Mask&&development!=null)
+                development.ObserveBlockCelebrationRender();
+            practiceCountdownRenderPending=false;blockCelebrationRenderPending=false;rawHoldView.EndRender();
+        }
         void DisposeRawHoldView()
         {if(rawHoldView!=null){rawHoldView.Dispose();rawHoldView=null;}}
         bool RawHoldPoseCurrent()
@@ -843,6 +864,11 @@ namespace AvatarStroop.Unity
                     {
                         if(!development.PresentationBlocked&&!development.DrainNamedRawTaskEvents())development.FailNamedRawAfterTask();
                         previewCamera.cullingMask=0;return;
+                    }
+                    if(development!=null&&development.TransitionVisible)
+                    {
+                        if(development.NamedRawPumpAttached&&!development.DrainNamedRawTaskEvents())development.FailNamedRawAfterTask();
+                        BlockTaskPresentation();return;
                     }
                     if(development!=null&&development.NamedRawInputBoundaryPending)
                     {

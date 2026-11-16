@@ -109,6 +109,7 @@ namespace AvatarStroop.Runtime
                 Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"practice_attempt",N(t.Attempt));Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"block_index",N(t.Block));
                 Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"planned_index",N(t.Planned));Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"segment",N(t.Segment));
                 Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"word",t.Word.ToString());Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"ink",t.Ink.ToString());
+                Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"response_rule",t.ResponseRule.ToString());Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"expected_response",t.ExpectedResponse.ToString());
                 Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"onset_local_seconds",T(t.Onset));Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"response_local_seconds",T(t.ResponseAt));
                 Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"response",t.Response.HasValue?t.Response.Value.ToString():null);
                 Field(rb,ref rbytes,ref rrows,RecordSchema,"trial",i,"correct",t.Correct.HasValue?t.Correct.Value.ToString():null);

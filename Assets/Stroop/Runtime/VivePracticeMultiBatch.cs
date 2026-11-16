@@ -142,6 +142,14 @@ namespace AvatarStroop.Runtime
                 if(m.Position!=m.Length)throw new InvalidDataException();return new JournalEvent(seq,time,clock,session,block,segment,trial,kind,fields);
             }
         }
+        // Old events have no rule; new task events declare one without changing
+        // the practice envelope. Unknown declarations are never discounted.
+        static int RuleAdjustedFieldCount(IReadOnlyDictionary<string,string> fields)
+        {
+            string rule;
+            if(!fields.TryGetValue("response_rule",out rule))return fields.Count;
+            return rule=="InkColor"||rule=="WordMeaning"?fields.Count-1:-1;
+        }
         internal static bool ValidTask(JournalEvent e,VivePracticeContextV3 context,int segment,long lastSequence,double lastTime,bool afterCompletion,bool completionPassed,bool afterEnd,bool boundaryReached)
         {
             if(e!=null&&(e.CarriesNamedProvenance||e.CarriesLegacyRawProvenance))return false;
@@ -155,21 +163,21 @@ namespace AvatarStroop.Runtime
                     Enum.TryParse(from,false,out previous)&&Enum.IsDefined(typeof(Phase),previous)&&previous.ToString()==from&&previous!=Phase.Ended&&
                     e.Fields.TryGetValue("to",out to)&&to=="Ended"&&
                     (!(afterCompletion&&context.PracticeAttempt==2&&!completionPassed)||
-                        (e.TrialId==null&&e.Fields.Count==2&&(from=="Practice"||from=="PracticeCorrection")));
+                        (e.TrialId==null&&RuleAdjustedFieldCount(e.Fields)==2&&(from=="Practice"||from=="PracticeCorrection")));
             }
             if(afterCompletion)
             {
                 if(context.PracticeAttempt==2&&!completionPassed)
                 {
                     string reason,detail;
-                    return e.Kind=="session_ended"&&e.BlockIndex==-1&&e.TrialId==null&&e.Fields.Count==2&&
+                    return e.Kind=="session_ended"&&e.BlockIndex==-1&&e.TrialId==null&&RuleAdjustedFieldCount(e.Fields)==2&&
                         e.Fields.TryGetValue("reason",out reason)&&reason=="PracticeFailed"&&
                         e.Fields.TryGetValue("detail",out detail)&&detail=="two_practice_attempts_below_6_of_8";
                 }
                 string from,to;
                 return e.Kind=="phase_changed"&&e.Fields.TryGetValue("from",out from)&&(from=="Practice"||from=="PracticeCorrection")&&
                     e.Fields.TryGetValue("to",out to)&&(completionPassed?(e.BlockIndex==0&&to=="BlockPreparation"):(e.BlockIndex==-1&&to=="PracticeRetry"))&&
-                    (context.PracticeAttempt!=2||(e.TrialId==null&&e.Fields.Count==2));
+                    (context.PracticeAttempt!=2||(e.TrialId==null&&RuleAdjustedFieldCount(e.Fields)==2));
             }
             if(e.BlockIndex!=-1)return false;
             // Attempt two cannot enter a terminal phase in Active without its
@@ -181,7 +189,7 @@ namespace AvatarStroop.Runtime
                 if(!e.Fields.TryGetValue("from",out from)||!Enum.TryParse(from,false,out parsedFrom)||
                     !Enum.IsDefined(typeof(Phase),parsedFrom)||parsedFrom.ToString()!=from||
                     !e.Fields.TryGetValue("to",out to)||!Enum.TryParse(to,false,out parsedTo)||
-                    !Enum.IsDefined(typeof(Phase),parsedTo)||parsedTo.ToString()!=to||e.Fields.Count!=2||
+                    !Enum.IsDefined(typeof(Phase),parsedTo)||parsedTo.ToString()!=to||RuleAdjustedFieldCount(e.Fields)!=2||
                     !((parsedFrom==Phase.Practice&&(parsedTo==Phase.Practice||parsedTo==Phase.PracticeCorrection||parsedTo==Phase.Paused))||
                       (parsedFrom==Phase.PracticeCorrection&&(parsedTo==Phase.Practice||parsedTo==Phase.Paused))))return false;
             }
@@ -189,7 +197,7 @@ namespace AvatarStroop.Runtime
             if(context.PracticeAttempt==2&&e.Kind=="session_ended")
             {
                 string reason,detail;
-                if(e.Fields.Count!=2||!e.Fields.TryGetValue("reason",out reason)||
+                if(RuleAdjustedFieldCount(e.Fields)!=2||!e.Fields.TryGetValue("reason",out reason)||
                     (reason!="Withdrawn"&&reason!="TechnicalEnd")||!e.Fields.TryGetValue("detail",out detail)||
                     (reason=="Withdrawn"&&detail!="participant_withdrawal")||
                     (reason=="TechnicalEnd"&&String.IsNullOrWhiteSpace(detail)))return false;
@@ -202,7 +210,7 @@ namespace AvatarStroop.Runtime
         {
             passed=false;string attempt,correct,planned;int count;
             if(e==null||e.Fields==null||context==null||(context.PracticeAttempt!=1&&context.PracticeAttempt!=2)||
-                (context.PracticeAttempt==2&&(e.Fields.Count!=3||String.IsNullOrWhiteSpace(e.TrialId)))||!e.Fields.TryGetValue("attempt",out attempt)||
+                (context.PracticeAttempt==2&&(RuleAdjustedFieldCount(e.Fields)!=3||String.IsNullOrWhiteSpace(e.TrialId)))||!e.Fields.TryGetValue("attempt",out attempt)||
                 attempt!=context.PracticeAttempt.ToString(CultureInfo.InvariantCulture)||!e.Fields.TryGetValue("planned",out planned)||planned!="8"||!e.Fields.TryGetValue("correct_first",out correct)||
                 !Int32.TryParse(correct,NumberStyles.None,CultureInfo.InvariantCulture,out count)||count<0||count>8||count.ToString(CultureInfo.InvariantCulture)!=correct)return false;
             passed=count>=6;return true;

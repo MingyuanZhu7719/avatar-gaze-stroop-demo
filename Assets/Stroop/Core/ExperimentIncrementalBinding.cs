@@ -25,7 +25,7 @@ namespace AvatarStroop.Core
         {return incrementalMutationJournal!=null&&incrementalMutationJournal.IsCurrent(revision);}
 
         internal int IncrementalBaselineValueCount()
-        {int result=13+4+4;foreach(var list in lists)result+=2*list.Length;return result;}
+        {int result=14+4+4;foreach(var list in lists)result+=2*list.Length;return result;}
         ExperimentIncrementalScalars CaptureIncrementalScalars()
         {
             int mask=0;for(int i=0;i<MutationColours.Length;i++)if(held.Contains(MutationColours[i]))mask|=1<<i;

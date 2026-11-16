@@ -98,8 +98,31 @@ namespace AvatarStroop.Unity.Editor
                     (camera.cullingMask&(1<<stimulus.layer))==0,
                     "controller-unavailable notice altered the neutral hold boundary");
                 Call(hold,"EndRender");
+                Call(hold,"SetTransition",false,0.0,5.0);
+                Call(hold,"SetPracticeInstruction","Choose the colour named by the word.");
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Practice starts in\n5")&&
+                    text.text.Contains("named by the word")&&camera.cullingMask==holdMask,
+                    "practice countdown omitted five-second warning or response rule");
+                var sparks=(Transform)Get(hold,"completionSparks");
+                Require(!sparks.gameObject.activeSelf,"practice warning leaked celebration");
+                Call(hold,"EndRender");
+                Call(hold,"SetBlockCompletion",1.0);
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Block complete!")&&sparks.gameObject.activeSelf,
+                    "completed block has no fireworks before questionnaire");
+                var firstSpark=sparks.GetChild(0).localPosition;Call(hold,"EndRender");
+                Call(hold,"SetBlockCompletion",2.0);Call(hold,"BeginRender",camera,true,false);
+                Require(sparks.GetChild(0).localPosition!=firstSpark,"fireworks are not animated");
+                foreach(var mesh in sparks.GetComponentsInChildren<Renderer>(true))
+                    Require(mesh.gameObject.layer==display.layer,"fireworks escaped the isolated hold layer");
+                Call(hold,"EndRender");
+                Call(hold,"SetTransition",true,6.0,Double.NaN);
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Thank you!")&&!sparks.gameObject.activeSelf,
+                    "final thank-you repeats fireworks after D or omits completion wording");
+                Call(hold,"EndRender");
+                Call(hold,"SetBlockCompletion",1.0);
                 Require((bool)Call(hold,"BeginRender",camera,true,true,true)&&text.text.Contains("Task blocked"),
                     "terminal stop was displayed as a routine hold");
+                Require(!sparks.gameObject.activeSelf,"fault/withdrawal incorrectly received fireworks");
                 UnityEngine.Object.DestroyImmediate(cameraObject);cameraObject=null;
                 hold.Dispose();hold.Dispose();hold=null;
                 Require(display==null,"destroyed camera retained its hold object");

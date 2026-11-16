@@ -4,6 +4,8 @@ Unity development software for a VR Stroop task with automatic or live operator-
 
 Start with the [VIVE owner workflow](docs/vive-owner-workflow.md) to run a built package, or the [development guide](docs/development.md) to build and test the source. The [documentation index](docs/README.md) separates operating instructions, implementation details, and research requirements.
 
+Use the [local study analyzer](docs/study-analyzer.md) to read completed VRAW/CSV recordings and produce behavioural, questionnaire and eye-quality tables. Deferred eye-accuracy work is tracked in [TODO](docs/TODO.md).
+
 ## Current capabilities
 
 | Component | Current scope |
@@ -29,6 +31,8 @@ The [experiment design](docs/experiment-design.md) defines the research baseline
 6. After normal completion and file closure, use **Open CSV** to open the session CSV in the Windows default application.
 
 The fixed trackpad mapping is up/red, right/green, down/blue, left/yellow. In questionnaires, up/down changes the rating and trigger confirms. The [self-test guide](docs/controlled-recording-self-test-guide.txt) covers setup, withdrawal checks, output limits and completed-session verification. The [WoZ guide](docs/woz-participant-local-recording.md) covers the separate two-PC path.
+
+Choose **Ink colour** or **Word meaning** before configuring the session. Ink colour remains the default; Word meaning answers RED shown in green with red. The rule stays fixed through practice and all blocks and is recorded in task events. Practice and each block begin with a five-second countdown; each completed block shows fireworks before its questionnaire.
 
 For the separate accuracy check, choose **Fixed-target eye validation** before configuring a task. The [validation guide](docs/vive-gaze-validation.md) explains target timing, the recorded files and interpretation. Its completion message is not an accuracy pass.
 

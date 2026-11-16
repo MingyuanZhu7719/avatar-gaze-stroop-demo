@@ -112,10 +112,10 @@ namespace AvatarStroop.Tests
             });
             suite.Run("VRAW3 task frame size matches actual practice and main plan events",()=>{
                 var f=new Fixture();var clock=new Clock();var e=new Experiment(SessionConfiguration.NamedRecordingDevelopment("session",7,f.Plan,f.Intent),clock);
-                e.BeginFamiliarization(Actor.Owner);var practice=e.PrepareNamedRecordingBlockPlan(Actor.Owner,true);Check.Equal(31,practice.Fields.Count);Matches(f,practice);
+                e.BeginFamiliarization(Actor.Owner);var practice=e.PrepareNamedRecordingBlockPlan(Actor.Owner,true);Check.Equal(32,practice.Fields.Count);Matches(f,practice);
                 e.BeginPractice(Actor.Owner);
                 for(int i=0;i<8;i++){e.MarkPresented(e.CurrentTrial.TrialId);clock.Now+=.25;var ink=e.CurrentTrial.Stimulus.Ink;Check.True(e.ButtonChanged(ink,true));e.ButtonChanged(ink,false);}
-                e.ConfirmNamedPlan(Actor.Owner,"owner");var main=e.PrepareNamedRecordingBlockPlan(Actor.Owner,false);Check.Equal(71,main.Fields.Count);Matches(f,main,2);
+                e.ConfirmNamedPlan(Actor.Owner,"owner");var main=e.PrepareNamedRecordingBlockPlan(Actor.Owner,false);Check.Equal(72,main.Fields.Count);Matches(f,main,2);
             });
             suite.Run("VRAW3 task frame measurement enforces field count and UTF8 byte limits",()=>{
                 var f=new Fixture();var fields=f.Fields();while(fields.Count<128)fields.Add("key"+fields.Count,null);

@@ -87,13 +87,13 @@ namespace AvatarStroop.Tests
             suite.Run("experiment mutation matcher rejects missing nonnullable default values",()=>{
                 var c=new Clock();var e=New(c);var valid=e.InitialMutationSnapshot;Check.True(e.MatchesMutationSnapshot(valid));
                 var values=new object[valid.ValueCount];for(int i=0;i<values.Length;i++)values[i]=valid.ValueAt(i);
-                int phaseIndex=13+4+4+2*4*24;values[phaseIndex]=null;
+                int phaseIndex=14+4+4+2*4*24;values[phaseIndex]=null;
                 var bad=new ExperimentMutationSnapshot(valid.Task,valid.Selection,valid.SourceOwner,valid.SourceConfirmationSequence,valid.PausedFrom,values);
                 Check.True(!e.MatchesMutationSnapshot(bad));
             });
             suite.Run("experiment mutation snapshots distinguish timestamp sign bits",()=>{
                 var c=new Clock();var e=New(c);var original=e.InitialMutationSnapshot;
-                var values=new object[original.ValueCount];int firstZero=-1,dynamicStart=13+4+4+2*4*24;
+                var values=new object[original.ValueCount];int firstZero=-1,dynamicStart=14+4+4+2*4*24;
                 for(int i=0;i<values.Length;i++){values[i]=original.ValueAt(i);if(i>=dynamicStart&&firstZero<0&&values[i] is double&&(double)values[i]==0)firstZero=i;}
                 Check.True(firstZero>=0);values[firstZero]=BitConverter.Int64BitsToDouble(unchecked((long)0x8000000000000000UL));
                 var changed=new ExperimentMutationSnapshot(original.Task,original.Selection,original.SourceOwner,original.SourceConfirmationSequence,original.PausedFrom,values);

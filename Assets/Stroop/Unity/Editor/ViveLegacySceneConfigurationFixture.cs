@@ -37,7 +37,7 @@ namespace AvatarStroop.Unity.Editor
             var expected=new[]{Condition.B,Condition.C,Condition.A,Condition.D};
             for(int i=0;i<4;i++){Require(order[i]==expected[i],"BCAD at block "+i);Require(lists[i]==i,"stimulus list at block "+i);}
             Require(preview.Allocation.BInitialTarget==GazeTarget.Participant,"B initially faces Participant");
-            Require(preview.CountdownSeconds==3&&preview.MinimumRestSeconds==30&&preview.SkipFinalRest,"original countdown and rest timing");
+            Require(preview.CountdownSeconds==5&&preview.MinimumRestSeconds==30&&preview.SkipFinalRest,"five-second countdown and rest timing");
             Require(preview.QuestionnaireInstructionSeconds==0&&preview.QuestionnaireInstructionRequiresAcknowledgement,"original questionnaire timing and acknowledgement");
             Require(preview.ParticipantPacedRest&&preview.RetainControlAcrossBlocks,"participant-paced rest and retained source");
             Require(!preview.IsNamedDesign&&preview.NamedPlan==null&&preview.NamedOption==null&&preview.NamedRecordingIntent==null,"preview is not a named alias");

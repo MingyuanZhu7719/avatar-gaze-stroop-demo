@@ -135,6 +135,7 @@ namespace AvatarStroop.Unity
         {
             double now;
             if(sharedClock==null||!sharedClock.TryReadRecordingAdmissionTime(out now))return;
+            ResetPracticeCountdown();
             consentAutoStartNotice=null;
             rawPracticeRequested=true;rawPracticeTask=participant;rawPracticeClock=sharedClock;
             rawPracticePhase=participant.Phase;rawPracticeRequestedAt=now;
@@ -143,6 +144,7 @@ namespace AvatarStroop.Unity
         }
         void ClearRawPracticeRequest()
         {
+            ResetPracticeCountdown();
             rawPracticeRequested=false;rawPracticeTask=null;rawPracticeClock=null;
             if(consentAutoStart!=null&&consentAutoStart.RequestsCaptured)consentAutoStart=null;
             ClearConsentPracticeOrigin();

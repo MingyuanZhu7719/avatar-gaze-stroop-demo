@@ -24,11 +24,16 @@ jobs:
         run: python scripts/test_unity_tools.py
       - name: Compile and run portable regression
         run: dotnet run --project AvatarStroop.Regression.csproj --configuration Release
+      - name: Verify offline study reader and analysis with synthetic files
+        run: dotnet run --project AvatarStroop.StudyAnalysisTests.csproj --configuration Release
       - name: Compile separate development owner console
         run: dotnet build AvatarStroop.OwnerConsole.csproj --configuration Release
       - name: Compile Windows Framework desktop preview owner window
         if: runner.os == 'Windows'
         run: dotnet build AvatarStroop.DesktopPreview.csproj --configuration Release
+      - name: Compile local study data analyzer
+        if: runner.os == 'Windows'
+        run: dotnet build AvatarStroop.StudyAnalyzer.csproj --configuration Release
       - name: Compile Quest Link preview owner window
         if: runner.os == 'Windows'
         run: dotnet build AvatarStroop.DesktopPreview.csproj --configuration Release -p:DefineConstants=QUEST_PREVIEW_LAUNCHER

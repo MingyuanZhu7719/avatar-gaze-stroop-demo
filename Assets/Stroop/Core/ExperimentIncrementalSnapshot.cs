@@ -69,7 +69,7 @@ namespace AvatarStroop.Core
         {
             this.baseline=baseline;this.scalars=scalars;this.practice=practice;this.ratings=ratings;this.trials=trials;
             bool display=scalars.Phase==Phase.MainTask&&scalars.Current.HasValue;
-            Condition? condition=scalars.Block>=0&&scalars.Block<4?(Condition?)((Condition)baseline[13+scalars.Block]):null;
+            Condition? condition=scalars.Block>=0&&scalars.Block<4?(Condition?)((Condition)baseline[14+scalars.Block]):null;
             Task=new TaskSnapshot((string)baseline[0],scalars.Block,scalars.Segment,display?scalars.Current.Value.TrialId:null,
                 display?(Colour?)scalars.Current.Value.Word:null,display?(Colour?)scalars.Current.Value.Ink:null,scalars.Phase,condition);
         }
@@ -82,7 +82,7 @@ namespace AvatarStroop.Core
             values.Add(value.HasValue);if(!value.HasValue)return;var t=value.Value;
             values.Add(t.TrialId);values.Add(t.SessionId);values.Add(t.ListId);values.Add(t.IsPractice);values.Add(t.PracticeAttempt);
             values.Add(t.BlockIndex);values.Add(t.PlannedIndex);values.Add(t.Segment);values.Add(t.Condition.HasValue?(int?)(int)t.Condition.Value:null);
-            values.Add((int?)((int)t.Word));values.Add((int?)((int)t.Ink));values.Add(t.Onset);values.Add(t.ResponseAt);
+            values.Add((int?)((int)t.Word));values.Add((int?)((int)t.Ink));values.Add(t.ResponseRule);values.Add(t.Onset);values.Add(t.ResponseAt);
             values.Add(t.Response.HasValue?(int?)(int)t.Response.Value:null);values.Add(t.Correct);values.Add((int)t.Outcome);values.Add(t.TechnicalIssue);
         }
         // Test-only expansion; production snapshots never materialize a full

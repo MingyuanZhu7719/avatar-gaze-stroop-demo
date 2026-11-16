@@ -26,7 +26,7 @@ namespace AvatarStroop.Tests
             {
                 while(Task.Phase==Phase.Practice)
                 {Task.MarkPresented(Task.CurrentTrial.TrialId);Clock.Now+=.2;var ink=Task.CurrentTrial.Stimulus.Ink;Check.True(Task.ButtonChanged(ink,true));Task.ButtonChanged(ink,false);}
-                Task.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");Task.BeginCountdown(Actor.Owner,true);Clock.Now+=3;Task.Tick();
+                Task.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");Task.BeginCountdown(Actor.Owner,true);Clock.Now+=Task.Configuration.CountdownSeconds;Task.Tick();
                 Check.Equal(Phase.MainTask,Task.Phase);
             }
             internal bool Capture(int limit,out ViveSyntheticMarkPresentedBudget budget,string source=ViveSyntheticMarkPresentedBudget.SourceAssumption,

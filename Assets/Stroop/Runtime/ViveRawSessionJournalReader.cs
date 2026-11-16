@@ -399,6 +399,20 @@ namespace AvatarStroop.Runtime
         // completion, consent, source-identity or publication receipt; an
         // incomplete/invalid scan may already have emitted a prefix. The
         // caller must keep it private and handle withdrawal independently.
+#if !UNITY_5_3_OR_NEWER
+        // Offline analysis of an explicitly selected, read-only existing file.
+        // This does not open recording or export gates in a Unity player. As
+        // with ScanAnalysisRows, callbacks are a private provisional prefix;
+        // the caller must inspect the final status before using the result.
+        internal static ViveRawSessionReadResult ScanOfflineStudyRows(Stream input,long maximumBytes,int maximumRecords,
+            CancellationToken cancellation,Action<string> acceptVerifiedFrame)
+        {
+            if(acceptVerifiedFrame==null)throw new ArgumentNullException("acceptVerifiedFrame");
+            if(maximumBytes<8||maximumBytes>ViveRawByteBudget.MaximumSupportedBytes||maximumRecords<1||maximumRecords>25000000)
+                throw new ArgumentOutOfRangeException("Explicit bounded limits required.");
+            return ReadCore(input,true,true,maximumBytes,maximumRecords,false,false,0,0,true,cancellation,null,acceptVerifiedFrame);
+        }
+#endif
         internal static ViveRawSessionReadResult ScanAnalysisRows(Stream input,long maximumBytes,int maximumRecords,
             CancellationToken cancellation,Action<string> acceptVerifiedFrame,bool syntheticFixture)
         {

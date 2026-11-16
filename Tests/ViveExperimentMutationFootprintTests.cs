@@ -77,11 +77,11 @@ namespace AvatarStroop.Tests
                 f.Mutation("confirm_plan",()=>e.ConfirmNamedPlan(Actor.Owner,"synthetic-owner"));
                 Check.Equal(1,f.Mutation("main_plan",()=>e.PrepareNamedRecordingBlockPlan(Actor.Owner,false)));
                 f.Mutation("main_countdown",()=>e.BeginCountdown(Actor.Owner,true));
-                f.Clock.Now+=3;f.Mutation("main_first_tick",()=>e.Tick());
+                f.Clock.Now+=e.Configuration.CountdownSeconds;f.Mutation("main_first_tick",()=>e.Tick());
                 f.Present();f.Answer(true,"main_correct_next");
                 f.Present();f.Mutation("main_pause",()=>e.Pause(Actor.Participant));
                 f.Clock.Now+=.3;f.Mutation("main_resume",()=>e.Resume(true));
-                f.Clock.Now+=3;f.Mutation("main_resume_tick",()=>e.Tick());
+                f.Clock.Now+=e.Configuration.CountdownSeconds;f.Mutation("main_resume_tick",()=>e.Tick());
                 while(e.Phase==Phase.MainTask)
                 {int index=e.CurrentTrial.PlannedIndex;f.Present();f.Answer(true,index==23?"main_final_response":"main_correct_next");}
                 Check.Equal(Phase.Questionnaire,e.Phase);

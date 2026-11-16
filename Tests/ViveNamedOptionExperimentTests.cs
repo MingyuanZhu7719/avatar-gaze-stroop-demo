@@ -27,7 +27,7 @@ namespace AvatarStroop.Tests
         {
             Update(p);p.OwnerBeginPractice(Actor.Owner);
             for(int i=0;i<8;i++){Update(p);p.MarkPresented(p.CurrentTrial.TrialId);var ink=p.CurrentTrial.Stimulus.Ink;c.Advance(.4);Update(p,true,ink);Update(p);}
-            p.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"synthetic-owner");p.OwnerBeginBlock(Actor.Owner);c.Advance(3);p.Tick();Check.Equal(Phase.MainTask,p.Phase);
+            p.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"synthetic-owner");p.OwnerBeginBlock(Actor.Owner);c.Advance(5);p.Tick();Check.Equal(Phase.MainTask,p.Phase);
         }
         static ViveNamedOptionProvenance Selection()
         {return ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.Automatic,2,"synthetic-geometry");}
@@ -36,7 +36,7 @@ namespace AvatarStroop.Tests
         static void Start(Experiment e,ManualClock c)
         {
             Fixtures.Practice(e,c,8);e.LockBlock(Actor.Owner,ControlSelection.Automatic,"test-owner");
-            e.BeginCountdown(Actor.Owner,true);c.Advance(3);e.Tick();Check.Equal(Phase.MainTask,e.Phase);
+            e.BeginCountdown(Actor.Owner,true);c.Advance(5);e.Tick();Check.Equal(Phase.MainTask,e.Phase);
         }
         static JournalEvent LegacyCopy(JournalEvent source)
         {
@@ -68,8 +68,8 @@ namespace AvatarStroop.Tests
                     Check.True(e.ButtonChanged(trial.Stimulus.Ink,true));e.ButtonChanged(trial.Stimulus.Ink,false);
                 }
                 Check.Equal(Phase.BlockPreparation,e.Phase);e.ConfirmNamedPlan(Actor.Owner,"owner");
-                e.BeginCountdown(Actor.Owner,true);c.Advance(3);e.Tick();
-                var main=e.CurrentTrial;e.MarkPresented(main.TrialId);e.Pause(Actor.Participant);e.Resume(true);c.Advance(3);e.Tick();
+                e.BeginCountdown(Actor.Owner,true);c.Advance(5);e.Tick();
+                var main=e.CurrentTrial;e.MarkPresented(main.TrialId);e.Pause(Actor.Participant);e.Resume(true);c.Advance(5);e.Tick();
                 Check.Equal(TrialOutcome.Interrupted,main.Outcome);
                 int planned=0;foreach(var ev in e.Events)if(ev.Kind=="trial_planned")
                 {
@@ -164,7 +164,7 @@ namespace AvatarStroop.Tests
                 foreach(var t in e.Trials){Check.True(t.IsPractice&&Object.ReferenceEquals(plan,t.NamedPlan)&&t.NamedBlock==null&&t.NamedOption==null);Check.Throws<InvalidOperationException>(()=>{var ignored=t.Condition;});}
                 Check.Throws<InvalidOperationException>(()=>e.LockBlock(Actor.Owner,ControlSelection.Automatic,"synthetic-owner"));
                 Check.Throws<UnauthorizedAccessException>(()=>e.ConfirmNamedPlan(Actor.Participant,"synthetic-owner"));
-                e.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");e.BeginCountdown(Actor.Owner,true);c.Advance(3);e.Tick();
+                e.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");e.BeginCountdown(Actor.Owner,true);c.Advance(5);e.Tick();
                 for(int b=0;b<4;b++)
                 {
                     Check.Equal(Phase.MainTask,e.Phase);Check.True(Object.ReferenceEquals(plan.Blocks[b],e.CurrentNamedPlanBlock));
@@ -174,7 +174,7 @@ namespace AvatarStroop.Tests
                     if(b==1)
                     {
                         e.MarkPresented(e.CurrentTrial.TrialId);c.Advance(.7);e.Pause(Actor.Participant);c.Advance(8);Check.Near(.7,e.ActiveSeconds);
-                        e.Resume(true);c.Advance(3);e.Tick();Check.Equal(1,e.Segment);
+                        e.Resume(true);c.Advance(5);e.Tick();Check.Equal(1,e.Segment);
                     }
                     while(e.Phase==Phase.MainTask)
                     {
@@ -189,7 +189,7 @@ namespace AvatarStroop.Tests
                         Check.Near(0,e.ActiveSeconds);Check.True(!e.TryBeginRetainedBlockCountdown(false));
                         var last=e.Events[e.Events.Count-1];Check.Equal("0",last.Fields["named_active_seconds"]);
                         Check.Equal("False",last.Fields["named_block_started"]);Check.True(Object.ReferenceEquals(plan.Blocks[b+1],last.NamedBlock));
-                        Check.True(e.TryBeginRetainedBlockCountdown(true));c.Advance(3);e.Tick();
+                        Check.True(e.TryBeginRetainedBlockCountdown(true));c.Advance(5);e.Tick();
                     }
                 }
                 Check.Equal(Phase.Ended,e.Phase);Check.Equal((EndReason?)EndReason.Completed,e.EndReason);Check.Equal(104,e.Trials.Count);Check.Equal(20,e.Ratings.Count);
@@ -245,14 +245,14 @@ namespace AvatarStroop.Tests
                 Update(p);p.OwnerBeginPractice(Actor.Owner);
                 for(int i=0;i<8;i++){Update(p);p.MarkPresented(p.CurrentTrial.TrialId);var ink=p.CurrentTrial.Stimulus.Ink;c.Advance(.4);Update(p,true,ink);Update(p);}
                 Check.Equal(Phase.BlockPreparation,p.Phase);p.OwnerConfirmNamedPlan(Actor.Owner,"owner");p.OwnerBeginBlock(Actor.Owner);
-                c.Advance(3);p.Tick();Update(p);Check.True(p.CurrentAvatar==null&&!p.ParticipantView.OperatorAvatarVisible);
+                c.Advance(5);p.Tick();Update(p);Check.True(p.CurrentAvatar==null&&!p.ParticipantView.OperatorAvatarVisible);
                 while(p.Phase==Phase.MainTask){p.MarkPresented(p.CurrentTrial.TrialId);var ink=p.CurrentTrial.Stimulus.Ink;c.Advance(.2);Update(p,true,ink);Update(p);}
                 p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);p.UpdateAuxiliary(false,false,false,0,true);
                 for(int i=0;i<Questionnaire.Count;i++){p.UpdateAuxiliary(true,false,false,0,true);p.UpdateAuxiliary(false,false,false,0,true);}
                 Check.Equal(Phase.Rest,p.Phase);p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);
                 Check.Equal(Phase.BlockReady,p.Phase);Check.True(Object.ReferenceEquals(plan.Blocks[1],p.CurrentNamedPlanBlock));
                 p.UpdateTrackpad(false,new VivePreviewTrackpadSample(true,false,0,0));p.Tick();Check.Equal(Phase.BlockReady,p.Phase);
-                Update(p);p.Tick();Check.Equal(Phase.Countdown,p.Phase);c.Advance(3);p.Tick();Update(p);Check.Equal(Phase.MainTask,p.Phase);
+                Update(p);p.Tick();Check.Equal(Phase.Countdown,p.Phase);c.Advance(5);p.Tick();Update(p);Check.Equal(Phase.MainTask,p.Phase);
                 p.MarkPresented(p.CurrentTrial.TrialId);c.Advance(3.25);var shown=p.CurrentAvatar;
                 Check.True(shown!=null&&Object.ReferenceEquals(plan.Blocks[1],shown.NamedBlock));Check.Near(3.25,shown.Reference.ActiveSeconds);
                 p.ParticipantPause();c.Advance(4);Check.Near(3.25,p.CurrentAvatar.Reference.ActiveSeconds);
@@ -268,7 +268,7 @@ namespace AvatarStroop.Tests
                 Check.Throws<ArgumentOutOfRangeException>(()=>ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.Automatic,4,"g"));
                 Check.Throws<ArgumentException>(()=>ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.Automatic,0," "));
                 Check.Throws<ArgumentException>(()=>SessionConfiguration.NamedAutomaticDevelopment("",37,Selection()));
-                var config=Config(Selection());Check.Equal(RunKind.Simulation,config.RunKind);Check.Near(3,config.CountdownSeconds);
+                var config=Config(Selection());Check.Equal(RunKind.Simulation,config.RunKind);Check.Near(5,config.CountdownSeconds);
                 Check.Throws<InvalidOperationException>(()=>{var ignored=config.Allocation;});
             });
             suite.Run("named VIVE authority records one real Experiment block and never emits old condition provenance",()=>{
@@ -285,7 +285,7 @@ namespace AvatarStroop.Tests
                 Check.True(first.Onset.HasValue&&first.ResponseAt.HasValue);Check.Near(3.25,first.ReactionSeconds.Value);
                 var interrupted=e.CurrentTrial;e.MarkPresented(interrupted.TrialId);e.Pause(Actor.Participant);
                 Check.Equal(TrialOutcome.Interrupted,interrupted.Outcome);c.Advance(30);Check.Near(active,e.ActiveSeconds);
-                e.Resume(true);c.Advance(3);e.Tick();Check.Equal(2,e.CurrentTrial.PlannedIndex);Check.Equal(1,e.Segment);
+                e.Resume(true);c.Advance(5);e.Tick();Check.Equal(2,e.CurrentTrial.PlannedIndex);Check.Equal(1,e.Segment);
                 while(e.Phase==Phase.MainTask)
                 {
                     var trial=e.CurrentTrial;Check.True(Object.ReferenceEquals(selected,trial.NamedOption));
@@ -422,7 +422,7 @@ namespace AvatarStroop.Tests
                 Check.Throws<InvalidOperationException>(()=>p.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"owner"));
                 Check.Equal(Phase.BlockPreparation,p.Phase);p.OwnerConfirmNamedNoAvatar(Actor.Owner,"owner");
                 Check.Equal(Phase.BlockReady,p.Phase);Check.True(p.CurrentAvatar==null&&!p.ParticipantView.OperatorAvatarVisible);
-                p.OwnerBeginBlock(Actor.Owner);c.Advance(3);p.Tick();Update(p);Check.Equal(Phase.MainTask,p.Phase);
+                p.OwnerBeginBlock(Actor.Owner);c.Advance(5);p.Tick();Update(p);Check.Equal(Phase.MainTask,p.Phase);
                 Check.True(p.CurrentAvatar==null&&!p.ParticipantView.OperatorAvatarVisible);
                 var trial=p.CurrentTrial;var expected=TrialPlans.MainList(37,2)[0];
                 Check.Equal(expected.Word,trial.Stimulus.Word);Check.Equal(expected.Ink,trial.Stimulus.Ink);
@@ -431,7 +431,7 @@ namespace AvatarStroop.Tests
                 p.MarkPresented(trial.TrialId);c.Advance(1);p.ParticipantPause();Check.Equal(Phase.Paused,p.Phase);
                 Check.True(p.CurrentAvatar==null&&!p.ParticipantView.OperatorAvatarVisible);Check.Equal(TrialOutcome.Interrupted,trial.Outcome);
                 Update(p);p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);
-                Check.Equal(Phase.Countdown,p.Phase);c.Advance(3);p.Tick();Update(p);Check.Equal(Phase.MainTask,p.Phase);
+                Check.Equal(Phase.Countdown,p.Phase);c.Advance(5);p.Tick();Update(p);Check.Equal(Phase.MainTask,p.Phase);
                 while(p.Phase==Phase.MainTask)
                 {
                     Check.True(p.CurrentAvatar==null&&!p.ParticipantView.OperatorAvatarVisible);
@@ -456,7 +456,7 @@ namespace AvatarStroop.Tests
                 var selected=ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.NoAvatar,2,null);var c=new ManualClock();
                 var e=new Experiment(SessionConfiguration.NamedNoAvatarDevelopment("no-avatar-complete",37,selected),c);
                 Fixtures.Practice(e,c,8);e.ConfirmNamedNoAvatar(Actor.Owner,"owner");
-                Check.True(!e.LockedControl.HasValue&&e.NamedOptionConfirmed);e.BeginCountdown(Actor.Owner,true);c.Advance(3);e.Tick();
+                Check.True(!e.LockedControl.HasValue&&e.NamedOptionConfirmed);e.BeginCountdown(Actor.Owner,true);c.Advance(5);e.Tick();
                 var plan=TrialPlans.MainList(37,2);int count=0;
                 while(e.Phase==Phase.MainTask)
                 {

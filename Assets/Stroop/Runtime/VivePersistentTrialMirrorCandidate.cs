@@ -38,13 +38,13 @@ namespace AvatarStroop.Runtime
             try{WireCodec.RequireIdentity(value.TrialId);WireCodec.RequireIdentity(value.ListId);}catch(ArgumentException){return false;}
             return value.SessionId==sessionId&&(int)value.Word>=(int)Colour.Red&&(int)value.Word<=(int)Colour.Yellow&&
             (int)value.Ink>=(int)Colour.Red&&(int)value.Ink<=(int)Colour.Yellow&&(!value.Response.HasValue||Enum.IsDefined(typeof(Colour),value.Response.Value))&&
-            (!value.Condition.HasValue||Enum.IsDefined(typeof(Condition),value.Condition.Value))&&Enum.IsDefined(typeof(TrialOutcome),value.Outcome)&&Finite(value.Onset)&&Finite(value.ResponseAt)&&
+            (!value.Condition.HasValue||Enum.IsDefined(typeof(Condition),value.Condition.Value))&&Enum.IsDefined(typeof(TrialOutcome),value.Outcome)&&Enum.IsDefined(typeof(ResponseRule),value.ResponseRule)&&Finite(value.Onset)&&Finite(value.ResponseAt)&&
             (!value.Onset.HasValue||!value.ResponseAt.HasValue||value.ResponseAt.Value>=value.Onset.Value)&&
             (value.Outcome!=TrialOutcome.Responded||(value.Onset.HasValue&&value.ResponseAt.HasValue&&value.Response.HasValue&&value.Correct.HasValue&&
-                value.Correct.Value==(value.Response.Value==value.Ink)));}
+                value.Correct.Value==(value.Response.Value==value.ExpectedResponse)));}
         static bool SameIdentity(VivePersistentTrialValue a,VivePersistentTrialValue b)
         {return a.TrialId==b.TrialId&&a.SessionId==b.SessionId&&a.ListId==b.ListId&&a.IsPractice==b.IsPractice&&a.PracticeAttempt==b.PracticeAttempt&&
-            a.BlockIndex==b.BlockIndex&&a.PlannedIndex==b.PlannedIndex&&a.Segment==b.Segment&&a.Condition==b.Condition&&a.Word==b.Word&&a.Ink==b.Ink;}
+            a.BlockIndex==b.BlockIndex&&a.PlannedIndex==b.PlannedIndex&&a.Segment==b.Segment&&a.Condition==b.Condition&&a.Word==b.Word&&a.Ink==b.Ink&&a.ResponseRule==b.ResponseRule;}
         static bool SameTime(double? a,double? b)
         {return a.HasValue==b.HasValue&&(!a.HasValue||BitConverter.DoubleToInt64Bits(a.Value)==BitConverter.DoubleToInt64Bits(b.Value));}
         static bool Advances(VivePersistentTrialValue before,VivePersistentTrialValue after)

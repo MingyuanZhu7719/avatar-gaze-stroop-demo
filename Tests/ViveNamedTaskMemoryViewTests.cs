@@ -26,7 +26,7 @@ namespace AvatarStroop.Tests
         static void GoToQuestionnaire(ViveDevelopmentParticipant p,Clock c)
         {
             Input(p);p.OwnerBeginPractice(Actor.Owner);for(int i=0;i<8;i++)Response(p,c);
-            p.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"synthetic-owner");p.OwnerBeginBlock(Actor.Owner);c.Time+=3;p.Tick();
+            p.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"synthetic-owner");p.OwnerBeginBlock(Actor.Owner);c.Time+=p.CountdownDurationSeconds;p.Tick();
             while(p.Phase==Phase.MainTask)Response(p,c);
             Check.Equal(Phase.Questionnaire,p.Phase);
             p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);

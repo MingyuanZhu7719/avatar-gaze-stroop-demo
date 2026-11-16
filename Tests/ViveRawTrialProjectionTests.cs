@@ -12,24 +12,25 @@ namespace AvatarStroop.Tests
     public static class ViveRawTrialProjectionTests
     {
         sealed class Clock:IClock {public double Now {get;set;}public string ClockId {get{return "synthetic-clock";}}internal void Advance(double dt){Now+=dt;}}
-        internal static byte[] FourBlocks(bool truncateTerminal=false,bool omitFirstPlanned=false)
+        internal static byte[] FourBlocks(bool truncateTerminal=false,bool omitFirstPlanned=false,ResponseRule responseRule=ResponseRule.InkColor)
         {
             var automatic=ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.Automatic,2,"synthetic-geometry");
             var noAvatar=ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.NoAvatar,1,null);
             var plan=ViveNamedSimulationPlan.Select(Actor.Owner,"synthetic-plan",automatic,noAvatar,automatic,noAvatar);
             var intent=ViveNamedRecordingIntent.Select(Actor.Owner,"synthetic-intent",true,true);
-            var clock=new Clock();var e=new Experiment(SessionConfiguration.NamedRecordingDevelopment("synthetic-session",37,plan,intent),clock);
+            var clock=new Clock();var config=SessionConfiguration.WithResponseRule(SessionConfiguration.NamedRecordingDevelopment("synthetic-session",37,plan,intent),responseRule);
+            var e=new Experiment(config,clock);
             e.BeginFamiliarization(Actor.Owner);e.BeginPractice(Actor.Owner);
-            for(int i=0;i<8;i++){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.4);var answer=e.CurrentTrial.Stimulus.Ink;Check.True(e.ButtonChanged(answer,true));e.ButtonChanged(answer,false);}
-            e.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");e.BeginCountdown(Actor.Owner,true);clock.Advance(3);e.Tick();
+            for(int i=0;i<8;i++){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.4);var answer=e.CurrentTrial.ExpectedResponse;Check.True(e.ButtonChanged(answer,true));e.ButtonChanged(answer,false);}
+            e.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");e.BeginCountdown(Actor.Owner,true);clock.Advance(e.Configuration.CountdownSeconds);e.Tick();
             for(int block=0;block<4;block++)
             {
                 Check.Equal(Phase.MainTask,e.Phase);
-                if(block==1){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);e.Pause(Actor.Participant);clock.Advance(.3);e.Resume(true);clock.Advance(3);e.Tick();}
-                while(e.Phase==Phase.MainTask){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);var answer=e.CurrentTrial.Stimulus.Ink;Check.True(e.ButtonChanged(answer,true));e.ButtonChanged(answer,false);}
+                if(block==1){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);e.Pause(Actor.Participant);clock.Advance(.3);e.Resume(true);clock.Advance(e.Configuration.CountdownSeconds);e.Tick();}
+                while(e.Phase==Phase.MainTask){e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);var answer=e.CurrentTrial.ExpectedResponse;Check.True(e.ButtonChanged(answer,true));e.ButtonChanged(answer,false);}
                 Check.Equal(Phase.Questionnaire,e.Phase);Check.True(e.AcknowledgeQuestionnaireInstruction());
                 for(int q=0;q<Questionnaire.Count;q++)e.Rate(q+1);
-                if(block<3){Check.True(e.Ready());Check.True(e.TryBeginRetainedBlockCountdown(true));clock.Advance(3);e.Tick();}
+                if(block<3){Check.True(e.Ready());Check.True(e.TryBeginRetainedBlockCountdown(true));clock.Advance(e.Configuration.CountdownSeconds);e.Tick();}
             }
             Check.Equal(EndReason.Completed,e.EndReason.Value);
             int baseline=0;

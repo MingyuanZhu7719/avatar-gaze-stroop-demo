@@ -1749,7 +1749,7 @@ namespace AvatarStroop.Unity
             if(viveTaskPreview)
             {
                 if(view.Phase==Phase.Ended&&ShowViveLegacyPreviewNotice)return ViveStroopRecordingScopePresentation.LegacyEndMessage(completed);
-                if(view.Phase==Phase.Preparation||view.Phase==Phase.Familiarization)return ViveRawAttached()?"Waiting for the owner to start practice.\nRecording status and coverage are not confirmed.":"Waiting for the owner to start practice.\nDevelopment task only; no data is saved.";
+                if(view.Phase==Phase.Preparation||view.Phase==Phase.Familiarization)return ResponseRuleInstructions.Participant(view.ResponseRule)+"\nWaiting for practice to begin.";
                 if(view.Phase==Phase.PracticeCorrection)return view.PracticeCorrection+"\nPress the trigger to continue.";
                 if(view.Phase==Phase.Questionnaire&&QuestionnaireIntro)return "Click top or bottom, then release.\nPull the trigger when ready.";
                 if(view.Phase==Phase.Rest)return "Rest as long as you need.\nPress the trigger to continue.";
@@ -1769,7 +1769,7 @@ namespace AvatarStroop.Unity
             if(view.Phase == Phase.PracticeRetry) return "Practice needs one retry.\nAsk the owner to start it in the control window.";
             if(view.Phase == Phase.PracticeCorrection) return view.PracticeCorrection + (headsetPreview ? "\nRight trigger to continue when ready." : "\nPress Space to continue when ready.");
             if(view.Phase == Phase.Countdown) return (HasWorldFixedMenu?"":"Starting in "+Math.Ceiling(countdownRemaining).ToString("0")+" seconds.\n")+
-                "The next block begins shortly.\nRespond to the font colour.";
+                "The next block begins shortly.\n"+ResponseRuleInstructions.Participant(view.ResponseRule);
             if(view.Phase == Phase.Questionnaire)
             {
                 if(questionnaireLanguage == null) return "QUESTIONNAIRE LANGUAGE NOT CONFIGURED";

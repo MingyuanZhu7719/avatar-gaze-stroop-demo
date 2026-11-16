@@ -67,11 +67,11 @@ namespace AvatarStroop.Runtime
             foreach(var pair in item.Fields)
             {
                 if(FocusFields.Contains(pair.Key))continue;
-                if(!(pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))||
+                if(!(pair.Key=="response_rule"||pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))||
                     !prepared.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value)return false;
             }
             foreach(var pair in prepared.Fields)
-                if((pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))&&
+                if((pair.Key=="response_rule"||pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))&&
                     (!item.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value))return false;
             return true;
         }
@@ -92,13 +92,13 @@ namespace AvatarStroop.Runtime
             {
                 if(pair.Key=="tracking_gap_schema"||pair.Key=="actor"||pair.Key=="code"||pair.Key=="reason"||pair.Key=="detail")continue;
                 string value;
-                if(!(pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))||
+                if(!(pair.Key=="response_rule"||pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))||
                     !prepared.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value)return false;
             }
             foreach(var pair in prepared.Fields)
             {
                 string value;
-                if((pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))&&
+                if((pair.Key=="response_rule"||pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))&&
                     (!item.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value))return false;
             }
             return true;

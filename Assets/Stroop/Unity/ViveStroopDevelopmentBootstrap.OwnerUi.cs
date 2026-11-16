@@ -151,6 +151,7 @@ namespace AvatarStroop.Unity
             if(selectedDesign!=previousDesign){controlledRecordingNoticeAccepted=false;legacyWozRecordingSelected=false;ownerPreviewWoz=false;}
             if(view!=null)view.SetViveLegacyPreviewNotice(LegacyPreviewSelected);
             if(selectedDesign<0)return;
+            DrawResponseRuleChoice();
             if(selectedDesign==1||selectedDesign==2)
             {
                 GUILayout.Label("Stimulus list");
@@ -258,6 +259,7 @@ namespace AvatarStroop.Unity
         string BeginPracticeBlocker()
         {
             if(participant==null||!RawPlanStartPhaseMatches(true,participant.Phase))return "Begin practice: task is not in a preparation phase.";
+            if(previewPracticeCountdownTask!=null)return "Practice starts after the five-second headset countdown.";
             if(RecordingBlocked||ObservationBlocked)return "Begin practice: task is blocked; review the recording or observation status.";
             if(participant.RawRecordingRequested)
             {
@@ -281,7 +283,7 @@ namespace AvatarStroop.Unity
             {
                 CaptureRawPracticeRequest();
             }
-            else Run(()=>{participant.OwnerBeginPractice(Actor.Owner);if(practicePreview!=null)practicePreview.OnPracticeStarted();});
+            else RequestPreviewPracticeCountdown();
         }
         string RecordingStartBlocker()
         {

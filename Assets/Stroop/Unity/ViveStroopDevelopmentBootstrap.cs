@@ -1020,6 +1020,7 @@ namespace AvatarStroop.Unity
                         config=ViveLegacySceneConfiguration.SelectRecording(config,geometry.Version,ViveFixedTrackpadMapping.Version,
                             "legacy-design-"+Guid.NewGuid().ToString("N"),"legacy-intent-"+Guid.NewGuid().ToString("N"),legacyWozRecordingSelected);
                 }
+                config=SessionConfiguration.WithResponseRule(config,selectedResponseRule);
                 var taskClock=selected?rig.ActiveViewClock:new MonotonicClock("vive-development-task-"+session);
                 if(taskClock==null)throw new InvalidOperationException("The active headset clock is unavailable.");
                 var options=observationOptIn?new ExperimentIncrementalOptions(4096,128,16L*1024*1024):null;
@@ -1355,6 +1356,7 @@ namespace AvatarStroop.Unity
                     {questionnaireGate.Reset();message="Release controller controls before the pending owner action.";Render();return;}
                 }
                 if(!Mutate(()=>ApplyInputFrame(headReady,frame))){questionnaireGate.Reset();Render();return;}
+                if(ServiceBlockCompletionAnimation())return;
                 if(namedRawPump!=null&&pendingRawOwnerAction!=null)
                 {
                     // Do not carry held inputs into the phase created by an
@@ -1378,6 +1380,13 @@ namespace AvatarStroop.Unity
                     ClearRawPracticeRequest();
                     RequestNamedBlockPlanStart(true);if(!automaticFirst)RequirePlanConfirmationAfterXrGap();
                     ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;
+                }
+                if(rawPracticeRequested)ResetPracticeCountdown();
+                if(previewPracticeCountdownTask!=null)
+                {
+                    if(!frame.InputReady||frame.TriggerHeld||frame.MenuHeld||frame.Trackpad.Pressed)
+                    {ResetPracticeCountdown();Render();return;}
+                    if(ServicePreviewPracticeCountdown())return;
                 }
                 bool displayReady=participant.Phase==Phase.Questionnaire?
                     (participant.QuestionnaireInstructionPending?view.QuestionnaireInstructionVisible:participant.QuestionnaireInputReady&&view.QuestionnaireResponseVisible):
@@ -1404,7 +1413,9 @@ namespace AvatarStroop.Unity
                 // Prepare before Tick's retained-source auto-countdown.
                 if(namedRawPump!=null&&participant.Phase==Phase.BlockReady&&participant.BlockIndex>0)
                 {RequestNamedBlockPlanStart(false);ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;}
-                if(!Mutate(()=>participant.Tick())){Render();return;}message=FocusHeldLiveWoz?LiveWozFocusHoldNotice:frame.Diagnostic;Render();
+                if(!Mutate(()=>participant.Tick())){Render();return;}
+                if(ServiceBlockCompletionAnimation())return;
+                message=FocusHeldLiveWoz?LiveWozFocusHoldNotice:frame.Diagnostic;Render();
             }
             catch(Exception error)
             {
@@ -1520,6 +1531,14 @@ namespace AvatarStroop.Unity
             // This is still not a physical hard-real-time guarantee.
             if(!RawPlanDeadlineStillValid())
             {FailNamedRawBeforeFrame();message+=" Block plan confirmation exceeded its deadline; in-flight I/O is unknown.";return;}
+            // Warn immediately before Practice, after the current plan receipt
+            // and any participant confirmation are ready. A held controller or
+            // missing render cannot spend the five-second warning off-screen.
+            if(practice&&state==ViveRawSessionJournalSink.BlockPlanReceiptPoll.Ready&&receipt!=null)
+            {
+                if(!input.InputReady){ResetPracticeCountdown();return;}
+                if(!ServicePracticeCountdown())return;
+            }
             bool started=false;
             if(state!=ViveRawSessionJournalSink.BlockPlanReceiptPoll.Ready||receipt==null||
                 !namedRawPump.TryRunReservedOrdinaryMutation(()=>started=participant.LegacyRecordingRequested?
@@ -1527,6 +1546,7 @@ namespace AvatarStroop.Unity
                     participant.TryBeginNamedRecordingWithPlan(Actor.Owner,rawPendingBlockPlan,receipt,practice))||!started)
             {FailNamedRawAfterTask();message+=" Block start or recording confirmation is unavailable or unknown.";return;}
             rawPendingBlockPlan=null;rawPlanStartRequested=0;rawPlanDeadline=-1;ClearRawPlanReadyObservation();suppressInputUntilReleased=true;
+            ResetPracticeCountdown();
             if(practice)UnityEngine.Debug.Log("VIVE_RAW_PRACTICE_STARTED: plan receipt consumed; presentation remains pending.");
             message="Block plan write and flush APIs returned; input must be released before continuing. Recording remains development-only.";
             // Refresh the hidden model after the phase mutation. The rig keeps
@@ -1987,6 +2007,8 @@ namespace AvatarStroop.Unity
         void RenderCore()
         {
             avatarOutputNotice=null;
+            if(TransitionVisible)
+            {if(view!=null)view.SetPresentationAvailable(false);if(rig!=null)rig.BlockTaskPresentation();return;}
             if(participant==null){if(view!=null)view.ClearAvatarOutput();return;}
             CapturePauseDiagnostic();
             if(view!=null)view.SetVivePauseDiagnostic(pauseDiagnostic!=null&&pauseDiagnostic.Length>180?
@@ -2373,7 +2395,7 @@ namespace AvatarStroop.Unity
         internal static SessionConfiguration CreatePreview(string session)
         {
             var allocation=new Allocation("development-fixture-BCAD",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
-            return new SessionConfiguration(session,20261028,allocation,RunKind.Simulation,"en",3,30,true,0,true,true,true);
+            return new SessionConfiguration(session,20261028,allocation,RunKind.Simulation,"en",5,30,true,0,true,true,true);
         }
         internal static SessionConfiguration SelectRecording(SessionConfiguration preview,string geometryVersion,string mappingVersion,string designId,string intentId,bool operatorWoz=false)
         {

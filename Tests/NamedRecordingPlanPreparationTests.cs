@@ -73,9 +73,9 @@ namespace AvatarStroop.Tests
                 }
                 var saved=items[23];items[23]=new Stimulus(saved.Word,(Colour)(((int)saved.Ink+1)%4));
                 Check.True(!e.MatchesNamedRecordingBlockPlan(plan));Check.Throws<InvalidOperationException>(()=>e.PrepareNamedRecordingBlockPlan(Actor.Owner,false));items[23]=saved;
-                Check.True(!e.MatchesNamedRecordingBlockPlan(Copy(plan)));e.BeginCountdown(Actor.Owner,true);c.Now+=3;e.Tick();
+                Check.True(!e.MatchesNamedRecordingBlockPlan(Copy(plan)));e.BeginCountdown(Actor.Owner,true);c.Now+=e.Configuration.CountdownSeconds;e.Tick();
                 Check.Equal(plan.Fields["item_00_word"],e.CurrentTrial.Stimulus.Word.ToString());Check.Equal(plan.Fields["item_00_ink"],e.CurrentTrial.Stimulus.Ink.ToString());
-                var interrupted=e.CurrentTrial;e.MarkPresented(interrupted.TrialId);e.Pause(Actor.Participant);e.Resume(true);c.Now+=3;e.Tick();
+                var interrupted=e.CurrentTrial;e.MarkPresented(interrupted.TrialId);e.Pause(Actor.Participant);e.Resume(true);c.Now+=e.Configuration.CountdownSeconds;e.Tick();
                 Check.Equal(TrialOutcome.Interrupted,interrupted.Outcome);Check.Equal(1,e.CurrentTrial.PlannedIndex);
                 Check.Equal(plan.Fields["item_01_word"],e.CurrentTrial.Stimulus.Word.ToString());Check.Equal(plan.Fields["item_01_ink"],e.CurrentTrial.Stimulus.Ink.ToString());
                 Check.True(!e.MatchesNamedRecordingBlockPlan(plan));

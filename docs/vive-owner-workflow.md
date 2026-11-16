@@ -2,6 +2,10 @@
 
 The desktop window now presents setup, the next action and local-output status in one place. The classroom scene, fixed colour mapping, trial protocol and recording authority remain separate from desktop presentation.
 
+Before configuration, select the response rule: **Ink colour** (default: ignore the word and answer its rendered colour) or **Word meaning** (answer the colour named by the word, regardless of ink). For example RED displayed in green requires green in Ink colour mode and red in Word meaning mode. The selected rule is locked for the session, including practice and A/B/C/D. Start a new configured session to change it. Logs preserve both the actual word/ink and the rule/expected response. Word meaning uses its own questionnaire version for the two task-attention items.
+
+Practice begins after a five-second headset countdown. Formal block countdown defaults are also five seconds. Each completed formal block shows six seconds of gentle fireworks before the questionnaire; questionnaire input is held until the animation ends, and the logged questionnaire duration excludes that transition. Final recording cleanup ends with a static thank-you screen.
+
 ## Participant application
 
 | Step | Preview | Record locally |
@@ -40,3 +44,5 @@ The operator has no authority to start participant trials, export participant re
 ## Validation boundary
 
 Regression and synthetic Unity fixtures test software behavior without a wearer. They do not establish physical controller reliability, eye-tracking accuracy, real two-PC acceptance or research-ready recording. Current package validation and exact local executable paths are reported with the build deliverables.
+
+Completed experimental files can be processed with the [local study analyzer](study-analyzer.md). Eye/face spatial accuracy work is currently [deferred](TODO.md).

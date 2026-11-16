@@ -11,10 +11,10 @@ namespace AvatarStroop.Runtime
     // eye/status records, actual peak memory and first-write cost are excluded.
     internal sealed class ViveSyntheticMarkPresentedBudget
     {
-        internal const string SourceAssumption="synthetic-mark-presented-source-20261106-v1";
+        internal const string SourceAssumption="synthetic-mark-presented-source-20261116-v2";
         const int MaxText=32768,MaxFrame=1048616,FixedFrameAndPayload=97;
         static readonly UTF8Encoding Utf8=new UTF8Encoding(false,true);
-        static readonly string[] Shared={"named_schema","named_plan_id","named_scope","named_phase","named_plan_schema",
+        static readonly string[] Shared={"response_rule","expected_response","named_schema","named_plan_id","named_scope","named_phase","named_plan_schema",
             "named_recording_intent_id","named_eye_sample_payload","named_task_recording_intent","named_eye_recording_intent"};
         static readonly string[] Block={"named_block_index","named_block_started","named_option","named_list_index",
             "named_schedule","named_geometry","named_source","named_avatar_aoi"};
@@ -68,10 +68,11 @@ namespace AvatarStroop.Runtime
                     !Object.ReferenceEquals(planned.NamedBlock,trial.NamedBlock)||!Field(planned,"list",trial.ListId)||
                     !Field(planned,"planned_index",trial.PlannedIndex.ToString())||!Field(planned,"planned_stimulus_schema","1")||
                     !Field(planned,"planned_word",trial.Stimulus.Word.ToString())||!Field(planned,"planned_ink",trial.Stimulus.Ink.ToString())||
+                    !Field(planned,"response_rule",config.ResponseRule.ToString())||!Field(planned,"expected_response",trial.ExpectedResponse.ToString())||
                     !Field(planned,"named_phase",task.Phase.ToString()))return false;
                 ViveRawSessionJournalCodec.ValidateTaskRecord(planned,manifest);
                 bool hasBlock=task.Phase==Phase.MainTask;
-                if(hasBlock!=(trial.NamedBlock!=null)||planned.Fields.Count!=(hasBlock?23:15))return false;
+                if(hasBlock!=(trial.NamedBlock!=null)||planned.Fields.Count!=(hasBlock?25:17))return false;
                 var fields=new Dictionary<string,string>();
                 foreach(string key in Shared){string value;if(!planned.Fields.TryGetValue(key,out value))return false;fields.Add(key,value);}
                 if(hasBlock)foreach(string key in Block){string value;if(!planned.Fields.TryGetValue(key,out value))return false;fields.Add(key,value);}

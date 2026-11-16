@@ -567,7 +567,7 @@ namespace AvatarStroop.Runtime
                 case Phase.MainTask:
                     var trial=Experiment.CurrentTrial;
                     // This is a headless software acknowledgement, not a display onset.
-                    var answer=trial.Stimulus.Ink;Experiment.ButtonChanged(answer,true);Experiment.ButtonChanged(answer,false);break;
+                    var answer=trial.ExpectedResponse;Experiment.ButtonChanged(answer,true);Experiment.ButtonChanged(answer,false);break;
                 case Phase.PracticeCorrection:Experiment.ContinuePractice();break;
                 case Phase.BlockPreparation:OwnerLockNextBlock(ControlSelection.SimulatorRehearsal);break;
                 case Phase.BlockReady:if(SourceReady(ControlSelection.SimulatorRehearsal))OwnerBeginBlock();break;

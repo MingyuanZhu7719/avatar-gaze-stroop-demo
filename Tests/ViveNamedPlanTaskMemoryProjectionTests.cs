@@ -29,7 +29,7 @@ namespace AvatarStroop.Tests
         static void Complete(ViveDevelopmentParticipant p,Clock c,int blocks)
         {
             Input(p);p.OwnerBeginPractice(Actor.Owner);for(int i=0;i<8;i++)Respond(p,c);
-            p.OwnerConfirmNamedPlan(Actor.Owner,"synthetic-owner");p.OwnerBeginBlock(Actor.Owner);c.Time+=3;p.Tick();
+            p.OwnerConfirmNamedPlan(Actor.Owner,"synthetic-owner");p.OwnerBeginBlock(Actor.Owner);c.Time+=p.CountdownDurationSeconds;p.Tick();
             for(int block=0;block<blocks;block++)
             {
                 Check.Equal(Phase.MainTask,p.Phase);Check.Equal(block,p.BlockIndex);
@@ -37,7 +37,7 @@ namespace AvatarStroop.Tests
                 Check.Equal(Phase.Questionnaire,p.Phase);p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);
                 for(int q=0;q<Questionnaire.Count;q++){p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);}
                 if(block+1<blocks)
-                {Check.Equal(Phase.Rest,p.Phase);p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);p.Tick();c.Time+=3;p.Tick();}
+                {Check.Equal(Phase.Rest,p.Phase);p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);p.Tick();c.Time+=p.CountdownDurationSeconds;p.Tick();}
             }
             Check.Equal(Phase.Ended,p.Phase);Check.Equal((EndReason?)EndReason.Completed,p.EndReason);
         }
@@ -114,7 +114,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("named plan partial questionnaire does not invent future ratings",()=>{
                 var c=new Clock();var p=Make(c,2);Input(p);p.OwnerBeginPractice(Actor.Owner);for(int i=0;i<8;i++)Respond(p,c);
-                p.OwnerConfirmNamedPlan(Actor.Owner,"synthetic-owner");p.OwnerBeginBlock(Actor.Owner);c.Time+=3;p.Tick();
+                p.OwnerConfirmNamedPlan(Actor.Owner,"synthetic-owner");p.OwnerBeginBlock(Actor.Owner);c.Time+=p.CountdownDurationSeconds;p.Tick();
                 while(p.Phase==Phase.MainTask)Respond(p,c);Check.Equal(Phase.Questionnaire,p.Phase);
                 p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);
                 p.UpdateAuxiliary(false,false,false,0,true);p.UpdateAuxiliary(true,false,false,0,true);

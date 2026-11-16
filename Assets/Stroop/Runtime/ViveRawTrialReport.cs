@@ -95,7 +95,7 @@ namespace AvatarStroop.Runtime
                     "planned_list","planned_index","planned_stimulus_schema","planned_word","planned_ink","planned_stimulus_state","presented_list","presented_index","presentation_event_word","presentation_event_ink","response","declared_correct","declared_onset","declared_rt_seconds",
                     "interruption_actor","interruption_reason","interruption_onset_available","event_conflict","incomplete_evidence",
                     "open_flush_evidence","render_proxy_evidence","response_commit_evidence","validity","gaze_alignment",
-                    "declared_presentation_task_onset","declared_presentation_task_clock","declared_presentation_task_basis","declared_unity_render_seconds","declared_unity_render_clock","declared_unity_render_frame","declared_unity_render_revision","declared_unity_render_basis");
+                    "declared_presentation_task_onset","declared_presentation_task_clock","declared_presentation_task_basis","declared_unity_render_seconds","declared_unity_render_clock","declared_unity_render_frame","declared_unity_render_revision","declared_unity_render_basis","response_rule","expected_response");
                 foreach(var t in p.Trials)trials.Line(TextCell(t.TrialId),I32(t.Block),I32(t.Segment),I32(t.PlannedEvents),I32(t.PresentationEvents),I32(t.ResponseEvents),I32(t.InterruptionEvents),
                     OptI64(t.PlannedEventSequence),OptI64(t.PresentationEventSequence),OptI64(t.ResponseEventSequence),OptI64(t.InterruptionEventSequence),
                     OptF64(t.PlannedEventLocalSeconds),OptF64(t.PresentationEventLocalSeconds),OptF64(t.ResponseEventLocalSeconds),OptF64(t.InterruptionEventLocalSeconds),
@@ -106,7 +106,7 @@ namespace AvatarStroop.Runtime
                     DeclaredTextCell(t.InterruptionOnsetAvailablePresent,t.InterruptionOnsetAvailable),
                     Bool(t.EventConflict),Bool(t.IncompleteEvidence),"state:unknown","state:unknown","state:unknown","state:unknown","state:unknown",
                     TextCell(t.DeclaredPresentationTaskOnset),TextCell(t.DeclaredPresentationTaskClock),TextCell(t.DeclaredPresentationTaskBasis),
-                    TextCell(t.DeclaredUnityRenderSeconds),TextCell(t.DeclaredUnityRenderClock),TextCell(t.DeclaredUnityRenderFrame),TextCell(t.DeclaredUnityRenderRevision),TextCell(t.DeclaredUnityRenderBasis));
+                    TextCell(t.DeclaredUnityRenderSeconds),TextCell(t.DeclaredUnityRenderClock),TextCell(t.DeclaredUnityRenderFrame),TextCell(t.DeclaredUnityRenderRevision),TextCell(t.DeclaredUnityRenderBasis),TextCell(t.ResponseRule),TextCell(t.ExpectedResponse));
                 ratings.Line("block","segment","event_local_f64bits","item","declared_value","language","version","validity");
                 foreach(var r in p.Ratings)ratings.Line(I32(r.Block),I32(r.Segment),F64(r.EventLocalSeconds),TextCell(r.Item),TextCell(r.DeclaredValue),TextCell(r.Language),TextCell(r.Version),"state:unknown");
                 statuses.Line("sequence","poll_return_local_f64bits","cause_flags","runtime","calibration","eye_connected","native_result","runtime_status","no_user","combined_mask","combined_direction_valid");
