@@ -24,6 +24,7 @@ namespace AvatarStroop.Unity.Editor
         static ViveDevelopmentParticipant task;
         static Vector2 downPoint;
         static int capturedControl;
+        static bool inputEventOrder;
         sealed class Clock:IClock {public double Value;public double Now{get{return Value;}}public string ClockId{get{return "synthetic-owner-click-clock";}}}
         internal static object Get(object o,string n){return o.GetType().GetField(n,I).GetValue(o);}
         internal static void Set(object o,string n,object v){o.GetType().GetField(n,I).SetValue(o,v);}
@@ -35,7 +36,7 @@ namespace AvatarStroop.Unity.Editor
             var clock=new Clock();
             var geometry=DevelopmentGeometry.FromLocalDirections(new Vec3(0,0,1),new Vec3(1,0,0),"synthetic-owner-click-geometry");
             SessionConfiguration configuration;
-            if(scenario<3)
+            if(!inputEventOrder&&scenario<3)
             {
                 var choice=ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.NoAvatar,0,null);
                 var plan=ViveNamedSimulationPlan.Select(Actor.Owner,"synthetic-owner-click-plan",choice);
@@ -48,22 +49,29 @@ namespace AvatarStroop.Unity.Editor
             }
             task=new ViveDevelopmentParticipant(configuration,clock,geometry,
                 ViveFixedTrackpadMapping.Create(),ViveFixedTrackpadMapping.SectorThreshold,true);
-            Neutral();task.OwnerBeginPractice(Actor.Owner);
-            for(int i=0;i<8;i++)
+            Neutral();if(!inputEventOrder)task.OwnerBeginPractice(Actor.Owner);
+            for(int i=0;i<(inputEventOrder?0:8);i++)
             {
                 Neutral();var trial=task.CurrentTrial;task.MarkPresented(trial.TrialId);clock.Value+=.4;
                 var colour=trial.Stimulus.Ink;double x=colour==Colour.Green?1:colour==Colour.Yellow?-1:0,y=colour==Colour.Red?1:colour==Colour.Blue?-1:0;
                 task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,true,x,y));Neutral();
             }
-            Require(task.Phase==Phase.BlockPreparation&&task.InputReady,"practice failed to reach a ready formal gate");
+            Require(task.Phase==(inputEventOrder?Phase.Preparation:Phase.BlockPreparation)&&task.InputReady,"task failed to reach its ready fixture phase");
             Set(window.Owner,"participant",task);Set(window.Owner,"configured",true);
-            Set(window.Owner,"rawInstallFailed",scenario==6);
+            Set(window.Owner,"rawInstallFailed",!inputEventOrder&&scenario==6);
+            if(inputEventOrder)
+            {
+                Set(window.Owner,"previewPracticeCountdownTask",null);Call(window.Owner,"ResetPracticeCountdown");
+                Set(window.Owner,"ownerAdvanced",false);Set(window.Owner,"message","Synthetic ready task.");
+            }
             Set(window.Rig,"ownerScroll",Vector2.zero);
-            window.DiagnosticReady=scenario%3!=2;window.ResetCapture=true;
+            window.DiagnosticReady=inputEventOrder||scenario%3!=2;window.ResetCapture=true;
         }
-        public static void ValidateGui()
+        public static void ValidateGui(){Begin(false);}
+        public static void ValidateInputEventOrderGui(){Begin(true);}
+        static void Begin(bool eventOrder)
         {
-            assertions=0;stage=0;scenario=0;
+            assertions=0;stage=0;scenario=0;inputEventOrder=eventOrder;
             Require(Application.isBatchMode&&!Application.isPlaying,"isolated batch Editor only");
             Require(SystemInfo.graphicsDeviceType!=UnityEngine.Rendering.GraphicsDeviceType.Null,"real IMGUI requires graphics");
             ViveSyntheticFixtureIsolation.OpenKnownSavedAnchor();scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Additive);
@@ -75,7 +83,13 @@ namespace AvatarStroop.Unity.Editor
             owner.Configure(rig,view);Set(rig,"development",owner);
             // Display-only fixture state; no loader, worker, device or recording is installed.
             Set(rig,"running",true);Set(rig,"headReady",true);
+            if(inputEventOrder)
+            {
+                Set(rig,"previewCamera",cameraObject.GetComponent<Camera>());
+                Set(rig,"SyntheticOwnerFocusForFixture",true);
+            }
             window=ScriptableObject.CreateInstance<ViveOwnerClickStabilityWindow>();window.Rig=rig;window.Owner=owner;
+            window.StaleMouseEvents=inputEventOrder;
             window.minSize=new Vector2(600,700);window.maxSize=new Vector2(1400,1400);
             window.position=new Rect(30,30,1100,1100);window.titleContent=new GUIContent("Synthetic owner click stability");
             deadline=EditorApplication.timeSinceStartup+90;window.ShowUtility();EditorApplication.update+=Step;
@@ -89,6 +103,7 @@ namespace AvatarStroop.Unity.Editor
                 if(window.Failure!=null)throw window.Failure;
                 if(stage==0){ResetTask();lastPaint=window.Paint;stage=1;window.Repaint();return;}
                 window.Repaint();if(window.Paint<=lastPaint)return;lastPaint=window.Paint;
+                if(inputEventOrder){InputEventOrderStep();return;}
                 if(stage==1)
                 {
                     Require(window.Rectangles.ContainsKey("formal-confirm")&&window.Enabled["formal-confirm"]==(scenario!=6),
@@ -123,6 +138,40 @@ namespace AvatarStroop.Unity.Editor
             }
             catch(Exception error){Debug.LogException(error);Finish(1);}
         }
+        static void InputEventOrderStep()
+        {
+            string key=scenario==0?"begin-practice":scenario==1?"advanced-task-tools":"desktop-close";
+            Require(window.Rectangles.ContainsKey(key)&&window.Enabled[key],"ready paint omitted or disabled "+key);
+            var rectangle=window.Rectangles[key];var point=rectangle.center-window.Origin;
+            if(stage==1)
+            {
+                downPoint=point;window.SendEvent(new Event{type=EventType.MouseDown,button=0,mousePosition=downPoint});
+                capturedControl=window.LastHotControl;
+                Debug.Log("VIVE_OWNER_EVENT_ORDER_DOWN: target="+key+" stale="+window.MouseDiagnosticWasStale+" capture="+capturedControl);
+                Require(window.MouseDiagnosticWasStale&&!window.MouseControllerWasReady,"mouse event incorrectly manufactured fresh controller authority");
+                Require(capturedControl!=0,"ready painted "+key+" rejected MouseDown before the next controller poll");
+                stage=2;window.Repaint();return;
+            }
+            Require(window.LastHotControl==capturedControl,"repaint lost the captured control for "+key);
+            Require(Vector2.Distance(point,downPoint)<.1f,"fresh repaint moved "+key+" during the click");
+            window.SendEvent(new Event{type=EventType.MouseUp,button=0,mousePosition=downPoint});
+            Require(window.MouseDiagnosticWasStale&&!window.MouseControllerWasReady,"MouseUp incorrectly manufactured current input authority");
+            Require(window.LastHotControl==0,"MouseUp retained a stale control ID for "+key);
+            if(scenario==0)
+            {
+                Require(object.ReferenceEquals(Get(window.Owner,"previewPracticeCountdownTask"),task),"explicit click failed to capture practice intent");
+                Require((int)Get(window.Owner,"practiceCountdownFrame")==-1&&task.Phase==Phase.Preparation&&task.CurrentTrial==null,
+                    "desktop click started a countdown or trial without a subsequent current poll");
+            }
+            else if(scenario==1)Require((bool)Get(window.Owner,"ownerAdvanced"),"Advanced tools click was lost across event freshness changes");
+            else Require((bool)Get(window.Rig,"quitRequested")&&!window.Rig.ViewRunning,"Close click was lost across event freshness changes");
+            Require(Get(window.Owner,"device")==null&&Get(window.Owner,"namedRawPump")==null&&Get(window.Rig,"worker")==null,
+                "GUI event fixture started a device, recording or eye source");
+            Debug.Log("VIVE_OWNER_EVENT_ORDER_CLICK: target="+key+" phase="+task.Phase+" capture="+capturedControl+" released="+window.LastHotControl);
+            if(++scenario<3){stage=0;return;}
+            Debug.Log("VIVE_OWNER_INPUT_EVENT_ORDER_GUI_FIXTURE_PASSED: "+assertions+" assertions; actual production mouse events with fresh Layout/Repaint and previous-frame controller diagnostics on MouseDown/Up; practice intent only, Advanced toggle and Close. No XR, device or recording.");
+            Finish(0);
+        }
         static void Finish(int code)
         {
             EditorApplication.update-=Step;
@@ -136,7 +185,7 @@ namespace AvatarStroop.Unity.Editor
     {
         internal ViveStroopPreviewRig Rig;
         internal ViveStroopDevelopmentBootstrap Owner;
-        internal bool DiagnosticReady,ResetCapture;
+        internal bool DiagnosticReady,ResetCapture,StaleMouseEvents,MouseDiagnosticWasStale,MouseControllerWasReady;
         internal int Paint,LastHotControl;
         internal Vector2 Origin;
         internal Exception Failure;
@@ -148,7 +197,15 @@ namespace AvatarStroop.Unity.Editor
             try
             {
                 if(ResetCapture){GUIUtility.hotControl=0;ResetCapture=false;}
-                ViveOwnerClickStabilityFixture.Call(Owner,"RecordControllerUiPoll",true,DiagnosticReady,"Synthetic transient controller diagnostic.");
+                bool mouse=Event.current.type==EventType.MouseDown||Event.current.type==EventType.MouseUp;
+                if(!StaleMouseEvents||!mouse)
+                    ViveOwnerClickStabilityFixture.Call(Owner,"RecordControllerUiPoll",true,DiagnosticReady,"Synthetic transient controller diagnostic.");
+                else ViveOwnerClickStabilityFixture.Set(Owner,"inputDiagnosticFrame",Time.frameCount-1);
+                if(mouse)
+                {
+                    MouseDiagnosticWasStale=(int)ViveOwnerClickStabilityFixture.Get(Owner,"inputDiagnosticFrame")!=Time.frameCount;
+                    MouseControllerWasReady=(bool)Owner.GetType().GetProperty("ControllerUiReady",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(Owner,null);
+                }
                 if(Event.current.type==EventType.Repaint){Rectangles.Clear();Enabled.Clear();Origin=GUIUtility.GUIToScreenPoint(Vector2.zero);}
                 ViveResponsiveOwnerLayoutFixture.SetObserver((key,rect)=>{Rectangles[key]=rect;Enabled[key]=GUI.enabled;});
                 ViveOwnerClickStabilityFixture.Call(Rig,"DrawOwnerDesktop",position.width,position.height);

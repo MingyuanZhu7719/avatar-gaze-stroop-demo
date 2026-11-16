@@ -89,12 +89,15 @@ namespace AvatarStroop.Unity
         // physical head sample exists for the recording stream.
 #if UNITY_EDITOR
         internal bool SyntheticRawTrackingForFixture;
+        internal bool SyntheticOwnerFocusForFixture;
         bool SyntheticRawTrackingCurrent {get{return SyntheticRawTrackingForFixture&&Application.isBatchMode&&!Application.isPlaying&&
             development!=null&&development.SyntheticRawPumpForFixture&&previewCamera!=null&&previewCamera.isActiveAndEnabled;}}
 #endif
         internal bool XrFocused {get{
 #if UNITY_EDITOR
             if(SyntheticRawTrackingCurrent)return true;
+            if(SyntheticOwnerFocusForFixture&&Application.isBatchMode&&!Application.isPlaying&&worker==null&&
+                development!=null&&!development.NamedRawPumpAttached&&previewCamera!=null&&previewCamera.isActiveAndEnabled)return true;
 #endif
             return OpenXRUtility.IsSessionFocused;}}
         internal MonotonicClock ActiveViewClock {get{return running&&!stopping?clock:null;}}

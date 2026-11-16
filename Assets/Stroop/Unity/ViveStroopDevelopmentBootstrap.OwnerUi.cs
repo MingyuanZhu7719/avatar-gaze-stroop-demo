@@ -28,6 +28,16 @@ namespace AvatarStroop.Unity
         bool ControllerUiChecked
         {get{return rig!=null&&rig.HeadReady&&inputDiagnosticHeadReady&&inputDiagnosticFrame==Time.frameCount;}}
         bool ControllerUiReady {get{return ControllerUiChecked&&inputDiagnosticReady;}}
+        // IMGUI mouse events may precede this frame's Poll while Repaint follows
+        // it. Keep the last completed check readable across that boundary only;
+        // this display snapshot never authorizes a task or recording mutation.
+        bool ControllerUiDisplayChecked
+        {get{return isActiveAndEnabled&&rig!=null&&rig.ViewRunning&&rig.HeadReady&&inputDiagnosticHeadReady&&
+            inputDiagnosticFrame>=0&&(inputDiagnosticFrame==Time.frameCount||inputDiagnosticFrame==Time.frameCount-1);}}
+        bool ControllerUiDisplayReady {get{return ControllerUiDisplayChecked&&inputDiagnosticReady;}}
+        string ControllerUiDisplayState {get{return !ControllerUiDisplayChecked?"not checked":inputDiagnosticReady?"ready":"not ready";}}
+        string ControllerUiDisplayDiagnostic
+        {get{return rig==null||!rig.HeadReady?ControllerHeadUnavailable:!ControllerUiDisplayChecked?ControllerNotChecked:inputDiagnostic;}}
         string ControllerUiState {get{return !ControllerUiChecked?"not checked":inputDiagnosticReady?"ready":"not ready";}}
         string ControllerUiDiagnostic
         {get{return rig==null||!rig.HeadReady?ControllerHeadUnavailable:
@@ -43,8 +53,12 @@ namespace AvatarStroop.Unity
                 var practiceGate=BeginPracticeBlocker();
                 GUI.enabled=practiceGate==null;
                 if(GUILayout.Button("Begin practice"))TryRequestBeginPractice();
+                ViveOwnerDesktopLayout.Observe("begin-practice",GUILayoutUtility.GetLastRect());
                 GUI.enabled=true;
-                if(practiceGate!=null)GUILayout.Label(practiceGate,recordingWrap);
+                GUILayout.Label(practiceGate??"Select Begin practice. Keep the headset on and release the controls.",
+                    recordingWrap,GUILayout.Height(Mathf.Max(60,recordingWrap.lineHeight*3)));
+                if(previewPracticeCountdownTask!=null&&GUILayout.Button("Cancel pending practice start"))
+                    CancelPreviewPracticeRequest("Pending practice start canceled. No trial started.");
                 if(rawPracticeRequested&&GUILayout.Button("Cancel pending practice start"))
                 {ClearRawPracticeRequest();message="Pending practice start canceled. No trial started.";}
             }
@@ -101,7 +115,7 @@ namespace AvatarStroop.Unity
             {var automatic=ConsentAutoStartStatus;if(!String.IsNullOrEmpty(automatic))return automatic;}
             if(participant.RawRecordingRequested&&namedRawPump==null)return "Next: complete source checks, then start local recording below.";
             if(!rig.ViewRunning)return "Next: start the classroom view.";
-            if(!ControllerUiReady||!participant.InputReady)return "Next: keep one wand connected, release the trackpad and trigger, and restore headset tracking.";
+            if(!ControllerUiDisplayReady||!participant.InputReady)return "Next: keep one wand connected, release the trackpad and trigger, and restore headset tracking.";
             switch(participant.Phase)
             {
                 case Phase.Preparation:case Phase.PracticeRetry:return BeginPracticeBlocker()??"Next: select Begin practice.";
@@ -260,8 +274,8 @@ namespace AvatarStroop.Unity
         string BeginPracticeBlocker()
         {
             if(participant==null||!RawPlanStartPhaseMatches(true,participant.Phase))return "Begin practice: task is not in a preparation phase.";
-            if(previewPracticeCountdownTask!=null)return "Practice starts after the five-second headset countdown.";
-            if(RecordingBlocked||ObservationBlocked)return "Begin practice: task is blocked; review the recording or observation status.";
+            if(previewPracticeCountdownTask!=null)return PreviewPracticePendingNotice;
+            if(!isActiveAndEnabled||!configured||faultLatched||RecordingBlocked||ObservationBlocked)return "Begin practice: task is blocked; review the recording or observation status.";
             if(participant.RawRecordingRequested)
             {
                 if(namedRawPump==null&&rawStartIntent==null)return "Begin practice: first request local recording explicitly.";
@@ -272,14 +286,16 @@ namespace AvatarStroop.Unity
                 return null; // Explicit request may wait; execution still validates the live frame.
             }
             if(rig==null||!rig.ViewRunning)return "Begin practice: start the headset view.";
-            if(!rig.XrFocused||!rig.HeadReady)return "Begin practice: restore headset tracking and XR focus.";
-            if(!ControllerUiReady||!participant.InputReady)return "Begin practice: waiting for one current, neutral controller.";
+            // Capture an explicit request only. Poll validates current head,
+            // focus, controller and neutral controls before any countdown/trial.
             return null;
         }
         void TryRequestBeginPractice()
         {
+            Debug.Log("VIVE_PRACTICE_START_CALLBACK: frame="+Time.frameCount+"; phase="+(participant==null?"none":participant.Phase.ToString())+
+                "; event="+(Event.current==null?"none":Event.current.rawType.ToString()));
             var blocker=BeginPracticeBlocker();
-            if(blocker!=null){message=blocker;return;}
+            if(blocker!=null){message=blocker;Debug.Log("VIVE_PRACTICE_START_NOT_REQUESTED: "+blocker);return;}
             if(participant.RawRecordingRequested)
             {
                 CaptureRawPracticeRequest();

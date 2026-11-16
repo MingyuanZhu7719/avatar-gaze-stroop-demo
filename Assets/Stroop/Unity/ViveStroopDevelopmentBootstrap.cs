@@ -527,7 +527,7 @@ namespace AvatarStroop.Unity
                     "Legacy A/B/C/D | 4 blocks";
                 OwnerHeading("Task status");
                 GUILayout.Label(design+"  |  "+participant.Phase,recordingWrap);
-                GUILayout.Label("Controller: "+ControllerUiState,recordingWrap);
+                GUILayout.Label("Controller (latest check): "+ControllerUiDisplayState,recordingWrap);
                 OwnerNotice(NextOwnerAction());
                 CapturePauseDiagnostic();
                 if(pauseDiagnostic!=null)
@@ -544,11 +544,8 @@ namespace AvatarStroop.Unity
                     if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
                     GUILayout.Label(avatarOutputNotice,recordingWrap);
                 }
-                if(!ControllerUiReady)
-                {
-                    if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
-                    GUILayout.Label(ControllerUiDiagnostic,recordingWrap);
-                }
+                // Reserve the same diagnostic control and height for every GUI event.
+                GUILayout.Label(ControllerUiDisplayDiagnostic,recordingWrap,GUILayout.Height(Mathf.Max(60,recordingWrap.lineHeight*3)));
                 if(ownerAdvanced&&participant.NamedPlan!=null)
                     foreach(var block in participant.NamedPlan.Blocks)
                         GUILayout.Label("Planned block "+(block.Index+1)+": "+block.Selection.Option+", list "+block.Selection.ListIndex);
@@ -570,6 +567,7 @@ namespace AvatarStroop.Unity
                     GUILayout.Button("Owner: acknowledge input fault after review"))
                 {faultLatched=false;view.SetFaults(new string[0]);message="Fault acknowledged. A healthy input and an explicit resume are still required.";}
                 bool advanced=GUILayout.Toggle(ownerAdvanced,"Advanced task tools");
+                ViveOwnerDesktopLayout.Observe("advanced-task-tools",GUILayoutUtility.GetLastRect());
                 if(ownerAdvanced&&!advanced)ClearNamedTaskView();
                 ownerAdvanced=advanced;
                 if(ownerAdvanced&&participant.HasNamedOption)
@@ -702,7 +700,7 @@ namespace AvatarStroop.Unity
         // independent owner actions. Only privacy/safety clears hide both.
         void ClearJournalEvidenceSummary(){if(evidencePanel!=null)evidencePanel.ClearSensitive();}
         void ClearSensitiveEvidence(){ClearJournalEvidenceSummary();ClearNamedTaskView();}
-        internal void BeforeViewStart(){ClearSensitiveEvidence();ClearNamedRawLocalCandidate();showEvidenceSummary=false;}
+        internal void BeforeViewStart(){CancelPreviewPracticeRequest("Practice request canceled because the headset view restarted.");ClearSensitiveEvidence();ClearNamedRawLocalCandidate();showEvidenceSummary=false;}
         void OnApplicationFocus(bool focused)
         {
             // Desktop focus alone neither withdraws the software choices nor
@@ -711,7 +709,7 @@ namespace AvatarStroop.Unity
             ObserveDesktopFocus(focused);
             if(!focused)ClearSensitiveEvidence();
         }
-        void OnDisable(){CancelFormalConfirmation("Formal confirmation canceled because the interface closed.");CancelSessionDirectoryPreparation("Folder preparation canceled because the interface closed. No recording was armed; an empty folder may remain.");CloseLegacyWozTaskBinding();if(namedRawPump!=null)AbortRawScenePresentation();ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)CancelRecordingChoices(ViveNamedRecordingSetup.CancellationCause.ComponentDisabled);}
+        void OnDisable(){CancelPreviewPracticeRequest("Practice request canceled because the interface closed.");CancelFormalConfirmation("Formal confirmation canceled because the interface closed.");CancelSessionDirectoryPreparation("Folder preparation canceled because the interface closed. No recording was armed; an empty folder may remain.");CloseLegacyWozTaskBinding();if(namedRawPump!=null)AbortRawScenePresentation();ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)CancelRecordingChoices(ViveNamedRecordingSetup.CancellationCause.ComponentDisabled);}
         void DrawRecordingControls()
         {
             if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
@@ -1209,6 +1207,7 @@ namespace AvatarStroop.Unity
         {
             maskedLiveWozHoldFrame=-1;
             BeginControllerUiPoll(headReady&&xrFocused);
+            ObservePreviewPracticeRequest(headReady,xrFocused);
             ObserveConsentAutoStartFrame(headReady,xrFocused);
             ObserveFormalConfirmationRequest();
             PublishRecordingChoiceCancellation();
@@ -1388,8 +1387,8 @@ namespace AvatarStroop.Unity
                 if(rawPracticeRequested)ResetPracticeCountdown();
                 if(previewPracticeCountdownTask!=null)
                 {
-                    if(!frame.InputReady||frame.TriggerHeld||frame.MenuHeld||frame.Trackpad.Pressed)
-                    {ResetPracticeCountdown();Render();return;}
+                    if(!headReady||!xrFocused||!ControllerUiReady||!participant.InputReady||!frame.InputReady||frame.DeviceChanged||frame.TriggerHeld||frame.MenuHeld||frame.Trackpad.Pressed)
+                    {ResetPracticeCountdown();message=PreviewPracticePendingNotice;Render();return;}
                     if(ServicePreviewPracticeCountdown())return;
                 }
                 bool displayReady=participant.Phase==Phase.Questionnaire?
@@ -2165,6 +2164,7 @@ namespace AvatarStroop.Unity
         }
         public void BeforeXrStop()
         {
+            CancelPreviewPracticeRequest("Practice request canceled because the headset view is stopping.");
             CancelFormalConfirmation("Formal confirmation canceled because the classroom view is stopping.");
             CloseLegacyWozScene();
             if(namedRawPump!=null){RequestNamedRawStopForViewClose();return;}
@@ -2196,9 +2196,10 @@ namespace AvatarStroop.Unity
             finally{CapturePauseDiagnostic("Recording stopped; task safety pause.",before,"Owner or software safety request.");recordingTerminal=true;if(view!=null)view.SetPresentationAvailable(false);CheckObservation(true);}
         }
         public void AfterXrStop()
-        {BeginControllerUiPoll(false);if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)CancelRecordingChoices(ViveNamedRecordingSetup.CancellationCause.ViewStopped);if(device!=null){device.Dispose();device=null;}}
+        {CancelPreviewPracticeRequest("Practice request canceled because the headset view stopped.");BeginControllerUiPoll(false);if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)CancelRecordingChoices(ViveNamedRecordingSetup.CancellationCause.ViewStopped);if(device!=null){device.Dispose();device=null;}}
         void OnDestroy()
         {
+            CancelPreviewPracticeRequest("Practice request canceled because the interface was destroyed.");
             CloseLegacyWozTaskBinding();
             if(namedRawPump!=null)AbortRawScenePresentation();
             ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();
@@ -2275,6 +2276,7 @@ namespace AvatarStroop.Unity
 #endif
         void WithdrawTask()
         {
+            CancelPreviewPracticeRequest("Practice request canceled by withdrawal.");
             if(namedRawPump!=null){try{RequestNamedRawWithdrawal();}finally{ClearNamedTaskView();}return;}
             ClearNamedTaskView();
             StopPracticeObservation();

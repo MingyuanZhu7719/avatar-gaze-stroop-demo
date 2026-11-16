@@ -68,17 +68,35 @@ namespace AvatarStroop.Unity
             message="Block complete. The headset celebration is followed by the questionnaire.";
             return true;
         }
+        const string PreviewPracticePendingNotice="Practice requested. Waiting for current tracking, released controls and the five-second headset countdown.";
+        bool PreviewPracticeRequestCurrent
+        {get{return previewPracticeCountdownTask!=null&&isActiveAndEnabled&&configured&&
+            object.ReferenceEquals(previewPracticeCountdownTask,participant)&&participant!=null&&!participant.RawRecordingRequested&&
+            RawPlanStartPhaseMatches(true,participant.Phase)&&!faultLatched&&!RecordingBlocked&&!ObservationBlocked&&rig!=null&&rig.ViewRunning;}}
+        void CancelPreviewPracticeRequest(string reason)
+        {
+            if(previewPracticeCountdownTask==null)return;
+            previewPracticeCountdownTask=null;ResetPracticeCountdown();message=reason;
+            Debug.Log("VIVE_PREVIEW_PRACTICE_CANCELED: "+reason);
+        }
+        void ObservePreviewPracticeRequest(bool headReady,bool xrFocused)
+        {
+            if(previewPracticeCountdownTask==null)return;
+            if(!PreviewPracticeRequestCurrent)
+            {CancelPreviewPracticeRequest("Practice request canceled because the task, view or safety state changed.");return;}
+            if(!headReady||!xrFocused)ResetPracticeCountdown();
+        }
         void RequestPreviewPracticeCountdown()
         {
             ResetPracticeCountdown();previewPracticeCountdownTask=participant;
-            message="Practice requested. A five-second warning will appear in the headset.";
+            message=PreviewPracticePendingNotice;
+            Debug.Log("VIVE_PREVIEW_PRACTICE_REQUESTED: explicit desktop intent; no countdown or trial has started.");
         }
         bool ServicePreviewPracticeCountdown()
         {
             if(previewPracticeCountdownTask==null)return false;
-            if(!object.ReferenceEquals(previewPracticeCountdownTask,participant)||participant==null||
-                !RawPlanStartPhaseMatches(true,participant.Phase)||RecordingBlocked||ObservationBlocked)
-            {previewPracticeCountdownTask=null;ResetPracticeCountdown();return false;}
+            if(!PreviewPracticeRequestCurrent)
+            {CancelPreviewPracticeRequest("Practice request canceled because the task, view or safety state changed.");return false;}
             if(!ServicePracticeCountdown())return true;
             previewPracticeCountdownTask=null;ResetPracticeCountdown();
             Run(()=>{participant.OwnerBeginPractice(Actor.Owner);if(practicePreview!=null)practicePreview.OnPracticeStarted();});
