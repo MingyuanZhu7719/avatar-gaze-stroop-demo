@@ -108,7 +108,10 @@ namespace AvatarStroop.Unity
             {
                 case Phase.Preparation:case Phase.PracticeRetry:return BeginPracticeBlocker()??"Next: select Begin practice.";
                 case Phase.Familiarization:return "In headset: follow the controller instructions and confirm with the trigger.";
-                case Phase.Practice:case Phase.PracticeCorrection:return "Practice in progress. Respond using the trackpad; trigger confirms instructions.";
+                case Phase.Practice:return participant.TaskKind==TaskKind.VisualSearch?
+                    "Practice in progress. Point at the matching backpack and pull the trigger.":
+                    "Practice in progress. Respond using the trackpad; trigger confirms instructions.";
+                case Phase.PracticeCorrection:return "Review the feedback, release the trigger, then pull it to continue.";
                 case Phase.BlockPreparation:return "Next: review and confirm the experiment plan below.";
                 case Phase.BlockReady:return "Next: begin the first block below.";
                 case Phase.Countdown:case Phase.MainTask:return "Block running. The participant responds in the headset.";

@@ -720,7 +720,6 @@ namespace AvatarStroop.Unity
                 OwnerHeading("Local output");
                 if(namedRawDestination!=null)
                 {
-                    GUILayout.Label("File writer: "+namedRawDestination.State,recordingWrap);
                     GUILayout.Label("After recording finishes, Open CSV opens the saved data in your default application.",recordingWrap);
                     if(ownerDiagnostics)GUILayout.Label("Software status does not establish consent, tracking accuracy, coverage or durable storage. Withdrawal cannot recall existing bytes.",recordingWrap);
                     DrawNamedCsvLocalCandidate();
@@ -1878,7 +1877,11 @@ namespace AvatarStroop.Unity
                 (legacyWozScene==null||!legacyWozScene.MayShowTask))return false;
             if(trial.Stimulus.IsVisualSearch&&!trial.Onset.HasValue&&view.VisualSearchCuePending)
             {
-                if(!PrepareRawAutomaticAvatar()||!view.TryRevealVisualSearchCue(trial.TrialId,trial.Stimulus.VisualSearch.LayoutId))return false;
+                // Cue-only frames reserve no array-onset callback. Drain the
+                // task FIFO and release this frame before the next independent
+                // head poll expires its ticket, including busy eye-status frames.
+                if(!namedRawPump.DrainTaskEvents()||!rig.RawSceneTrackingCurrent()||
+                    !PrepareRawAutomaticAvatar()||!view.TryRevealVisualSearchCue(trial.TrialId,trial.Stimulus.VisualSearch.LayoutId))return false;
                 view.SetPresentationAvailable(true);
                 return rig.TryRevealRawScene();
             }

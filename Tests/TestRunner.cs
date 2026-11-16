@@ -258,6 +258,7 @@ namespace AvatarStroop.Tests
             ViveTaskAuthorityContentionTests.Register(suite);
             ViveNamedRawRecordingPumpTests.RegisterFocusBoundaryTests(suite);
             VivePresentationReservationTests.Register(suite);
+            VisualSearchRawFrameLifecycleTests.Register(suite);
 #endif
             ViveRawRelativeFileCapabilityTests.Register(suite);
             ViveRawDirectoryLeaseTests.Register(suite);
