@@ -14,7 +14,7 @@ namespace AvatarStroop.Unity
     // not a hardware eye-exposure or display-photon timestamp.
     public sealed class ViveGazeValidationView : MonoBehaviour
     {
-        public const string SceneGeometryVersion="classroom-fixed-participant-facing-validation-v1";
+        public const string SceneGeometryVersion="classroom-fixed-participant-facing-validation-v2";
         public const double MaximumSceneAgeSeconds=.1;
         public const float TargetDiameterMetres=.012f;
         [SerializeField] WorldSpaceExperimentView classroom;
@@ -111,9 +111,11 @@ namespace AvatarStroop.Unity
             float cheekZ=Mathf.Sqrt(.25f-.24f*.24f-.20f*.20f);
             positions[5]=InFront(geometry[1].TransformPoint(new Vector3(-.24f,-.20f,cheekZ)));
             positions[6]=InFront(geometry[1].TransformPoint(new Vector3(.24f,-.20f,cheekZ)));
-            // A point beside the board at the same approximate depth. Placing
-            // it on the distant wall would make the nearer board occlude it.
-            positions[7]=new Vector3(-1.8f,1.6f,1.95f);
+            // The background target stays outside the original task/face AOIs,
+            // above the board in the central room view. This avoids the v1 jump
+            // from the right cheek to the far-left peripheral background. Target
+            // placement and measurement timing never depend on measured gaze.
+            positions[7]=new Vector3(-.5f,2.30f,1.90f);
             targetMarker.localScale=Vector3.one*TargetDiameterMetres;
             var witness=targetMarker.GetComponent<ViveGazeValidationRenderWitness>();
             if(witness==null)throw new InvalidOperationException("The target render witness is missing.");

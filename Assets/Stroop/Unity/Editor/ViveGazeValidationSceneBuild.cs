@@ -116,11 +116,16 @@ namespace AvatarStroop.Unity.Editor
             camera.transform.SetPositionAndRotation(WorldSpaceExperimentView.CenteredParticipantReference,Quaternion.identity);
             view.SetInstruction("Keep your head naturally steady.\nTargets begin in 3...");
             Render(camera,Path.Combine(output,"synthetic-validation-instructions.png"));
-            foreach(int index in new[]{0,3})
+            foreach(int index in new[]{0,3,7})
             {
                 view.ShowTarget(index,"synthetic_render");
-                camera.transform.rotation=Quaternion.LookRotation(view.GetTargetPositionWorld(index)-camera.transform.position,Vector3.up);
-                Render(camera,Path.Combine(output,index==0?"synthetic-validation-board.png":"synthetic-validation-eye.png"));
+                camera.transform.rotation=index==7?Quaternion.identity:Quaternion.LookRotation(view.GetTargetPositionWorld(index)-camera.transform.position,Vector3.up);
+                Render(camera,Path.Combine(output,index==0?"synthetic-validation-board.png":index==3?"synthetic-validation-eye.png":"synthetic-validation-background.png"));
+                if(index==7)
+                {
+                    camera.transform.rotation=Quaternion.LookRotation(view.GetTargetPositionWorld(index)-camera.transform.position,Vector3.up);
+                    Render(camera,Path.Combine(output,"synthetic-validation-background-centered.png"));
+                }
             }
             EditorSceneManager.OpenScene(ScenePath,OpenSceneMode.Single);
         }
@@ -169,8 +174,10 @@ namespace AvatarStroop.Unity.Editor
                     camera.transform.rotation=centreTarget?Quaternion.LookRotation(view.GetTargetPositionWorld(i)-camera.transform.position,Vector3.up):Quaternion.identity;
                     var bounds=ProjectedQuad(camera,backing);
                     Require(bounds.xMin>0&&bounds.yMin>0&&bounds.xMax<1&&bounds.yMax<1,"instruction panel cropped in validation camera");
-                    var target=camera.WorldToViewportPoint(view.GetTargetPositionWorld(i));
-                    Require(!bounds.Contains(new Vector2(target.x,target.y)),"instruction panel overlaps a nominal target position");
+                    // Instructions may occupy the future background-target
+                    // direction during countdown. They are never co-present:
+                    // the target-loop assertions below verify both text and
+                    // backing are hidden before measurement rendering starts.
                 }
             }
             camera.aspect=previousAspect;camera.transform.rotation=Quaternion.identity;
@@ -195,8 +202,10 @@ namespace AvatarStroop.Unity.Editor
                 Require(capture.Geometry.Count==6&&capture.Geometry[0].ScaleWorld.X>1.37&&capture.Geometry[0].ScaleWorld.X<1.39,
                     "validation does not reuse actual classroom writing area");
                 Require(Math.Abs(capture.TargetPositionWorld.X-target.x)<.000001,"snapshot target position changed");
+                VerifyTargetUnobstructed(scene,view,camera.transform.position,target,"nominal "+capture.TargetId);
             }
             Require(onsets==view.TargetCount,"target onset count mismatch");
+            VerifyBackgroundEnvelope(scene,view,camera);
             Require(HistoricalScene(10,13,10,10.02,10.035),"delayed callback discarded genuine recent static render");
             Require(!HistoricalScene(10,13,10,10.02,10.101),"historical scene exceeded100ms");
             Require(!HistoricalScene(14,13,10,10.02,10.035),"future Unity render accepted");
@@ -233,6 +242,81 @@ namespace AvatarStroop.Unity.Editor
                 left=Mathf.Min(left,point.x);right=Mathf.Max(right,point.x);bottom=Mathf.Min(bottom,point.y);top=Mathf.Max(top,point.y);
             }
             return Rect.MinMaxRect(left,bottom,right,top);
+        }
+        static void VerifyBackgroundEnvelope(Scene scene,ViveGazeValidationView view,Camera camera)
+        {
+            var originalPosition=camera.transform.position;var originalRotation=camera.transform.rotation;float originalAspect=camera.aspect;
+            try
+            {
+                camera.aspect=1600f/1050;
+                var target=view.GetTargetPositionWorld(7);
+                Require(Vector3.Distance(target,new Vector3(-.5f,2.30f,1.90f))<.00001f&&view.GetTarget(7,"fixture").ExpectedAoi=="other",
+                    "background target must use the v2 central above-board layout and original other category");
+                Require(Vector3.Distance(view.TargetMarker.localScale,Vector3.one*ViveGazeValidationView.TargetDiameterMetres)<.00001f,
+                    "layout correction changed target diameter");
+                // A declared synthetic pose envelope, not replayed participant
+                // data and not proof of the unrecorded per-eye HMD projection.
+                foreach(var offset in new[]{Vector3.zero,new Vector3(.03f,-.08f,-.04f)})
+                foreach(float yaw in new[]{-20f,0f,20f})foreach(float pitch in new[]{-10f,0f,5f})
+                {
+                    camera.transform.SetPositionAndRotation(WorldSpaceExperimentView.CenteredParticipantReference+offset,Quaternion.Euler(pitch,yaw,0));
+                    float radius=ViveGazeValidationView.TargetDiameterMetres*.5f;
+                    foreach(var edge in new[]{Vector3.zero,camera.transform.right*radius,-camera.transform.right*radius,
+                        camera.transform.up*radius,-camera.transform.up*radius})
+                    {
+                        var projected=camera.WorldToViewportPoint(target+edge);
+                        Require(projected.z>0&&projected.x>.02f&&projected.x<.98f&&projected.y>.02f&&projected.y<.98f,
+                            "background target reaches fixture viewport edge within declared pose envelope");
+                    }
+                    VerifyTargetUnobstructed(scene,view,camera.transform.position,target,"background pose envelope");
+                }
+                camera.transform.SetPositionAndRotation(WorldSpaceExperimentView.CenteredParticipantReference,Quaternion.identity);
+                var blocker=GameObject.CreatePrimitive(PrimitiveType.Cube);blocker.name="SyntheticBackgroundOccluder";
+                try
+                {
+                    blocker.transform.position=(camera.transform.position+target)*.5f;blocker.transform.localScale=Vector3.one*.12f;
+                    UnityEngine.Object.DestroyImmediate(blocker.GetComponent<Collider>());
+                    bool rejected=false;
+                    try{VerifyTargetUnobstructed(scene,view,camera.transform.position,target,"synthetic obstruction control");}
+                    catch(InvalidOperationException error){rejected=error.Message.Contains("scene mesh obscures")&&error.Message.Contains(blocker.name);}
+                    Require(rejected,"mesh visibility fixture did not detect its synthetic obstruction control");
+                }
+                finally{UnityEngine.Object.DestroyImmediate(blocker);}
+            }
+            finally{camera.transform.SetPositionAndRotation(originalPosition,originalRotation);camera.aspect=originalAspect;}
+        }
+        static void VerifyTargetUnobstructed(Scene scene,ViveGazeValidationView view,Vector3 origin,Vector3 target,string context)
+        {
+            float targetDistance=Vector3.Distance(origin,target),nearest=Single.PositiveInfinity;
+            string surface="none";var direction=(target-origin).normalized;
+            // Test actual rendered scene mesh triangles, including room and
+            // board-frame geometry that the six analytic AOIs intentionally
+            // do not cover. Marker and inactive instruction meshes are excluded.
+            foreach(var renderer in scene.GetRootGameObjects().SelectMany(x=>x.GetComponentsInChildren<MeshRenderer>(false)))
+            {
+                if(!renderer.enabled||renderer.transform==view.TargetMarker||
+                    (view.PresentationCamera.cullingMask&(1<<renderer.gameObject.layer))==0)continue;
+                var filter=renderer.GetComponent<MeshFilter>();if(filter==null||filter.sharedMesh==null)continue;
+                float boundsDistance;if(!renderer.bounds.IntersectRay(new Ray(origin,direction),out boundsDistance)||boundsDistance>targetDistance)continue;
+                var vertices=filter.sharedMesh.vertices;var triangles=filter.sharedMesh.triangles;
+                for(int i=0;i<triangles.Length;i+=3)
+                {
+                    float distance;
+                    if(IntersectTriangle(origin,direction,renderer.transform.TransformPoint(vertices[triangles[i]]),
+                        renderer.transform.TransformPoint(vertices[triangles[i+1]]),renderer.transform.TransformPoint(vertices[triangles[i+2]]),out distance)&&distance<nearest)
+                    {nearest=distance;surface=renderer.name;}
+                }
+            }
+            Require(nearest>=targetDistance-ViveGazeValidationView.TargetDiameterMetres*.5f,
+                "scene mesh obscures "+context+": "+surface+" at "+nearest+"m before target at "+targetDistance+"m");
+        }
+        static bool IntersectTriangle(Vector3 origin,Vector3 direction,Vector3 a,Vector3 b,Vector3 c,out float distance)
+        {
+            distance=0;var edge1=b-a;var edge2=c-a;var cross=Vector3.Cross(direction,edge2);float determinant=Vector3.Dot(edge1,cross);
+            if(Mathf.Abs(determinant)<1e-8f)return false;
+            float inverse=1/determinant;var delta=origin-a;float u=Vector3.Dot(delta,cross)*inverse;if(u<0||u>1)return false;
+            var q=Vector3.Cross(delta,edge1);float v=Vector3.Dot(direction,q)*inverse;if(v<0||u+v>1)return false;
+            distance=Vector3.Dot(edge2,q)*inverse;return distance>0;
         }
     }
 }

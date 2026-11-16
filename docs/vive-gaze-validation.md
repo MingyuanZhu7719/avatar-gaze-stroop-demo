@@ -13,6 +13,8 @@ This is a separate engineering check in VIVE packages built with `--controlled-r
 
 The target sequence takes about 96 seconds, plus countdowns and the break. Targets include the board, both eyes, both cheeks and background. The scene displays known targets rather than live gaze feedback. The marker has no collider and is excluded from AOI classification.
 
+Geometry version `classroom-fixed-participant-facing-validation-v2` places the background point above the board at Unity world `(-0.5, 2.30, 1.90)` metres. Version v1 placed it far to the left at `(-1.8, 1.6, 1.95)`, which could become highly peripheral after looking at the avatar. This is a target-layout improvement, not an eye-ray correction or a claim about peripheral tracking accuracy. Marker size, fixed timing and AOI geometry remain unchanged. The geometry version is recorded in `session.txt`, and actual target positions are recorded in `targets.csv` and `samples.csv`; retain v1 runs and distinguish the versions when comparing results. Use the matching session bundle when reading `summary.csv`, which does not itself contain the layout version; do not pool v1 and v2 background rows solely by target ID.
+
 **Stop and save incomplete run** preserves the acquired prefix with an incomplete outcome. Persistent head/focus loss during a target, reference-space changes, acquisition faults, time/memory limits or unconfirmed shutdown also prevent a completed outcome. Calibration-required samples are retained; a fluctuating calibration flag alone does not stop the target sequence.
 
 ## Files and timing
@@ -34,3 +36,5 @@ Compare steady-head and gentle-turn passes, each target's angular bias/spread, a
 Summaries retain a geometric diagnostic subset and a stricter SDK-ready subset, so calibration-required valid rays can be examined without being silently promoted to ready data. No automatic scientific pass is assigned: the acceptable error and confusion rate depend on the actual AOI size/separation and the planned analysis. A successful sequence/save establishes neither eye/face accuracy nor fixation or mutual-gaze detection. Quantitative conclusions require the wearer's target-following test and review of its recorded results.
 
 Portable regression covers known-angle calculations, delayed target joins, validity exclusions, export integrity and bounded native capture/shutdown. The Unity build validates marker placement and the production primitive AOI intersection path without starting hardware. Headset testing remains separate.
+
+The build also checks the background point against scene-mesh occlusion and a set of ordinary camera poses. Those synthetic viewport checks do not reproduce a headset's per-eye projection or establish that a wearer perceived the marker. The render witness records camera submission, not visibility through the lenses. Steady/turn pass names describe instructions; use recorded head-pose trajectories to determine how much movement actually occurred.
