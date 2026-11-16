@@ -1665,7 +1665,8 @@ namespace AvatarStroop.Unity
         void EnsureViveControllerLegend(IDictionary<ViveTrackpadDirection,Colour> mapping)
         {
             if(viveControllerLegend!=null)throw new InvalidOperationException("A VIVE mapping is already configured.");
-            viveControllerLegend=Child("ViveControllerLegend",contentRoot,new Vector3(-1.60f,1.55f,BoardPosition.z));
+            // Keep the full-size colour guide beside the upper-right board edge, above the observer.
+            viveControllerLegend=Child("ViveControllerLegend",contentRoot,BoardPosition+new Vector3(1.08f,.75f,0));
             Primitive("LegendFrame",PrimitiveType.Cube,viveControllerLegend,Vector3.zero,new Vector3(.55f,.82f,.035f),new Color(.78f,.81f,.79f));
             Primitive("LegendFace",PrimitiveType.Cube,viveControllerLegend,new Vector3(0,0,-.022f),new Vector3(.525f,.795f,.014f),new Color(.12f,.15f,.16f));
             Primitive("Trackpad",PrimitiveType.Sphere,viveControllerLegend,new Vector3(0,.05f,-.04f),new Vector3(.43f,.43f,.025f),new Color(.55f,.60f,.60f));

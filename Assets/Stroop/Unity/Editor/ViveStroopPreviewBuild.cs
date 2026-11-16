@@ -481,10 +481,10 @@ namespace AvatarStroop.Unity.Editor
                     if(verifyLegend)
                     {
                         int red=0,green=0,blue=0,yellow=0;
-                        // Only the left portion contains the mapping; the green
+                        // Only the upper-right portion contains the mapping; the green
                         // centre word cannot make this check pass accidentally.
                         var values=pixels.GetPixels32();
-                        for(int y=0;y<720;y++)for(int x=0;x<480;x++)
+                        for(int y=400;y<720;y++)for(int x=800;x<1280;x++)
                         {
                             var c=values[y*1280+x];
                             if(c.r>180&&c.g<80&&c.b<80)red++;
@@ -492,7 +492,7 @@ namespace AvatarStroop.Unity.Editor
                             if(c.b>180&&c.r<80&&c.g<80)blue++;
                             if(c.r>180&&c.g>180&&c.b<80)yellow++;
                         }
-                        Require(red>=50&&green>=50&&blue>=50&&yellow>=50,"synthetic VIVE legend colours must actually render on the left");
+                        Require(red>=50&&green>=50&&blue>=50&&yellow>=50,"synthetic VIVE legend colours must actually render above the right board edge");
                     }
                     if(expectAvatar.HasValue)
                     {

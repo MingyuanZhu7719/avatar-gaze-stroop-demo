@@ -25,6 +25,8 @@ Keep exactly one VIVE wand connected. The application automatically selects its 
 
 The visible controller uses the model and texture supplied by the installed SteamVR runtime, aligned to its grip component. It is shown across participant screens while current head/controller tracking is valid, including countdowns, questionnaires and completion. Vendor model files are not bundled. A missing model is reported separately; a stale controller pose is never displayed as current tracking.
 
+For both Ink colour and Word meaning, the fixed colour guide sits just outside the upper-right edge of the whiteboard, above the observer. It keeps the same position and size across A/B/C/D, and stays hidden for Visual Search.
+
 The mapping is fixed in practice and formal trials:
 
 | Trackpad | Colour |
