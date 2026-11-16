@@ -44,6 +44,8 @@ namespace AvatarStroop.Unity
         bool rawHoldViewUnavailable;
         bool practiceCountdownRenderPending;
         bool blockCelebrationRenderPending;
+        readonly VivePracticeCountdown finalCelebrationCountdown=new VivePracticeCountdown(6);
+        bool finalCelebrationRenderPending,finalCelebrationFinished;
         uint presenceEpoch;
         bool hasPresenceEpoch,hasHeadDevice;
         InputDevice headDevice;
@@ -234,6 +236,7 @@ namespace AvatarStroop.Unity
             if(rawHoldView!=null)rawHoldView.EndRender();
             practiceCountdownRenderPending=false;
             blockCelebrationRenderPending=false;
+            finalCelebrationRenderPending=false;
             GuardRawTaskBeforeCull(camera);
             RefreshTrackedWandVisual(camera);
             if(camera==null||camera!=previewCamera||camera.cullingMask!=0||rawHoldViewUnavailable||
@@ -246,15 +249,17 @@ namespace AvatarStroop.Unity
                 bool celebration=development!=null&&development.NormalRawCompletionReady&&rawEyeCleanupObserved&&rawEyeCleanupSafe;
                 bool practice=development!=null&&development.PracticeCountdownVisible&&XrFocused&&!ControllerVisualUnavailable;
                 if(practice)rawHoldView.SetPracticeInstruction(development.PracticeResponseInstruction);
-                // Each block has already had its six-second celebration.
-                // Final cleanup shows the thank-you without repeating D.
-                rawHoldView.SetTransition(celebration,6,
+                // After the last questionnaire and safe recording/eye cleanup,
+                // give the wearer a final six-second celebration. The same
+                // isolated layer remains visible as a static thank-you after it.
+                rawHoldView.SetTransition(celebration,finalCelebrationFinished?6:6-finalCelebrationCountdown.RemainingSeconds,
                     practice?development.PracticeCountdownRemaining:Double.NaN);
                 bool block=development!=null&&development.BlockCelebrationVisible&&XrFocused;
                 if(block)rawHoldView.SetBlockCompletion(development.BlockCelebrationElapsed);
                 bool stopped=RawInstallFailure||development!=null&&development.RawSafetyNoticeActive;
                 bool shown=rawHoldView.BeginRender(camera,true,stopped,ControllerVisualUnavailable);
                 practiceCountdownRenderPending=shown&&!stopped&&practice;blockCelebrationRenderPending=shown&&!stopped&&block;
+                finalCelebrationRenderPending=shown&&!stopped&&celebration&&!block&&!finalCelebrationFinished&&XrFocused;
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
             {
@@ -271,10 +276,24 @@ namespace AvatarStroop.Unity
                 development.ObservePracticeCountdownRender();
             if(blockCelebrationRenderPending&&camera.cullingMask==ViveRawHoldView.Mask&&development!=null)
                 development.ObserveBlockCelebrationRender();
-            practiceCountdownRenderPending=false;blockCelebrationRenderPending=false;rawHoldView.EndRender();
+            if(finalCelebrationRenderPending&&camera.cullingMask==ViveRawHoldView.Mask&&XrFocused&&
+                development!=null&&development.NormalRawCompletionReady&&rawEyeCleanupObserved&&rawEyeCleanupSafe)
+                ObserveFinalCelebrationRender(Time.realtimeSinceStartupAsDouble,Time.frameCount);
+            practiceCountdownRenderPending=false;blockCelebrationRenderPending=false;finalCelebrationRenderPending=false;rawHoldView.EndRender();
+        }
+        // Timing only; the camera callback above supplies the current render
+        // and terminal-cleanup checks. Finishing is latched until view cleanup.
+        void ObserveFinalCelebrationRender(double now,int frame)
+        {
+            if(finalCelebrationFinished)return;
+            finalCelebrationCountdown.ObserveRendered(now,frame);
+            finalCelebrationFinished=finalCelebrationCountdown.RemainingSeconds<=1e-9;
         }
         void DisposeRawHoldView()
-        {if(rawHoldView!=null){rawHoldView.Dispose();rawHoldView=null;}}
+        {
+            if(rawHoldView!=null){rawHoldView.Dispose();rawHoldView=null;}
+            finalCelebrationCountdown.Reset();finalCelebrationFinished=false;finalCelebrationRenderPending=false;
+        }
         bool RawHoldPoseCurrent()
         {
             // A live render callback can also occur while the session is

@@ -115,14 +115,28 @@ namespace AvatarStroop.Unity.Editor
                 foreach(var mesh in sparks.GetComponentsInChildren<Renderer>(true))
                     Require(mesh.gameObject.layer==display.layer,"fireworks escaped the isolated hold layer");
                 Call(hold,"EndRender");
+                Call(hold,"SetTransition",true,1.0,Double.NaN);
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Thank you!")&&sparks.gameObject.activeSelf,
+                    "normal final completion has no thank-you fireworks after recording cleanup");
+                Call(hold,"EndRender");
                 Call(hold,"SetTransition",true,6.0,Double.NaN);
                 Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Thank you!")&&!sparks.gameObject.activeSelf,
-                    "final thank-you repeats fireworks after D or omits completion wording");
+                    "final fireworks do not settle to a static thank-you after six seconds");
                 Call(hold,"EndRender");
                 Call(hold,"SetBlockCompletion",1.0);
                 Require((bool)Call(hold,"BeginRender",camera,true,true,true)&&text.text.Contains("Task blocked"),
                     "terminal stop was displayed as a routine hold");
                 Require(!sparks.gameObject.activeSelf,"fault/withdrawal incorrectly received fireworks");
+                var rig=taskObject.AddComponent<ViveStroopPreviewRig>();
+                Require(!(bool)Get(rig,"finalCelebrationFinished"),"final rig animation starts completed");
+                for(int frame=0;frame<60;frame++)Call(rig,"ObserveFinalCelebrationRender",frame*.1,frame);
+                Require(!(bool)Get(rig,"finalCelebrationFinished"),"final rig animation ends before six rendered seconds");
+                Call(rig,"ObserveFinalCelebrationRender",6.0,60);
+                Require((bool)Get(rig,"finalCelebrationFinished"),"final rig animation never reaches its six-second ending");
+                Call(rig,"ObserveFinalCelebrationRender",100.0,1000);
+                Require((bool)Get(rig,"finalCelebrationFinished"),"completed final animation restarts after a later render gap");
+                Call(rig,"DisposeRawHoldView");
+                Require(!(bool)Get(rig,"finalCelebrationFinished"),"view cleanup retained a previous session's final animation clock");
                 UnityEngine.Object.DestroyImmediate(cameraObject);cameraObject=null;
                 hold.Dispose();hold.Dispose();hold=null;
                 Require(display==null,"destroyed camera retained its hold object");
