@@ -22,6 +22,7 @@ namespace AvatarStroop.Unity.Editor
             Run("automatic controller discovery and commitment",ViveAutomaticControllerInputFixture.Validate);
             Run("selected controller pose snapshot",ViveControllerPoseAdapterFixture.Validate);
             Run("tracked wand model and pose",ViveTrackedWandVisualFixture.Validate);
+            Run("tracked wand physical colour mapping",ViveTrackpadOverlayFixture.Validate);
             Run("tracked wand phase isolation",ViveControllerVisualPolicyFixture.Validate);
             Run("automatic eye service lifecycle",ViveAutoEyeViewStartFixture.Validate);
             Run("consent-driven recording and first Practice",ViveConsentAutoStartFixture.Validate);
@@ -49,7 +50,7 @@ namespace AvatarStroop.Unity.Editor
             Run("named automatic presentation",ViveNamedAutomaticPresentationFixture.Validate);
             Run("named no-avatar presentation",ViveNamedAutomaticPresentationFixture.ValidateNoAvatar);
             Run("named multi-block presentation",ViveNamedAutomaticPresentationFixture.ValidateMultiBlock);
-            Debug.Log("VIVE_OWNER_UI_REGRESSION_SYNTHETIC_FIXTURE_PASSED: 33 suites; no physical headset acceptance.");
+            Debug.Log("VIVE_OWNER_UI_REGRESSION_SYNTHETIC_FIXTURE_PASSED: 34 suites; no physical headset acceptance.");
         }
     }
 }

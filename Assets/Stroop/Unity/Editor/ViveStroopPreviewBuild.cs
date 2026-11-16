@@ -312,7 +312,7 @@ namespace AvatarStroop.Unity.Editor
             var task=new TaskView();
             typeof(TaskView).GetProperty("Phase").SetValue(task,Phase.Practice,null);
             typeof(TaskView).GetProperty("TrialId").SetValue(task,"synthetic-editor-vive-practice",null);
-            typeof(TaskView).GetProperty("Stimulus").SetValue(task,new Stimulus(Colour.Red,Colour.Green),null);
+            typeof(TaskView).GetProperty("Stimulus").SetValue(task,new Stimulus(Colour.Yellow,Colour.Green),null);
             view.ApplyTaskView(task);
             // Edit-mode fixtures do not receive MonoBehaviour.LateUpdate.
             // Explicitly run the same layout pass before inspecting/rasterizing.
@@ -331,7 +331,11 @@ namespace AvatarStroop.Unity.Editor
                 Require(button.GetComponent<Renderer>().sharedMaterial.color==expectedColours[i]&&
                     label!=null&&label.GetComponent<TextMesh>().text==directions[i],"fixed VIVE mapping or label changed");
             }
-            Render(camera,Path.Combine(output,"synthetic-vive-practice.png"),true,false);
+            var guide=legend.Find("LegendFrame").GetComponent<Renderer>().bounds;
+            var writing=view.transform.Find("WorldSpaceContent/ClassroomEnvironment/Whiteboard/WritingArea").GetComponent<Renderer>().bounds;
+            Require(guide.min.x>writing.min.x&&guide.max.x<writing.max.x&&guide.min.y>writing.min.y&&guide.max.y<writing.max.y&&
+                guide.max.z<writing.min.z,"VIVE guide must fit inside the writing area and sit ahead of its surface");
+            Render(camera,Path.Combine(output,"synthetic-vive-practice.png"),legend,false);
             var root=view.AvatarRoot;var head=view.AvatarHead.position;
             var towardParticipant=root.InverseTransformDirection(view.ParticipantReferencePosition-head);
             var towardTask=root.InverseTransformDirection(view.TaskWorldPosition-head);
@@ -341,14 +345,14 @@ namespace AvatarStroop.Unity.Editor
                 var main=new TaskView();
                 typeof(TaskView).GetProperty("Phase").SetValue(main,Phase.MainTask,null);
                 typeof(TaskView).GetProperty("TrialId").SetValue(main,"synthetic-editor-vive-main-"+condition,null);
-                typeof(TaskView).GetProperty("Stimulus").SetValue(main,new Stimulus(Colour.Red,Colour.Green),null);
+                typeof(TaskView).GetProperty("Stimulus").SetValue(main,new Stimulus(Colour.Green,Colour.Green),null);
                 typeof(TaskView).GetProperty("OperatorAvatarVisible").SetValue(main,condition!=Condition.D,null);
                 view.ApplyTaskView(main);
                 var controller=new AvatarController("synthetic-editor-vive",RunKind.Simulation,0,0,ControlSelection.Automatic,condition,GazeTarget.Participant,geometry);
                 view.ApplyAvatarOutput(controller.Render(Phase.MainTask,0));
                 typeof(WorldSpaceExperimentView).GetMethod("LayoutHud",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).Invoke(view,null);
                 Require(view.AvatarRoot.gameObject.activeInHierarchy==(condition!=Condition.D),"main-task avatar visibility must follow A/B/C versus D");
-                Render(camera,Path.Combine(output,"synthetic-vive-main-"+condition.ToString().ToLowerInvariant()+".png"),true,condition!=Condition.D);
+                Render(camera,Path.Combine(output,"synthetic-vive-main-"+condition.ToString().ToLowerInvariant()+".png"),legend,condition!=Condition.D);
             }
             // Match the projection used by the 1280x720 render textures while
             // checking text bounds; restore the camera setting afterwards.
@@ -463,7 +467,7 @@ namespace AvatarStroop.Unity.Editor
             return Rect.MinMaxRect(left,bottom,right,top);
         }
         static Vec3 ToVec(Vector3 value){return new Vec3(value.x,value.y,value.z);}
-        static void Render(Camera camera,string path,bool verifyLegend=false,bool? expectAvatar=null,Action beforeCameraRender=null)
+        static void Render(Camera camera,string path,Transform verifyLegend=null,bool? expectAvatar=null,Action beforeCameraRender=null)
         {
             var render=new RenderTexture(1280,720,24,RenderTextureFormat.ARGB32);
             var previous=RenderTexture.active;var priorTarget=camera.targetTexture;
@@ -478,13 +482,18 @@ namespace AvatarStroop.Unity.Editor
                 try
                 {
                     pixels.ReadPixels(new Rect(0,0,1280,720),0,0);pixels.Apply();
-                    if(verifyLegend)
+                    if(verifyLegend!=null)
                     {
                         int red=0,green=0,blue=0,yellow=0;
-                        // Only the upper-right portion contains the mapping; the green
-                        // centre word cannot make this check pass accidentally.
+                        // Project the actual card, excluding the centre word even
+                        // when its longest labels are GREEN or YELLOW.
+                        var area=ViewportBounds(camera,verifyLegend.Find("LegendFrame").GetComponent<Renderer>());
+                        var word=ViewportBounds(camera,verifyLegend.parent.Find("Stimulus").GetComponent<Renderer>());
+                        if(area.Overlaps(word))File.WriteAllBytes(Path.ChangeExtension(path,"layout-debug.png"),pixels.EncodeToPNG());
+                        Require(!area.Overlaps(word),"VIVE guide overlaps the central Stroop word: guide="+area.ToString("F4")+" word="+word.ToString("F4"));
                         var values=pixels.GetPixels32();
-                        for(int y=400;y<720;y++)for(int x=800;x<1280;x++)
+                        for(int y=Mathf.FloorToInt(area.yMin*720);y<Mathf.CeilToInt(area.yMax*720);y++)
+                        for(int x=Mathf.FloorToInt(area.xMin*1280);x<Mathf.CeilToInt(area.xMax*1280);x++)
                         {
                             var c=values[y*1280+x];
                             if(c.r>180&&c.g<80&&c.b<80)red++;
@@ -492,7 +501,7 @@ namespace AvatarStroop.Unity.Editor
                             if(c.b>180&&c.r<80&&c.g<80)blue++;
                             if(c.r>180&&c.g>180&&c.b<80)yellow++;
                         }
-                        Require(red>=50&&green>=50&&blue>=50&&yellow>=50,"synthetic VIVE legend colours must actually render above the right board edge");
+                        Require(red>=50&&green>=50&&blue>=50&&yellow>=50,"synthetic VIVE legend colours must actually render inside the upper-right writing area");
                     }
                     if(expectAvatar.HasValue)
                     {

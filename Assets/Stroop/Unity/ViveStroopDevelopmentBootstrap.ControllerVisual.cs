@@ -10,6 +10,18 @@ namespace AvatarStroop.Unity
         internal static bool ControllerVisualPhasePermitted(bool configured,Phase phase,int block)
         {return true;}
         internal bool ControllerVisualPhaseAllowed {get{return isActiveAndEnabled;}}
+        // Colour sectors describe Stroop responses only. The questionnaire uses
+        // the same pad for ratings, and Visual Search uses a ray and trigger.
+        internal static bool ControllerColourMappingPermitted(TaskKind task,Phase phase)
+        {
+            return task==TaskKind.Stroop&&(phase==Phase.Preparation||phase==Phase.Familiarization||
+                phase==Phase.Practice||phase==Phase.PracticeCorrection||phase==Phase.PracticeRetry||
+                phase==Phase.BlockPreparation||phase==Phase.BlockReady||phase==Phase.Countdown||
+                phase==Phase.MainTask||phase==Phase.Rest);
+        }
+        internal bool ControllerColourMappingAllowed
+        {get{return ControllerVisualPhaseAllowed&&ControllerColourMappingPermitted(
+            participant==null?selectedTaskKind:participant.TaskKind,participant==null?Phase.Preparation:participant.Phase);}}
         internal VivePreviewControllerHand ControllerVisualHand
         {get{return device==null?VivePreviewControllerHand.Automatic:device.Hand;}}
         internal bool TryGetCurrentControllerPose(out ViveStroopControllerPose pose)

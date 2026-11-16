@@ -1665,16 +1665,17 @@ namespace AvatarStroop.Unity
         void EnsureViveControllerLegend(IDictionary<ViveTrackpadDirection,Colour> mapping)
         {
             if(viveControllerLegend!=null)throw new InvalidOperationException("A VIVE mapping is already configured.");
-            // Keep the full-size colour guide beside the upper-right board edge, above the observer.
-            viveControllerLegend=Child("ViveControllerLegend",contentRoot,BoardPosition+new Vector3(1.08f,.75f,0));
-            Primitive("LegendFrame",PrimitiveType.Cube,viveControllerLegend,Vector3.zero,new Vector3(.55f,.82f,.035f),new Color(.78f,.81f,.79f));
-            Primitive("LegendFace",PrimitiveType.Cube,viveControllerLegend,new Vector3(0,0,-.022f),new Vector3(.525f,.795f,.014f),new Color(.12f,.15f,.16f));
-            Primitive("Trackpad",PrimitiveType.Sphere,viveControllerLegend,new Vector3(0,.05f,-.04f),new Vector3(.43f,.43f,.025f),new Color(.55f,.60f,.60f));
-            LegendButton(viveControllerLegend,"U",mapping[ViveTrackpadDirection.Up],new Vector3(0,.19f,-.07f));
-            LegendButton(viveControllerLegend,"R",mapping[ViveTrackpadDirection.Right],new Vector3(.14f,.05f,-.07f));
-            LegendButton(viveControllerLegend,"D",mapping[ViveTrackpadDirection.Down],new Vector3(0,-.09f,-.07f));
-            LegendButton(viveControllerLegend,"L",mapping[ViveTrackpadDirection.Left],new Vector3(-.14f,.05f,-.07f));
-            var label=Text("TrackpadLabel",viveControllerLegend,new Vector3(0,.33f,-.045f),.0065f,64,Color.white);label.text="TRACKPAD";
+            // Reflow the guide inside the upper-right writing area, above the
+            // word. Keep button/letter sizes; bring the card ahead of the board.
+            viveControllerLegend=Child("ViveControllerLegend",contentRoot,BoardPosition+new Vector3(.43f,.33f,-.06f));
+            Primitive("LegendFrame",PrimitiveType.Cube,viveControllerLegend,Vector3.zero,new Vector3(.44f,.36f,.035f),new Color(.78f,.81f,.79f));
+            Primitive("LegendFace",PrimitiveType.Cube,viveControllerLegend,new Vector3(0,0,-.022f),new Vector3(.415f,.335f,.014f),new Color(.12f,.15f,.16f));
+            Primitive("Trackpad",PrimitiveType.Sphere,viveControllerLegend,new Vector3(0,-.02f,-.04f),new Vector3(.29f,.29f,.025f),new Color(.55f,.60f,.60f));
+            LegendButton(viveControllerLegend,"U",mapping[ViveTrackpadDirection.Up],new Vector3(0,.065f,-.07f));
+            LegendButton(viveControllerLegend,"R",mapping[ViveTrackpadDirection.Right],new Vector3(.105f,-.025f,-.07f));
+            LegendButton(viveControllerLegend,"D",mapping[ViveTrackpadDirection.Down],new Vector3(0,-.115f,-.07f));
+            LegendButton(viveControllerLegend,"L",mapping[ViveTrackpadDirection.Left],new Vector3(-.105f,-.025f,-.07f));
+            var label=Text("TrackpadLabel",viveControllerLegend,new Vector3(0,.145f,-.045f),.0065f,64,Color.white);label.text="TRACKPAD";
             viveControllerLegend.gameObject.SetActive(false);
         }
         void BuildControllerLegend(string name,float x,bool left)

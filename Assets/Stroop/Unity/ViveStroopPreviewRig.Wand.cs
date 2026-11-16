@@ -160,6 +160,7 @@ namespace AvatarStroop.Unity
                 // the current grip again before publishing that first model.
                 if(!WandVisualTrackingSpaceCurrent()||!FreshVisualPose(current,out position,out rotation))
                 {trackedWandVisual.Hide();return;}
+                trackedWandVisual.SetTrackpadMapping(development.ControllerColourMappingAllowed);
                 trackedWandVisual.Apply(true,true,position,rotation,Time.frameCount);
             }
             catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))

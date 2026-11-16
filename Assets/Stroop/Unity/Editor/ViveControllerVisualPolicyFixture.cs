@@ -16,6 +16,9 @@ namespace AvatarStroop.Unity.Editor
         static bool Permitted(bool configured,Phase phase,int block)
         {return (bool)typeof(ViveStroopDevelopmentBootstrap).GetMethod("ControllerVisualPhasePermitted",
             BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{configured,phase,block});}
+        static bool Colours(TaskKind task,Phase phase)
+        {return (bool)typeof(ViveStroopDevelopmentBootstrap).GetMethod("ControllerColourMappingPermitted",
+            BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{task,phase});}
         static bool Head(bool aligned,bool tracked,bool reference,bool present,TrackingOriginModeFlags origin,TrackingOriginModeFlags placed)
         {return (bool)typeof(ViveStroopPreviewRig).GetMethod("ControllerVisualHeadPermitted",
             BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,new object[]{aligned,tracked,reference,present,origin,placed});}
@@ -25,6 +28,10 @@ namespace AvatarStroop.Unity.Editor
         public static void Validate()
         {
             assertions=0;
+            Require(Colours(TaskKind.Stroop,Phase.Practice)&&Colours(TaskKind.Stroop,Phase.MainTask),"Stroop response mapping missing");
+            Require(!Colours(TaskKind.Stroop,Phase.Questionnaire),"colour response mapping conflicts with rating directions");
+            Require(!Colours(TaskKind.VisualSearch,Phase.Practice)&&!Colours(TaskKind.VisualSearch,Phase.MainTask),"colour mapping leaks into ray selection task");
+            Require(!Colours(TaskKind.Stroop,Phase.Ended)&&!Colours(TaskKind.Stroop,Phase.Paused),"inactive response mapping remains visible");
             foreach(Phase phase in Enum.GetValues(typeof(Phase)))
             {
                 foreach(bool configured in new[]{false,true})foreach(int block in new[]{-1,0,3})

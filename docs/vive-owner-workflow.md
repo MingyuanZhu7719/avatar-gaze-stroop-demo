@@ -25,7 +25,9 @@ Keep exactly one VIVE wand connected. The application automatically selects its 
 
 The visible controller uses the model and texture supplied by the installed SteamVR runtime, aligned to its grip component. It is shown across participant screens while current head/controller tracking is valid, including countdowns, questionnaires and completion. Vendor model files are not bundled. A missing model is reported separately; a stale controller pose is never displayed as current tracking.
 
-For both Ink colour and Word meaning, the fixed colour guide sits just outside the upper-right edge of the whiteboard, above the observer. It keeps the same position and size across A/B/C/D, and stays hidden for Visual Search.
+For the Vive wand (`vr_controller_vive_1_5`), the trackpad itself carries the fixed Stroop colours: red up, green right, blue down and yellow left. These markings follow the native model and grip pose. They appear in Stroop preparation, practice and task phases, and are hidden during questionnaires, inactive task states and Visual Search, where the controls have different meanings. Other controller models retain their native appearance without a guessed trackpad overlay. The controller draws in the camera's forward geometry stage, with a minimum surface brightness for dark plastic; physical alignment and both-eye appearance still require a wearer check.
+
+For both Ink colour and Word meaning, the fixed colour guide sits inside the whiteboard's upper-right writing area, above the central word. Its compact card preserves the colour-button and letter sizes. It keeps the same position and size across A/B/C/D, and stays hidden for Visual Search.
 
 The mapping is fixed in practice and formal trials:
 

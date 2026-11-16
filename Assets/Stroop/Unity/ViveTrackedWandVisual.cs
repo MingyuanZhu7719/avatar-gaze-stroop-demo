@@ -9,7 +9,7 @@ namespace AvatarStroop.Unity
     // The runtime supplies the actual device mesh/texture. It has no Renderer,
     // collider or input component: only this camera's visual command buffer can
     // draw it, even when the task camera's scene layer mask is safely closed.
-    internal sealed class ViveTrackedWandVisual : MonoBehaviour
+    internal sealed partial class ViveTrackedWandVisual : MonoBehaviour
     {
         Transform model;
         GameObject trackingHint;
@@ -19,6 +19,8 @@ namespace AvatarStroop.Unity
         Camera ownerCamera;
         CommandBuffer draw;
         int visibleFrame=-1;
+        int loggedEyes;
+        internal const CameraEvent DrawEvent=CameraEvent.AfterForwardAlpha;
         internal string ModelName {get;private set;}
         internal bool Visible {get{return model!=null&&model.gameObject.activeInHierarchy&&visibleFrame==Time.frameCount;}}
         internal bool TrackingHintVisible {get{return trackingHint!=null&&trackingHint.activeInHierarchy;}}
@@ -100,7 +102,7 @@ namespace AvatarStroop.Unity
             if(hintLayer<0||hintLayer>31)throw new ArgumentOutOfRangeException("hintLayer");
             DetachBuffer();ownerCamera=camera;
             draw=new CommandBuffer{name="Current tracked runtime controller only"};
-            ownerCamera.AddCommandBuffer(CameraEvent.AfterEverything,draw);
+            ownerCamera.AddCommandBuffer(DrawEvent,draw);
             DestroyOwned(trackingHint);
             trackingHint=new GameObject("Vive wand tracking loss");trackingHint.SetActive(false);trackingHint.layer=hintLayer;
             trackingHint.transform.SetParent(camera.transform,false);
@@ -130,17 +132,29 @@ namespace AvatarStroop.Unity
             if(camera!=ownerCamera)return;
             if(draw!=null)draw.Clear();ValidateFrame();
             if(Visible&&draw!=null&&mesh!=null&&material!=null)
+            {
                 draw.DrawMesh(mesh,model.localToWorldMatrix,material,0,0);
+                AppendTrackpadOverlay(draw,model.localToWorldMatrix);
+                int eyeBit=1<<(int)camera.stereoActiveEye;
+                if(Application.isPlaying&&(loggedEyes&eyeBit)==0)
+                {
+                    loggedEyes|=eyeBit;
+                    Debug.Log("VIVE_CONTROLLER_DRAW: event="+DrawEvent+"; eye="+camera.stereoActiveEye+
+                        "; stereo="+camera.stereoEnabled+"; near="+camera.nearClipPlane+
+                        "; camera_local_controller="+camera.transform.InverseTransformPoint(transform.position).ToString("F3")+
+                        "; model="+ModelName+"; triangles="+mesh.triangles.Length/3);
+                }
+            }
         }
-        // AfterEverything can execute after onPostRender. Keep this frame's
-        // commands until the next owner pre-cull replaces them; Hide/Disable
-        // clear immediately, and a missing current publication never redraws.
+        // Draw while the eye's geometry target, projection and depth buffer are
+        // current, before final XR resolve/output. Keep commands until the next
+        // owner pre-cull; Hide/Disable clear immediately and stale poses never draw.
         void OnEnable(){Camera.onPreCull+=GuardRender;ValidateFrame();}
         void OnDisable(){Camera.onPreCull-=GuardRender;Hide();}
         void ClearModel()
-        {DestroyOwned(mesh);DestroyOwned(material);DestroyOwned(texture);mesh=null;material=null;texture=null;ModelName=null;}
+        {ClearTrackpadOverlay();DestroyOwned(mesh);DestroyOwned(material);DestroyOwned(texture);mesh=null;material=null;texture=null;ModelName=null;loggedEyes=0;}
         void DetachBuffer()
-        {if(draw==null)return;if(ownerCamera!=null)ownerCamera.RemoveCommandBuffer(CameraEvent.AfterEverything,draw);draw.Clear();draw.Release();draw=null;ownerCamera=null;}
+        {if(draw==null)return;if(ownerCamera!=null)ownerCamera.RemoveCommandBuffer(DrawEvent,draw);draw.Clear();draw.Release();draw=null;ownerCamera=null;}
         void OnDestroy()
         {
             Camera.onPreCull-=GuardRender;

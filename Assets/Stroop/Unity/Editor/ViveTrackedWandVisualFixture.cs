@@ -88,7 +88,7 @@ namespace AvatarStroop.Unity.Editor
                 Matrix4x4 expected=Matrix4x4.TRS(new Vector3(.03f,.04f,.05f),Quaternion.Euler(0,-90,0),Vector3.one).inverse;
                 Require((model.localPosition-(Vector3)expected.GetColumn(3)).sqrMagnitude<1e-8f&&Quaternion.Angle(model.localRotation,expected.rotation)<.05f,
                     "model origin did not use inverse converted grip component");
-                Require(camera.GetCommandBuffers(CameraEvent.AfterEverything).Length==1&&camera.cullingMask==0,"camera buffer attachment changed task mask");
+                Require(camera.GetCommandBuffers(CameraEvent.AfterForwardAlpha).Length==1&&camera.cullingMask==0,"camera buffer attachment changed task mask");
                 var position=new Vector3(.26f,1.15f,.38f);var rotation=Quaternion.Euler(-12,38,19);int frame=Time.frameCount;
                 Require((bool)Call(wand,"Apply",true,true,position,rotation,frame)&&Flag(wand,"Visible"),"valid current wand not shown");
                 Require((wand.transform.position-origin.TransformPoint(position)).sqrMagnitude<1e-8f&&
@@ -114,7 +114,7 @@ namespace AvatarStroop.Unity.Editor
                 var texture=(Texture2D)Get(wand,"texture");var material=(Material)Get(wand,"material");
                 DestroyVisual(wand);wand=null;
                 Require(mesh==null&&texture==null&&material==null,"owned mesh, texture or material leaked");
-                Require(camera.transform.Find("Vive wand tracking loss")==null&&camera.GetCommandBuffers(CameraEvent.AfterEverything).Length==0,
+                Require(camera.transform.Find("Vive wand tracking loss")==null&&camera.GetCommandBuffers(CameraEvent.AfterForwardAlpha).Length==0,
                     "hint or camera command buffer leaked on teardown");
             }
             finally{DestroyVisual(wand);}
@@ -154,7 +154,7 @@ namespace AvatarStroop.Unity.Editor
                 Require((bool)Call(wand,"Apply",true,true,new Vector3(0,0,.8f),Quaternion.identity,Time.frameCount),"pixel pose unavailable");
                 Require(RenderPixels(other)==0&&Flag(wand,"Visible"),"another camera rendered or invalidated the owner model");
                 int pixels=RenderPixels(camera);
-                Require(pixels>20000&&pixels<100000,"AfterEverything did not actually render bounded pixels: "+pixels);
+                Require(pixels>20000&&pixels<100000,"AfterForwardAlpha did not actually render bounded pixels: "+pixels);
                 Require(RenderPixels(other)==0,"owner render leaked commands into another camera");
                 Require(!startup.WasRenderedBefore(Time.frameCount+1),"controller-only pixels fabricated a hidden startup witness");
                 wand.GetType().GetField("visibleFrame",Private).SetValue(wand,Time.frameCount-1);
