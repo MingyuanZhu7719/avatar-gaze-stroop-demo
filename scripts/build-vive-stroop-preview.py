@@ -43,6 +43,8 @@ def editor_environment(output, controlled=False, legacy=False, woz=False):
 def recording_manifest(controlled=False, legacy=False, woz=False):
     validate_recording_options(controlled, legacy, woz)
     return {"recording_default": False,
+            "fixed_target_validation_available": controlled,
+            "fixed_target_validation_default": False,
             "optional_local_eye_and_task_recording": controlled,
             "controlled_recording_development": controlled,
             "legacy_raw_recording_development": legacy,
@@ -76,6 +78,12 @@ def start_here_text(controlled=False, legacy=False, guide="", woz=False):
                "Recording is OFF by default. Building or opening the package starts no task, XR, eye source or file capture.\n"
                "Choose Preview (no files) for a non-recording run. Task records stay in memory until close, with no task or eye files.\n")
     if controlled:
+        heading += ("FIXED-TARGET EYE VALIDATION\n"
+                    "Before configuring a task, choose Fixed-target eye validation. Complete calibration in HTC's interface.\n"
+                    "Start headset view, then Start validation and record. Follow the eight targets for two steady-head passes.\n"
+                    "At the break, select Begin gentle head-turn passes for two more passes. No trackpad answers are required.\n"
+                    "After capture closes, Open validation summary or Open sample CSV. Files are separate under LocalGazeValidationData.\n"
+                    "Completion means the sequence and save finished; accuracy has no automatic pass threshold.\n\n")
         woz_notice = ("OPTIONAL PARTICIPANT-LOCAL LEGACY WOZ RECORDING\n"
                       "This separately opted-in development package adds recorded Legacy WoZ; network and recording remain OFF by default.\n"
                       "Choose Record locally, Legacy A/B/C/D, and Use a second-PC WoZ operator. Local storage, both headset choices and explicit recording start remain required.\n"

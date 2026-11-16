@@ -226,7 +226,7 @@ namespace AvatarStroop.Unity
             if(target==null||!AoiFiniteTransform(target)||!AoiFinite(origin)||!AoiFinite(direction)||direction.sqrMagnitude<=0)return false;
             return TryIntersectAoiMatrix(target.worldToLocalMatrix,box,origin,direction,out distance,out localHit);
         }
-        static bool TryIntersectAoiMatrix(Matrix4x4 inverse,bool box,Vector3 origin,Vector3 direction,out float distance,out Vector3 localHit)
+        internal static bool TryIntersectAoiMatrix(Matrix4x4 inverse,bool box,Vector3 origin,Vector3 direction,out float distance,out Vector3 localHit)
         {
             distance=0;localHit=Vector3.zero;
             var o=inverse.MultiplyPoint3x4(origin);var d=inverse.MultiplyVector(direction);

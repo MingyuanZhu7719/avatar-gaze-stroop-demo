@@ -10,6 +10,7 @@ Start with the [VIVE owner workflow](docs/vive-owner-workflow.md) to run a built
 | --- | --- |
 | VIVE participant | Classroom presentation, one VIVE wand, practice, Legacy A/B/C/D and Named multi-block development plans, automatic avatar control, questionnaires, and explicit local recording. |
 | Eye acquisition | Installed SRanipal native callbacks, a bounded acquisition queue independent of Unity updates, channel-validity and calibration-query evidence, and graceful completion draining. |
+| Fixed-target eye validation | Separate opt-in recording in controlled VIVE builds; known classroom targets, steady-head and gentle head-turn passes, software timing and descriptive accuracy/AOI summaries. |
 | Gaze analysis records | Raw native frame identity and software timestamps; admitted observations add head pose, completed-render scene geometry and exclusive task/eyes/remaining-face AOI proxies. |
 | Live WoZ | Separate participant and operator applications, explicit pairing and pose forwarding, and an optional participant-local recording build. Physical two-PC acceptance remains separate. |
 | Other development tools | Quest PC Link preview, desktop preview, independent-process simulation, owner console, and read-only journal analysis. |
@@ -28,6 +29,8 @@ The [experiment design](docs/experiment-design.md) defines the research baseline
 6. After normal completion and file closure, use **Open CSV** to open the session CSV in the Windows default application.
 
 The fixed trackpad mapping is up/red, right/green, down/blue, left/yellow. In questionnaires, up/down changes the rating and trigger confirms. The [self-test guide](docs/controlled-recording-self-test-guide.txt) covers setup, withdrawal checks, output limits and completed-session verification. The [WoZ guide](docs/woz-participant-local-recording.md) covers the separate two-PC path.
+
+For the separate accuracy check, choose **Fixed-target eye validation** before configuring a task. The [validation guide](docs/vive-gaze-validation.md) explains target timing, the recorded files and interpretation. Its completion message is not an accuracy pass.
 
 ## Build and test
 

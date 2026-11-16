@@ -259,6 +259,8 @@ namespace AvatarStroop.Tests
             ViveNamedPlanTaskMemoryProjectionTests.Register(suite);
             ViveWozOperatorSourceFactoryTests.Register(suite);
             ViveProEyeWorkerTests.Register(suite);
+            ViveGazeValidationTests.Register(suite);
+            ViveGazeValidationCaptureTests.Register(suite);
             ViveRecordingStartReadinessTests.Register(suite);
             VivePreviewDiagnosticsTests.Register(suite);
             VivePreviewMarkerContinuityTests.Register(suite);

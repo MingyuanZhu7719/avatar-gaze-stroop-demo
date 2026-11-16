@@ -46,7 +46,7 @@ namespace AvatarStroop.Unity.Editor
         }
         public static void Configure()
         {
-            ReadRecordingBuildDefines(Project());
+            var recordingDefines=ReadRecordingBuildDefines(Project());
             // Configure only this isolated project's official cached packages and
             // generated scene; the installed system runtime is never changed.
             QuestPreviewBuild.Configure();
@@ -94,7 +94,11 @@ namespace AvatarStroop.Unity.Editor
             development.Configure(rig,view);rig.ConfigureDevelopment(development);
             EditorUtility.SetDirty(view);EditorUtility.SetDirty(rig);EditorUtility.SetDirty(development);
             Require(EditorSceneManager.SaveScene(scene,ScenePath),"could not save isolated scene");
-            EditorBuildSettings.scenes=new[]{new EditorBuildSettingsScene(ScenePath,true)};
+            ViveGazeValidationSceneBuild.CreateScene();
+            EditorSceneManager.OpenScene(ScenePath,OpenSceneMode.Single);
+            EditorBuildSettings.scenes=recordingDefines.Contains("STROOP_CONTROLLED_RECORDING_DEVELOPMENT")?
+                new[]{new EditorBuildSettingsScene(ScenePath,true),new EditorBuildSettingsScene(ViveGazeValidationSceneBuild.ScenePath,true)}:
+                new[]{new EditorBuildSettingsScene(ScenePath,true)};
             AssetDatabase.SaveAssets();
             File.WriteAllText(Path.Combine(Project(),"vive-classroom-configured.json"),"{\"explicit_xr_start\":true,\"explicit_eye_start\":true,\"explicit_task_configuration\":true,\"study\":false,\"input_configured\":false,\"hardware_validated\":false}\n");
             Debug.Log("VIVE_CLASSROOM_CONFIGURED: development task waits for explicit setup; no runtime, eye capture or task started.");
@@ -279,10 +283,11 @@ namespace AvatarStroop.Unity.Editor
                 general.Manager.activeLoaders.Count==1&&general.Manager.activeLoaders[0] is OpenXRLoader,"XR must require explicit start");
             Require(settings!=null&&settings.GetFeature<HTCViveControllerProfile>()!=null&&settings.GetFeature<HTCViveControllerProfile>().enabled&&
                 (settings.GetFeature<OculusTouchControllerProfile>()==null||!settings.GetFeature<OculusTouchControllerProfile>().enabled),"wrong isolated controller profile");
+            ViveGazeValidationSceneBuild.Validate();
             var scene=EditorSceneManager.OpenScene(ScenePath,OpenSceneMode.Single);Validate(scene);
             PlayerSettings.productName=woz?"Avatar Stroop - LEGACY WOZ PARTICIPANT-LOCAL RECORDING TEST":legacy?"Avatar Stroop - LEGACY + NAMED LOCAL RECORDING TEST":controlled?"Avatar Stroop - CONTROLLED LOCAL RECORDING TEST":"Avatar Stroop - VIVE CLASSROOM VIEW ONLY";
             string executable=Path.Combine(output,"UnityPlayer/AvatarStroopViveEyePlayer.exe");Directory.CreateDirectory(Path.GetDirectoryName(executable));
-            var result=BuildPipeline.BuildPlayer(new BuildPlayerOptions{scenes=new[]{ScenePath},locationPathName=executable,
+            var result=BuildPipeline.BuildPlayer(new BuildPlayerOptions{scenes=controlled?new[]{ScenePath,ViveGazeValidationSceneBuild.ScenePath}:new[]{ScenePath},locationPathName=executable,
                 target=BuildTarget.StandaloneWindows64,options=controlled?BuildOptions.Development:BuildOptions.None,
                 extraScriptingDefines=recordingDefines});
             Require(result.summary.result==BuildResult.Succeeded&&File.Exists(executable),"player build failed");
@@ -292,6 +297,7 @@ namespace AvatarStroop.Unity.Editor
         public static void RenderFixture()
         {
             string project=Project();ReadRecordingBuildDefines(project);string output=Output(project);
+            ViveGazeValidationSceneBuild.RenderFixture(output);
             var scene=EditorSceneManager.OpenScene(ScenePath,OpenSceneMode.Single);Validate(scene);
             var view=scene.GetRootGameObjects().SelectMany(x=>x.GetComponentsInChildren<WorldSpaceExperimentView>(true)).Single();
             view.SetViveUnconfiguredPreview("Synthetic Editor render. No XR or eye capture started.");

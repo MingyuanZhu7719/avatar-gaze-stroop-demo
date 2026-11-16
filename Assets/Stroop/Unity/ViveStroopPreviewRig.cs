@@ -342,6 +342,14 @@ namespace AvatarStroop.Unity
             ownerScroll.x=0;
             ownerScroll=GUILayout.BeginScrollView(ownerScroll,false,true,GUIStyle.none,ownerSkin.verticalScrollbar);
             GUILayout.BeginVertical(GUILayout.Width(contentWidth),GUILayout.ExpandWidth(false));
+            if(ViveControlledRecordingBuildPolicy.Available&&!ViewRunning&&worker==null&&!quitRequested&&
+                development!=null&&!development.Configured&&!development.RecordingBlocked)
+            {
+                if(GUILayout.Button("Fixed-target eye validation",button,GUILayout.Height(44)))
+                    UnityEngine.SceneManagement.SceneManager.LoadScene(ViveGazeValidationController.SceneName);
+                GUILayout.Label("Separate gaze accuracy check with local CSV output. Start before configuring a task.",label);
+                GUILayout.Space(10);
+            }
             if(development!=null)development.DrawOwnerControls();
             else
             {

@@ -7,6 +7,7 @@ Use the operating guides for a current package, the development guide for source
 | Document | Use it for |
 | --- | --- |
 | [VIVE owner workflow](vive-owner-workflow.md) | Participant setup, practice, formal blocks, controller mapping and opening CSV. |
+| [Fixed-target eye validation](vive-gaze-validation.md) | Separate recorded accuracy check, target sequence, gaze/AOI summaries and limitations. |
 | [Local recording self-test](controlled-recording-self-test-guide.txt) | Recording choices, short withdrawal checks, complete-session output and storage limits. |
 | [WoZ participant-local recording](woz-participant-local-recording.md) | Separate participant/operator workflow and recording scope. |
 | [Development](development.md) | Current architecture, isolated builds, toolchains and validation commands. |
