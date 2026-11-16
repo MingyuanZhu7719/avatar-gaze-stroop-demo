@@ -291,7 +291,7 @@ namespace AvatarStroop.Unity
             get
             {
                 if(participant==null)return "VIVE input unavailable.";
-                if(RecordingBlocked)return "Use the desktop Withdraw task button; ask the operator to pause or stop.";
+                if(RecordingBlocked)return "Use the desktop Withdraw task button to end this attempt.";
                 if(formalConfirmationRequest!=null)return FormalConfirmationStatus;
                 if(focusPlanConfirmationRequired||focusPlanTriggerAccepted)return FocusPlanAwaitNotice;
                 if(participant.Phase==Phase.Preparation)
@@ -300,7 +300,7 @@ namespace AvatarStroop.Unity
                     return "Trackpad UP: lower | DOWN: higher | Trigger: confirm\nSelected: "+participant.CandidateRating+" (not submitted)";
                 return participant!=null&&participant.TaskKind==TaskKind.VisualSearch?
                     "Point at the matching backpack | Trigger: select / continue\nEscape on desktop: withdraw development task":
-                    "Trackpad: colour | Trigger: continue / resume\nEscape on desktop: withdraw development task";
+                    "Trackpad: colour | Trigger: confirm the current instruction\nEscape on desktop: withdraw development task";
             }
         }
         public void Configure(ViveStroopPreviewRig preview,WorldSpaceExperimentView presentation)
@@ -1413,8 +1413,8 @@ namespace AvatarStroop.Unity
                 int ratingDirection=questionnaireGate.Observe(frame.InputReady,participant.Phase==Phase.Questionnaire,displayReady,frame.Trackpad);
                 bool allowResume=!FocusHeldLiveWoz;
                 bool searchInputConsumed=ServiceVisualSearchInput(frame);
-                bool searchAuxiliaryAllowed=searchTriggerGate.AllowAuxiliary(frame.TriggerHeld,searchInputConsumed&&frame.TriggerDown);
-                if(!Mutate(()=>participant.UpdateAuxiliary(searchAuxiliaryAllowed&&!searchInputConsumed&&allowResume&&frame.InputReady&&frame.TriggerHeld,false,false,ratingDirection,displayReady))){Render();return;}
+                bool confirmPress=taskTriggerGate.TakeConfirmationPress(frame.InputReady,frame.TriggerHeld,frame.TriggerDown,searchInputConsumed||!allowResume);
+                if(!Mutate(()=>participant.UpdateAuxiliary(confirmPress,false,false,ratingDirection,displayReady))){Render();return;}
                 // Rest confirmation can enter BlockReady in this same Poll.
                 // Prepare before Tick's retained-source auto-countdown.
                 if(namedRawPump!=null&&participant.Phase==Phase.BlockReady&&participant.BlockIndex>0)
@@ -2228,8 +2228,13 @@ namespace AvatarStroop.Unity
             finally{current=CheckObservation(true);if(legacyWozScene!=null)legacyWozScene.AfterTaskMutation();}
             return ok&&current;
         }
-        void PauseTask()
+#if UNITY_EDITOR
+        // Explicit software-safety injection for isolated Editor fixtures only.
+        // No desktop/controller action or player build exposes manual pause.
+        void InjectOwnerSafetyStopForFixture()
         {
+            if(Application.isPlaying||recording!=null||(namedRawPump!=null&&!namedRawPump.SyntheticSceneFixtureOnly))
+                throw new InvalidOperationException("Isolated Editor safety fixture required.");
             if(legacyWozProcess!=null&&!legacyWozProcess.Terminal){RevokeLegacyWoz();return;}
             long beforePause=participant==null?0:participant.PauseDiagnosticRevision;
             if(namedRawPump!=null&&(rawPlanStartRequested!=0||rawPendingBlockPlan!=null))
@@ -2267,6 +2272,7 @@ namespace AvatarStroop.Unity
             {rawSafetyCause=cause;rawPauseAttempted=false;}
             FailNamedRawBeforeFrame();
         }
+#endif
         void WithdrawTask()
         {
             if(namedRawPump!=null){try{RequestNamedRawWithdrawal();}finally{ClearNamedTaskView();}return;}

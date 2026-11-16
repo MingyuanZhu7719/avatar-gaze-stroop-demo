@@ -240,7 +240,7 @@ namespace AvatarStroop.Unity.Editor
                 }
                 else if(mode=="owner-pause")
                 {
-                    Call(bootstrap,"PauseTask");
+                    Call(bootstrap,"InjectOwnerSafetyStopForFixture");
                     Require((bool)Get(bootstrap,"rawSafetyLatched"),"explicit raw pause must latch recording safety");
                     var message=(string)Get(bootstrap,"message");
                     Require(message.Contains("unconfirmed tail is unknown")&&message.Contains("cannot resume"),
@@ -267,7 +267,7 @@ namespace AvatarStroop.Unity.Editor
                 {
                     var gate=typeof(ViveDevelopmentParticipant).GetField("namedRecordingGate",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(task);
                     Hold(gate,()=>{
-                        var watch=Stopwatch.StartNew();Call(bootstrap,"PauseTask");
+                        var watch=Stopwatch.StartNew();Call(bootstrap,"InjectOwnerSafetyStopForFixture");
                         Require(watch.ElapsedMilliseconds<500&&camera.cullingMask==0&&task.Phase==Phase.Practice,
                             "raw owner pause waited for task lock or claimed an unperformed pause");
                         Require(((string)Get(bootstrap,"message")).Contains("pending"),"busy safety pause must remain pending");
@@ -278,7 +278,7 @@ namespace AvatarStroop.Unity.Editor
                 if(mode=="technical-then-owner"||mode=="technical-then-menu")
                 {
                     Require(task.Phase==Phase.Practice&&camera.cullingMask==0,"technical hold must precede explicit pause");
-                    Call(bootstrap,mode=="technical-then-owner"?"PauseTask":"HandleParticipantMenu");
+                    Call(bootstrap,mode=="technical-then-owner"?"InjectOwnerSafetyStopForFixture":"HandleParticipantMenu");
                 }
                 bool explicitPause=mode=="owner-pause"||mode=="owner-pause-busy"||mode=="technical-then-owner";
                 Require(camera.cullingMask==0&&(explicitPause?task.Phase==Phase.Paused&&trial.Outcome==TrialOutcome.Interrupted:
@@ -568,7 +568,7 @@ namespace AvatarStroop.Unity.Editor
                 task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));
                 Require(task.Phase==Phase.BlockPreparation&&!(bool)Call(bootstrap,"PendingRawOwnerStillCurrent"),
                     "same-phase task mutation must invalidate a queued owner action");
-                Call(bootstrap,"PauseTask");
+                Call(bootstrap,"InjectOwnerSafetyStopForFixture");
                 Require(calls==0&&Get(bootstrap,"pendingRawOwnerAction")==null&&camera.cullingMask==0&&
                     (bool)Get(bootstrap,"rawSafetyLatched"),"safety must clear a queued owner action without executing it");
             }

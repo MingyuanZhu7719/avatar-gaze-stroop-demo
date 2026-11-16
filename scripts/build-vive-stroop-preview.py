@@ -90,14 +90,14 @@ def start_here_text(controlled=False, legacy=False, guide="", woz=False):
                       "Use the matching operator package on a second prepared PC. At block preparation, exchange the existing operator clock ID and exact private-LAN endpoints; accept plaintext messaging and create the recorded offer.\n"
                       "The operator must review and explicitly allow forwarding plus participant-local storage before connecting. Start the operator first, then connect the participant. Never use Automatic for the declared recorded WoZ session.\n"
                       "Participant files may include mapped operator head/eye poses plus source, time and status. Participant raw eyes, answers, timings and ratings never go to the operator. Messages are authenticated, not encrypted.\n"
-                      "Desktop focus changes do not stop a running participant writer. XR focus gaps hold task input/presentation while healthy raw acquisition continues and focus state is recorded. After recording starts, eye-only stale, repeated or invalid samples do not stop the task; CSV marks NO_NEW_SAMPLE/MISSING without fabricated gaze. Actual head/controller integrity, writer faults, explicit pause or withdrawal remain separate safety boundaries; incomplete/UNKNOWN output is not a completed recording.\n"
+                      "Desktop focus changes do not stop a running participant writer. XR focus gaps hold task input/presentation while healthy raw acquisition continues and focus state is recorded. After recording starts, eye-only stale, repeated or invalid samples do not stop the task; CSV marks NO_NEW_SAMPLE/MISSING without fabricated gaze. Actual head/controller integrity, writer faults, source revocation or withdrawal remain separate safety boundaries; incomplete/UNKNOWN output is not a completed recording.\n"
                       "SHORT CHECK: after one or two main trials, revoke the source and check pause plus cleared avatar. This stops with a raw prefix, not a completed session or completed-session CSV. Do not run four blocks just for this check.\n"
                       "Completed-session CSV requires a later full, normally completed session and successful local close/verification; it is not expected after the short stop check.\n"
                       "Hardware, LAN, gaze accuracy and full-session coverage remain unvalidated. No data submission is needed.\n\n"
                       "SEPARATE LOCAL AUTOMATIC / NAMED SELF-TEST GUIDE\n" if woz else "")
         return heading + "Runtime, storage, separate headset choices and explicit start checks must still pass.\n\n" + woz_notice + guide
     return heading + (
-        "Participant controller manual pause is disabled. Trigger confirms selections, continues and explicitly resumes. Ask the operator to pause or stop. Desktop Withdraw task is the reliable withdrawal control; Escape is not handled in every failed state.\n"
+        "Manual participant pause is disabled. Trigger confirms only the current selection or instruction; release it before the next confirmation. Genuine XR focus/tracking holds retain their recovery checks. Desktop Withdraw task is the reliable withdrawal control; Escape is not handled in every failed state.\n"
         "Trackpad colours are fixed: up red, right green, down blue, left yellow. Hardware, LAN and study validation are pending.\n"
         "Open the outer launcher only when no other VIVE preview is running. Choose Preview (no files), select a design, click Configure preview (no recording), then Start classroom view. Keep exactly one VIVE wand connected; it is selected automatically, regardless of its left/right assignment. The trackpad sector threshold is fixed at 0.5.\n"
         "Follow the headset startup prompt, release controls and hold still briefly. Real head movement is preserved; the virtual floor may shift.\n"
@@ -110,7 +110,7 @@ def start_here_text(controlled=False, legacy=False, guide="", woz=False):
         "Choose Preview (no files), Legacy A/B/C/D, and Use a second-PC WoZ operator (unrecorded). Complete practice.\n"
         "Copy the operator's existing clock ID into the participant WoZ panel. Enter exact private-LAN IPv4 endpoints (participant 45171, operator 45172), accept plaintext messaging and create an offer.\n"
         "Transfer the temporary offer privately. Start the operator with explicit head/eye forwarding first, then connect the participant and begin the current block when ready.\n"
-        "For a short check, answer one or two main trials, then use Revoke source and pause task. Confirm the task pauses and avatar clears; no automatic resume.\n"
+        "For a short check, answer one or two main trials, then use Stop WoZ source and task. Confirm the task pauses and avatar clears; no automatic resume.\n"
         "WoZ recording/export is unavailable. Existing separate local-recording packages are unchanged. No data submission is needed.\n")
 
 

@@ -9,7 +9,7 @@ namespace AvatarStroop.Unity
     public sealed partial class ViveStroopDevelopmentBootstrap
     {
         string searchHoverTrial,searchHoverItem,searchCueRecordedTrial;
-        readonly ViveVisualSearchTriggerGate searchTriggerGate=new ViveVisualSearchTriggerGate();
+        readonly ViveTaskTriggerGate taskTriggerGate=new ViveTaskTriggerGate();
         Vector3 searchRayOrigin,searchRayDirection;int searchRayFrame=-1;
         bool SearchTrialInputCurrent(ViveStroopDeviceFrame frame)
         {

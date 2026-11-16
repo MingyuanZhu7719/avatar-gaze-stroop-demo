@@ -98,7 +98,7 @@ namespace AvatarStroop.Unity.Editor
                 Require((bool)Call(hold,"BeginRender",camera,true,false),
                     "valid hold was not admitted to the masked camera");
                 Require(camera.cullingMask==holdMask&&camera.clearFlags==CameraClearFlags.SolidColor&&
-                    display.activeSelf&&text.text.Contains("Task on hold")&&(camera.cullingMask&(1<<stimulus.layer))==0,
+                    display.activeSelf&&text.text.Replace("\n"," ").Contains("Task on hold")&&(camera.cullingMask&(1<<stimulus.layer))==0,
                     "masked hold culling admitted task layers or omitted wording");
                 foreach(var item in view.GetComponentsInChildren<Renderer>(true))
                     Require((camera.cullingMask&(1<<item.gameObject.layer))==0,"hold mask admits an actual task renderer");
@@ -128,20 +128,20 @@ namespace AvatarStroop.Unity.Editor
                     Get(view,"capturedAvatar")==null&&Get(view,"capturedTrial")==null,
                     "reverse callback order admitted a task or recording-choice witness");
                 Require((bool)Call(hold,"BeginRender",camera,true,false,true)&&
-                    text.text.Contains("Controller view unavailable")&&camera.cullingMask==holdMask&&
+                    text.text.Replace("\n"," ").Contains("Controller view unavailable")&&camera.cullingMask==holdMask&&
                     (camera.cullingMask&(1<<stimulus.layer))==0,
                     "controller-unavailable notice altered the neutral hold boundary");
                 Call(hold,"EndRender");
                 Call(hold,"SetTransition",false,0.0,5.0);
                 Call(hold,"SetPracticeInstruction","Choose the colour named by the word.");
-                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Practice starts in\n5")&&
-                    text.text.Contains("named by the word")&&camera.cullingMask==holdMask,
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Replace("\n"," ").Contains("Practice starts in 5")&&
+                    text.text.Replace("\n"," ").Contains("named by the word")&&camera.cullingMask==holdMask,
                     "practice countdown omitted five-second warning or response rule");
                 var sparks=(Transform)Get(hold,"completionSparks");
                 Require(!sparks.gameObject.activeSelf,"practice warning leaked celebration");
                 Call(hold,"EndRender");
                 Call(hold,"SetBlockCompletion",1.0);
-                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Block complete!")&&sparks.gameObject.activeSelf,
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Replace("\n"," ").Contains("Block complete!")&&sparks.gameObject.activeSelf,
                     "completed block has no fireworks before questionnaire");
                 var firstSpark=sparks.GetChild(0).localPosition;Call(hold,"EndRender");
                 Call(hold,"SetBlockCompletion",2.0);Call(hold,"BeginRender",camera,true,false);
@@ -168,18 +168,18 @@ namespace AvatarStroop.Unity.Editor
                     Call(hold,"EndRender");
                 }
                 Call(hold,"SetTransition",true,1.0,Double.NaN);
-                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("All blocks complete!")&&sparks.gameObject.activeSelf,
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Replace("\n"," ").Contains("All blocks complete!")&&sparks.gameObject.activeSelf,
                     "normal final completion has no completion fireworks");
-                Require(!text.text.Contains("saved")&&!text.text.Contains("recording"),"task celebration claims a recording outcome");
+                Require(!text.text.Replace("\n"," ").Contains("saved")&&!text.text.Replace("\n"," ").Contains("recording"),"task celebration claims a recording outcome");
                 Call(hold,"EndRender");
                 Call(hold,"SetTransition",true,6.0,Double.NaN);
-                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Contains("Thank you for participating!")&&
-                    text.text.Contains("remove the headset")&&!sparks.gameObject.activeSelf,
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Replace("\n"," ").Contains("Thank you for participating!")&&
+                    text.text.Replace("\n"," ").Contains("remove the headset")&&!sparks.gameObject.activeSelf,
                     "final fireworks do not settle to a static thank-you after six seconds");
                 Call(hold,"EndRender");
                 WriteRequestedPreviews(hold,camera);
                 Call(hold,"SetBlockCompletion",1.0);
-                Require((bool)Call(hold,"BeginRender",camera,true,true,true)&&text.text.Contains("Task blocked"),
+                Require((bool)Call(hold,"BeginRender",camera,true,true,true)&&text.text.Replace("\n"," ").Contains("Task blocked"),
                     "terminal stop was displayed as a routine hold");
                 Require(!sparks.gameObject.activeSelf,"fault/withdrawal incorrectly received fireworks");
                 var rig=taskObject.AddComponent<ViveStroopPreviewRig>();

@@ -104,6 +104,7 @@ namespace AvatarStroop.Unity.Editor
                 rig=rigObject.AddComponent<ViveStroopPreviewRig>();
                 bootstrapObject=new GameObject("SyntheticSafetyFixtureBootstrap");SceneManager.MoveGameObjectToScene(bootstrapObject,fixtureScene);Require(bootstrapObject.scene==fixtureScene,"bootstrap root not in fixture scene");bootstrapObject.hideFlags=HideFlags.HideAndDontSave;
                 var bootstrap=bootstrapObject.AddComponent<ViveStroopDevelopmentBootstrap>();bootstrap.Configure(rig,view);
+                Require(typeof(ViveStroopDevelopmentBootstrap).GetMethod("PauseTask",BindingFlags.Instance|BindingFlags.NonPublic)==null,"manual pause callback remains exposed");
                 var task=Participant();view.ApplyTaskView(task.ParticipantView);
                 var trial=task.CurrentTrial;int before=task.ReadEventsAfter(-1,4096).Count;
                 Set(bootstrap,"participant",task);Set(bootstrap,"configured",true);
@@ -140,9 +141,9 @@ namespace AvatarStroop.Unity.Editor
                 Require(task.Phase==Phase.Practice&&trial.Outcome==TrialOutcome.Pending&&task.ReadEventsAfter(-1,4096).Count==before,
                     "participant menu must not pause, interrupt, or add an event");
                 Require(camera.cullingMask==0,"menu handler restored the blocked camera");
-                Call(bootstrap,"PauseTask");
-                Require(task.Phase==Phase.Paused&&trial.Outcome==TrialOutcome.Interrupted,"owner pause was removed");
-                Require(CountPause(task,"Owner")==1,"owner must remain the only explicit pause actor");
+                Call(bootstrap,"InjectOwnerSafetyStopForFixture");
+                Require(task.Phase==Phase.Paused&&trial.Outcome==TrialOutcome.Interrupted,"software safety injection did not interrupt the task");
+                Require(CountPause(task,"Owner")==1,"software safety injection must retain its owner actor");
                 Call(rig,"Update");
                 Require(camera.cullingMask==0&&task.Phase==Phase.Paused&&CountPause(task,"Owner")==1,
                     "subsequent blocked frame restored the camera or repeated the pause");
@@ -160,7 +161,7 @@ namespace AvatarStroop.Unity.Editor
                 Require(focusTask.Phase==Phase.Paused&&(string)Get(bootstrap,"pauseDiagnostic")==focusReason,
                     "first focus-loss diagnostic was not captured");
                 focusTask.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));
-                Call(bootstrap,"PauseTask");
+                Call(bootstrap,"InjectOwnerSafetyStopForFixture");
                 Require((string)Get(bootstrap,"pauseDiagnostic")==focusReason&&focusTask.PauseDiagnosticRevision==1,
                     "recovery or repeated owner pause replaced the first reason");
                 Require((string)Get(view,"vivePauseDiagnostic")==focusReason,"headset pause reason missing");
@@ -169,7 +170,7 @@ namespace AvatarStroop.Unity.Editor
                 Call(bootstrap,"WithdrawTask");
                 var unseen=Participant();Set(bootstrap,"participant",unseen);
                 unseen.UpdateTrackpad(false,new VivePreviewTrackpadSample(true,false,0,0));
-                Call(bootstrap,"PauseTask");
+                Call(bootstrap,"InjectOwnerSafetyStopForFixture");
                 Require((string)Get(bootstrap,"pauseDiagnostic")==unseen.LastPauseDiagnostic&&
                     ((string)Get(bootstrap,"pauseDiagnostic")).Contains("head/input"),
                     "later owner request misattributed an unseen automatic pause");
@@ -184,7 +185,7 @@ namespace AvatarStroop.Unity.Editor
                 Require(camera.cullingMask==0&&v3.Phase==Phase.Ended&&v3.EndReason==EndReason.Withdrawn,
                     "blocked rig failed to drain v3 withdrawal without a menu edge");
                 Require(Get(rig,"worker")==null&&Get(rig,"display")==null,"v3 fixture unexpectedly used XR or eye capture");
-                Debug.Log("VIVE_SAFETY_MENU_SYNTHETIC_FIXTURE_PASSED: participant menu ignored, owner pause, withdrawal and camera mask only; no XR, headset or recording validation.");
+                Debug.Log("VIVE_SAFETY_MENU_SYNTHETIC_FIXTURE_PASSED: participant menu ignored, no manual pause callback, software safety injection, withdrawal and camera mask only; no XR, headset or recording validation.");
             }
             finally
             {

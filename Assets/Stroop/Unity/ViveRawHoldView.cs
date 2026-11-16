@@ -14,6 +14,7 @@ namespace AvatarStroop.Unity
         readonly Camera camera;
         readonly GameObject root;
         readonly TextMesh text;
+        readonly ViveHeadsetNoticeLayout noticeLayout;
         readonly Transform completionSparks;
         const int BurstCount=6,RaysPerBurst=16,TrailSegments=3;
         readonly Material[] sparkMaterials=new Material[BurstCount*TrailSegments];
@@ -46,6 +47,7 @@ namespace AvatarStroop.Unity
                 var renderer=text.GetComponent<MeshRenderer>();
                 renderer.sharedMaterial=text.font.material;
                 renderer.shadowCastingMode=ShadowCastingMode.Off;renderer.receiveShadows=false;
+                noticeLayout=new ViveHeadsetNoticeLayout(camera,text);
                 completionSparks=new GameObject("GentleCompletionFireworks").transform;
                 completionSparks.gameObject.layer=Layer;completionSparks.SetParent(root.transform,false);
                 var shader=Shader.Find("AvatarStroop/WorldSpaceOverlay");
@@ -76,16 +78,16 @@ namespace AvatarStroop.Unity
             // promises of recording, recovery or compositor delivery.
             bool celebrating=!stopped&&completed;
             bool practice=!stopped&&!controllerUnavailable&&!celebrating&&!Double.IsNaN(practiceRemaining)&&practiceRemaining>=0;
-            text.text=stopped?"Task blocked.\nCheck recording status on the desktop.":
-                celebrating?(blockCompleted?"Block complete!\nWell done. A few questions are next.":
+            string message=stopped?"Task blocked.\nCheck recording status\non the desktop.":
+                celebrating?(blockCompleted?"Block complete!\nA few questions are next.":
                     completionElapsed<6?"All blocks complete!\nWell done!":"Thank you for participating!\nYou may remove the headset."):
-                controllerUnavailable?"Controller view unavailable.\nCheck controller tracking and the desktop.":
+                controllerUnavailable?"Controller view unavailable.\nCheck tracking on the desktop.":
                 practice?"Practice starts in\n"+Math.Max(1,Math.Ceiling(practiceRemaining))+"\n"+practiceInstruction:
-                "Task on hold.\nCheck the desktop for the next step.";
+                "Task on hold.\nCheck the desktop\nfor the next step.";
+            noticeLayout.Apply(message,practice?.015f:.012f);
             // Staggered coloured bursts and short fading trails surround a
             // clear text area. No full-screen flashes or task camera layers.
             LayoutCompletionFireworks(celebrating,completionElapsed);
-            text.characterSize=practice?.015f*(1+.035f*Mathf.Sin((float)(practiceRemaining%1)*Mathf.PI)):.012f;
             oldClear=camera.clearFlags;oldBackground=camera.backgroundColor;active=true;
             camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=new Color(.025f,.025f,.035f,1);
             camera.cullingMask=Mask;

@@ -13,6 +13,7 @@ namespace AvatarStroop.Unity
         readonly Color oldBackground;
         readonly GameObject root;
         readonly TextMesh text;
+        readonly ViveHeadsetNoticeLayout noticeLayout;
         int renderedFrame=-1;
         bool shown,disposed;
         public ViveStartupView(Camera camera)
@@ -26,6 +27,7 @@ namespace AvatarStroop.Unity
             text.anchor=TextAnchor.MiddleCenter;text.alignment=TextAlignment.Center;text.richText=false;
             var renderer=text.GetComponent<MeshRenderer>();renderer.sharedMaterial=text.font.material;
             renderer.shadowCastingMode=ShadowCastingMode.Off;renderer.receiveShadows=false;
+            noticeLayout=new ViveHeadsetNoticeLayout(camera,text);
             root.SetActive(false);Camera.onPostRender+=Rendered;
         }
         public bool WasRenderedBefore(int frame){return !disposed&&shown&&root!=null&&camera!=null&&renderedFrame==frame-1;}
@@ -35,7 +37,7 @@ namespace AvatarStroop.Unity
         {
             if(disposed||camera==null||root==null||text==null){shown=false;renderedFrame=-1;return;}
             camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=new Color(.025f,.025f,.035f,1);
-            if(text.text!=message){text.text=message;renderedFrame=-1;}
+            if(noticeLayout.Apply(message,.012f))renderedFrame=-1;
             shown=tracked;root.SetActive(tracked);camera.cullingMask=tracked?Mask:0;
             if(!tracked)renderedFrame=-1;
         }

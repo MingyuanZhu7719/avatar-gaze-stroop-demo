@@ -23,6 +23,8 @@ An incomplete Named plan is identified by block and missing field before folder 
 
 Keep exactly one VIVE wand connected. The application automatically selects its reported role, so no left/right dropdown is required. With no wand or multiple wands, input stays blocked. The device and its role stay pinned for that classroom-view run; a changed device/role requires stopping and restarting the view. Reconnection requires released controls before another press is accepted.
 
+The visible controller uses the model and texture supplied by the installed SteamVR runtime, aligned to its grip component. It is shown across participant screens while current head/controller tracking is valid, including countdowns, questionnaires and completion. Vendor model files are not bundled. A missing model is reported separately; a stale controller pose is never displayed as current tracking.
+
 The mapping is fixed in practice and formal trials:
 
 | Trackpad | Colour |
@@ -32,7 +34,7 @@ The mapping is fixed in practice and formal trials:
 | Down | Blue |
 | Left | Yellow |
 
-The sector threshold remains 0.5. For questionnaire ratings, up selects a lower value and down selects a higher value; trigger confirms. Trigger continues instructions/rest or resumes an eligible paused preview. It does not manually pause a task. The desktop owner retains pause and withdrawal controls; recording interruptions retain their existing terminal safety rules.
+The sector threshold remains 0.5. For questionnaire ratings, up selects a lower value and down selects a higher value; trigger confirms the current rating. Release it before confirming another item or continuing an instruction. The participant application no longer provides a manual Pause task button or a controller pause action. Withdrawal and real tracking, XR-focus, source-revocation and recording fault handling remain available. An eligible focus-loss hold still needs its own recovery confirmation; a held trigger cannot acknowledge the next item.
 
 ## Operator application
 

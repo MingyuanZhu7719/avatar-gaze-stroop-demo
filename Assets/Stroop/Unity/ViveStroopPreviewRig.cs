@@ -713,6 +713,7 @@ namespace AvatarStroop.Unity
                 try
                 {
                     BlockTaskPresentation();
+                    RefreshTerminalCameraPose();
                     bool finishing=development.PollNamedRawCompletion();
                     if(finishing&&development.NamedRawCompletionEyeMayStop&&!rawCompletionEyeStopRequested)
                         rawCompletionEyeStopRequested=TryStopEyeForRawSafety();
@@ -741,6 +742,7 @@ namespace AvatarStroop.Unity
             if(development!=null&&development.NamedRawPumpAttached&&development.RecordingBlocked)
             {
                 if(previewCamera!=null)previewCamera.cullingMask=0;
+                RefreshTerminalCameraPose();
                 development.PollRecordingBlockedSafety();
                 ObserveRawEyeCleanup();
                 SetStatus("Recording stopped; task safety may be pending. Presentation remains blocked."+RawEyeCleanupStatus);return;
@@ -780,6 +782,7 @@ namespace AvatarStroop.Unity
                 {
                     development.ObservePracticeFrame(null);
                     previewCamera.cullingMask=0;
+                    RefreshTerminalCameraPose();
                     // Keep the camera culled and drain pending safety work.
                     // No controller or eye input is polled in this blocked path.
                     development.PollRecordingBlockedSafety();

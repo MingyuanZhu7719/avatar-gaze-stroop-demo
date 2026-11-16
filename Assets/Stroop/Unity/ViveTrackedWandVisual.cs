@@ -1,65 +1,116 @@
 #if STROOP_XR_PREVIEW
 using System;
-using System.Collections.Generic;
+using AvatarStroop.Runtime;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace AvatarStroop.Unity
 {
-    // A local visual of the currently selected physical wand. It is not an
-    // input device, an interactable, or evidence that a participant saw it.
-    // Axes are Unity tracked-device local: +Z toward hoop, +Y controls.
+    // The runtime supplies the actual device mesh/texture. It has no Renderer,
+    // collider or input component: only this camera's visual command buffer can
+    // draw it, even when the task camera's scene layer mask is safely closed.
     internal sealed class ViveTrackedWandVisual : MonoBehaviour
     {
         Transform model;
         GameObject trackingHint;
+        Mesh mesh;
+        Material material;
+        Texture2D texture;
+        Camera ownerCamera;
+        CommandBuffer draw;
         int visibleFrame=-1;
-        readonly List<Mesh> meshes=new List<Mesh>();
-        readonly List<Material> materials=new List<Material>();
-        internal bool Visible {get{return model!=null&&model.gameObject.activeInHierarchy;}}
+        internal string ModelName {get;private set;}
+        internal bool Visible {get{return model!=null&&model.gameObject.activeInHierarchy&&visibleFrame==Time.frameCount;}}
         internal bool TrackingHintVisible {get{return trackingHint!=null&&trackingHint.activeInHierarchy;}}
         internal static ViveTrackedWandVisual Create(Transform trackingSpace,int layer=0)
         {
             if(trackingSpace==null)throw new ArgumentNullException("trackingSpace");
             if(layer<0||layer>31)throw new ArgumentOutOfRangeException("layer");
-            var root=new GameObject("Tracked Vive wand");root.SetActive(false);root.layer=layer;
+            var root=new GameObject("Tracked runtime controller");root.SetActive(false);root.layer=layer;
             root.transform.SetParent(trackingSpace,false);
             var visual=root.AddComponent<ViveTrackedWandVisual>();
-            try{visual.Build(layer);root.SetActive(true);return visual;}
-            catch{DestroyOwned(root);throw;}
+            visual.model=new GameObject("Runtime controller model").transform;
+            visual.model.SetParent(root.transform,false);visual.model.gameObject.SetActive(false);
+            root.SetActive(true);return visual;
         }
-
+        internal void InstallModel(ViveSteamVrRenderModelSource.Model data,float[] trackingToGrip)
+        {
+            Hide();
+            if(data==null||String.IsNullOrEmpty(data.Name)||data.Vertices==null||data.Vertices.Length<24||data.Vertices.Length%8!=0||
+                data.Indices==null||data.Indices.Length<3||data.Indices.Length%3!=0||data.Rgba==null||
+                data.Width<1||data.Height<1||data.Width>4096||data.Height>4096||data.Rgba.Length!=data.Width*data.Height*4)
+                throw new ArgumentException("Invalid runtime controller model");
+            Matrix4x4 local=GripToModel(trackingToGrip);
+            int count=data.Vertices.Length/8;
+            var vertices=new Vector3[count];var normals=new Vector3[count];var uv=new Vector2[count];
+            for(int i=0;i<count;i++)
+            {
+                int p=i*8;
+                for(int j=0;j<8;j++)if(!Finite(data.Vertices[p+j]))throw new ArgumentException("Nonfinite model vertex");
+                vertices[i]=new Vector3(data.Vertices[p],data.Vertices[p+1],-data.Vertices[p+2]);
+                normals[i]=new Vector3(data.Vertices[p+3],data.Vertices[p+4],-data.Vertices[p+5]);
+                uv[i]=new Vector2(data.Vertices[p+6],data.Vertices[p+7]);
+                if(vertices[i].sqrMagnitude>4)throw new ArgumentException("Controller model is not meter scale");
+            }
+            var indices=new int[data.Indices.Length];
+            for(int i=0;i<indices.Length;i+=3)
+            {
+                for(int j=0;j<3;j++)if(data.Indices[i+j]<0||data.Indices[i+j]>=count)throw new ArgumentException("Invalid model index");
+                indices[i]=data.Indices[i];indices[i+1]=data.Indices[i+2];indices[i+2]=data.Indices[i+1];
+            }
+            var shader=Resources.Load<Shader>("ViveControllerModel");
+            if(shader==null||!shader.isSupported)throw new InvalidOperationException("Controller texture shader unavailable");
+            ClearModel();
+            mesh=new Mesh{name=data.Name,hideFlags=HideFlags.DontSave,vertices=vertices,normals=normals,uv=uv,triangles=indices};
+            mesh.RecalculateBounds();
+            texture=new Texture2D(data.Width,data.Height,TextureFormat.RGBA32,false,false){name=data.Name+" texture",hideFlags=HideFlags.DontSave};
+            texture.LoadRawTextureData(data.Rgba);texture.Apply(false,true);
+            material=new Material(shader){name="Runtime controller texture",mainTexture=texture,hideFlags=HideFlags.DontSave,enableInstancing=true};
+            model.SetLocalPositionAndRotation(local.GetColumn(3),local.rotation);model.localScale=Vector3.one;
+            ModelName=data.Name;
+        }
+        // OpenVR model origin -> grip component, expressed in Unity coordinates.
+        // Unity's tracked grip pose therefore needs the inverse component pose.
+        internal static Matrix4x4 GripToModel(float[] native)
+        {
+            if(native==null||native.Length!=12)throw new ArgumentException("Missing grip component");
+            var m=Matrix4x4.identity;
+            for(int r=0;r<3;r++)for(int c=0;c<4;c++)
+            {float x=native[r*4+c];if(!Finite(x))throw new ArgumentException("Invalid grip component");m[r,c]=x*(r==2?-1:1)*(c==2?-1:1);}
+            var xAxis=(Vector3)m.GetColumn(0);var yAxis=(Vector3)m.GetColumn(1);var zAxis=(Vector3)m.GetColumn(2);
+            if(Mathf.Abs(xAxis.sqrMagnitude-1)>.002f||Mathf.Abs(yAxis.sqrMagnitude-1)>.002f||Mathf.Abs(zAxis.sqrMagnitude-1)>.002f||
+                Mathf.Abs(Vector3.Dot(xAxis,yAxis))>.002f||Mathf.Abs(Vector3.Dot(xAxis,zAxis))>.002f||Mathf.Abs(Vector3.Dot(yAxis,zAxis))>.002f||
+                Mathf.Abs(m.determinant-1)>.003f||((Vector3)m.GetColumn(3)).sqrMagnitude>1)
+                throw new ArgumentException("Grip component is not a rigid meter transform");
+            return m.inverse;
+        }
         internal bool Apply(bool eligible,bool poseValid,Vector3 trackingPosition,Quaternion trackingRotation,int observationFrame)
         {
-            if(!eligible||!poseValid||observationFrame!=Time.frameCount||!isActiveAndEnabled||model==null||
-                !Finite(trackingPosition.x)||!Finite(trackingPosition.y)||!Finite(trackingPosition.z)||
-                !Unit(trackingRotation)){Hide();return false;}
-            // Set the current exact tracking-local transform BEFORE enabling
-            // geometry, so a new/recovered model cannot flash at the origin.
+            if(!eligible||!poseValid||observationFrame!=Time.frameCount||!isActiveAndEnabled||model==null||mesh==null||material==null||
+                !Finite(trackingPosition.x)||!Finite(trackingPosition.y)||!Finite(trackingPosition.z)||!Unit(trackingRotation))
+            {Hide();return false;}
             transform.SetLocalPositionAndRotation(trackingPosition,trackingRotation.normalized);
             visibleFrame=observationFrame;
-            if(trackingHint!=null&&trackingHint.activeSelf)trackingHint.SetActive(false);
-            model.gameObject.SetActive(true);
-            return true;
+            if(trackingHint!=null)trackingHint.SetActive(false);
+            model.gameObject.SetActive(true);return true;
         }
         internal void ConfigureCamera(Camera camera,int hintLayer=0)
         {
             if(camera==null)throw new ArgumentNullException("camera");
             if(hintLayer<0||hintLayer>31)throw new ArgumentOutOfRangeException("hintLayer");
-            if(trackingHint!=null)DestroyOwned(trackingHint);
+            DetachBuffer();ownerCamera=camera;
+            draw=new CommandBuffer{name="Current tracked runtime controller only"};
+            ownerCamera.AddCommandBuffer(CameraEvent.AfterEverything,draw);
+            DestroyOwned(trackingHint);
             trackingHint=new GameObject("Vive wand tracking loss");trackingHint.SetActive(false);trackingHint.layer=hintLayer;
-            try
-            {
-                trackingHint.transform.SetParent(camera.transform,false);
-                trackingHint.transform.localPosition=new Vector3(0,-.30f,1.20f);
-                var text=trackingHint.AddComponent<TextMesh>();
-                text.font=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-                text.fontSize=64;text.characterSize=.009f;text.color=new Color(.93f,.94f,.96f);
-                text.anchor=TextAnchor.MiddleCenter;text.alignment=TextAlignment.Center;text.richText=false;
-                text.text="Controller view unavailable.\nCheck controller tracking.";
-                var renderer=text.GetComponent<MeshRenderer>();renderer.sharedMaterial=text.font.material;
-                renderer.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;renderer.receiveShadows=false;
-            }
-            catch{DestroyOwned(trackingHint);trackingHint=null;throw;}
+            trackingHint.transform.SetParent(camera.transform,false);
+            trackingHint.transform.localPosition=new Vector3(0,-.30f,1.20f);
+            var text=trackingHint.AddComponent<TextMesh>();text.font=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize=64;text.characterSize=.009f;text.color=new Color(.93f,.94f,.96f);
+            text.anchor=TextAnchor.MiddleCenter;text.alignment=TextAlignment.Center;text.richText=false;
+            text.text="Controller view unavailable.\nCheck controller tracking.";
+            var renderer=text.GetComponent<MeshRenderer>();renderer.sharedMaterial=text.font.material;
+            renderer.shadowCastingMode=ShadowCastingMode.Off;renderer.receiveShadows=false;
         }
         internal bool ShowTrackingUnavailable(bool eligible,int observationFrame)
         {
@@ -69,21 +120,31 @@ namespace AvatarStroop.Unity
         }
         internal void Hide()
         {
-            visibleFrame=-1;
-            if(model!=null&&model.gameObject.activeSelf)model.gameObject.SetActive(false);
-            if(trackingHint!=null&&trackingHint.activeSelf)trackingHint.SetActive(false);
+            visibleFrame=-1;if(draw!=null)draw.Clear();
+            if(model!=null)model.gameObject.SetActive(false);
+            if(trackingHint!=null)trackingHint.SetActive(false);
         }
         void ValidateFrame(){if(visibleFrame!=Time.frameCount)Hide();}
-        void GuardRender(Camera camera){ValidateFrame();}
+        void GuardRender(Camera camera)
+        {
+            if(camera!=ownerCamera)return;
+            if(draw!=null)draw.Clear();ValidateFrame();
+            if(Visible&&draw!=null&&mesh!=null&&material!=null)
+                draw.DrawMesh(mesh,model.localToWorldMatrix,material,0,0);
+        }
+        // AfterEverything can execute after onPostRender. Keep this frame's
+        // commands until the next owner pre-cull replaces them; Hide/Disable
+        // clear immediately, and a missing current publication never redraws.
         void OnEnable(){Camera.onPreCull+=GuardRender;ValidateFrame();}
         void OnDisable(){Camera.onPreCull-=GuardRender;Hide();}
+        void ClearModel()
+        {DestroyOwned(mesh);DestroyOwned(material);DestroyOwned(texture);mesh=null;material=null;texture=null;ModelName=null;}
+        void DetachBuffer()
+        {if(draw==null)return;if(ownerCamera!=null)ownerCamera.RemoveCommandBuffer(CameraEvent.AfterEverything,draw);draw.Clear();draw.Release();draw=null;ownerCamera=null;}
         void OnDestroy()
         {
             Camera.onPreCull-=GuardRender;
-            DestroyOwned(trackingHint);trackingHint=null;
-            foreach(var mesh in meshes)DestroyOwned(mesh);
-            foreach(var material in materials)DestroyOwned(material);
-            meshes.Clear();materials.Clear();
+            DetachBuffer();ClearModel();DestroyOwned(trackingHint);trackingHint=null;
         }
         static void DestroyOwned(UnityEngine.Object value)
         {if(value==null)return;if(Application.isPlaying)Destroy(value);else DestroyImmediate(value);}
@@ -91,85 +152,7 @@ namespace AvatarStroop.Unity
         static bool Unit(Quaternion q)
         {
             if(!Finite(q.x)||!Finite(q.y)||!Finite(q.z)||!Finite(q.w))return false;
-            float n=q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w;
-            return Finite(n)&&Mathf.Abs(n-1f)<=.02f;
-        }
-
-        Material Paint(Shader shader,Color color)
-        {
-            var material=new Material(shader){color=color,hideFlags=HideFlags.DontSave};
-            materials.Add(material);return material;
-        }
-        void Build(int layer)
-        {
-            var shader=Shader.Find("Unlit/Color"); // Already used by the authored classroom.
-            if(shader==null)throw new InvalidOperationException("Tracked wand visual shader unavailable.");
-            model=new GameObject("Wand geometry").transform;
-            model.gameObject.layer=layer;model.SetParent(transform,false);model.gameObject.SetActive(false);
-            var shell=Paint(shader,new Color(.105f,.12f,.155f));
-            var rim=Paint(shader,new Color(.19f,.22f,.28f));
-            var dark=Paint(shader,new Color(.051f,.059f,.081f));
-            var pad=Paint(shader,new Color(.23f,.28f,.36f));
-            var accent=Paint(shader,new Color(.31f,.56f,.77f));
-
-            // Approximately 21 cm from handle tip to tracking hoop, expressed
-            // in meters. The hoop is a real open mesh, not a painted hole.
-            Part("Open tracking hoop",Ring(.040f,.009f,.007f),new Vector3(0,.003f,.049f),rim,layer);
-            Part("Hoop underside",Ring(.040f,.008f,.004f),new Vector3(0,-.003f,.049f),shell,layer);
-            Part("Tracking neck",Oval(.020f,.012f,.029f),new Vector3(0,.002f,.006f),shell,layer);
-            Part("Grip shell",Oval(.019f,.016f,.060f),new Vector3(0,0,-.052f),shell,layer);
-            Part("Upper control housing",Oval(.023f,.014f,.034f),new Vector3(0,.009f,-.022f),rim,layer);
-            Part("Trackpad bezel",Oval(.0190f,.0048f,.0185f),new Vector3(0,.0200f,-.0240f),dark,layer);
-            Part("Round trackpad",Oval(.0167f,.0033f,.0163f),new Vector3(0,.0230f,-.0240f),pad,layer);
-            Part("Menu button",Oval(.0047f,.0023f,.0030f),new Vector3(0,.0223f,.0005f),dark,layer);
-            Part("System button",Oval(.0040f,.0021f,.0038f),new Vector3(0,.0159f,-.0510f),dark,layer);
-            Part("Small grip accent",Oval(.0020f,.0014f,.0024f),new Vector3(0,.0140f,-.060f),accent,layer);
-            Part("Underside trigger",Oval(.012f,.0100f,.0150f),new Vector3(0,-.0165f,-.017f),dark,layer,
-                Quaternion.Euler(-21,0,0));
-            Part("Left squeeze detail",Oval(.003f,.005f,.020f),new Vector3(-.017f,0,-.058f),dark,layer);
-            Part("Right squeeze detail",Oval(.003f,.005f,.020f),new Vector3(.017f,0,-.058f),dark,layer);
-        }
-        void Part(string label,Mesh mesh,Vector3 offset,Material material,int layer,Quaternion? localRotation=null)
-        {
-            meshes.Add(mesh);
-            var part=new GameObject(label);part.layer=layer;part.transform.SetParent(model,false);
-            part.transform.SetLocalPositionAndRotation(offset,localRotation??Quaternion.identity);
-            part.AddComponent<MeshFilter>().sharedMesh=mesh;
-            var renderer=part.AddComponent<MeshRenderer>();renderer.sharedMaterial=material;
-            renderer.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows=false;
-        }
-        static Mesh Surface(int uCount,int vCount,Func<float,float,Vector3> point,bool flip=false)
-        {
-            var vertices=new Vector3[(uCount+1)*(vCount+1)];
-            var triangles=new int[uCount*vCount*6];
-            int stride=vCount+1;
-            for(int u=0;u<=uCount;u++)
-                for(int v=0;v<=vCount;v++)
-                    vertices[u*stride+v]=point((float)u/uCount,(float)v/vCount);
-            for(int u=0,i=0;u<uCount;u++)
-                for(int v=0;v<vCount;v++)
-                {
-                    int a=u*stride+v,b=a+1,c=a+stride,d=c+1;
-                    triangles[i++]=a;triangles[i++]=flip?c:b;triangles[i++]=flip?b:c;
-                    triangles[i++]=b;triangles[i++]=flip?c:d;triangles[i++]=flip?d:c;
-                }
-            var mesh=new Mesh{hideFlags=HideFlags.DontSave,vertices=vertices,triangles=triangles};
-            mesh.RecalculateNormals();mesh.RecalculateBounds();return mesh;
-        }
-        static Mesh Ring(float radius,float width,float height)
-        {
-            return Surface(48,10,(u,v)=>{
-                float a=u*Mathf.PI*2,b=v*Mathf.PI*2,r=radius+width*Mathf.Cos(b);
-                return new Vector3(r*Mathf.Cos(a),height*Mathf.Sin(b),r*Mathf.Sin(a));
-            });
-        }
-        static Mesh Oval(float x,float y,float z)
-        {
-            return Surface(24,12,(u,v)=>{
-                float a=u*Mathf.PI*2,b=(v-.5f)*Mathf.PI,r=Mathf.Cos(b);
-                return new Vector3(x*r*Mathf.Cos(a),y*Mathf.Sin(b),z*r*Mathf.Sin(a));
-            });
+            float n=q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w;return Finite(n)&&Mathf.Abs(n-1f)<=.02f;
         }
     }
 }

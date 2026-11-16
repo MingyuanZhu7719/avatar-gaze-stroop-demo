@@ -30,6 +30,6 @@ Package-specific validation is recorded with the build deliverables. A synthetic
 
 STOPPING / FAILURES
 - Desktop Withdraw task is the reliable withdrawal control, including faults. Escape works during normal/completion polling but is not handled in every failed state.
-- Owner stop/pause, withdrawal, unrecoverable head/controller/recording-authority errors or storage failures can end recording. Focus loss alone does not end it. A recoverable pose hold is distinct from a stopped writer; a late/failed operation stays UNKNOWN. Do not expect a completed output receipt.
+- Owner stop, withdrawal, unrecoverable head/controller/recording-authority errors or storage failures can end recording. The Vive participant has no manual pause control. Focus loss alone does not end it. A recoverable pose hold is distinct from a stopped writer; a late/failed operation stays UNKNOWN. Do not expect a completed output receipt.
 - Do not unplug hardware to force this test. Do not change permissions, run as administrator or disable safety settings. Report the status instead.
 - The existing 64-bit Windows HTC SRanipal.dll 1.3.5.1 must already be installed at its calibration-dashboard location. It is not bundled, downloaded or initialized by building the package. SteamVR is selected for the launched child process only; system/Quest settings are unchanged.

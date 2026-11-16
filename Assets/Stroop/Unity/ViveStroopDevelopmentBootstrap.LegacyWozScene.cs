@@ -199,7 +199,7 @@ namespace AvatarStroop.Unity
             GUI.enabled=legacyWozStarted&&legacyWozScene!=null&&legacyWozScene.CanBeginCountdown;
             if(GUILayout.Button("Begin current block")){if(RecordedLegacyWoz)RequestNamedBlockPlanStart(false);else legacyWozScene.BeginCountdown();Render();}
             GUI.enabled=legacyWozProcess!=null&&!legacyWozProcess.Terminal;
-            if(GUILayout.Button("Revoke source and pause task"))RevokeLegacyWoz();
+            if(GUILayout.Button("Stop WoZ source and task"))RevokeLegacyWoz();
             GUI.enabled=true;
         }
     }

@@ -782,7 +782,8 @@ namespace AvatarStroop.Unity
             FitHud(phaseText,phase,frustum,new Rect(.02f,.13f,.96f,.045f),.034f,1);
             FitHud(provisionalText,provisional,frustum,new Rect(.04f,.20f,.92f,.075f),.031f,2);
             FitHud(messageText,instructions,frustum,
-                role==Actor.Participant?new Rect(.04f,.21f,.92f,.40f):new Rect(.04f,.29f,.92f,.32f),.035f,100);
+                role==Actor.Participant?new Rect(.06f,.21f,.88f,.40f):new Rect(.04f,.29f,.92f,.32f),
+                viveTaskPreview?.043f:.035f,100);
             FitHud(avatarLabel,scope,frustum,new Rect(.02f,.62f,.96f,.065f),.026f,2);
             if(headsetPreview)
             {

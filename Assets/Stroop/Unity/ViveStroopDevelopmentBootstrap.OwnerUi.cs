@@ -55,15 +55,13 @@ namespace AvatarStroop.Unity
             GUI.enabled=true;
         }
         // Kept outside the scrollable setup/status body by the desktop rig.
-        // These call the same authoritative safety actions as before.
+        // Explicit withdrawal remains available; manual pause is not an input action.
         public void DrawOwnerSafetyControls()
         {
             if(!configured||participant==null)return;
             bool enabled=GUI.enabled;
             bool stacked=ViveOwnerDesktopLayout.StackActions;
             if(stacked)GUILayout.BeginVertical();else GUILayout.BeginHorizontal();
-            GUI.enabled=enabled&&participant.Phase!=Phase.Ended;
-            if(GUILayout.Button("Pause task",GUILayout.Height(42)))PauseTask();
             GUI.enabled=enabled&&(participant.Phase!=Phase.Ended||rawCompletionRequested);
             if(GUILayout.Button("Withdraw task",GUILayout.Height(42)))WithdrawTask();
             GUI.enabled=enabled;if(stacked)GUILayout.EndVertical();else GUILayout.EndHorizontal();
@@ -117,7 +115,7 @@ namespace AvatarStroop.Unity
                 case Phase.Countdown:case Phase.MainTask:return "Block running. The participant responds in the headset.";
                 case Phase.Questionnaire:return "In headset: trackpad up selects a lower rating; down selects a higher rating. Trigger confirms.";
                 case Phase.Rest:return "Rest. The participant presses the trigger when ready to continue.";
-                case Phase.Paused:return "Paused. Review and acknowledge any input fault below, then release the controls and press the trigger to resume.";
+                case Phase.Paused:return "Safety hold. Review the tracking or input fault below; after recovery, release the controls and confirm to continue.";
                 default:return "Follow the current headset instruction.";
             }
         }
