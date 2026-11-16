@@ -8,7 +8,11 @@ namespace AvatarStroop.Core
     {
         public string TrialId {get;} public string SessionId {get;} public string ListId {get;}
         public bool IsPractice {get;} public int PracticeAttempt {get;} public int BlockIndex {get;} public int PlannedIndex {get;} public int Segment {get;}
-        public Condition? Condition {get;} public Colour Word {get;} public Colour Ink {get;}
+        readonly Colour word,ink;
+        public Condition? Condition {get;}
+        public Colour Word {get{if(TaskKind==TaskKind.VisualSearch)throw new InvalidOperationException("Search snapshot has no word");return word;}}
+        public Colour Ink {get{if(TaskKind==TaskKind.VisualSearch)throw new InvalidOperationException("Search snapshot has no ink");return ink;}}
+        public TaskKind TaskKind {get;} public string SearchLayout {get;} public string SelectedItemId {get;}
         public ResponseRule ResponseRule {get;}
         public double? Onset {get;} public double? ResponseAt {get;} public Colour? Response {get;} public bool? Correct {get;}
         public TrialOutcome Outcome {get;} public bool TechnicalIssue {get;}
@@ -16,7 +20,9 @@ namespace AvatarStroop.Core
         {
             if(source==null||source.Stimulus==null)throw new ArgumentException("Trial and immutable stimulus required");
             TrialId=source.TrialId;SessionId=source.SessionId;ListId=source.ListId;IsPractice=source.IsPractice;PracticeAttempt=source.PracticeAttempt;
-            BlockIndex=source.BlockIndex;PlannedIndex=source.PlannedIndex;Segment=source.Segment;Condition=source.Condition;Word=source.Stimulus.Word;Ink=source.Stimulus.Ink;
+            BlockIndex=source.BlockIndex;PlannedIndex=source.PlannedIndex;Segment=source.Segment;Condition=source.Condition;
+            TaskKind=source.TaskKind;SearchLayout=source.VisualSearch==null?null:source.VisualSearch.Serialize();SelectedItemId=source.SelectedItemId;
+            word=TaskKind==TaskKind.Stroop?source.Stimulus.Word:default(Colour);ink=TaskKind==TaskKind.Stroop?source.Stimulus.Ink:default(Colour);
             ResponseRule=source.ResponseRule;
             Onset=source.Onset;ResponseAt=source.ResponseAt;Response=source.Response;Correct=source.Correct;Outcome=source.Outcome;TechnicalIssue=source.TechnicalIssue;
         }
@@ -24,7 +30,8 @@ namespace AvatarStroop.Core
         {return a.HasValue==b.HasValue&&(!a.HasValue||BitConverter.DoubleToInt64Bits(a.Value)==BitConverter.DoubleToInt64Bits(b.Value));}
         public bool Equals(ExperimentMutationTrialSnapshot value)
         {return TrialId==value.TrialId&&SessionId==value.SessionId&&ListId==value.ListId&&IsPractice==value.IsPractice&&PracticeAttempt==value.PracticeAttempt&&
-            BlockIndex==value.BlockIndex&&PlannedIndex==value.PlannedIndex&&Segment==value.Segment&&Condition==value.Condition&&Word==value.Word&&Ink==value.Ink&&ResponseRule==value.ResponseRule&&
+            BlockIndex==value.BlockIndex&&PlannedIndex==value.PlannedIndex&&Segment==value.Segment&&Condition==value.Condition&&word==value.word&&ink==value.ink&&ResponseRule==value.ResponseRule&&
+            TaskKind==value.TaskKind&&SearchLayout==value.SearchLayout&&SelectedItemId==value.SelectedItemId&&
             SameTime(Onset,value.Onset)&&SameTime(ResponseAt,value.ResponseAt)&&Response==value.Response&&Correct==value.Correct&&Outcome==value.Outcome&&TechnicalIssue==value.TechnicalIssue;}
         public override bool Equals(object value){return value is ExperimentMutationTrialSnapshot&&Equals((ExperimentMutationTrialSnapshot)value);}
         public override int GetHashCode(){return TrialId==null?0:TrialId.GetHashCode();}

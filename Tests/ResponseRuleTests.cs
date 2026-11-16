@@ -47,7 +47,8 @@ namespace AvatarStroop.Tests
                     Check.True(projection.Trials.Where(x=>x.ResponseEvents==1).All(x=>x.Response==x.Word&&x.DeclaredCorrect=="True"));
                     Check.True(projection.Ratings.All(x=>x.Version==Questionnaire.WordMeaningVersion));
                     ViveRawTrialReport report;Check.True(ViveRawTrialReport.TryBuild(read,true,out report));
-                    Check.True(report.TrialsCsv.Contains(",response_rule,expected_response\n"));
+                    var header=report.TrialsCsv.Split('\n')[0].Split(',');
+                    Check.True(header.Contains("response_rule")&&header.Contains("expected_response")&&header.Contains("task_kind"));
                 }
             });
             suite.Run("Word-meaning rule scores actual word and keeps all four blocks and practice in one mode",()=>{

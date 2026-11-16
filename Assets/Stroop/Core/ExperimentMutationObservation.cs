@@ -48,7 +48,7 @@ namespace AvatarStroop.Core
         {
             long values=512;foreach(var list in lists)values+=2L*list.Length;
             values+=practice==null?0:2L*practice.Length;
-            values+=19L*(trials.Count+1)+6L*ratings.Count;
+            values+=(Configuration.TaskKind==TaskKind.VisualSearch?22L:19L)*(trials.Count+1)+6L*ratings.Count;
             return checked(8192+160*values);
         }
 
@@ -65,14 +65,16 @@ namespace AvatarStroop.Core
             vals.Add(Configuration.Allocation.AllocationId);vals.Add(Configuration.Allocation.BInitialTarget);
             foreach(var allocationCondition in Configuration.Allocation.Order)vals.Add(allocationCondition);
             foreach(var list in Configuration.Allocation.ListByBlock)vals.Add(list);
-            foreach(var list in lists)foreach(var stimulus in list){vals.Add(stimulus.Word);vals.Add(stimulus.Ink);}
+            foreach(var list in lists)foreach(var stimulus in list)
+            {if(stimulus.IsVisualSearch){vals.Add(stimulus.VisualSearch.Serialize());vals.Add(TaskKind.VisualSearch);}else{vals.Add(stimulus.Word);vals.Add(stimulus.Ink);}}
             vals.Add((int)Phase);vals.Add(BlockIndex);vals.Add(Segment);vals.Add(PracticeAttempt);vals.Add(practiceCorrect);
             vals.Add(questionIndex);vals.Add(trialIndex);vals.Add((int)beforePause);vals.Add(resumeCountdown);vals.Add(questionnaireInstructionPending);
             vals.Add(countdownAt);vals.Add(restAt);vals.Add(ratingAt);vals.Add(pausedAt);vals.Add(activeAccum);vals.Add(activeSince);
             vals.Add(EndReason.HasValue?(int?)(int)EndReason.Value:null);vals.Add(LockedControl.HasValue?(int?)(int)LockedControl.Value:null);vals.Add(sourceConfirmationOwner);vals.Add(sourceConfirmationSequence);
             foreach(var colour in MutationColours)vals.Add(held.Contains(colour));
             vals.Add(practice==null?-1:practice.Length);
-            if(practice!=null)foreach(var stimulus in practice){vals.Add((int)stimulus.Word);vals.Add((int)stimulus.Ink);}
+            if(practice!=null)foreach(var stimulus in practice)
+            {if(stimulus.IsVisualSearch){vals.Add(stimulus.VisualSearch.Serialize());vals.Add(TaskKind.VisualSearch);}else{vals.Add((int)stimulus.Word);vals.Add((int)stimulus.Ink);}}
             vals.Add(trials.Count);
             foreach(var trial in trials)AppendMutationTrial(vals,trial);
             AppendMutationTrial(vals,current);int currentIndex=current==null?-1:trials.IndexOf(current);vals.Add(currentIndex);vals.Add(ratings.Count);
@@ -80,7 +82,7 @@ namespace AvatarStroop.Core
             vals.Add(events.Count);
             bool display=Phase==Phase.MainTask&&current!=null;var condition=CurrentCondition;
             var task=new TaskSnapshot(Configuration.SessionId,BlockIndex,Segment,display?current.TrialId:null,
-                display?(Colour?)current.Stimulus.Word:null,display?(Colour?)current.Stimulus.Ink:null,Phase,condition);
+                display&&!current.Stimulus.IsVisualSearch?(Colour?)current.Stimulus.Word:null,display&&!current.Stimulus.IsVisualSearch?(Colour?)current.Stimulus.Ink:null,Phase,condition);
             var copiedTrials=new ExperimentMutationTrialSnapshot[trials.Count];
             for(int i=0;i<trials.Count;i++)copiedTrials[i]=new ExperimentMutationTrialSnapshot(trials[i]);
             return new ExperimentMutationSnapshot(task,LockedControl,sourceConfirmationOwner,sourceConfirmationSequence,
@@ -92,9 +94,10 @@ namespace AvatarStroop.Core
             values.Add(trial!=null);if(trial==null)return;
             values.Add(trial.TrialId);values.Add(trial.SessionId);values.Add(trial.ListId);values.Add(trial.IsPractice);values.Add(trial.PracticeAttempt);
             values.Add(trial.BlockIndex);values.Add(trial.PlannedIndex);values.Add(trial.Segment);values.Add(trial.Condition.HasValue?(int?)(int)trial.Condition.Value:null);
-            values.Add(trial.Stimulus==null?(int?)null:(int)trial.Stimulus.Word);values.Add(trial.Stimulus==null?(int?)null:(int)trial.Stimulus.Ink);
+            values.Add(trial.Stimulus==null||trial.Stimulus.IsVisualSearch?(int?)null:(int)trial.Stimulus.Word);values.Add(trial.Stimulus==null||trial.Stimulus.IsVisualSearch?(int?)null:(int)trial.Stimulus.Ink);
             values.Add(trial.ResponseRule);
             values.Add(trial.Onset);values.Add(trial.ResponseAt);values.Add(trial.Response.HasValue?(int?)(int)trial.Response.Value:null);values.Add(trial.Correct);values.Add((int)trial.Outcome);values.Add(trial.TechnicalIssue);
+            if(trial.TaskKind==TaskKind.VisualSearch){values.Add(trial.TaskKind);values.Add(trial.VisualSearch.Serialize());values.Add(trial.SelectedItemId);}
         }
         // Compare against an immutable snapshot without reboxing/copying the
         // full experiment on every no-op Tick or freshness read. Configuration
@@ -137,7 +140,8 @@ namespace AvatarStroop.Core
             m.Check(EndReason.HasValue?(int?)(int)EndReason.Value:null);m.Check(LockedControl.HasValue?(int?)(int)LockedControl.Value:null);m.Check(sourceConfirmationOwner);m.Check(sourceConfirmationSequence);
             foreach(var colour in MutationColours)m.Check(held.Contains(colour));
             m.Check(practice==null?-1:practice.Length);
-            if(practice!=null)foreach(var stimulus in practice){m.Check((int)stimulus.Word);m.Check((int)stimulus.Ink);}
+            if(practice!=null)foreach(var stimulus in practice)
+            {if(stimulus.IsVisualSearch){m.Check(stimulus.VisualSearch.Serialize());m.Check(TaskKind.VisualSearch);}else{m.Check((int)stimulus.Word);m.Check((int)stimulus.Ink);}}
             m.Check(trials.Count);foreach(var trial in trials)MatchMutationTrial(ref m,trial);
             MatchMutationTrial(ref m,current);m.Check(current==null?-1:trials.IndexOf(current));m.Check(ratings.Count);
             foreach(var rating in ratings){m.Check(rating.BlockIndex);m.Check(rating.ItemId);m.Check(rating.Value);m.Check(rating.Time);m.Check(rating.Language);m.Check(rating.Version);}
@@ -148,9 +152,10 @@ namespace AvatarStroop.Core
             m.Check(trial!=null);if(trial==null)return;
             m.Check(trial.TrialId);m.Check(trial.SessionId);m.Check(trial.ListId);m.Check(trial.IsPractice);m.Check(trial.PracticeAttempt);
             m.Check(trial.BlockIndex);m.Check(trial.PlannedIndex);m.Check(trial.Segment);m.Check(trial.Condition.HasValue?(int?)(int)trial.Condition.Value:null);
-            m.Check(trial.Stimulus==null?(int?)null:(int)trial.Stimulus.Word);m.Check(trial.Stimulus==null?(int?)null:(int)trial.Stimulus.Ink);
+            m.Check(trial.Stimulus==null||trial.Stimulus.IsVisualSearch?(int?)null:(int)trial.Stimulus.Word);m.Check(trial.Stimulus==null||trial.Stimulus.IsVisualSearch?(int?)null:(int)trial.Stimulus.Ink);
             m.Check(trial.ResponseRule);
             m.Check(trial.Onset);m.Check(trial.ResponseAt);m.Check(trial.Response.HasValue?(int?)(int)trial.Response.Value:null);m.Check(trial.Correct);m.Check((int)trial.Outcome);m.Check(trial.TechnicalIssue);
+            if(trial.TaskKind==TaskKind.VisualSearch){m.Check(trial.TaskKind);m.Check(trial.VisualSearch.Serialize());m.Check(trial.SelectedItemId);}
         }
     }
 }

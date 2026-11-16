@@ -37,13 +37,16 @@ namespace AvatarStroop.Runtime
             // Reconstruct only from the immutable producer copy, never from
             // Experiment.CurrentTrial or other live mutable references.
             object key=new object();var record=new TrialRecord(key,value.TrialId,value.SessionId,value.ListId,value.IsPractice,value.PracticeAttempt,
-                value.BlockIndex,value.PlannedIndex,value.Segment,value.Condition,new Stimulus(value.Word,value.Ink),responseRule:value.ResponseRule);
+                value.BlockIndex,value.PlannedIndex,value.Segment,value.Condition,value.TaskKind==TaskKind.VisualSearch?
+                    new Stimulus(VisualSearchTrial.Parse(value.SearchLayout)):new Stimulus(value.Word,value.Ink),responseRule:value.ResponseRule);
             if(value.Onset.HasValue)record.SetOnset(key,value.Onset.Value);
             if(value.ResponseAt.HasValue)record.SetResponseAt(key,value.ResponseAt.Value);
             if(value.Response.HasValue)record.SetResponse(key,value.Response.Value);
+            if(value.SelectedItemId!=null)record.SetSelectedItem(key,value.SelectedItemId);
             if(value.Correct.HasValue)record.SetCorrect(key,value.Correct.Value);
             if(value.Outcome==TrialOutcome.Responded)record.SetResponded(key);
             else if(value.Outcome==TrialOutcome.Interrupted)record.SetInterrupted(key);
+            else if(value.Outcome==TrialOutcome.TimedOut)record.SetTimedOut(key);
             else if(value.Outcome!=TrialOutcome.Pending)throw new InvalidOperationException("Unknown trial outcome");
             if(value.TechnicalIssue)record.SetTechnicalIssue(key);return record;
         }

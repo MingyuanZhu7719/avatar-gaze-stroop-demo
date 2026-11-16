@@ -238,7 +238,7 @@ namespace AvatarStroop.Core
         public static ExportResult Export(Experiment experiment,AuditLog audit,string parentDirectory,ExportProvenance provenance)
         {
             if(experiment == null || audit == null || provenance == null) throw new ArgumentNullException("experiment/audit/provenance");
-            if(experiment.Configuration.IsNamedDesign||experiment.Configuration.LegacyRecordingIntent!=null)throw new InvalidOperationException("Legacy CSV export cannot represent versioned raw or named-option provenance");
+            if(experiment.Configuration.TaskKind==TaskKind.VisualSearch||experiment.Configuration.IsNamedDesign||experiment.Configuration.LegacyRecordingIntent!=null)throw new InvalidOperationException("Legacy CSV export cannot represent visual-search, versioned raw or named-option provenance; use the participant-local recorder and study analyzer");
             if(experiment.Configuration.SessionId != audit.SessionId || experiment.Configuration.RunKind != audit.RunKind)
                 throw new ArgumentException("Audit/session provenance mismatch");
             if(String.IsNullOrWhiteSpace(parentDirectory)) throw new ArgumentException("Explicit export parent required");

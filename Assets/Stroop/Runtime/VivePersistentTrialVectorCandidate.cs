@@ -11,7 +11,11 @@ namespace AvatarStroop.Runtime
     {
         public string TrialId {get;} public string SessionId {get;} public string ListId {get;}
         public bool IsPractice {get;} public int PracticeAttempt {get;} public int BlockIndex {get;} public int PlannedIndex {get;} public int Segment {get;}
-        public Condition? Condition {get;} public Colour Word {get;} public Colour Ink {get;}
+        readonly Colour word,ink;
+        public Condition? Condition {get;}
+        public Colour Word {get{if(TaskKind==TaskKind.VisualSearch)throw new InvalidOperationException("Search trial has no word");return word;}}
+        public Colour Ink {get{if(TaskKind==TaskKind.VisualSearch)throw new InvalidOperationException("Search trial has no ink");return ink;}}
+        public TaskKind TaskKind {get;} public VisualSearchTrial VisualSearch {get;} public string SelectedItemId {get;}
         public ResponseRule ResponseRule {get;}
         public Colour ExpectedResponse {get{return ResponseRule==ResponseRule.WordMeaning?Word:Ink;}}
         public double? Onset {get;} public double? ResponseAt {get;} public Colour? Response {get;} public bool? Correct {get;}
@@ -20,13 +24,16 @@ namespace AvatarStroop.Runtime
         {
             if(source==null||source.Stimulus==null)throw new ArgumentException("A trial with stimulus is required");
             TrialId=source.TrialId;SessionId=source.SessionId;ListId=source.ListId;IsPractice=source.IsPractice;PracticeAttempt=source.PracticeAttempt;
-            BlockIndex=source.BlockIndex;PlannedIndex=source.PlannedIndex;Segment=source.Segment;Condition=source.Condition;Word=source.Stimulus.Word;Ink=source.Stimulus.Ink;
+            BlockIndex=source.BlockIndex;PlannedIndex=source.PlannedIndex;Segment=source.Segment;Condition=source.Condition;
+            TaskKind=source.TaskKind;VisualSearch=source.VisualSearch;SelectedItemId=source.SelectedItemId;
+            word=TaskKind==TaskKind.Stroop?source.Stimulus.Word:default(Colour);ink=TaskKind==TaskKind.Stroop?source.Stimulus.Ink:default(Colour);
             ResponseRule=source.ResponseRule;
             Onset=source.Onset;ResponseAt=source.ResponseAt;Response=source.Response;Correct=source.Correct;Outcome=source.Outcome;TechnicalIssue=source.TechnicalIssue;
         }
         public bool Equals(VivePersistentTrialValue value)
         {return TrialId==value.TrialId&&SessionId==value.SessionId&&ListId==value.ListId&&IsPractice==value.IsPractice&&PracticeAttempt==value.PracticeAttempt&&
-            BlockIndex==value.BlockIndex&&PlannedIndex==value.PlannedIndex&&Segment==value.Segment&&Condition==value.Condition&&Word==value.Word&&Ink==value.Ink&&ResponseRule==value.ResponseRule&&
+            BlockIndex==value.BlockIndex&&PlannedIndex==value.PlannedIndex&&Segment==value.Segment&&Condition==value.Condition&&word==value.word&&ink==value.ink&&ResponseRule==value.ResponseRule&&
+            TaskKind==value.TaskKind&&SearchIdentity==value.SearchIdentity&&SelectedItemId==value.SelectedItemId&&
             SameTime(Onset,value.Onset)&&SameTime(ResponseAt,value.ResponseAt)&&Response==value.Response&&Correct==value.Correct&&Outcome==value.Outcome&&TechnicalIssue==value.TechnicalIssue;}
         // Preserve even unusual synthetic bits for differential tests. This is
         // not a declaration that non-finite source timestamps are valid.
@@ -34,6 +41,14 @@ namespace AvatarStroop.Runtime
         {return a.HasValue==b.HasValue&&(!a.HasValue||BitConverter.DoubleToInt64Bits(a.Value)==BitConverter.DoubleToInt64Bits(b.Value));}
         public override bool Equals(object value){return value is VivePersistentTrialValue&&Equals((VivePersistentTrialValue)value);}
         public override int GetHashCode(){return TrialId==null?0:TrialId.GetHashCode();}
+        internal string SearchIdentity {get{return VisualSearch==null?null:VisualSearch.PlanIdentity;}}
+        internal bool ValidSearchValue
+        {get{return TaskKind==TaskKind.VisualSearch&&VisualSearch!=null&&!Response.HasValue&&
+            (!Condition.HasValue||Enum.IsDefined(typeof(Condition),Condition.Value))&&Enum.IsDefined(typeof(TrialOutcome),Outcome)&&
+            (SelectedItemId==null||VisualSearch.FindItem(SelectedItemId)!=null)&&
+            (!Correct.HasValue||(SelectedItemId!=null&&Correct.Value==(SelectedItemId==VisualSearch.TargetId)))&&
+            (Outcome!=TrialOutcome.Responded||(Onset.HasValue&&ResponseAt.HasValue&&SelectedItemId!=null&&Correct.HasValue))&&
+            (Outcome!=TrialOutcome.TimedOut||(Onset.HasValue&&!ResponseAt.HasValue&&SelectedItemId==null&&!Correct.HasValue));}}
     }
 
     // Structural-sharing prototype only. A 32-element chunk and a short root

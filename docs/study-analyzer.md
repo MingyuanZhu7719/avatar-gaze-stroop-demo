@@ -14,9 +14,11 @@ The report links to these tables:
 
 | File | Contents |
 | --- | --- |
-| `trials.csv` | Reconstructed planned/presented/responded trials, practice/formal scope, condition, segment, rule, word, ink, expected answer, correctness, RT, software timing provenance and exclusion flags. Interrupted attempts and retries remain separate rows. |
-| `blocks.csv` | Counts, accuracy and correct-response RT mean/median/sample SD/p95, separately by session, block, rule and congruence. |
-| `contrasts.csv` | Incongruent minus congruent RT differences within each formal block/rule, with both sample counts. |
+| `trials.csv` | Reconstructed trials, practice/formal scope, condition, segment, task kind, response rule, correctness, software timing and exclusion flags. Search adds set size, target/selected item, outcome, search-and-selection duration and separate timeout timestamps; Stroop retains word/ink. Interrupted attempts and retries remain separate rows. |
+| `blocks.csv` | Counts, accuracy and correct-response RT mean/median/sample SD/p95. Stroop is separated by session/block/rule/congruence; Visual search by session/block/set size (12 or 24), with timeout counts. |
+| `contrasts.csv` | Stroop-only incongruent minus congruent RT differences within each formal block/rule, with both sample counts. No search trials enter this table. |
+| `visual_search_items.csv` | Every recorded search layout: item identity, six-column/four-row grid slot, colour, pattern and target flag. Layouts are decoded from the recorded payload, not reconstructed from a seed. These are layout coordinates, not measured eye AOIs. |
+| `visual_search_events.csv` | Recorded controller-ray hover changes and click misses, with trial/context and local event time. Separate `action=cue` rows preserve target-preview first Unity render time, rendered elapsed seconds and the software-camera timing basis; these are not controller or photon observations and do not change array-onset reaction time. A hover does not establish that the participant found or fixated an item. Submitted item choices remain in `trials.csv`. |
 | `ratings.csv` | Individual questionnaire responses, language, version and duplicate/invalid-value flags. No composite is invented. |
 | `eye_quality.csv` | Native acquisition counts, observed callback receipt frequency, ray validity, SDK calibration/runtime states and separate geometry-observation/quality-marker counts. |
 | `aoi_observations.csv` | Active-task valid geometry observation counts and proportions. These are not fixations or dwell duration. D/no-avatar eye/face measures are not applicable. |
@@ -31,9 +33,12 @@ Empty statistics mean unavailable; they are not zero. Block indices are zero-bas
 - Practice is separate from formal trials. Accuracy requires a single unambiguous plan/presentation/response, known rule/colours and no interruption or correctness contradiction. Missing responses are not counted as errors.
 - RT summaries use correct eligible trials with finite positive RT and consistent task-time declarations. There is **no automatic outlier trimming**. The response software timestamp is reconstructed from the response's declared onset plus RT; log emission time is retained separately. Software/render timing is not measured photon exposure.
 - `InkColor` uses rendered ink as the answer. `WordMeaning` uses the word's meaning. Old logs without a rule are labelled `legacy_inferred` InkColor; the modes are never pooled into one contrast.
+- `VisualSearch` is a separate task, displayed as `SelectTarget` in the analysis response-rule column. It has no Stroop word, ink or congruence. Correctness is recomputed from the selected and target item IDs after checking the full recorded layout and metadata. A valid explicit timeout counts as incorrect for search accuracy and is reported separately; an unfinished/missing response is not assumed to be a timeout. Correct-response RT summaries exclude timeouts and wrong selections. `search_selection_seconds` includes finding and controller selection; it is not pure search latency. Timeout timestamps do not populate response timestamps.
 - VRAW verification checks record integrity and a source terminal. CSV parsing checks its structure and exact raw-encoded fields but does not cryptographically re-verify the original VRAW chain. A source terminal does not prove all planned trials were completed.
 - Native acquisitions have no reliable task/block alignment, so native frequency is reported for the whole source, using local callback receipt times. Geometry observations retain their recorded task context. Repeated native identities in observation rows are not new native acquisitions.
 - Calibration `ReportedReady` is an SDK status, not a spatial accuracy result. Fine eye/face AOI validation is [deferred](TODO.md). No gaps are interpolated and no fixation algorithm is applied.
+
+The [Visual search development task](visual-search.md) defines the first version's stimulus, selection and allocation contract. Its board/item geometry does not establish validated object-level eye tracking.
 
 For perceived-evaluation research, freeze eligibility, trial/participant exclusion criteria, RT outlier rules and allowable missingness before inferential analysis. Check condition differences in missingness/interruptions and preserve the questionnaire version. `observed`, `evaluated` and `negative_evaluation_worry` are individual custom items, not an automatically validated scale. Existing development recordings remain labelled with their original run/source scope.
 

@@ -63,7 +63,7 @@ namespace AvatarStroop.Apps
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute,28));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,40));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute,48));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,24));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
             layout.Controls.Add(new Label{Text="实验数据分析",Font=new Font(Font.FontFamily,22,FontStyle.Bold),AutoSize=true},0,0);
-            layout.Controls.Add(new Label{Text="选择一个或多个已完成的实验 VRAW / CSV。输出包含反应时、正确率、干扰效应、问卷条目与眼动质量。\n每个 session 只选一种格式；眼动精度验收暂缓，AOI 不作为已验证的注视指标。",Dock=DockStyle.Fill},0,1);
+            layout.Controls.Add(new Label{Text="支持 Stroop 和 Visual search 的 VRAW / CSV，分析反应时、正确率、问卷和眼动质量；搜索任务按 12 / 24 个物品分别汇总。\n每个 session 只选一种格式；眼动精度验收暂缓，AOI 不作为已验证的注视指标。",Dock=DockStyle.Fill},0,1);
             var files=new FlowLayoutPanel{Dock=DockStyle.Fill};files.Controls.Add(add);files.Controls.Add(clear);files.Controls.Add(new Label{Text="长路径可在下方粘贴添加。",AutoSize=true,Padding=new Padding(12,6,0,0)});layout.Controls.Add(files,0,2);
             var pathRow=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3};pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             pathRow.Controls.Add(new Label{Text="完整路径",AutoSize=true,Padding=new Padding(0,5,8,0)},0,0);pathRow.Controls.Add(pathEntry,1,0);pathRow.Controls.Add(addPath,2,0);layout.Controls.Add(pathRow,0,3);layout.Controls.Add(inputs,0,4);

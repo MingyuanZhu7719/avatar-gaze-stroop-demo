@@ -10,6 +10,10 @@ namespace AvatarStroop.Runtime
     internal sealed class ViveRawObservedTrial
     {
         internal readonly string ResponseRule,ExpectedResponse;
+        internal readonly string TaskKind,SearchSchema,SearchLayout,SetSize,TargetItem,SelectedItem,TimeoutElapsed;
+        internal readonly int TimeoutEvents;
+        internal readonly long? TimeoutEventSequence;
+        internal readonly double? TimeoutEventLocalSeconds;
         internal readonly string TrialId,PlannedList,PlannedIndex,PlannedStimulusSchema,PlannedWord,PlannedInk,PresentedList,PresentedIndex,Word,Ink,Response,DeclaredCorrect,DeclaredOnset,DeclaredReactionSeconds,InterruptionActor,InterruptionReason,InterruptionOnsetAvailable;
         // Declared software evidence, not a hardware onset or an inferred
         // replacement for an absent field in a legacy event.
@@ -26,17 +30,19 @@ namespace AvatarStroop.Runtime
         internal string OpenFlushEvidence {get{return "UNKNOWN";}}
         internal string RenderProxyEvidence {get{return "UNKNOWN";}}
         internal string ResponseCommitEvidence {get{return "UNKNOWN";}}
-        internal string PlannedStimulusState {get{return ViveRawTrialAccumulator.StimulusState(PlannedStimulusSchema,PlannedWord,PlannedInk);}}
-        internal bool EventConflict {get{return ContextConflict||PlannedStimulusState=="CONFLICT"||PlannedEvents>1||PresentationEvents>1||ResponseEvents>1||InterruptionEvents>1||(ResponseEvents>0&&InterruptionEvents>0);}}
+        internal string PlannedStimulusState {get{return TaskKind=="VisualSearch"?ViveRawTrialAccumulator.SearchState(SearchSchema,SearchLayout):ViveRawTrialAccumulator.StimulusState(PlannedStimulusSchema,PlannedWord,PlannedInk);}}
+        internal bool EventConflict {get{return ContextConflict||PlannedStimulusState=="CONFLICT"||PlannedEvents>1||PresentationEvents>1||ResponseEvents>1||InterruptionEvents>1||TimeoutEvents>1||((ResponseEvents>0?1:0)+(InterruptionEvents>0?1:0)+(TimeoutEvents>0?1:0)>1);}}
         // Missing a planned declaration or final observed outcome, or a
         // response without a presentation declaration, remains incomplete.
-        internal bool IncompleteEvidence {get{return PlannedEvents==0||(ResponseEvents>0&&PresentationEvents==0)||(ResponseEvents==0&&InterruptionEvents==0);}}
+        internal bool IncompleteEvidence {get{return PlannedEvents==0||((ResponseEvents>0||TimeoutEvents>0)&&PresentationEvents==0)||(ResponseEvents==0&&InterruptionEvents==0&&TimeoutEvents==0);}}
         internal ViveRawObservedTrial(ViveRawTrialAccumulator.Trial x)
         {TrialId=x.Id;Block=x.Block;Segment=x.Segment;PlannedEvents=x.Planned;PresentationEvents=x.Presented;ResponseEvents=x.Responded;InterruptionEvents=x.Interrupted;
             PlannedList=x.List;PlannedIndex=x.Index;PlannedStimulusSchema=x.StimulusSchema;PlannedWord=x.PlannedWord;PlannedInk=x.PlannedInk;
             PresentedList=x.PresentedList;PresentedIndex=x.PresentedIndex;Word=x.Word;Ink=x.Ink;Response=x.Response;
             DeclaredCorrect=x.Correct;DeclaredOnset=x.Onset;DeclaredReactionSeconds=x.Reaction;
             ResponseRule=x.ResponseRule;ExpectedResponse=x.ExpectedResponse;
+            TaskKind=x.TaskKind;SearchSchema=x.SearchSchema;SearchLayout=x.SearchLayout;SetSize=x.SetSize;TargetItem=x.TargetItem;SelectedItem=x.SelectedItem;TimeoutEvents=x.TimedOut;TimeoutElapsed=x.TimeoutElapsed;
+            TimeoutEventSequence=x.TimeoutSequence;TimeoutEventLocalSeconds=x.TimeoutAt;
             DeclaredPresentationTaskOnset=x.PresentationTaskOnset;DeclaredPresentationTaskClock=x.PresentationTaskClock;DeclaredPresentationTaskBasis=x.PresentationTaskBasis;
             DeclaredUnityRenderSeconds=x.UnityRenderSeconds;DeclaredUnityRenderClock=x.UnityRenderClock;DeclaredUnityRenderFrame=x.UnityRenderFrame;
             DeclaredUnityRenderRevision=x.UnityRenderRevision;DeclaredUnityRenderBasis=x.UnityRenderBasis;
@@ -125,6 +131,9 @@ namespace AvatarStroop.Runtime
         internal sealed class Trial
         {
             internal string ResponseRule,ExpectedResponse;
+            internal string TaskKind,SearchSchema,SearchLayout,SetSize,TargetItem,SelectedItem,TimeoutElapsed;
+            internal int TimedOut;
+            internal long? TimeoutSequence;internal double? TimeoutAt;
             internal string Id,List,Index,StimulusSchema,PlannedWord,PlannedInk,PresentedList,PresentedIndex,Word,Ink,Response,Correct,Onset,Reaction,InterruptionActor,InterruptionReason,InterruptionOnsetAvailable;
             internal string PresentationTaskOnset,PresentationTaskClock,PresentationTaskBasis,UnityRenderSeconds,UnityRenderClock,UnityRenderFrame,UnityRenderRevision,UnityRenderBasis;
             internal int Block,Segment,Planned,Presented,Responded,Interrupted;
@@ -145,6 +154,11 @@ namespace AvatarStroop.Runtime
         {if(s==null)return null;if(s.Length>MaxFieldChars||s.Length>MaxTotalChars-chars)throw new ProjectionLimit();chars+=s.Length;return s;}
         string Field(IReadOnlyDictionary<string,string> fields,string key)
         {string value;return fields.TryGetValue(key,out value)?Keep(value):null;}
+        string LayoutField(IReadOnlyDictionary<string,string> fields)
+        {
+            string value;if(!fields.TryGetValue("visual_search_layout",out value)||value==null)return null;
+            if(value.Length>2048||value.Length>MaxTotalChars-chars)throw new ProjectionLimit();chars+=value.Length;return value;
+        }
         // Called only after the strict manifest parser has checked these
         // declarations; they still do not authenticate source or assignment.
         internal void SetManifest(string sessionValue,string clockValue,string planValue,int[] options,int[] lists,string[] schedules,string[] geometries)
@@ -171,6 +185,13 @@ namespace AvatarStroop.Runtime
             if(schema!="1")return "UNSUPPORTED_SCHEMA";
             return ColourName(word)&&ColourName(ink)?"DECLARED_V1":"CONFLICT";
         }
+        internal static string SearchState(string schema,string layout)
+        {
+            if(schema==null&&layout==null)return "UNKNOWN";
+            if(schema!="visual-search-v1")return schema==null?"CONFLICT":"UNSUPPORTED_SCHEMA";
+            try{VisualSearchTrial.Parse(layout);return "DECLARED_VISUAL_SEARCH_V1";}
+            catch(Exception e) when(e is ArgumentException||e is FormatException||e is OverflowException||e is InvalidOperationException){return "CONFLICT";}
+        }
         internal void Observe(string kind,string id,int block,int segment,long sequence,double time,IReadOnlyDictionary<string,string> fields)
         {
             // Focus is a local software declaration. Preserve its selected
@@ -196,30 +217,37 @@ namespace AvatarStroop.Runtime
             }
             if(kind=="rating")
             {if(ratings.Count>=MaxRatings)throw new ProjectionLimit();ratings.Add(new ViveRawObservedRating(block,segment,time,Field(fields,"item"),Field(fields,"value"),Field(fields,"language"),Field(fields,"version")));return;}
-            if(kind!="trial_planned"&&kind!="stimulus_presented"&&kind!="first_response"&&kind!="trial_interrupted")return;
+            if(kind!="trial_planned"&&kind!="stimulus_presented"&&kind!="first_response"&&kind!="trial_interrupted"&&kind!="trial_timed_out")return;
             if(String.IsNullOrEmpty(id)){checked{unassigned++;}return;}
             Trial trial;
             if(!byId.TryGetValue(id,out trial))
             {if(trials.Count>=MaxTrials)throw new ProjectionLimit();trial=new Trial{Id=Keep(id),Block=block,Segment=segment};byId.Add(trial.Id,trial);trials.Add(trial);}
             else if(trial.Block!=block||trial.Segment!=segment)trial.Conflict=true;
+            string taskKind=Field(fields,"task_kind");
+            if(taskKind!=null)
+            {if((taskKind!="Stroop"&&taskKind!="VisualSearch")||(trial.TaskKind!=null&&trial.TaskKind!=taskKind))trial.Conflict=true;else trial.TaskKind=taskKind;}
+            bool search=trial.TaskKind=="VisualSearch";
             string rule=Field(fields,"response_rule"),expectedResponse=Field(fields,"expected_response");
             if(rule!=null)
             {if((rule!="InkColor"&&rule!="WordMeaning")||(trial.ResponseRule!=null&&trial.ResponseRule!=rule))trial.Conflict=true;
                 if(trial.ResponseRule==null)trial.ResponseRule=rule;}
             if(expectedResponse!=null)
-            {if((expectedResponse!="Red"&&expectedResponse!="Green"&&expectedResponse!="Blue"&&expectedResponse!="Yellow")||
+            {if((!search&&expectedResponse!="Red"&&expectedResponse!="Green"&&expectedResponse!="Blue"&&expectedResponse!="Yellow")||
                     (trial.ExpectedResponse!=null&&trial.ExpectedResponse!=expectedResponse))trial.Conflict=true;
                 if(trial.ExpectedResponse==null)trial.ExpectedResponse=expectedResponse;}
             if(kind=="trial_planned")
             {if(trial.Planned++==0){trial.PlannedAt=time;trial.PlannedSequence=sequence;trial.List=Field(fields,"list");trial.Index=Field(fields,"planned_index");
-                trial.StimulusSchema=Field(fields,"planned_stimulus_schema");trial.PlannedWord=Field(fields,"planned_word");trial.PlannedInk=Field(fields,"planned_ink");}}
+                trial.StimulusSchema=Field(fields,"planned_stimulus_schema");trial.PlannedWord=Field(fields,"planned_word");trial.PlannedInk=Field(fields,"planned_ink");
+                if(search){trial.SearchSchema=Field(fields,"search_schema");trial.SearchLayout=LayoutField(fields);trial.SetSize=Field(fields,"set_size");trial.TargetItem=Field(fields,"target_item");}}}
             else if(kind=="stimulus_presented")
             {if(trial.Presented++==0){trial.PresentedAt=time;trial.PresentedSequence=sequence;trial.PresentedList=Field(fields,"list");trial.PresentedIndex=Field(fields,"planned_index");trial.Word=Field(fields,"word");trial.Ink=Field(fields,"ink");
                 trial.PresentationTaskOnset=Field(fields,"task_onset_seconds");trial.PresentationTaskClock=Field(fields,"task_onset_clock_id");trial.PresentationTaskBasis=Field(fields,"task_onset_basis");
                 trial.UnityRenderSeconds=Field(fields,"unity_render_proxy_seconds");trial.UnityRenderClock=Field(fields,"unity_render_proxy_clock_id");trial.UnityRenderFrame=Field(fields,"unity_render_proxy_frame");
                 trial.UnityRenderRevision=Field(fields,"unity_render_proxy_revision");trial.UnityRenderBasis=Field(fields,"unity_render_proxy_basis");}}
             else if(kind=="first_response")
-            {if(trial.Responded++==0){trial.RespondedAt=time;trial.RespondedSequence=sequence;trial.Response=Field(fields,"response");trial.Correct=Field(fields,"correct");trial.Onset=Field(fields,"onset");trial.Reaction=Field(fields,"rt_seconds");}}
+            {if(trial.Responded++==0){trial.RespondedAt=time;trial.RespondedSequence=sequence;trial.Response=Field(fields,"response");trial.Correct=Field(fields,"correct");trial.Onset=Field(fields,"onset");trial.Reaction=Field(fields,"rt_seconds");if(search)trial.SelectedItem=Field(fields,"selected_item");}}
+            else if(kind=="trial_timed_out")
+            {if(!search)trial.Conflict=true;if(trial.TimedOut++==0){trial.TimeoutAt=time;trial.TimeoutSequence=sequence;trial.Onset=Field(fields,"onset");trial.TimeoutElapsed=Field(fields,"elapsed_seconds");}}
             else if(trial.Interrupted++==0){trial.InterruptedAt=time;trial.InterruptedSequence=sequence;
                 string actor,reason,onset;trial.InterruptionActorPresent=fields.TryGetValue("actor",out actor);
                 trial.InterruptionReasonPresent=fields.TryGetValue("reason",out reason);trial.InterruptionOnsetAvailablePresent=fields.TryGetValue("onset_available",out onset);
@@ -229,6 +257,8 @@ namespace AvatarStroop.Runtime
                 WrongOrder(trial.PresentedSequence,trial.InterruptedSequence)||WrongTime(trial.PlannedAt,trial.PresentedAt)||
                 WrongTime(trial.PlannedAt,trial.RespondedAt)||WrongTime(trial.PlannedAt,trial.InterruptedAt)||
                 WrongTime(trial.PresentedAt,trial.RespondedAt)||WrongTime(trial.PresentedAt,trial.InterruptedAt))trial.Conflict=true;
+            if(WrongOrder(trial.PlannedSequence,trial.TimeoutSequence)||WrongOrder(trial.PresentedSequence,trial.TimeoutSequence)||
+                WrongTime(trial.PlannedAt,trial.TimeoutAt)||WrongTime(trial.PresentedAt,trial.TimeoutAt))trial.Conflict=true;
             if(trial.List!=null&&trial.PresentedList!=null&&!String.Equals(trial.List,trial.PresentedList,StringComparison.Ordinal))trial.Conflict=true;
             if(trial.Index!=null&&trial.PresentedIndex!=null&&!String.Equals(trial.Index,trial.PresentedIndex,StringComparison.Ordinal))trial.Conflict=true;
             // Compare only declarations that actually exist. Legacy records
@@ -252,6 +282,20 @@ namespace AvatarStroop.Runtime
                 if(trial.ExpectedResponse!=null&&
                     ((trial.ResponseRule=="InkColor"&&trial.ExpectedResponse!=trial.PlannedInk)||
                      (trial.ResponseRule=="WordMeaning"&&trial.ExpectedResponse!=trial.PlannedWord)))trial.Conflict=true;
+            }
+            if(search)
+            {
+                if(trial.PlannedWord!=null||trial.PlannedInk!=null||trial.Word!=null||trial.Ink!=null||trial.StimulusSchema!="visual-search-v1")trial.Conflict=true;
+                if(trial.SearchLayout!=null)
+                {
+                    try
+                    {
+                        var layout=VisualSearchTrial.Parse(trial.SearchLayout);
+                        if(trial.TargetItem!=layout.TargetId||trial.SetSize!=layout.SetSize.ToString(System.Globalization.CultureInfo.InvariantCulture))trial.Conflict=true;
+                        if(trial.SelectedItem!=null){bool found=false;foreach(var item in layout.Items)if(item.Id==trial.SelectedItem)found=true;if(!found)trial.Conflict=true;}
+                    }
+                    catch(Exception e) when(e is ArgumentException||e is FormatException||e is OverflowException||e is InvalidOperationException){trial.Conflict=true;}
+                }
             }
         }
         internal void ObserveStatus(ViveProEyeWorker.ObservedEyeStatus status)

@@ -35,7 +35,7 @@ namespace AvatarStroop.Tests
             internal readonly ViveRawByteBudget Budget;
             readonly int capacity;
             int frame;
-            internal Fixture(long maxBytes=8388608,int capacity=32)
+            internal Fixture(long maxBytes=8388608,int capacity=32,bool visualSearch=false)
             {
                 this.capacity=capacity;
                 Worker=new ViveProEyeWorker(Clock,()=>new ViveHeadFrame(1,Clock.Now,true,true,Rotation.Identity),()=>Source);
@@ -44,11 +44,22 @@ namespace AvatarStroop.Tests
                 var plan=ViveNamedSimulationPlan.Select(Actor.Owner,"reservation-plan",option);
                 var intent=ViveNamedRecordingIntent.Select(Actor.Owner,"reservation-intent",true,true);
                 var config=SessionConfiguration.NamedRecordingDevelopment("reservation-session",37,plan,intent);
+                if(visualSearch)
+                {
+                    var allocation=new Allocation("reservation-search-allocation",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
+                    var design=ViveLegacyRecordingDesign.Select(Actor.Owner,"reservation-search-design",allocation,"reservation-geometry",ViveFixedTrackpadMapping.Version);
+                    var recording=ViveLegacyRecordingIntent.Select(Actor.Owner,"reservation-search-intent",true,true);
+                    config=SessionConfiguration.WithTaskKind(SessionConfiguration.LegacyRecordingDevelopment(
+                        new SessionConfiguration("reservation-search-session",37,allocation,RunKind.Simulation,"en",5,30,true,0,true,true,true),design,recording),TaskKind.VisualSearch);
+                }
                 var geometry=new AutomaticGazeGeometry(Rotation.Identity,new Vec3(0,0,1),new Rotation(0,Math.Sqrt(.5),0,Math.Sqrt(.5)),new Vec3(1,0,0),"reservation-geometry");
                 var map=new Dictionary<ViveTrackpadDirection,Colour>{{ViveTrackpadDirection.Up,Colour.Red},{ViveTrackpadDirection.Right,Colour.Green},{ViveTrackpadDirection.Down,Colour.Blue},{ViveTrackpadDirection.Left,Colour.Yellow}};
                 Task=new ViveDevelopmentParticipant(config,Clock,geometry,map,.5,true);
-                Admission=ViveNamedSessionFrameAdmission.CreateSyntheticForTest(Task,Worker,Clock,capacity);
+                double taskChoice=Clock.Now,eyeChoice=Clock.Now;
+                Admission=visualSearch?ViveNamedSessionFrameAdmission.CreateLegacySyntheticForTest(Task,Worker,Clock,capacity,taskChoice,eyeChoice):
+                    ViveNamedSessionFrameAdmission.CreateSyntheticForTest(Task,Worker,Clock,capacity);
                 Check.True(Admission.ConfirmTask()&&Admission.ConfirmEye());
+                if(visualSearch)Task.RecordLegacySoftwareChoices(Clock,taskChoice,eyeChoice);
                 Budget=ViveRawByteBudget.SelectExplicit(maxBytes);
                 Check.True(Admission.TryBindQueueBudget(Budget));
                 object run;Check.True(Admission.TryEnableWorkerStatus(8,out run));
@@ -59,7 +70,7 @@ namespace AvatarStroop.Tests
                 Check.True(Admission.TryStageStatus(status,out proof)&&Worker.TryAcknowledgeStatusEvidence(status,proof));
                 DrainQueue();
                 Task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));
-                var planEvent=Task.PrepareNamedRecordingBlockPlan(Actor.Owner,true);DrainTask();
+                var planEvent=Task.PrepareRawRecordingBlockPlan(Actor.Owner,true);DrainTask();
                 ViveBlockPlanRequest request;Check.True(ViveBlockPlanRequest.TryCapture(Task,Clock,planEvent,out request));
                 ViveNamedSessionFrameAdmission.SyntheticPlanProof planProof;
                 Check.True(Admission.TryIssueSyntheticPlanProof(request,planEvent,out planProof));
@@ -78,7 +89,7 @@ namespace AvatarStroop.Tests
                 ViveProEyeWorker.RecordingFrameTicket ticket;
                 Check.Equal(ViveProEyeWorker.RecordingTicketDisposition.Issued,Worker.TryIssueRecordingTicket(poll,out ticket));
                 ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp;
-                Check.True(Task.TryCaptureNamedRecordingTaskStamp(Clock,out stamp)&&Admission.TryStage(stamp,ticket,1));
+                Check.True(Task.TryCaptureRawRecordingTaskStamp(Clock,out stamp)&&Admission.TryStage(stamp,ticket,1));
                 return ticket;
             }
             internal void DrainTask(){bool staged;do{Check.True(Admission.TryStageNextTaskEvent(out staged));if(staged&&capacity==1)DrainQueue();}while(staged);}
@@ -96,6 +107,34 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("visual search presentation reservation commits exact layout identity and cannot be replayed",()=>{
+                using(var f=new Fixture(visualSearch:true))
+                {
+                    var ticket=f.StageFreshEye();f.DrainQueue();var trial=f.Task.CurrentTrial;
+                    ViveNamedSessionFrameAdmission.PresentationReservation token;
+                    Check.True(Reserve(f,ticket,out token)&&token.Search==trial.VisualSearch&&!trial.Onset.HasValue);
+                    Check.True(f.Admission.TryCommitVisualSearchPresentation(token,42,8,trial.TrialId,trial.VisualSearch.LayoutId,12.75));
+                    Check.True(trial.Onset.HasValue);double onset=trial.Onset.Value;
+                    ViveNamedSessionFrameAdmission.ConsumerReceipt receipt;Check.True(f.Admission.TryReserveConsumer(out receipt)&&receipt!=null);
+                    var item=receipt.Record as JournalEvent;Check.True(item!=null&&item.Kind=="stimulus_presented");
+                    Check.Equal(trial.VisualSearch.LayoutId,item.Fields["layout_id"]);Check.Equal("VisualSearch",item.Fields["task_kind"]);
+                    Check.True(!item.Fields.ContainsKey("word")&&!item.Fields.ContainsKey("ink"));
+                    ViveNamedSessionFrameAdmission.Manifest manifest;Check.True(f.Admission.TryGetManifestForReservedConsumer(receipt,item,out manifest));
+                    Check.True(ViveRawSessionJournalCodec.RecordPayload(receipt.Ordinal+1,item,manifest).Length>0);
+                    Check.True(f.Admission.TryAcknowledgeSyntheticForTest(receipt));
+                    Check.True(!f.Admission.TryCommitVisualSearchPresentation(token,42,8,trial.TrialId,trial.VisualSearch.LayoutId,12.75));
+                    Check.Equal(onset,trial.Onset.Value);
+                }
+            });
+            suite.Run("visual search presentation reservation rejects a wrong layout before onset",()=>{
+                using(var f=new Fixture(visualSearch:true))
+                {
+                    var ticket=f.StageFreshEye();f.DrainQueue();var trial=f.Task.CurrentTrial;
+                    ViveNamedSessionFrameAdmission.PresentationReservation token;Check.True(Reserve(f,ticket,out token));
+                    Check.True(!f.Admission.TryCommitVisualSearchPresentation(token,42,8,trial.TrialId,"another-layout",12.75));
+                    Check.True(!trial.Onset.HasValue&&f.Admission.State!=0);
+                }
+            });
             suite.Run("focus boundary abandons an uncommitted display without publishing an onset",()=>{
                 using(var f=new Fixture())
                 {

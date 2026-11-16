@@ -70,7 +70,7 @@ namespace AvatarStroop.Core
                 throw new InvalidOperationException("Apparatus sessions are unavailable: real head/eye adapters, approved fault/recovery policy, calibration and timing validation are not complete.");
             Configuration=configuration; this.clock=clock; lastTime=clock.Now;
             if(Double.IsNaN(lastTime) || Double.IsInfinity(lastTime) || lastTime < 0) throw new ArgumentException("Invalid clock");
-            for(int i=0;i<4;i++) lists[i]=TrialPlans.MainList(configuration.Seed,i);
+            for(int i=0;i<4;i++) lists[i]=configuration.TaskKind==TaskKind.VisualSearch?VisualSearchPlans.MainList(configuration.Seed,i):TrialPlans.MainList(configuration.Seed,i);
             Phase=Phase.Preparation;
             if(configuration.NamedPlan!=null)
                 Log("session_created","run_kind","Simulation","protocol",configuration.NamedRecordingIntent==null?ViveNamedSimulationPlan.SchemaVersion:ViveNamedRecordingIntent.EventSchemaVersion,
@@ -159,7 +159,7 @@ namespace AvatarStroop.Core
                 throw new InvalidOperationException("Prepared practice plan no longer matches the task.");
             bool prepared=preparedEvent!=null;
             PracticeAttempt++; TraceMutation(); practiceCorrect=0; TraceMutation(); trialIndex=0; TraceMutation();
-            if(!prepared)practice=TrialPlans.Practice(Configuration.Seed,PracticeAttempt); TraceMutation();
+            if(!prepared)practice=PracticePlan(PracticeAttempt); TraceMutation();
             Log("practice_started", "attempt", PracticeAttempt.ToString());
             Move(Phase.Practice); CreateTrial(true);
         }
@@ -205,16 +205,17 @@ namespace AvatarStroop.Core
             JournalEvent prior=FindNamedRecordingPlanEvent(practiceScope,attempt);
             if(prior!=null)
             {if(!MatchesRawRecordingBlockPlan(prior))throw new InvalidOperationException("Prepared plan no longer matches the task.");return prior;}
-            if(practiceScope){practice=TrialPlans.Practice(Configuration.Seed,attempt);TraceMutation();items=practice;}
+            if(practiceScope){practice=PracticePlan(attempt);TraceMutation();items=practice;}
             else items=lists[RecordingListIndex];
             if(items==null||items.Length!=(practiceScope?8:24))throw new InvalidOperationException("Stimulus plan is unavailable.");
-            var fields=new List<string>{"recording_plan_schema","1","plan_scope",practiceScope?"PRACTICE":"MAIN",
+            var fields=new List<string>{"recording_plan_schema",Configuration.TaskKind==TaskKind.VisualSearch?VisualSearchTrial.Schema:"1","plan_scope",practiceScope?"PRACTICE":"MAIN",
                 "attempt",attempt.ToString(CultureInfo.InvariantCulture),"list",list,"item_count",items.Length.ToString(CultureInfo.InvariantCulture)};
             for(int i=0;i<items.Length;i++)
             {
                 if(items[i]==null)throw new InvalidOperationException("Stimulus plan is unavailable.");
                 string prefix="item_"+i.ToString("D2",CultureInfo.InvariantCulture);
-                fields.Add(prefix+"_word");fields.Add(items[i].Word.ToString());fields.Add(prefix+"_ink");fields.Add(items[i].Ink.ToString());
+                if(items[i].IsVisualSearch){fields.Add(prefix+"_search");fields.Add(items[i].VisualSearch.PlanIdentity);}
+                else{fields.Add(prefix+"_word");fields.Add(items[i].Word.ToString());fields.Add(prefix+"_ink");fields.Add(items[i].Ink.ToString());}
             }
             Log("block_plan_prepared",fields.ToArray());return events[events.Count-1];
         }
@@ -240,7 +241,7 @@ namespace AvatarStroop.Core
                 !String.Equals(prepared.SessionId,Configuration.SessionId,StringComparison.Ordinal)||!String.Equals(prepared.ClockId,clock.ClockId,StringComparison.Ordinal)||
                 prepared.TrialId!=null)return false;
             string schema,scope,attemptText,list,count;
-            if(!prepared.Fields.TryGetValue("recording_plan_schema",out schema)||schema!="1"||
+            if(!prepared.Fields.TryGetValue("recording_plan_schema",out schema)||schema!=(Configuration.TaskKind==TaskKind.VisualSearch?VisualSearchTrial.Schema:"1")||
                 !prepared.Fields.TryGetValue("plan_scope",out scope)||!prepared.Fields.TryGetValue("attempt",out attemptText)||
                 !prepared.Fields.TryGetValue("list",out list)||!prepared.Fields.TryGetValue("item_count",out count))return false;
             Stimulus[] items;int attempt;
@@ -264,6 +265,8 @@ namespace AvatarStroop.Core
             for(int i=0;i<items.Length;i++)
             {
                 string word,ink,prefix="item_"+i.ToString("D2",CultureInfo.InvariantCulture);
+                if(items[i]!=null&&items[i].IsVisualSearch)
+                {string identity;if(!prepared.Fields.TryGetValue(prefix+"_search",out identity)||identity!=items[i].VisualSearch.PlanIdentity)return false;continue;}
                 if(items[i]==null||!prepared.Fields.TryGetValue(prefix+"_word",out word)||word!=items[i].Word.ToString()||
                     !prepared.Fields.TryGetValue(prefix+"_ink",out ink)||ink!=items[i].Ink.ToString())return false;
             }
@@ -281,6 +284,8 @@ namespace AvatarStroop.Core
         void LockBlockCore(Actor actor, ControlSelection selection, string ownerId)
         {
             RequireOwner(actor); Require(Phase.BlockPreparation);
+            if(Configuration.TaskKind==TaskKind.VisualSearch&&selection!=ControlSelection.Automatic)
+                throw new InvalidOperationException("Visual search v1 requires Automatic avatar control");
             if(Configuration.NamedPlan!=null)throw new InvalidOperationException("Confirm the complete named plan instead of locking one source");
             if(String.IsNullOrWhiteSpace(ownerId) || !Enum.IsDefined(typeof(ControlSelection),selection)) throw new ArgumentException("Owner and source required");
             if(Configuration.NamedOption!=null && (Configuration.NamedOption.Option!=ViveNamedOption.Automatic||selection!=ControlSelection.Automatic))
@@ -409,6 +414,7 @@ namespace AvatarStroop.Core
         void TickCore()
         {
             double now=Time();
+            if(ExpireVisualSearchCore(now))return;
             CompleteQuestionnaireInstruction(now);
             if(Phase == Phase.Countdown && !rawCountdownWitnessPending && now >= countdownAt+Configuration.CountdownSeconds)
             {
@@ -449,7 +455,16 @@ namespace AvatarStroop.Core
             var fixtureHook=SyntheticAfterOnsetForFixture;if(fixtureHook!=null)fixtureHook();
 #endif
             if(Phase == Phase.MainTask && !activeSince.HasValue) {activeSince=current.Onset.Value;TraceMutation();}
-            if(unityProxySeconds.HasValue)
+            if(Configuration.TaskKind==TaskKind.VisualSearch)
+            {
+                var fields=new List<string>{"list",current.ListId,"planned_index",current.PlannedIndex.ToString(CultureInfo.InvariantCulture)};
+                if(unityProxySeconds.HasValue)fields.AddRange(new[]{"software_proxy_schema","1","task_onset_seconds",Number(current.Onset.Value),
+                    "task_onset_clock_id",clock.ClockId,"task_onset_basis","task_clock_after_caller_declared_unity_proxy","unity_render_proxy_seconds",Number(unityProxySeconds.Value),
+                    "unity_render_proxy_clock_id","unity-realtime-since-startup","unity_render_proxy_frame",frame.ToString(CultureInfo.InvariantCulture),
+                    "unity_render_proxy_revision",revision.ToString(CultureInfo.InvariantCulture),"unity_render_proxy_basis","caller_declared_unity_render_proxy_not_photon_onset"});
+                Log("stimulus_presented",fields.ToArray());
+            }
+            else if(unityProxySeconds.HasValue)
                 Log("stimulus_presented", "word",current.Stimulus.Word.ToString(),"ink",current.Stimulus.Ink.ToString(),
                     "list",current.ListId,"planned_index",current.PlannedIndex.ToString(),
                     "software_proxy_schema","1",
@@ -476,7 +491,7 @@ namespace AvatarStroop.Core
             if(!down) { held.Remove(colour);TraceMutation(); return false; }
             if(!held.Add(colour)) return false;
             TraceMutation();
-            if((Phase != Phase.Practice && Phase != Phase.MainTask) || current == null || !current.Onset.HasValue || current.Outcome != TrialOutcome.Pending)
+            if(Configuration.TaskKind==TaskKind.VisualSearch||(Phase != Phase.Practice && Phase != Phase.MainTask) || current == null || !current.Onset.HasValue || current.Outcome != TrialOutcome.Pending)
                 return false;
             current.SetResponseAt(trialAuthority,Time());TraceMutation(); current.SetResponse(trialAuthority,colour);TraceMutation(); current.SetCorrect(trialAuthority,colour == current.ExpectedResponse);TraceMutation();
             current.SetResponded(trialAuthority);TraceMutation();
@@ -521,9 +536,9 @@ namespace AvatarStroop.Core
                     "Wait for the questionnaire control instructions to finish before selecting a rating");
             CompleteQuestionnaireInstruction(now);
             var item=Questionnaire.Id(questionIndex);
-            ratings.Add(new RatingRecord(BlockIndex,item,value,now,Configuration.QuestionnaireLanguage,Questionnaire.VersionFor(Configuration.ResponseRule)));
+            ratings.Add(new RatingRecord(BlockIndex,item,value,now,Configuration.QuestionnaireLanguage,Questionnaire.VersionFor(Configuration.ResponseRule,Configuration.TaskKind)));
             TraceMutation();
-            Log("rating", "item", item, "value", value.ToString(), "language", Configuration.QuestionnaireLanguage, "version", Questionnaire.VersionFor(Configuration.ResponseRule));
+            Log("rating", "item", item, "value", value.ToString(), "language", Configuration.QuestionnaireLanguage, "version", Questionnaire.VersionFor(Configuration.ResponseRule,Configuration.TaskKind));
             questionIndex++;TraceMutation();
             if(questionIndex == Questionnaire.Count)
             {
@@ -729,13 +744,16 @@ namespace AvatarStroop.Core
                 Phase=Phase,BlockIndex=BlockIndex,Segment=Segment, TrialId=task && current != null ? current.TrialId : null,
                 Stimulus=task && current != null ? current.Stimulus : null,
                 ResponseRule=Configuration.ResponseRule,
+                TaskKind=Configuration.TaskKind,
+                VisualSearch=Configuration.TaskKind==TaskKind.VisualSearch&&current!=null&&(task||Phase==Phase.PracticeCorrection)?current.VisualSearch:null,
                 OperatorAvatarVisible=actor == Actor.Participant && Phase == Phase.MainTask &&
                     (Configuration.IsNamedDesign ? CurrentNamedSelection!=null&&CurrentNamedSelection.Option!=ViveNamedOption.NoAvatar : CurrentCondition != Condition.D),
                 ParticipantAvatarVisible=actor == Actor.Operator && Phase == Phase.MainTask,
                 OperatorViewProvisional=actor == Actor.Operator && (Configuration.IsNamedDesign || Phase != Phase.MainTask || CurrentCondition == Condition.D),
                 PracticeCorrection=actor == Actor.Participant && Phase == Phase.PracticeCorrection ?
-                    (Configuration.ResponseRule==ResponseRule.WordMeaning?"Select the colour named by the word: ":"Select the font colour: ")+current.ExpectedResponse : null,
-                QuestionnaireItem=actor == Actor.Participant && Phase == Phase.Questionnaire ? Questionnaire.Item(questionIndex,Configuration.QuestionnaireLanguage,Configuration.ResponseRule) : null,
+                    (Configuration.TaskKind==TaskKind.VisualSearch?(current.TimedOut?"Time is up. Find the ":"The target was the ")+current.VisualSearch.TargetLabel+". Press the trigger to continue.":
+                    (Configuration.ResponseRule==ResponseRule.WordMeaning?"Select the colour named by the word: ":"Select the font colour: ")+current.ExpectedResponse) : null,
+                QuestionnaireItem=actor == Actor.Participant && Phase == Phase.Questionnaire ? Questionnaire.Item(questionIndex,Configuration.QuestionnaireLanguage,Configuration.ResponseRule,Configuration.TaskKind) : null,
                 ReadyEnabled=ReadyEnabled,
                 SourceContinuationPending=RetainedSourceContinuationPending,
                 SourceLabel=Configuration.IsNamedDesign&&CurrentNamedSelection!=null&&CurrentNamedSelection.Option==ViveNamedOption.NoAvatar ? "NO AVATAR - SOURCE NOT APPLICABLE" :
@@ -760,7 +778,16 @@ namespace AvatarStroop.Core
             // The named recording event captures the planned stimulus before
             // presentation. It is not evidence that the headset displayed it.
             // Preserve the existing Quest and earlier named event encodings.
-            if(retryOf!=null)
+            if(Configuration.TaskKind==TaskKind.VisualSearch)
+            {
+                var fields=new List<string>{"list",current.ListId,"planned_index",trialIndex.ToString(CultureInfo.InvariantCulture),
+                    "planned_stimulus_schema",VisualSearchTrial.Schema,"visual_search_layout",current.VisualSearch.Serialize(),
+                    "layout_seed",current.VisualSearch.LayoutSeed.ToString(CultureInfo.InvariantCulture),"target_colour",current.VisualSearch.TargetColour.ToString(),
+                    "target_pattern",current.VisualSearch.TargetPattern.ToString(),"timeout_seconds",Number(VisualSearchTrial.TimeoutSeconds)};
+                if(retryOf!=null)fields.AddRange(new[]{"tracking_retry_schema","1","retry_of",retryOf});
+                Log("trial_planned",fields.ToArray());
+            }
+            else if(retryOf!=null)
                 Log("trial_planned","list",current.ListId,"planned_index",trialIndex.ToString(CultureInfo.InvariantCulture),
                     "planned_stimulus_schema","1","planned_word",current.Stimulus.Word.ToString(),"planned_ink",current.Stimulus.Ink.ToString(),
                     "tracking_retry_schema","1","retry_of",retryOf);
@@ -855,8 +882,25 @@ namespace AvatarStroop.Core
         void Log(string kind, params string[] fields)
         {
             var data=new Dictionary<string,string>(); for(int i=0;i<fields.Length;i+=2) data.Add(fields[i],fields[i+1]);
-            data.Add("response_rule",Configuration.ResponseRule.ToString());
-            if(current!=null&&(kind=="trial_planned"||kind=="stimulus_presented"||kind=="first_response"))
+            if(Configuration.TaskKind==TaskKind.VisualSearch)
+            {
+                data.Add("task_kind",TaskKind.VisualSearch.ToString());data.Add("search_schema",VisualSearchTrial.Schema);
+                if(kind=="session_created")
+                {
+                    data.Add("search_geometry",VisualSearchTrial.GeometryVersion);data.Add("columns",VisualSearchTrial.Columns.ToString(CultureInfo.InvariantCulture));
+                    data.Add("rows",VisualSearchTrial.Rows.ToString(CultureInfo.InvariantCulture));data.Add("column_step_m",Number(VisualSearchTrial.ColumnStepMetres));
+                    data.Add("row_step_m",Number(VisualSearchTrial.RowStepMetres));data.Add("hit_width_m",Number(VisualSearchTrial.HitWidthMetres));
+                    data.Add("hit_height_m",Number(VisualSearchTrial.HitHeightMetres));data.Add("timeout_seconds",Number(VisualSearchTrial.TimeoutSeconds));
+                    data.Add("search_cue_seconds",Number(VisualSearchTrial.TargetPreviewSeconds));
+                }
+                if(current!=null&&(kind=="trial_planned"||kind=="stimulus_presented"||kind=="first_response"||kind=="trial_timed_out"||kind=="visual_search_pointer"||kind=="visual_search_cue"))
+                {
+                    data.Add("layout_id",current.VisualSearch.LayoutId);data.Add("set_size",current.VisualSearch.SetSize.ToString(CultureInfo.InvariantCulture));
+                    data.Add("target_item",current.VisualSearch.TargetId);
+                }
+            }
+            else data.Add("response_rule",Configuration.ResponseRule.ToString());
+            if(Configuration.TaskKind==TaskKind.Stroop&&current!=null&&(kind=="trial_planned"||kind=="stimulus_presented"||kind=="first_response"))
                 data.Add("expected_response",current.ExpectedResponse.ToString());
             double now=Time();
             if(Configuration.NamedPlan!=null)

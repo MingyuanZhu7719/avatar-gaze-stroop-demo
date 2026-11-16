@@ -28,7 +28,7 @@ namespace AvatarStroop.Core
         // main task, so no state waits for an owner decision that does not exist.
         NeedsProtocolDecision, Ended }
     public enum EndReason { Completed, PracticeFailed, Withdrawn, TechnicalEnd }
-    public enum TrialOutcome { Pending, Responded, Interrupted }
+    public enum TrialOutcome { Pending, Responded, Interrupted, TimedOut }
 
     // A new named design is deliberately not an alias for legacy A/B/C/D.
     public enum ViveNamedOption { Automatic, LiveWoz, NoAvatar, DirectParticipantEyes }
@@ -76,15 +76,20 @@ namespace AvatarStroop.Core
 
     public sealed class Stimulus
     {
-        public Colour Word { get; private set; }
-        public Colour Ink { get; private set; }
+        readonly Colour word,ink;
+        public bool IsVisualSearch {get{return VisualSearch!=null;}}
+        public VisualSearchTrial VisualSearch {get;private set;}
+        public Colour Word { get {if(IsVisualSearch)throw new InvalidOperationException("Visual search has no Stroop word");return word;} }
+        public Colour Ink { get {if(IsVisualSearch)throw new InvalidOperationException("Visual search has no Stroop ink");return ink;} }
         public bool Congruent { get { return Word == Ink; } }
-        public string Key { get { return Word + "/" + Ink; } }
+        public string Key { get { return IsVisualSearch?VisualSearch.PlanIdentity:Word + "/" + Ink; } }
+        public Stimulus(VisualSearchTrial visualSearch)
+        {VisualSearch=visualSearch??throw new ArgumentNullException("visualSearch");}
         public Stimulus(Colour word, Colour ink)
         {
             if (!Enum.IsDefined(typeof(Colour), word) || !Enum.IsDefined(typeof(Colour), ink))
                 throw new ArgumentOutOfRangeException("colour");
-            Word = word; Ink = ink;
+            this.word = word; this.ink = ink;
         }
     }
 
@@ -131,6 +136,7 @@ namespace AvatarStroop.Core
         public bool IsNamedDesign {get{return namedOption!=null||NamedPlan!=null;}}
         public RunKind RunKind { get; private set; }
         public ResponseRule ResponseRule { get; private set; }
+        public TaskKind TaskKind {get;private set;}
         public string QuestionnaireLanguage { get; private set; }
         public double CountdownSeconds { get; private set; }
         public double MinimumRestSeconds { get; private set; }
@@ -175,6 +181,14 @@ namespace AvatarStroop.Core
             var copy=(SessionConfiguration)configuration.MemberwiseClone();
             copy.ResponseRule=responseRule;return copy;
         }
+        public static SessionConfiguration WithTaskKind(SessionConfiguration configuration,TaskKind taskKind)
+        {
+            if(configuration==null)throw new ArgumentNullException("configuration");
+            if(!Enum.IsDefined(typeof(TaskKind),taskKind))throw new ArgumentOutOfRangeException("taskKind");
+            if(taskKind==TaskKind.VisualSearch&&(configuration.IsNamedDesign||configuration.LegacyRecordingDesign!=null&&configuration.LegacyRecordingDesign.OperatorWozRequested))
+                throw new InvalidOperationException("Visual search v1 requires Legacy A/B/C/D with Automatic control");
+            var copy=(SessionConfiguration)configuration.MemberwiseClone();copy.TaskKind=taskKind;return copy;
+        }
         // A copy is configured before Experiment starts. Existing legacy preview remains unchanged.
         public static SessionConfiguration LegacyRecordingDevelopment(SessionConfiguration legacyConfiguration,
             ViveLegacyRecordingDesign design,ViveLegacyRecordingIntent intent)
@@ -187,7 +201,8 @@ namespace AvatarStroop.Core
             var result=new SessionConfiguration(c.SessionId,c.Seed,c.Allocation,c.RunKind,c.QuestionnaireLanguage,c.CountdownSeconds,
                 c.MinimumRestSeconds,c.SkipFinalRest,c.QuestionnaireInstructionSeconds,c.QuestionnaireInstructionRequiresAcknowledgement,
                 c.ParticipantPacedRest,c.RetainControlAcrossBlocks,c.ResponseRule);
-            result.LegacyRecordingDesign=design;result.LegacyRecordingIntent=intent;return result;
+            if(c.TaskKind==TaskKind.VisualSearch&&design.OperatorWozRequested)throw new InvalidOperationException("Visual search v1 does not support WoZ");
+            result.TaskKind=c.TaskKind;result.LegacyRecordingDesign=design;result.LegacyRecordingIntent=intent;return result;
         }
         // Single-block development preview only: it does not define a four-option
         // roster, establish research admission or create a legacy allocation.
@@ -238,6 +253,10 @@ namespace AvatarStroop.Core
         public ViveNamedSimulationPlan NamedPlan {get;private set;}
         public ViveNamedSimulationBlock NamedBlock {get;private set;}
         public Stimulus Stimulus { get; private set; }
+        public TaskKind TaskKind {get{return Stimulus!=null&&Stimulus.IsVisualSearch?TaskKind.VisualSearch:TaskKind.Stroop;}}
+        public VisualSearchTrial VisualSearch {get{return Stimulus==null?null:Stimulus.VisualSearch;}}
+        public string SelectedItemId {get;private set;}
+        public bool TimedOut {get{return Outcome==TrialOutcome.TimedOut;}}
         public ResponseRule ResponseRule { get; private set; }
         public Colour ExpectedResponse { get { return ResponseRule==ResponseRule.WordMeaning?Stimulus.Word:Stimulus.Ink; } }
         public double? Onset { get; private set; }
@@ -273,9 +292,11 @@ namespace AvatarStroop.Core
         internal void SetOnset(object key,double value){RequireAuthority(key);Onset=value;}
         internal void SetResponseAt(object key,double at){RequireAuthority(key);ResponseAt=at;}
         internal void SetResponse(object key,Colour response){RequireAuthority(key);Response=response;}
+        internal void SetSelectedItem(object key,string itemId){RequireAuthority(key);SelectedItemId=itemId;}
         internal void SetCorrect(object key,bool correct){RequireAuthority(key);Correct=correct;}
         internal void SetResponded(object key){RequireAuthority(key);Outcome=TrialOutcome.Responded;}
         internal void SetInterrupted(object key){RequireAuthority(key);Outcome=TrialOutcome.Interrupted;}
+        internal void SetTimedOut(object key){RequireAuthority(key);Outcome=TrialOutcome.TimedOut;}
         internal void SetTechnicalIssue(object key){RequireAuthority(key);TechnicalIssue=true;}
     }
 
@@ -346,6 +367,8 @@ namespace AvatarStroop.Core
         public string TrialId { get; internal set; }
         public Stimulus Stimulus { get; internal set; }
         public ResponseRule ResponseRule { get; internal set; }
+        public TaskKind TaskKind {get;internal set;}
+        public VisualSearchTrial VisualSearch {get;internal set;}
         public bool OperatorAvatarVisible { get; internal set; }
         public bool ParticipantAvatarVisible { get; internal set; }
         public bool OperatorViewProvisional { get; internal set; }

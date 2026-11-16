@@ -282,7 +282,7 @@ namespace AvatarStroop.Runtime
                         if(context.TrialAccumulator!=null)context.TrialAccumulator.ObservePreparedPlan(prepared);
                     }
                     else if(eventKind=="trial_planned")context.PreparedPlans.ObserveTrial(fields,block,context.Session,trialId,segment);
-                    else if(eventKind=="trial_interrupted"||eventKind=="first_response")context.PreparedPlans.ObserveOutcome(eventKind,fields,block,segment,trialId);
+                    else if(eventKind=="trial_interrupted"||eventKind=="first_response"||eventKind=="trial_timed_out")context.PreparedPlans.ObserveOutcome(eventKind,fields,block,segment,trialId);
                     if(context.TrialAccumulator!=null||context.WithholdObservedWithdrawal)
                     {
                         string reason;

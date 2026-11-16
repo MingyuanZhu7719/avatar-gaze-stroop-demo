@@ -172,7 +172,7 @@ namespace AvatarStroop.Unity
                     {GUILayout.Label(missing,recordingWrap,GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));ViveOwnerDesktopLayout.Observe("block-"+i+"-validation",GUILayoutUtility.GetLastRect());}
                 }
             }
-            if(selectedDesign==0)
+            if(selectedDesign==0&&selectedTaskKind!=TaskKind.VisualSearch)
             {
                 if(local&&ViveLegacyWozRecordingBuildPolicy.Available)
                 {
@@ -182,7 +182,7 @@ namespace AvatarStroop.Unity
                 else if(!local)ownerPreviewWoz=GUILayout.Toggle(ownerPreviewWoz,"Use a second-PC WoZ operator (unrecorded)");
             }
             GUILayout.Space(6);GUILayout.Label("Controller: automatic. Keep exactly one VIVE wand connected.");
-            GUILayout.Label(ViveFixedTrackpadMapping.Label);
+            GUILayout.Label(selectedTaskKind==TaskKind.VisualSearch?"Point at a backpack and pull the trigger. Ratings: trackpad up/down, trigger to confirm.":ViveFixedTrackpadMapping.Label);
             if(local)
             {
                 OwnerHeading("3  Local output");

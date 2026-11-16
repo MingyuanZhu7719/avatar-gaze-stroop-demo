@@ -603,6 +603,14 @@ namespace AvatarStroop.Runtime
         }
         internal void CancelPresentation(ViveNamedSessionFrameAdmission.PresentationReservation token)
         {stagedEpoch=null;admission.CancelPresentation(token);Fail();}
+        internal bool CommitVisualSearchPresentation(ViveNamedSessionFrameAdmission.PresentationReservation token,
+            int unityFrame,long revision,string trialId,string layoutId,double unityRenderSeconds)
+        {
+            if(Thread.CurrentThread.ManagedThreadId!=owner||Volatile.Read(ref terminal)!=0||
+                !admission.TryCommitVisualSearchPresentation(token,unityFrame,revision,trialId,layoutId,unityRenderSeconds))
+            {stagedEpoch=null;Fail();return false;}
+            stagedEpoch=null;return true;
+        }
         // A software revision check only. It cannot prove physical eye/head
         // continuity or the exact interval in which the vendor sampled gaze.
         internal bool VerifyStagedEpoch()

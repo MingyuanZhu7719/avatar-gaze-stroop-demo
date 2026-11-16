@@ -85,6 +85,7 @@ namespace AvatarStroop.Tests
             var suite=new TestSuite(); TrialPlanTests.Register(suite); ExperimentTests.Register(suite);
             PreviewFlowTests.Register(suite);
             ResponseRuleTests.Register(suite);
+            VisualSearchTests.Register(suite);
             ViveCsvPathPolicyTests.Register(suite);
             StudyAnalysisTests.Register(suite);
             AppLanguageTests.Register(suite);

@@ -13,6 +13,11 @@ namespace AvatarStroop.Runtime
     {
         public string Session, Id, Condition, Phase, Rule, RuleProvenance, Word, Ink, Response, Expected, DeclaredExpected, DeclaredCorrect, List, RetryOf;
         public string OnsetBasis, TaskClockId, UnityRenderBasis;
+        public string TaskKind="Stroop", SearchSchema, TargetItem, SelectedItem, TargetColour, TargetPattern, LayoutSeed;
+        public int? SetSize;
+        public int TimeoutCount;
+        public bool TimedOut;
+        public double? TimeoutSeconds,TimeoutTime,TimeoutEventTime;
         public int Block, Segment, PlannedCount, PresentedCount, ResponseCount;
         public double? Onset, ResponseTime, ResponseEventTime, ReactionSeconds, UnityRenderSeconds;
         internal double? PlanEventTime, PresentationEventTime;
@@ -22,7 +27,9 @@ namespace AvatarStroop.Runtime
         public bool? Correct { get; internal set; }
         public bool AccuracyIncluded { get; internal set; }
         public bool RtIncluded { get; internal set; }
-        public string Congruence { get { return !StudyAnalysis.IsColour(Word)||!StudyAnalysis.IsColour(Ink)?"Unknown":Word==Ink?"Congruent":"Incongruent"; } }
+        public bool VisualSearch { get { return TaskKind=="VisualSearch"; } }
+        public string Outcome { get { return Interrupted?"Interrupted":TimedOut?"TimedOut":ResponseCount>0?"Responded":"Pending"; } }
+        public string Congruence { get { return VisualSearch?"NotApplicable":!StudyAnalysis.IsColour(Word)||!StudyAnalysis.IsColour(Ink)?"Unknown":Word==Ink?"Congruent":"Incongruent"; } }
         public void Flag(string value) { if(!Flags.Contains(value))Flags.Add(value); }
     }
 
@@ -104,14 +111,15 @@ namespace AvatarStroop.Runtime
     public sealed class StudyBlockSummary
     {
         public int Block;
-        public string Condition, Rule, Scope, Congruence;
-        public int Trials, Planned, Presented, Responded, Interrupted, AccuracyN, Correct, RtN;
+        public string Condition, Rule, Scope, Congruence, TaskKind;
+        public int? SetSize;
+        public int Trials, Planned, Presented, Responded, Interrupted, TimedOut, AccuracyN, Correct, RtN;
         public double? Accuracy, MeanRt, MedianRt, SdRt, P95Rt;
     }
 
-    public sealed class StudyAnalysis
+    public sealed partial class StudyAnalysis
     {
-        public const string Version="1.0.0";
+        public const string Version="1.1.0";
         static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
         readonly Dictionary<string,StudyTrial> byId=new Dictionary<string,StudyTrial>(StringComparer.Ordinal);
         readonly Dictionary<string,StudyEyeGroup> eye=new Dictionary<string,StudyEyeGroup>(StringComparer.Ordinal);
@@ -185,6 +193,8 @@ namespace AvatarStroop.Runtime
             if(kind=="phase_changed")currentPhase=Get(p,"to")??phase;else currentPhase=phase;
             string condition=Get(p,"legacy_condition")??Get(p,"named_option");if(condition!=null&&block>=0)conditions[block]=condition;
             string rule=Get(p,"response_rule");
+            string taskKind=Get(p,"task_kind");
+            if(taskKind=="VisualSearch")rule="SelectTarget";
             if(rule!=null)
             {
                 string previous;if(rules.TryGetValue(block,out previous)&&previous!=rule)Warn("Response rule changed within block "+block+"; trials remain separated by rule.");
@@ -206,17 +216,21 @@ namespace AvatarStroop.Runtime
                 Ratings.Add(new StudyRating{Session=SessionId,Block=block,Condition=Condition(block),Rule=rule??"InkColor (legacy inferred)",Item=item,
                     Value=value,Language=Get(p,"language"),Version=Get(p,"version"),LocalTime=Number(f,"event_local_time"),Flags=flag});
             }
-            if(kind!="trial_planned"&&kind!="stimulus_presented"&&kind!="first_response"&&kind!="trial_interrupted")return;
+            if(kind=="visual_search_pointer") { SearchPointer(f,p,block,segment);return; }
+            if(kind=="visual_search_cue") { SearchCue(f,p,block,segment);return; }
+            if(kind!="trial_planned"&&kind!="stimulus_presented"&&kind!="first_response"&&kind!="trial_interrupted"&&kind!="trial_timed_out")return;
             string id=Get(f,"trial_id");if(String.IsNullOrEmpty(id)){Warn("A trial event has no trial ID; not reconstructed.");return;}
             StudyTrial trial;if(!byId.TryGetValue(id,out trial))
             {
                 if(Trials.Count>=1000000)throw new InvalidDataException("Too many trials.");
                 trial=new StudyTrial{Session=SessionId,Id=id,Block=block,Segment=segment,Condition=Condition(block),Phase=phase,Rule=rule??"InkColor",
-                    RuleProvenance=rule==null?"legacy_inferred":"explicit"};byId.Add(id,trial);Trials.Add(trial);
+                    RuleProvenance=rule==null?"legacy_inferred":"explicit",TaskKind=taskKind??"Stroop"};byId.Add(id,trial);Trials.Add(trial);
             }
             if(trial.Block!=block||trial.Segment!=segment)trial.Flag("context_conflict");
             if(rule!=null&&trial.Rule!=rule)trial.Flag("response_rule_conflict");
             if(rule!=null)trial.RuleProvenance="explicit";
+            if(taskKind!=null&&trial.TaskKind!=taskKind)trial.Flag("task_kind_conflict");
+            if(trial.VisualSearch)SearchPayload(trial,kind,f,p);
             string word=Get(p,"word")??Get(p,"planned_word"),ink=Get(p,"ink")??Get(p,"planned_ink");
             if(word!=null){if(trial.Word!=null&&trial.Word!=word)trial.Flag("stimulus_conflict");trial.Word=word;}
             if(ink!=null){if(trial.Ink!=null&&trial.Ink!=ink)trial.Flag("stimulus_conflict");trial.Ink=ink;}
@@ -239,7 +253,7 @@ namespace AvatarStroop.Runtime
             {
                 trial.ResponseCount++;if(trial.ResponseCount==1)
                 {
-                    trial.Response=Get(p,"response");trial.ReactionSeconds=Number(p,"rt_seconds");trial.ResponseEventTime=Number(f,"event_local_time");trial.DeclaredCorrect=Get(p,"correct");
+                    trial.Response=trial.VisualSearch?Get(p,"selected_item"):Get(p,"response");trial.ReactionSeconds=Number(p,"rt_seconds");trial.ResponseEventTime=Number(f,"event_local_time");trial.DeclaredCorrect=Get(p,"correct");
                     double? onset=Number(p,"onset");
                     if(trial.Onset.HasValue&&onset.HasValue&&Math.Abs(trial.Onset.Value-onset.Value)>0.000001)trial.Flag("onset_declaration_conflict");
                     if(!trial.Onset.HasValue&&onset.HasValue){trial.Onset=onset;trial.OnsetBasis="response_declared_task_onset";trial.TaskClockId=Get(f,"clock_id");}
@@ -258,24 +272,33 @@ namespace AvatarStroop.Runtime
             {
                 if(t.PlannedCount!=1)t.Flag(t.PlannedCount==0?"missing_plan":"duplicate_plan");
                 if(t.PresentedCount!=1)t.Flag(t.PresentedCount==0?"not_presented":"duplicate_presentation");
-                if(t.ResponseCount!=1)t.Flag(t.ResponseCount==0?"no_response":"duplicate_response");
+                if(t.VisualSearch&&t.TimedOut)
+                {if(t.TimeoutCount!=1||t.ResponseCount!=0)t.Flag("conflicting_trial_outcomes");}
+                else if(t.ResponseCount!=1)t.Flag(t.ResponseCount==0?"no_response":"duplicate_response");
                 if(t.Interrupted)t.Flag("interrupted");
                 if(t.Phase=="Unknown"||(!t.Practice&&t.Phase!="MainTask"))t.Flag("unknown_trial_phase");
-                if(t.Rule!="InkColor"&&t.Rule!="WordMeaning")t.Flag("unknown_response_rule");
-                t.Expected=t.Rule=="InkColor"?t.Ink:t.Rule=="WordMeaning"?t.Word:null;
-                if(!IsColour(t.Word)||!IsColour(t.Ink)||!IsColour(t.Response)||!IsColour(t.Expected))t.Flag("invalid_or_missing_colour");
-                if(t.DeclaredExpected!=null&&t.DeclaredExpected!=t.Expected)t.Flag("expected_response_mismatch");
-                if(IsColour(t.Expected)&&IsColour(t.Response))t.Correct=t.Expected==t.Response;
+                if(t.VisualSearch)FinishSearch(t);
+                else
+                {
+                    if(t.TaskKind!="Stroop")t.Flag("unknown_task_kind");
+                    if(t.Rule!="InkColor"&&t.Rule!="WordMeaning")t.Flag("unknown_response_rule");
+                    t.Expected=t.Rule=="InkColor"?t.Ink:t.Rule=="WordMeaning"?t.Word:null;
+                    if(!IsColour(t.Word)||!IsColour(t.Ink)||!IsColour(t.Response)||!IsColour(t.Expected))t.Flag("invalid_or_missing_colour");
+                    if(t.DeclaredExpected!=null&&t.DeclaredExpected!=t.Expected)t.Flag("expected_response_mismatch");
+                    if(IsColour(t.Expected)&&IsColour(t.Response))t.Correct=t.Expected==t.Response;
+                }
                 bool declared;if(Boolean.TryParse(t.DeclaredCorrect,out declared)&&t.Correct.HasValue&&declared!=t.Correct.Value)t.Flag("correctness_mismatch");
                 if(t.PlanEventTime.HasValue&&t.PresentationEventTime.HasValue&&t.PlanEventTime>t.PresentationEventTime)t.Flag("event_time_order_conflict");
                 if(t.PresentationEventTime.HasValue&&t.ResponseEventTime.HasValue&&t.PresentationEventTime>t.ResponseEventTime)t.Flag("event_time_order_conflict");
+                if(t.PresentationEventTime.HasValue&&t.TimeoutEventTime.HasValue&&t.PresentationEventTime>t.TimeoutEventTime)t.Flag("event_time_order_conflict");
                 t.AccuracyIncluded=t.Flags.Count==0;
-                if(!t.ReactionSeconds.HasValue||t.ReactionSeconds.Value<=0)t.Flag("missing_or_nonpositive_rt");
+                if(!t.TimedOut&&(!t.ReactionSeconds.HasValue||t.ReactionSeconds.Value<=0))t.Flag("missing_or_nonpositive_rt");
                 if(!t.Onset.HasValue)t.Flag("missing_declared_onset");
                 // The response event is logged after the input is captured.
                 // Do not mistake logging latency for an incorrect reaction time.
                 if(t.ResponseTime.HasValue&&t.ResponseEventTime.HasValue&&t.ResponseTime.Value>t.ResponseEventTime.Value+0.0001)t.Flag("response_time_after_event");
-                t.RtIncluded=t.AccuracyIncluded&&t.Correct==true&&t.Flags.Count==0;
+                if(t.TimeoutTime.HasValue&&t.TimeoutEventTime.HasValue&&t.TimeoutTime.Value>t.TimeoutEventTime.Value+0.0001)t.Flag("timeout_time_after_event");
+                t.RtIncluded=!t.TimedOut&&t.AccuracyIncluded&&t.Correct==true&&t.Flags.Count==0;
             }
             if(Trials.Any(x=>x.RuleProvenance=="legacy_inferred"))Warn("Older events omit response_rule: InkColor is inferred and labelled, not merged with WordMeaning.");
             if(eye.Values.Any(x=>x.AcquisitionRows>0))Warn("Native acquisition cadence is session-wide and unaligned to task blocks; ingest observations carry separate software task context.");
@@ -288,15 +311,15 @@ namespace AvatarStroop.Runtime
         public IEnumerable<StudyBlockSummary> Summaries()
         {
             Finish();
-            foreach(var group in Trials.GroupBy(t=>new{t.Block,t.Condition,t.Rule,Scope=t.Practice?"Practice":"Formal",t.Congruence})
-                .OrderBy(g=>g.Key.Block).ThenBy(g=>g.Key.Rule,StringComparer.Ordinal).ThenBy(g=>g.Key.Congruence,StringComparer.Ordinal))
+            foreach(var group in Trials.GroupBy(t=>new{t.Block,t.Condition,t.Rule,Scope=t.Practice?"Practice":"Formal",t.Congruence,t.TaskKind,t.SetSize})
+                .OrderBy(g=>g.Key.Block).ThenBy(g=>g.Key.Rule,StringComparer.Ordinal).ThenBy(g=>g.Key.SetSize).ThenBy(g=>g.Key.Congruence,StringComparer.Ordinal))
             {
                 var rt=group.Where(x=>x.RtIncluded).Select(x=>x.ReactionSeconds.Value).OrderBy(x=>x).ToArray();
                 int n=group.Count(x=>x.AccuracyIncluded),correct=group.Count(x=>x.AccuracyIncluded&&x.Correct==true);
                 double? mean=rt.Length>0?(double?)rt.Average():null;
-                yield return new StudyBlockSummary{Block=group.Key.Block,Condition=group.Key.Condition,Rule=group.Key.Rule,Scope=group.Key.Scope,Congruence=group.Key.Congruence,
+                yield return new StudyBlockSummary{Block=group.Key.Block,Condition=group.Key.Condition,Rule=group.Key.Rule,Scope=group.Key.Scope,Congruence=group.Key.Congruence,TaskKind=group.Key.TaskKind,SetSize=group.Key.SetSize,
                     Trials=group.Count(),Planned=group.Count(x=>x.PlannedCount>0),Presented=group.Count(x=>x.PresentedCount>0),Responded=group.Count(x=>x.ResponseCount>0),
-                    Interrupted=group.Count(x=>x.Interrupted),AccuracyN=n,Correct=correct,Accuracy=n>0?(double?)correct/n:null,RtN=rt.Length,MeanRt=mean,
+                    Interrupted=group.Count(x=>x.Interrupted),TimedOut=group.Count(x=>x.TimedOut),AccuracyN=n,Correct=correct,Accuracy=n>0?(double?)correct/n:null,RtN=rt.Length,MeanRt=mean,
                     MedianRt=Quantile(rt,.5),P95Rt=Quantile(rt,.95),SdRt=rt.Length>1?(double?)Math.Sqrt(rt.Sum(x=>(x-mean.Value)*(x-mean.Value))/(rt.Length-1)):null};
             }
         }

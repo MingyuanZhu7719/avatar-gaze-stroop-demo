@@ -86,16 +86,17 @@ namespace AvatarStroop.Runtime
                 manifest.Line("writer_confirmation","state:unknown");manifest.Line("tail_coverage","state:unknown");
                 blocks.Line("block",p.DesignVariant=="LEGACY_ABCD"?"legacy_condition":"option","list_index",p.DesignVariant=="LEGACY_ABCD"?"mapping":"schedule","geometry");
                 foreach(var b in p.DeclaredPlanBlocks)blocks.Line(I32(b.Index),TextCell(b.Option),I32(b.ListIndex),TextCell(b.Schedule),TextCell(b.Geometry));
-                prepared.Line("scope","block","declaration_segment","attempt","plan_event_sequence","plan_event_local_f64bits","list","item_index","planned_word","planned_ink","execution","prior_order_state","writer_confirmation");
+                prepared.Line("scope","block","declaration_segment","attempt","plan_event_sequence","plan_event_local_f64bits","list","item_index","planned_word","planned_ink","visual_search_plan_identity","execution","prior_order_state","writer_confirmation");
                 foreach(var plan in p.PreparedPlans)foreach(var item in plan.Items)
-                    prepared.Line(TextCell(plan.Scope),I32(plan.Block),I32(plan.SegmentAtDeclaration),I32(plan.Attempt),I64(plan.EventSequence),F64(plan.EventLocalSeconds),TextCell(plan.List),I32(item.Index),TextCell(item.Word),TextCell(item.Ink),"state:unknown","state:"+plan.PriorOrderState.ToLowerInvariant(),"state:unknown");
+                    prepared.Line(TextCell(plan.Scope),I32(plan.Block),I32(plan.SegmentAtDeclaration),I32(plan.Attempt),I64(plan.EventSequence),F64(plan.EventLocalSeconds),TextCell(plan.List),I32(item.Index),TextCell(item.Word),TextCell(item.Ink),TextCell(item.SearchIdentity),"state:unknown","state:"+plan.PriorOrderState.ToLowerInvariant(),"state:unknown");
                 trials.Line("trial_id","block","segment","planned_event_count","presentation_event_count","response_event_count","interruption_event_count",
                     "planned_event_sequence","presentation_event_sequence","response_event_sequence","interruption_event_sequence",
                     "planned_event_local_f64bits","presentation_event_local_f64bits","response_event_local_f64bits","interruption_event_local_f64bits",
                     "planned_list","planned_index","planned_stimulus_schema","planned_word","planned_ink","planned_stimulus_state","presented_list","presented_index","presentation_event_word","presentation_event_ink","response","declared_correct","declared_onset","declared_rt_seconds",
                     "interruption_actor","interruption_reason","interruption_onset_available","event_conflict","incomplete_evidence",
                     "open_flush_evidence","render_proxy_evidence","response_commit_evidence","validity","gaze_alignment",
-                    "declared_presentation_task_onset","declared_presentation_task_clock","declared_presentation_task_basis","declared_unity_render_seconds","declared_unity_render_clock","declared_unity_render_frame","declared_unity_render_revision","declared_unity_render_basis","response_rule","expected_response");
+                    "declared_presentation_task_onset","declared_presentation_task_clock","declared_presentation_task_basis","declared_unity_render_seconds","declared_unity_render_clock","declared_unity_render_frame","declared_unity_render_revision","declared_unity_render_basis","response_rule","expected_response",
+                    "task_kind","search_schema","visual_search_layout","set_size","target_item","selected_item","timeout_event_count","timeout_elapsed_seconds","timeout_event_sequence","timeout_event_local_f64bits");
                 foreach(var t in p.Trials)trials.Line(TextCell(t.TrialId),I32(t.Block),I32(t.Segment),I32(t.PlannedEvents),I32(t.PresentationEvents),I32(t.ResponseEvents),I32(t.InterruptionEvents),
                     OptI64(t.PlannedEventSequence),OptI64(t.PresentationEventSequence),OptI64(t.ResponseEventSequence),OptI64(t.InterruptionEventSequence),
                     OptF64(t.PlannedEventLocalSeconds),OptF64(t.PresentationEventLocalSeconds),OptF64(t.ResponseEventLocalSeconds),OptF64(t.InterruptionEventLocalSeconds),
@@ -106,7 +107,8 @@ namespace AvatarStroop.Runtime
                     DeclaredTextCell(t.InterruptionOnsetAvailablePresent,t.InterruptionOnsetAvailable),
                     Bool(t.EventConflict),Bool(t.IncompleteEvidence),"state:unknown","state:unknown","state:unknown","state:unknown","state:unknown",
                     TextCell(t.DeclaredPresentationTaskOnset),TextCell(t.DeclaredPresentationTaskClock),TextCell(t.DeclaredPresentationTaskBasis),
-                    TextCell(t.DeclaredUnityRenderSeconds),TextCell(t.DeclaredUnityRenderClock),TextCell(t.DeclaredUnityRenderFrame),TextCell(t.DeclaredUnityRenderRevision),TextCell(t.DeclaredUnityRenderBasis),TextCell(t.ResponseRule),TextCell(t.ExpectedResponse));
+                    TextCell(t.DeclaredUnityRenderSeconds),TextCell(t.DeclaredUnityRenderClock),TextCell(t.DeclaredUnityRenderFrame),TextCell(t.DeclaredUnityRenderRevision),TextCell(t.DeclaredUnityRenderBasis),TextCell(t.ResponseRule),TextCell(t.ExpectedResponse),
+                    TextCell(t.TaskKind),TextCell(t.SearchSchema),TextCell(t.SearchLayout),TextCell(t.SetSize),TextCell(t.TargetItem),TextCell(t.SelectedItem),I32(t.TimeoutEvents),TextCell(t.TimeoutElapsed),OptI64(t.TimeoutEventSequence),OptF64(t.TimeoutEventLocalSeconds));
                 ratings.Line("block","segment","event_local_f64bits","item","declared_value","language","version","validity");
                 foreach(var r in p.Ratings)ratings.Line(I32(r.Block),I32(r.Segment),F64(r.EventLocalSeconds),TextCell(r.Item),TextCell(r.DeclaredValue),TextCell(r.Language),TextCell(r.Version),"state:unknown");
                 statuses.Line("sequence","poll_return_local_f64bits","cause_flags","runtime","calibration","eye_connected","native_result","runtime_status","no_user","combined_mask","combined_direction_valid");

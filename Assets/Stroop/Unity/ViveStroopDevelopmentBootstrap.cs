@@ -298,7 +298,9 @@ namespace AvatarStroop.Unity
                 {var automatic=ConsentAutoStartStatus;if(!String.IsNullOrEmpty(automatic))return automatic;}
                 if(participant.Phase==Phase.Questionnaire)
                     return "Trackpad UP: lower | DOWN: higher | Trigger: confirm\nSelected: "+participant.CandidateRating+" (not submitted)";
-                return "Trackpad: colour | Trigger: continue / resume\nEscape on desktop: withdraw development task";
+                return participant!=null&&participant.TaskKind==TaskKind.VisualSearch?
+                    "Point at the matching backpack | Trigger: select / continue\nEscape on desktop: withdraw development task":
+                    "Trackpad: colour | Trigger: continue / resume\nEscape on desktop: withdraw development task";
             }
         }
         public void Configure(ViveStroopPreviewRig preview,WorldSpaceExperimentView presentation)
@@ -1023,6 +1025,7 @@ namespace AvatarStroop.Unity
                             "legacy-design-"+Guid.NewGuid().ToString("N"),"legacy-intent-"+Guid.NewGuid().ToString("N"),legacyWozRecordingSelected);
                 }
                 config=SessionConfiguration.WithResponseRule(config,selectedResponseRule);
+                config=SessionConfiguration.WithTaskKind(config,selectedTaskKind);
                 var taskClock=selected?rig.ActiveViewClock:new MonotonicClock("vive-development-task-"+session);
                 if(taskClock==null)throw new InvalidOperationException("The active headset clock is unavailable.");
                 var options=observationOptIn?new ExperimentIncrementalOptions(4096,128,16L*1024*1024):null;
@@ -1410,14 +1413,16 @@ namespace AvatarStroop.Unity
                 }
                 int ratingDirection=questionnaireGate.Observe(frame.InputReady,participant.Phase==Phase.Questionnaire,displayReady,frame.Trackpad);
                 bool allowResume=!FocusHeldLiveWoz;
-                if(!Mutate(()=>participant.UpdateAuxiliary(allowResume&&frame.InputReady&&frame.TriggerHeld,false,false,ratingDirection,displayReady))){Render();return;}
+                bool searchInputConsumed=ServiceVisualSearchInput(frame);
+                bool searchAuxiliaryAllowed=searchTriggerGate.AllowAuxiliary(frame.TriggerHeld,searchInputConsumed&&frame.TriggerDown);
+                if(!Mutate(()=>participant.UpdateAuxiliary(searchAuxiliaryAllowed&&!searchInputConsumed&&allowResume&&frame.InputReady&&frame.TriggerHeld,false,false,ratingDirection,displayReady))){Render();return;}
                 // Rest confirmation can enter BlockReady in this same Poll.
                 // Prepare before Tick's retained-source auto-countdown.
                 if(namedRawPump!=null&&participant.Phase==Phase.BlockReady&&participant.BlockIndex>0)
                 {RequestNamedBlockPlanStart(false);ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;}
                 if(!Mutate(()=>participant.Tick())){Render();return;}
                 if(ServiceBlockCompletionAnimation())return;
-                message=FocusHeldLiveWoz?LiveWozFocusHoldNotice:frame.Diagnostic;Render();
+                message=FocusHeldLiveWoz?LiveWozFocusHoldNotice:frame.Diagnostic;Render();RefreshVisualSearchPointer(frame);
             }
             catch(Exception error)
             {
@@ -1871,8 +1876,17 @@ namespace AvatarStroop.Unity
             if(trial==null||trial.Stimulus==null||(participant.Phase!=Phase.Practice&&participant.Phase!=Phase.MainTask))return false;
             if(participant.LegacyWozRecordingDeclared&&participant.Phase==Phase.MainTask&&
                 (legacyWozScene==null||!legacyWozScene.MayShowTask))return false;
+            if(trial.Stimulus.IsVisualSearch&&!trial.Onset.HasValue&&view.VisualSearchCuePending)
+            {
+                if(!PrepareRawAutomaticAvatar()||!view.TryRevealVisualSearchCue(trial.TrialId,trial.Stimulus.VisualSearch.LayoutId))return false;
+                view.SetPresentationAvailable(true);
+                return rig.TryRevealRawScene();
+            }
             long revision;
-            if(!view.TryGetViveRawTrialIdentity(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,out revision))return false;
+            bool identity=trial.Stimulus.IsVisualSearch?
+                view.TryGetViveRawVisualSearchIdentity(trial.TrialId,trial.Stimulus.VisualSearch.LayoutId,out revision):
+                view.TryGetViveRawTrialIdentity(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,out revision);
+            if(!identity)return false;
             if(trial.Onset.HasValue)
             {
                 if(!String.Equals(committedRawTrial,trial.TrialId,StringComparison.Ordinal)||committedRawRevision!=revision||
@@ -1893,10 +1907,12 @@ namespace AvatarStroop.Unity
             }
             if(!PrepareRawAutomaticAvatar())
             {NoteRawFirstFault("raw_automatic_avatar_unavailable");AbortRawScenePresentation();return false;}
-            if(!view.TryRevealViveRawTrial(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,revision))
+            if(!(trial.Stimulus.IsVisualSearch?view.TryRevealViveRawVisualSearchTrial(trial.TrialId,trial.Stimulus.VisualSearch.LayoutId,revision):
+                view.TryRevealViveRawTrial(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,revision)))
             {AbortRawScenePresentation();return false;}
             view.SetPresentationAvailable(true);
             if(!rig.TryRevealRawScene()){AbortRawScenePresentation();return false;}
+            ApplyCachedSearchPointer();
             return true;
         }
         // Only after the final task mutation has been drained. This merely
@@ -2119,8 +2135,10 @@ namespace AvatarStroop.Unity
                     {NoteRawFirstFault("raw_automatic_avatar_changed_during_render");AbortRawScenePresentation();return;}
                     if(!RawRecordingDesignAvailable||render==null||rig==null||!rig.RawSceneTrackingCurrent()||
                         render.Frame!=Time.frameCount||render.Frame!=token.Frame||render.Revision!=token.Revision||
-                        !String.Equals(render.TrialId,token.Stamp.TrialId,StringComparison.Ordinal)||!render.MatchesTask(token.Word,token.Ink)||
-                        !namedRawPump.CommitPresentation(token,render.Frame,render.Revision,render.TrialId,token.Word,token.Ink,render.UnityRenderSeconds))
+                        !String.Equals(render.TrialId,token.Stamp.TrialId,StringComparison.Ordinal)||
+                        !(token.Search==null?render.MatchesTask(token.Word,token.Ink):render.MatchesVisualSearch(token.Search.LayoutId))||
+                        !(token.Search==null?namedRawPump.CommitPresentation(token,render.Frame,render.Revision,render.TrialId,token.Word,token.Ink,render.UnityRenderSeconds):
+                        namedRawPump.CommitVisualSearchPresentation(token,render.Frame,render.Revision,render.TrialId,token.Search.LayoutId,render.UnityRenderSeconds)))
                     {AbortRawScenePresentation();return;}
                     committedRawTrial=render.TrialId;committedRawRevision=render.Revision;
                     if(legacyWozScene!=null)legacyWozScene.NotePresented(render.TrialId);

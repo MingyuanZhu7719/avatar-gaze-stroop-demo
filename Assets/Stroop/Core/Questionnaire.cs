@@ -6,6 +6,7 @@ namespace AvatarStroop.Core
     {
         public const string Version = "custom-five-items-2026-10-26";
         public const string WordMeaningVersion = "custom-five-items-word-meaning-2026-11-16";
+        public const string VisualSearchVersion = "custom-five-items-visual-search-2026-11-16";
         static readonly string[] ids = { "focus", "distraction", "observed", "evaluated", "negative_evaluation_worry" };
         static readonly string[] en = {
             "During this block, I kept my attention on selecting the font colour.",
@@ -24,6 +25,13 @@ namespace AvatarStroop.Core
             if(rule==ResponseRule.WordMeaning)return WordMeaningVersion;
             if(rule==ResponseRule.InkColor)return Version;
             throw new ArgumentOutOfRangeException("rule");
+        }
+        public static string VersionFor(ResponseRule rule,TaskKind taskKind)
+        {if(taskKind==TaskKind.VisualSearch)return VisualSearchVersion;if(taskKind!=TaskKind.Stroop)throw new ArgumentOutOfRangeException("taskKind");return VersionFor(rule);}
+        public static string Item(int index,string language,ResponseRule rule,TaskKind taskKind)
+        {
+            ValidateIndex(index);ValidateLanguage(language);VersionFor(rule,taskKind);
+            return taskKind==TaskKind.VisualSearch&&index<2?en[index].Replace("selecting the font colour","finding and selecting the target object"):Item(index,language,rule);
         }
         public static string Item(int index,string language,ResponseRule rule)
         {

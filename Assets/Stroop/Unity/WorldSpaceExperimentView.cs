@@ -166,17 +166,23 @@ namespace AvatarStroop.Unity
         // is a software render proxy, not proof of HMD visibility or persistence.
         internal sealed class StimulusRenderObservation
         {
-            internal readonly string TrialId,Text;
+            internal readonly string TrialId,Text,VisualSearchLayoutId;
             internal readonly long Revision;
             internal readonly int Frame;
             internal readonly double UnityRenderSeconds;
             internal readonly Color InkColor;
             internal StimulusRenderObservation(string trial,long revision,int frame,double time,string text,Color ink)
             {TrialId=trial;Revision=revision;Frame=frame;UnityRenderSeconds=time;Text=text;InkColor=ink;}
+            internal StimulusRenderObservation(string trial,long revision,int frame,double time,string layoutId)
+            {TrialId=trial;Revision=revision;Frame=frame;UnityRenderSeconds=time;VisualSearchLayoutId=layoutId;Text=null;InkColor=Color.white;}
             internal bool MatchesTask(Colour word,Colour ink)
             {return !String.IsNullOrEmpty(TrialId)&&Revision>=0&&Frame>=0&&
                 !Double.IsNaN(UnityRenderSeconds)&&!Double.IsInfinity(UnityRenderSeconds)&&UnityRenderSeconds>=0&&
                 String.Equals(Text,word.ToString().ToUpperInvariant(),StringComparison.Ordinal)&&InkColor.Equals(Ink(ink));}
+            internal bool MatchesVisualSearch(string layoutId)
+            {return !String.IsNullOrEmpty(TrialId)&&Revision>=0&&Frame>=0&&
+                !Double.IsNaN(UnityRenderSeconds)&&!Double.IsInfinity(UnityRenderSeconds)&&UnityRenderSeconds>=0&&
+                !String.IsNullOrEmpty(layoutId)&&String.Equals(VisualSearchLayoutId,layoutId,StringComparison.Ordinal);}
         }
         internal event Action<StimulusRenderObservation> ViveRawStimulusRendered;
         internal Func<bool> ViveRawObservationRequired;
@@ -356,17 +362,20 @@ namespace AvatarStroop.Unity
             if(viveUnconfiguredPreview)throw new InvalidOperationException("VIVE classroom input and task are not configured.");
             if(view == null) throw new ArgumentNullException("view");
             bool taskPhase = view.Phase == Phase.MainTask || (role == Actor.Participant && view.Phase == Phase.Practice);
-            string nextTrial = taskPhase && view.Stimulus != null && !String.IsNullOrEmpty(view.TrialId) ? view.TrialId : null;
-            string nextWord = nextTrial == null ? "" : view.Stimulus.Word.ToString().ToUpperInvariant();
-            Color nextInk = nextTrial == null ? Color.white : Ink(view.Stimulus.Ink);
-            if(displayedTrial != nextTrial || stimulusText.text != nextWord || stimulusText.color != nextInk)
+            bool search=view.TaskKind==TaskKind.VisualSearch;
+            string nextTrial = taskPhase && (search?view.VisualSearch!=null:view.Stimulus!=null) && !String.IsNullOrEmpty(view.TrialId) ? view.TrialId : null;
+            string nextWord = nextTrial == null||search ? "" : view.Stimulus.Word.ToString().ToUpperInvariant();
+            Color nextInk = nextTrial == null||search ? Color.white : Ink(view.Stimulus.Ink);
+            if(displayedTrial != nextTrial || stimulusText.text != nextWord || stimulusText.color != nextInk||
+                (search&&!object.ReferenceEquals(shownVisualSearch,view.VisualSearch)))
             {
                 presentationRevision++;
                 ResetCapture();
             }
             currentView = view; displayedTrial = nextTrial;
             stimulusText.text = nextWord; stimulusText.color = nextInk;
-            stimulusText.gameObject.SetActive(nextTrial != null&&showTrialMesh);
+            stimulusText.gameObject.SetActive(nextTrial != null&&showTrialMesh&&!search);
+            ApplyVisualSearchView(view,nextTrial!=null&&showTrialMesh&&search);
             phaseText.text = (role == Actor.Participant ? "PARTICIPANT" : "OPERATOR") + "  |  " + view.Phase;
             OperatorViewProvisional = role == Actor.Operator && view.OperatorViewProvisional;
             provisionalText.text = OperatorViewProvisional ? "PROVISIONAL OPERATOR VIEW\nD / non-main display policy awaits review" : "";
@@ -520,6 +529,7 @@ namespace AvatarStroop.Unity
         {
             if(role==Actor.Participant&&stimulusText!=null)
                 stimulusText.gameObject.SetActive(false);
+            SuppressVisualSearchStimulus();
         }
         // Identity of the task mesh prepared while the camera is masked.
         // This is a local view check, not permission to reveal the mesh.
@@ -1325,7 +1335,7 @@ namespace AvatarStroop.Unity
         }
         void RefreshLegendVisibility()
         {
-            bool useful=!viveUnconfiguredPreview&&headsetPreview&&role==Actor.Participant&&currentView!=null&&
+            bool useful=!viveUnconfiguredPreview&&headsetPreview&&role==Actor.Participant&&currentView!=null&&currentView.TaskKind!=TaskKind.VisualSearch&&
                 (currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask||currentView.Phase==Phase.PracticeCorrection);
             if(controllerLegend!=null)controllerLegend.gameObject.SetActive(useful&&!viveTaskPreview);
             if(viveControllerLegend!=null)viveControllerLegend.gameObject.SetActive(useful&&viveTaskPreview);
@@ -1439,6 +1449,7 @@ namespace AvatarStroop.Unity
             PrepareViveRecordingChoiceRender(camera);
 #endif
             PrepareViveRawPanelCull(camera);
+            PrepareVisualSearchCueCapture(camera);
             ResetCapture();
             capturedAvatar = null; capturedAvatarFrame = -1; avatarObservedByCamera = false;
             if(PresentationIsAvailable() && isActiveAndEnabled && contentRoot != null && GraphicsSettings.currentRenderPipeline == null)
@@ -1450,6 +1461,7 @@ namespace AvatarStroop.Unity
             if(!CanAcknowledge()) return;
             capturedTrial = displayedTrial; capturedRevision = presentationRevision;
             capturedFrame = Time.frameCount;
+            PrepareVisualSearchRenderCapture();
         }
         internal void ObserveStimulusRender(Camera camera)
         {
@@ -1481,6 +1493,7 @@ namespace AvatarStroop.Unity
 #endif
             ObserveViveEyeAoiCameraRender(camera);
             FinishViveRawPanelRender(camera);
+            FinishVisualSearchCueCapture(camera);
             var avatarCallback = AvatarPresented;
             if(PresentationIsAvailable() && capturedAvatar != null && capturedAvatarFrame == Time.frameCount && capturedAvatarRevision == avatarRevision &&
                 capturedTaskRevision == presentationRevision && isActiveAndEnabled && camera.isActiveAndEnabled &&
@@ -1495,15 +1508,17 @@ namespace AvatarStroop.Unity
                 capturedAvatar = null; capturedAvatarFrame = -1;
                 if(avatarCallback != null) avatarCallback(observation);
             }
-            bool present = stimulusObservedByCamera && capturedFrame == Time.frameCount &&
+            bool visualSearch=IsVisualSearchTrial;
+            bool present = (visualSearch?VisualSearchObservedByCamera():stimulusObservedByCamera) && capturedFrame == Time.frameCount &&
                 capturedRevision == presentationRevision && capturedTrial == displayedTrial && CanAcknowledge();
             string trial = capturedTrial;
             long revision = capturedRevision;
             int frame = capturedFrame;
             string rawText = capturedStimulusText;
             Color rawColor = capturedStimulusColor;
+            string searchLayout=capturedVisualSearchLayout;
             bool rawStable = false;
-            try{rawStable=capturedStimulusContent&&String.Equals(rawText,stimulusText.text,StringComparison.Ordinal)&&rawColor.Equals(stimulusText.color);}
+            try{rawStable=visualSearch?VisualSearchCaptureStable():capturedStimulusContent&&String.Equals(rawText,stimulusText.text,StringComparison.Ordinal)&&rawColor.Equals(stimulusText.color);}
             catch(Exception){rawStable=false;}
             ResetCapture();
             var callback = StimulusRendered;
@@ -1514,7 +1529,8 @@ namespace AvatarStroop.Unity
             // callback: the VIVE raw handler there still masks and fail-stops.
             if(viveCallback != null&&rawStable)
             {
-                try{viveCallback(new StimulusRenderObservation(trial,revision,frame,renderSeconds,rawText,rawColor));}
+                try{viveCallback(visualSearch?new StimulusRenderObservation(trial,revision,frame,renderSeconds,searchLayout):
+                    new StimulusRenderObservation(trial,revision,frame,renderSeconds,rawText,rawColor));}
                 catch(Exception){}
             }
             if(callback != null) callback(trial, renderSeconds);
@@ -1528,10 +1544,10 @@ namespace AvatarStroop.Unity
                 presentationCamera.rect.width > 0 && presentationCamera.rect.height > 0 &&
                 !String.IsNullOrEmpty(displayedTrial) && currentView != null && currentView.TrialId == displayedTrial &&
                 (currentView.Phase == Phase.Practice || currentView.Phase == Phase.MainTask) &&
-                stimulusText != null && stimulusText.gameObject.activeInHierarchy &&
-                stimulusText.GetComponent<MeshRenderer>().enabled;
+                (IsVisualSearchTrial?VisualSearchMeshesAvailable():stimulusText != null && stimulusText.gameObject.activeInHierarchy &&
+                stimulusText.GetComponent<MeshRenderer>().enabled);
         }
-        void ResetCapture() { capturedTrial = null; capturedFrame = -1; stimulusObservedByCamera = false; capturedStimulusContent=false; capturedStimulusText=null; }
+        void ResetCapture() { capturedTrial = null; capturedFrame = -1; stimulusObservedByCamera = false; capturedStimulusContent=false; capturedStimulusText=null; ResetVisualSearchRenderCapture(); }
         void RequireLayout() { if(contentRoot == null) throw new InvalidOperationException("Initialize the presentation with its camera first."); }
 
         void BuildLayout()
@@ -1749,7 +1765,7 @@ namespace AvatarStroop.Unity
             if(viveTaskPreview)
             {
                 if(view.Phase==Phase.Ended&&ShowViveLegacyPreviewNotice)return ViveStroopRecordingScopePresentation.LegacyEndMessage(completed);
-                if(view.Phase==Phase.Preparation||view.Phase==Phase.Familiarization)return ResponseRuleInstructions.Participant(view.ResponseRule)+"\nWaiting for practice to begin.";
+                if(view.Phase==Phase.Preparation||view.Phase==Phase.Familiarization)return TaskInstructions(view)+"\nWaiting for practice to begin.";
                 if(view.Phase==Phase.PracticeCorrection)return view.PracticeCorrection+"\nPress the trigger to continue.";
                 if(view.Phase==Phase.Questionnaire&&QuestionnaireIntro)return "Click top or bottom, then release.\nPull the trigger when ready.";
                 if(view.Phase==Phase.Rest)return "Rest as long as you need.\nPress the trigger to continue.";
@@ -1769,7 +1785,7 @@ namespace AvatarStroop.Unity
             if(view.Phase == Phase.PracticeRetry) return "Practice needs one retry.\nAsk the owner to start it in the control window.";
             if(view.Phase == Phase.PracticeCorrection) return view.PracticeCorrection + (headsetPreview ? "\nRight trigger to continue when ready." : "\nPress Space to continue when ready.");
             if(view.Phase == Phase.Countdown) return (HasWorldFixedMenu?"":"Starting in "+Math.Ceiling(countdownRemaining).ToString("0")+" seconds.\n")+
-                "The next block begins shortly.\n"+ResponseRuleInstructions.Participant(view.ResponseRule);
+                "The next block begins shortly.\n"+TaskInstructions(view);
             if(view.Phase == Phase.Questionnaire)
             {
                 if(questionnaireLanguage == null) return "QUESTIONNAIRE LANGUAGE NOT CONFIGURED";

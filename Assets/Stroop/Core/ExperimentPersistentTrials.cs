@@ -83,7 +83,8 @@ namespace AvatarStroop.Core
         static bool SameIdentity(ExperimentMutationTrialSnapshot a,ExperimentMutationTrialSnapshot b)
         {return a.TrialId==b.TrialId&&a.SessionId==b.SessionId&&a.ListId==b.ListId&&a.IsPractice==b.IsPractice&&
             a.PracticeAttempt==b.PracticeAttempt&&a.BlockIndex==b.BlockIndex&&a.PlannedIndex==b.PlannedIndex&&a.Segment==b.Segment&&
-            a.Condition==b.Condition&&a.Word==b.Word&&a.Ink==b.Ink;}
+            a.Condition==b.Condition&&a.TaskKind==b.TaskKind&&a.SearchLayout==b.SearchLayout&&
+            (a.TaskKind==TaskKind.VisualSearch||(a.Word==b.Word&&a.Ink==b.Ink));}
         bool Valid(ExperimentMutationTrialSnapshot value)
         {
             try{WireCodec.RequireIdentity(value.TrialId);WireCodec.RequireIdentity(value.ListId);}catch(ArgumentException){return false;}

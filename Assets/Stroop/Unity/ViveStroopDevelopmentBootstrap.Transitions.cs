@@ -24,7 +24,8 @@ namespace AvatarStroop.Unity
             RawPlanStartPhaseMatches(true,participant.Phase)&&!RecordingBlocked&&!ObservationBlocked;}}
         internal double PracticeCountdownRemaining {get{return practiceCountdown.RemainingSeconds;}}
         internal string PracticeResponseInstruction
-        {get{return ResponseRuleInstructions.Participant(participant==null?ResponseRule.InkColor:participant.ParticipantView.ResponseRule);}}
+        {get{return participant!=null&&participant.TaskKind==TaskKind.VisualSearch?"Find the matching backpack. Point and pull the trigger.":
+            ResponseRuleInstructions.Participant(participant==null?ResponseRule.InkColor:participant.ParticipantView.ResponseRule);}}
         void ResetPracticeCountdown(){practiceCountdown.Reset();practiceCountdownFrame=-1;}
         bool ServicePracticeCountdown()
         {

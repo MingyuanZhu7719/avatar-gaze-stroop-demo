@@ -16,8 +16,9 @@ namespace AvatarStroop.Unity
         }
         internal bool ControllerVisualPhaseAllowed
         {get{return isActiveAndEnabled&&!faultLatched&&!recordingTerminal&&!RawSafetyNoticeActive&&
-            ControllerVisualPhasePermitted(configured,participant==null?Phase.Preparation:participant.Phase,
-                participant==null?-1:participant.BlockIndex);}}
+            (ControllerVisualPhasePermitted(configured,participant==null?Phase.Preparation:participant.Phase,
+                participant==null?-1:participant.BlockIndex)||participant!=null&&participant.TaskKind==TaskKind.VisualSearch&&
+                (participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask||participant.Phase==Phase.PracticeCorrection));}}
         internal bool TryGetCurrentControllerPose(out ViveStroopControllerPose pose)
         {
             pose=default(ViveStroopControllerPose);

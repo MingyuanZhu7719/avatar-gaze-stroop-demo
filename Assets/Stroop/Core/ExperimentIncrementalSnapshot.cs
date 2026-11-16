@@ -31,10 +31,11 @@ namespace AvatarStroop.Core
         internal bool Matches(Stimulus[] source)
         {
             if(items==null||source==null)return items==null&&source==null;if(items.Length!=source.Length)return false;
-            for(int i=0;i<items.Length;i++)if(items[i].Word!=source[i].Word||items[i].Ink!=source[i].Ink)return false;return true;
+            for(int i=0;i<items.Length;i++)if(items[i].Key!=source[i].Key)return false;return true;
         }
         internal void AddReferenceValues(List<object> values)
-        {values.Add(Count);if(items!=null)foreach(var stimulus in items){values.Add((int)stimulus.Word);values.Add((int)stimulus.Ink);}}
+        {values.Add(Count);if(items!=null)foreach(var stimulus in items)
+            {if(stimulus.IsVisualSearch){values.Add(stimulus.VisualSearch.Serialize());values.Add(TaskKind.VisualSearch);}else{values.Add((int)stimulus.Word);values.Add((int)stimulus.Ink);}}}
     }
     internal sealed class ExperimentIncrementalRatings
     {
@@ -71,7 +72,8 @@ namespace AvatarStroop.Core
             bool display=scalars.Phase==Phase.MainTask&&scalars.Current.HasValue;
             Condition? condition=scalars.Block>=0&&scalars.Block<4?(Condition?)((Condition)baseline[14+scalars.Block]):null;
             Task=new TaskSnapshot((string)baseline[0],scalars.Block,scalars.Segment,display?scalars.Current.Value.TrialId:null,
-                display?(Colour?)scalars.Current.Value.Word:null,display?(Colour?)scalars.Current.Value.Ink:null,scalars.Phase,condition);
+                display&&scalars.Current.Value.TaskKind==TaskKind.Stroop?(Colour?)scalars.Current.Value.Word:null,
+                display&&scalars.Current.Value.TaskKind==TaskKind.Stroop?(Colour?)scalars.Current.Value.Ink:null,scalars.Phase,condition);
         }
         internal ExperimentIncrementalSnapshot Next(ExperimentIncrementalScalars next,ExperimentIncrementalPractice nextPractice,
             ExperimentIncrementalRatings nextRatings,ExperimentPersistentTrials nextTrials)
@@ -82,8 +84,9 @@ namespace AvatarStroop.Core
             values.Add(value.HasValue);if(!value.HasValue)return;var t=value.Value;
             values.Add(t.TrialId);values.Add(t.SessionId);values.Add(t.ListId);values.Add(t.IsPractice);values.Add(t.PracticeAttempt);
             values.Add(t.BlockIndex);values.Add(t.PlannedIndex);values.Add(t.Segment);values.Add(t.Condition.HasValue?(int?)(int)t.Condition.Value:null);
-            values.Add((int?)((int)t.Word));values.Add((int?)((int)t.Ink));values.Add(t.ResponseRule);values.Add(t.Onset);values.Add(t.ResponseAt);
+            values.Add(t.TaskKind==TaskKind.VisualSearch?(int?)null:(int)t.Word);values.Add(t.TaskKind==TaskKind.VisualSearch?(int?)null:(int)t.Ink);values.Add(t.ResponseRule);values.Add(t.Onset);values.Add(t.ResponseAt);
             values.Add(t.Response.HasValue?(int?)(int)t.Response.Value:null);values.Add(t.Correct);values.Add((int)t.Outcome);values.Add(t.TechnicalIssue);
+            if(t.TaskKind==TaskKind.VisualSearch){values.Add(t.TaskKind);values.Add(t.SearchLayout);values.Add(t.SelectedItemId);}
         }
         // Test-only expansion; production snapshots never materialize a full
         // boxed historical array per step.

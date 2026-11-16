@@ -141,6 +141,7 @@ namespace AvatarStroop.Runtime
             internal readonly long Ordinal,Revision;
             internal readonly int Frame;
             internal readonly Colour Word,Ink;
+            internal readonly VisualSearchTrial Search;
             internal readonly double MaximumAge;
             internal readonly ViveLegacyWozRecordingBinding.PresentationEvidence WozEvidence;
             internal int Consumed;
@@ -148,7 +149,8 @@ namespace AvatarStroop.Runtime
                 TrialRecord trial,ViveProEyeWorker.RecordingFrameTicket ticket,long ordinal,long revision,int frame,double maximumAge,
                 ViveLegacyWozRecordingBinding.PresentationEvidence wozEvidence=null)
             {Owner=owner;Stamp=stamp;Trial=trial;Ticket=ticket;Ordinal=ordinal;Revision=revision;Frame=frame;
-                Word=trial.Stimulus.Word;Ink=trial.Stimulus.Ink;MaximumAge=maximumAge;WozEvidence=wozEvidence;}
+                Search=trial.Stimulus.VisualSearch;if(Search==null){Word=trial.Stimulus.Word;Ink=trial.Stimulus.Ink;}
+                MaximumAge=maximumAge;WozEvidence=wozEvidence;}
         }
         // This fixture never accepts an installed source or authorizes task
         // mutations. It exercises only queue reservation/publication mechanics.
@@ -355,11 +357,10 @@ namespace AvatarStroop.Runtime
                 SyntheticPresentationRecord candidate=null;
                 if(delta==1)
                 {
-                    var item=events[0];string word,ink;
+                    var item=events[0];
                     if(item.Sequence!=after.EventCursor||item.Kind!="stimulus_presented"||item.TrialId!=trialId||item.ClockId!=clock.ClockId||
                         item.SessionId!=before.Session||item.BlockIndex!=before.Block||item.Segment!=before.Segment||
-                        !item.Fields.TryGetValue("word",out word)||word!=trial.Stimulus.Word.ToString()||
-                        !item.Fields.TryGetValue("ink",out ink)||ink!=trial.Stimulus.Ink.ToString()||item.Time<trial.Onset.Value)
+                        !VisualSearchRecordingContract.MatchesPresented(item.Fields,trial.Stimulus)||item.Time<trial.Onset.Value)
                     {Fail();return false;}
                     candidate=new SyntheticPresentationRecord(item,trial.Onset.Value,clock.ClockId);
                     if(!TryAddSyntheticBatchForTest(batch,candidate))return false;
@@ -656,11 +657,16 @@ namespace AvatarStroop.Runtime
         // enqueue means neither file durability nor HMD visibility. Failure
         // after MarkPresented faults the interval; it is never rolled back.
         internal bool TryCommitPresentation(PresentationReservation token,int unityFrame,long revision,string trialId,Colour word,Colour ink,double unityRenderSeconds)
+        {return TryCommitPresentationCore(token,unityFrame,revision,trialId,word,ink,null,unityRenderSeconds);}
+        internal bool TryCommitVisualSearchPresentation(PresentationReservation token,int unityFrame,long revision,string trialId,string layoutId,double unityRenderSeconds)
+        {return TryCommitPresentationCore(token,unityFrame,revision,trialId,default(Colour),default(Colour),layoutId,unityRenderSeconds);}
+        bool TryCommitPresentationCore(PresentationReservation token,int unityFrame,long revision,string trialId,Colour word,Colour ink,string layoutId,double unityRenderSeconds)
         {
             if(Thread.CurrentThread.ManagedThreadId!=owner||token==null||!Object.ReferenceEquals(token.Owner,this)||
                 Interlocked.Exchange(ref token.Consumed,1)!=0||!Object.ReferenceEquals(Volatile.Read(ref presentationSlot),token)||
                 unityFrame!=token.Frame||revision!=token.Revision||!String.Equals(trialId,token.Stamp.TrialId,StringComparison.Ordinal)||
-                word!=token.Word||ink!=token.Ink||Double.IsNaN(unityRenderSeconds)||Double.IsInfinity(unityRenderSeconds)||unityRenderSeconds<0){Fail();return false;}
+                (token.Search==null?(layoutId!=null||word!=token.Word||ink!=token.Ink):layoutId!=token.Search.LayoutId)||
+                Double.IsNaN(unityRenderSeconds)||Double.IsInfinity(unityRenderSeconds)||unityRenderSeconds<0){Fail();return false;}
             try
             {
                 if(!Monitor.TryEnter(task.NamedRecordingGate)){Fail();return false;}
@@ -673,7 +679,8 @@ namespace AvatarStroop.Runtime
                             Interlocked.Read(ref nextOrdinal)!=token.Ordinal||
                             lastTaskSequence!=token.Stamp.EventCursor||!Object.ReferenceEquals(task.CurrentTrial,token.Trial)||
                             token.Trial.Outcome!=TrialOutcome.Pending||token.Trial.Onset.HasValue||token.Trial.Stimulus==null||
-                            token.Trial.Stimulus.Word!=token.Word||token.Trial.Stimulus.Ink!=token.Ink){Fail();return false;}
+                            (token.Search!=null?!Object.ReferenceEquals(token.Trial.Stimulus.VisualSearch,token.Search):
+                            token.Trial.Stimulus.IsVisualSearch||token.Trial.Stimulus.Word!=token.Word||token.Trial.Stimulus.Ink!=token.Ink)){Fail();return false;}
                         int expectedEvents=token.WozEvidence!=null&&token.WozEvidence.Fields!=null?2:1;
                         if(token.WozEvidence!=null)task.MarkWozPresentedWithSoftwareProxy(trialId,unityRenderSeconds,unityFrame,revision,token.WozEvidence);
                         else task.MarkPresentedWithSoftwareProxy(trialId,unityRenderSeconds,unityFrame,revision);
@@ -685,13 +692,12 @@ namespace AvatarStroop.Runtime
                             !Object.ReferenceEquals(after.Context,context)||!Object.ReferenceEquals(after.Plan,plan)||!Object.ReferenceEquals(after.Intent,intent)||
                             !Object.ReferenceEquals(task.CurrentTrial,token.Trial)||!token.Trial.Onset.HasValue||
                             !PresentationEpochFresh(token.Ticket,token.MaximumAge)){Fail();return false;}
-                        var items=task.ReadEventsAfter(token.Stamp.EventCursor,3);string eventWord,eventInk,onset,onsetClock,onsetBasis,proxy,proxyClock,proxyFrame,proxyRevision,proxyBasis,proxySchema;
+                        var items=task.ReadEventsAfter(token.Stamp.EventCursor,3);string onset,onsetClock,onsetBasis,proxy,proxyClock,proxyFrame,proxyRevision,proxyBasis,proxySchema;
                         if(items.Count!=expectedEvents){Fail();return false;}var item=items[0];
                         if(item.Sequence!=token.Stamp.EventCursor+1||item.Kind!="stimulus_presented"||item.TrialId!=trialId||
                             item.ClockId!=clock.ClockId||item.SessionId!=token.Stamp.Session||item.BlockIndex!=after.Block||item.Segment!=after.Segment||
                             !context.MatchesEvent(item)||
-                            !item.Fields.TryGetValue("word",out eventWord)||eventWord!=word.ToString()||
-                            !item.Fields.TryGetValue("ink",out eventInk)||eventInk!=ink.ToString()||item.Time<token.Trial.Onset.Value||
+                            !VisualSearchRecordingContract.MatchesPresented(item.Fields,token.Trial.Stimulus)||item.Time<token.Trial.Onset.Value||
                             !item.Fields.TryGetValue("software_proxy_schema",out proxySchema)||proxySchema!="1"||
                             !item.Fields.TryGetValue("task_onset_seconds",out onset)||onset!=token.Trial.Onset.Value.ToString("R",CultureInfo.InvariantCulture)||
                             !item.Fields.TryGetValue("task_onset_clock_id",out onsetClock)||onsetClock!=clock.ClockId||

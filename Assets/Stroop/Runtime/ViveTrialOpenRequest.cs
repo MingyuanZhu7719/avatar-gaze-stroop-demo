@@ -12,6 +12,7 @@ namespace AvatarStroop.Runtime
     {
         internal readonly string Session,Trial,ClockId,PlanId,IntentId,ListId;
         internal readonly Colour PlannedWord,PlannedInk;
+        internal readonly VisualSearchTrial PlannedSearch;
         internal readonly int Block,Segment,PlannedIndex,PracticeAttempt;
         internal readonly long TaskGeneration,TaskCursor,PlannedEventSequence;
         internal readonly double TaskLocalObserved;
@@ -27,7 +28,8 @@ namespace AvatarStroop.Runtime
         {Session=stamp.Session;Trial=stamp.TrialId;ClockId=stamp.Clock.ClockId;PlanId=stamp.Context.DesignId;IntentId=stamp.Context.IntentId;ListId=trial.ListId;Block=stamp.Block;Segment=stamp.Segment;
             PlannedIndex=trial.PlannedIndex;PracticeAttempt=trial.PracticeAttempt;TaskGeneration=stamp.Generation;TaskCursor=stamp.EventCursor;
             PlannedEventSequence=planned.Sequence;TaskLocalObserved=observed;this.participant=participant;this.clock=clock;
-            PlannedWord=trial.Stimulus.Word;PlannedInk=trial.Stimulus.Ink;
+            PlannedSearch=trial.Stimulus.VisualSearch;
+            if(PlannedSearch==null){PlannedWord=trial.Stimulus.Word;PlannedInk=trial.Stimulus.Ink;}
             capturedStamp=stamp;capturedTrial=trial;capturedBlock=trial.NamedBlock;revocation=participant.NamedRawRevocation;ownerThread=Thread.CurrentThread;}
         static bool Same(ViveDevelopmentParticipant.NamedRecordingTaskStamp a,ViveDevelopmentParticipant.NamedRecordingTaskStamp b)
         {return a!=null&&b!=null&&Object.ReferenceEquals(a.Owner,b.Owner)&&Object.ReferenceEquals(a.Clock,b.Clock)&&
@@ -55,7 +57,7 @@ namespace AvatarStroop.Runtime
                 ViveDevelopmentParticipant.NamedRecordingTaskStamp before,after;
                 if(!participant.TryCaptureRawRecordingTaskStamp(clock,out before)||!Same(capturedStamp,before)||
                     !Object.ReferenceEquals(capturedTrial,participant.CurrentTrial)||capturedTrial.Outcome!=TrialOutcome.Pending||capturedTrial.Onset.HasValue||
-                    capturedTrial.Stimulus==null||capturedTrial.Stimulus.Word!=PlannedWord||capturedTrial.Stimulus.Ink!=PlannedInk||
+                    capturedTrial.Stimulus==null||!CapturedStimulusCurrent()||
                     !participant.TryCaptureRawRecordingTaskStamp(clock,out after)||!Same(before,after)||revocation.IsRevoked)return false;
                 return true;
             }
@@ -65,7 +67,7 @@ namespace AvatarStroop.Runtime
         // arbitrary bytes. Matching it is not itself a Write/Flush receipt.
         internal bool MatchesWriterPlannedEvent(JournalEvent value)
         {
-            string list,index,schema,word,ink;
+            string list,index;
             return !revocation.IsRevoked&&value!=null&&value.Kind=="trial_planned"&&value.Sequence==PlannedEventSequence&&
                 TaskCursor==PlannedEventSequence&&String.Equals(value.TrialId,Trial,StringComparison.Ordinal)&&
                 String.Equals(value.SessionId,Session,StringComparison.Ordinal)&&String.Equals(value.ClockId,ClockId,StringComparison.Ordinal)&&
@@ -73,15 +75,13 @@ namespace AvatarStroop.Runtime
                 Object.ReferenceEquals(value.NamedBlock,capturedBlock)&&Object.ReferenceEquals(value.NamedRecordingIntent,capturedStamp.Intent)&&
                 value.Fields.TryGetValue("list",out list)&&String.Equals(list,ListId,StringComparison.Ordinal)&&
                 value.Fields.TryGetValue("planned_index",out index)&&String.Equals(index,PlannedIndex.ToString(CultureInfo.InvariantCulture),StringComparison.Ordinal)&&
-                value.Fields.TryGetValue("planned_stimulus_schema",out schema)&&schema=="1"&&
-                value.Fields.TryGetValue("planned_word",out word)&&String.Equals(word,PlannedWord.ToString(),StringComparison.Ordinal)&&
-                value.Fields.TryGetValue("planned_ink",out ink)&&String.Equals(ink,PlannedInk.ToString(),StringComparison.Ordinal)&&
+                CapturedStimulusCurrent()&&VisualSearchRecordingContract.MatchesPlanned(value.Fields,capturedTrial.Stimulus)&&
                 !revocation.IsRevoked;
         }
         // This comparison grants no write receipt or presentation authority.
         internal static bool MatchesPlannedEvent(JournalEvent planned,ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp,TrialRecord trial,MonotonicClock clock)
         {
-            string list,index,schema,word,ink;
+            string list,index;
             return planned!=null&&stamp!=null&&trial!=null&&trial.Stimulus!=null&&clock!=null&&planned.Kind=="trial_planned"&&
                 planned.Sequence>=0&&planned.Sequence<=stamp.EventCursor&&String.Equals(planned.TrialId,stamp.TrialId,StringComparison.Ordinal)&&
                 String.Equals(planned.SessionId,stamp.Session,StringComparison.Ordinal)&&String.Equals(planned.ClockId,clock.ClockId,StringComparison.Ordinal)&&
@@ -89,10 +89,11 @@ namespace AvatarStroop.Runtime
                 Object.ReferenceEquals(planned.NamedBlock,trial.NamedBlock)&&Object.ReferenceEquals(planned.NamedRecordingIntent,stamp.Intent)&&
                 planned.Fields.TryGetValue("list",out list)&&String.Equals(list,trial.ListId,StringComparison.Ordinal)&&
                 planned.Fields.TryGetValue("planned_index",out index)&&String.Equals(index,trial.PlannedIndex.ToString(CultureInfo.InvariantCulture),StringComparison.Ordinal)&&
-                planned.Fields.TryGetValue("planned_stimulus_schema",out schema)&&schema=="1"&&
-                planned.Fields.TryGetValue("planned_word",out word)&&String.Equals(word,trial.Stimulus.Word.ToString(),StringComparison.Ordinal)&&
-                planned.Fields.TryGetValue("planned_ink",out ink)&&String.Equals(ink,trial.Stimulus.Ink.ToString(),StringComparison.Ordinal);
+                VisualSearchRecordingContract.MatchesPlanned(planned.Fields,trial.Stimulus);
         }
+        bool CapturedStimulusCurrent()
+        {return PlannedSearch!=null?Object.ReferenceEquals(capturedTrial.Stimulus.VisualSearch,PlannedSearch):
+            !capturedTrial.Stimulus.IsVisualSearch&&capturedTrial.Stimulus.Word==PlannedWord&&capturedTrial.Stimulus.Ink==PlannedInk;}
         static bool LegacyTrialMatches(ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp,TrialRecord trial)
         {
             if(trial.NamedPlan!=null||trial.NamedBlock!=null||trial.NamedOption!=null)return false;

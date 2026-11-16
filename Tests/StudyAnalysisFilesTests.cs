@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using AvatarStroop.Core;
 using AvatarStroop.Runtime;
 
 namespace AvatarStroop.Tests
@@ -38,6 +39,57 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("full visual search VRAW4 and CSV preserve 104 trials layouts timeouts and identical analysis tables",()=>{
+                using(var files=new Files())
+                {
+                    byte[] bytes=StudyVisualSearchRecordingFixture.FourBlocks();File.WriteAllBytes(files.Raw,bytes);
+                    using(var source=new MemoryStream(bytes,false))
+                    {
+                        var projected=ViveRawSessionJournalReader.ProjectTrials(source,true,true,4194304,5000,CancellationToken.None);
+                        Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,projected.Status);Check.True(projected.CaptureTerminalObserved);
+                        Check.Equal(104,projected.TrialProjection.Trials.Count);Check.Equal(5,projected.TrialProjection.PreparedPlans.Count);
+                        Check.True(projected.TrialProjection.Trials.All(x=>!x.EventConflict&&!x.IncompleteEvidence&&x.PlannedStimulusState=="DECLARED_VISUAL_SEARCH_V1"));
+                        Check.Equal(1,projected.TrialProjection.Trials.Sum(x=>x.TimeoutEvents));
+                    }
+                    using(var source=new MemoryStream(bytes,false))using(var output=new MemoryStream())
+                    {
+                        Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(source,output,4194304,5000,33554432,CancellationToken.None));
+                        File.WriteAllBytes(files.Csv,output.ToArray());
+                    }
+                    var analysis=new StudyAnalysis();using(var source=new MemoryStream(bytes,false))Check.Equal("Complete",StudyDataReader.Read(source,"vraw",analysis.Accept,CancellationToken.None).Status);
+                    analysis.Finish();Check.Equal(104,analysis.Trials.Count);Check.Equal(20,analysis.Ratings.Count);Check.Equal(1872,analysis.SearchItems.Count);
+                    Check.Equal(208,analysis.SearchEvents.Count);Check.Equal(104,analysis.SearchEvents.Count(x=>x.Action=="hover"));
+                    var cues=analysis.SearchEvents.Where(x=>x.Action=="cue").ToArray();Check.Equal(104,cues.Length);Check.Equal(104,cues.Select(x=>x.Trial).Distinct().Count());
+                    Check.True(cues.All(x=>x.Item==null&&x.CueFirstRenderUnitySeconds.HasValue&&x.CueRenderedElapsedSeconds==VisualSearchTrial.TargetPreviewSeconds&&x.CueBasis=="software_camera_callbacks_not_photon"&&x.Flags==""));
+                    Check.True(analysis.Trials.All(x=>x.AccuracyIncluded));Check.Equal(102,analysis.Trials.Count(x=>x.RtIncluded));
+                    Check.Equal(1,analysis.Trials.Count(x=>x.TimedOut));Check.Equal(1,analysis.Trials.Count(x=>!x.TimedOut&&x.Correct==false));Check.Equal(8,analysis.Summaries().Count(x=>x.Scope=="Formal"));
+                    string raw=Path.GetDirectoryName(StudyAnalysisFiles.Run(new[]{files.Raw},files.Output,null,CancellationToken.None));
+                    string csv=Path.GetDirectoryName(StudyAnalysisFiles.Run(new[]{files.Csv},files.Output,null,CancellationToken.None));
+                    foreach(string table in new[]{"trials.csv","blocks.csv","contrasts.csv","visual_search_items.csv","visual_search_events.csv","ratings.csv","eye_quality.csv","aoi_observations.csv","event_counts.csv"})
+                        Check.Equal(File.ReadAllText(Path.Combine(raw,table)),File.ReadAllText(Path.Combine(csv,table)),table);
+                    Check.Equal(1,File.ReadAllLines(Path.Combine(raw,"contrasts.csv")).Length);
+                    using(var source=new MemoryStream(StudyVisualSearchRecordingFixture.FourBlocks(true),false))
+                        Check.Equal(ViveRawSessionReadStatus.Invalid,ViveRawSessionJournalReader.ProjectTrials(source,true,true,4194304,5000,CancellationToken.None).Status);
+                }
+            });
+            suite.Run("study visual search output preserves layouts and pointer events without Stroop contrasts",()=>{
+                using(var files=new Files())
+                {
+                    Directory.CreateDirectory(files.Output);var analysis=StudyAnalysisTests.Analysis();
+                    StudyAnalysisTests.SearchTrial(analysis,"twelve",12);StudyAnalysisTests.SearchTrial(analysis,"twentyfour",24);
+                    StudyAnalysisTests.SearchCue(analysis,"twelve");
+                    var source=new StudyAnalysisSource{Path=files.Raw,Analysis=analysis,Sha256="synthetic",Read=new StudyDataReadSummary{Format="synthetic",Status="Complete"}};
+                    StudyAnalysisFiles.Write(new[]{source},files.Output,CancellationToken.None);
+                    Check.Equal(1,File.ReadAllLines(Path.Combine(files.Output,"contrasts.csv")).Length);
+                    Check.Equal(37,File.ReadAllLines(Path.Combine(files.Output,"visual_search_items.csv")).Length);
+                    string searchEvents=File.ReadAllText(Path.Combine(files.Output,"visual_search_events.csv"));
+                    Check.Equal(4,File.ReadAllLines(Path.Combine(files.Output,"visual_search_events.csv")).Length);
+                    Check.True(searchEvents.Contains("cue_first_render_unity_seconds")&&searchEvents.Contains("cue_rendered_elapsed_seconds")&&searchEvents.Contains("\"cue\"")&&searchEvents.Contains("software_camera_callbacks_not_photon"));
+                    string trials=File.ReadAllText(Path.Combine(files.Output,"trials.csv"));
+                    Check.True(trials.Contains("search_selection_seconds")&&trials.Contains("\"VisualSearch\"")&&trials.Contains("\"SelectTarget\""));
+                    Check.True(File.ReadAllText(Path.Combine(files.Output,"methods.txt")).Contains("not pure visual-search latency"));
+                }
+            });
             suite.Run("study analysis opens long input paths without copying or changing source identity",()=>{
                 using(var files=new Files())
                 {

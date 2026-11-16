@@ -1301,7 +1301,7 @@ namespace AvatarStroop.Runtime
             inputReady=true;
             var frame=trackpad.Update(experiment.Phase,sample);
             Release(frame.ReleasedColours);
-            if(frame.PressedColour.HasValue&&MayContinueOrdinaryMutation())experiment.ButtonChanged(frame.PressedColour.Value,true);
+            if(experiment.Configuration.TaskKind==TaskKind.Stroop&&frame.PressedColour.HasValue&&MayContinueOrdinaryMutation())experiment.ButtonChanged(frame.PressedColour.Value,true);
         }
         void ResetAuxiliary()
         {

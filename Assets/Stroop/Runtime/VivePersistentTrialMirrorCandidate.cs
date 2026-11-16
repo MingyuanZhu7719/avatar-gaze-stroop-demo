@@ -36,6 +36,8 @@ namespace AvatarStroop.Runtime
         bool Valid(VivePersistentTrialValue value)
         {
             try{WireCodec.RequireIdentity(value.TrialId);WireCodec.RequireIdentity(value.ListId);}catch(ArgumentException){return false;}
+            if(value.TaskKind==TaskKind.VisualSearch)return value.SessionId==sessionId&&value.ValidSearchValue&&Finite(value.Onset)&&Finite(value.ResponseAt)&&
+                (!value.Onset.HasValue||!value.ResponseAt.HasValue||value.ResponseAt.Value>=value.Onset.Value);
             return value.SessionId==sessionId&&(int)value.Word>=(int)Colour.Red&&(int)value.Word<=(int)Colour.Yellow&&
             (int)value.Ink>=(int)Colour.Red&&(int)value.Ink<=(int)Colour.Yellow&&(!value.Response.HasValue||Enum.IsDefined(typeof(Colour),value.Response.Value))&&
             (!value.Condition.HasValue||Enum.IsDefined(typeof(Condition),value.Condition.Value))&&Enum.IsDefined(typeof(TrialOutcome),value.Outcome)&&Enum.IsDefined(typeof(ResponseRule),value.ResponseRule)&&Finite(value.Onset)&&Finite(value.ResponseAt)&&
@@ -44,7 +46,8 @@ namespace AvatarStroop.Runtime
                 value.Correct.Value==(value.Response.Value==value.ExpectedResponse)));}
         static bool SameIdentity(VivePersistentTrialValue a,VivePersistentTrialValue b)
         {return a.TrialId==b.TrialId&&a.SessionId==b.SessionId&&a.ListId==b.ListId&&a.IsPractice==b.IsPractice&&a.PracticeAttempt==b.PracticeAttempt&&
-            a.BlockIndex==b.BlockIndex&&a.PlannedIndex==b.PlannedIndex&&a.Segment==b.Segment&&a.Condition==b.Condition&&a.Word==b.Word&&a.Ink==b.Ink&&a.ResponseRule==b.ResponseRule;}
+            a.BlockIndex==b.BlockIndex&&a.PlannedIndex==b.PlannedIndex&&a.Segment==b.Segment&&a.Condition==b.Condition&&a.TaskKind==b.TaskKind&&a.SearchIdentity==b.SearchIdentity&&
+            (a.TaskKind==TaskKind.VisualSearch||(a.Word==b.Word&&a.Ink==b.Ink))&&a.ResponseRule==b.ResponseRule;}
         static bool SameTime(double? a,double? b)
         {return a.HasValue==b.HasValue&&(!a.HasValue||BitConverter.DoubleToInt64Bits(a.Value)==BitConverter.DoubleToInt64Bits(b.Value));}
         static bool Advances(VivePersistentTrialValue before,VivePersistentTrialValue after)
@@ -52,6 +55,7 @@ namespace AvatarStroop.Runtime
             if(before.Onset.HasValue&&!SameTime(before.Onset,after.Onset))return false;
             if(before.ResponseAt.HasValue&&!SameTime(before.ResponseAt,after.ResponseAt))return false;
             if(before.Response.HasValue&&before.Response!=after.Response)return false;
+            if(before.SelectedItemId!=null&&before.SelectedItemId!=after.SelectedItemId)return false;
             if(before.Correct.HasValue&&before.Correct!=after.Correct)return false;
             if(before.TechnicalIssue&&!after.TechnicalIssue)return false;
             if(before.Outcome!=TrialOutcome.Pending&&before.Outcome!=after.Outcome)return false;

@@ -43,7 +43,7 @@ namespace AvatarStroop.Tests
                 var source=Project(ViveRawTrialProjectionTests.FourBlocks());ViveRawTrialReport report;
                 Check.True(ViveRawTrialReport.TryBuild(source,true,out report));Check.True(!report.Saved&&!report.CompleteSessionProven&&!report.CurrentAccessAuthorized);
                 Check.Equal(5,Lines(report.BlocksCsv));Check.Equal(105,Lines(report.TrialsCsv));Check.Equal(21,Lines(report.RatingsCsv));Check.Equal(1,Lines(report.StatusesCsv));
-                Width(report.BlocksCsv,5);Width(report.TrialsCsv,49);Width(report.RatingsCsv,8);Width(report.StatusesCsv,11);Width(report.SafetyEventsCsv,17);Width(report.PreparedStimuliCsv,13);
+                Width(report.BlocksCsv,5);Width(report.TrialsCsv,59);Width(report.RatingsCsv,8);Width(report.StatusesCsv,11);Width(report.SafetyEventsCsv,17);Width(report.PreparedStimuliCsv,14);
                 Check.True(report.ManifestCsv.Contains("scope,state:selected_verified_prefix_only\n")&&report.ManifestCsv.Contains("sampling_coverage,state:unknown\n")&&
                     report.ManifestCsv.Contains("current_access_authorized,state:unknown\n")&&report.ManifestCsv.Contains("samples_joined_to_trials,bool:false\n")&&
                     report.ManifestCsv.Contains("raw_eye_sample_rows_included,bool:false\n")&&report.ManifestCsv.Contains("all_task_event_fields_included,bool:false\n")&&
@@ -188,7 +188,7 @@ namespace AvatarStroop.Tests
                 acc.Observe("trial_planned","+trial,\nnext",0,0,0,1,fields);
                 var source=new ViveRawSessionReadResult{Status=ViveRawSessionReadStatus.VerifiedPrefix,TrialProjection=acc.Finish()};ViveRawTrialReport report;
                 Check.True(ViveRawTrialReport.TryBuild(source,true,out report));Check.True(!report.ManifestCsv.Contains("=unsafe")&&!report.TrialsCsv.Contains("=danger")&&!report.TrialsCsv.Contains("+trial"));
-                Check.True(report.TrialsCsv.Contains("b64:"+Convert.ToBase64String(Encoding.UTF8.GetBytes("+trial,\nnext"))));Width(report.TrialsCsv,49);
+                Check.True(report.TrialsCsv.Contains("b64:"+Convert.ToBase64String(Encoding.UTF8.GetBytes("+trial,\nnext"))));Width(report.TrialsCsv,59);
             });
         }
     }

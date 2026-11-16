@@ -10,9 +10,9 @@ namespace AvatarStroop.Runtime
     // participant consent, actual trial creation, presentation or response.
     internal sealed class ViveRawPreparedPlanItem
     {
-        internal readonly int Index;internal readonly string Word,Ink;
+        internal readonly int Index;internal readonly string Word,Ink,SearchIdentity;
         internal string Execution {get{return "UNKNOWN";}}
-        internal ViveRawPreparedPlanItem(int index,string word,string ink){Index=index;Word=word;Ink=ink;}
+        internal ViveRawPreparedPlanItem(int index,string word,string ink,string searchIdentity=null){Index=index;Word=word;Ink=ink;SearchIdentity=searchIdentity;}
     }
     internal sealed class ViveRawPreparedPlan
     {
@@ -46,7 +46,7 @@ namespace AvatarStroop.Runtime
         {
             var slot=currentRetrySlot;
             if(slot==null||block!=currentRetryBlock||segment!=slot.Segment||String.IsNullOrEmpty(trialId)||trialId!=slot.Trial)return;
-            if(kind=="first_response"){slot.Responded=true;slot.TrackingInterrupted=false;return;}
+            if(kind=="first_response"||kind=="trial_timed_out"){slot.Responded=true;slot.TrackingInterrupted=false;return;}
             string reason;
             if(!slot.Responded&&fields.TryGetValue("reason",out reason)&&reason=="tracking_gap")slot.TrackingInterrupted=true;
         }
@@ -85,8 +85,10 @@ namespace AvatarStroop.Runtime
         internal ViveRawPreparedPlan Add(IReadOnlyDictionary<string,string> fields,string trial,int block,int segment,long sequence,double time,bool legacy=false)
         {
             string schema;
-            if(!fields.TryGetValue("recording_plan_schema",out schema)||schema!="1")
+            if(!fields.TryGetValue("recording_plan_schema",out schema)||(schema!="1"&&schema!="visual-search-v1"))
             {if(UnsupportedEvents==Int32.MaxValue)throw new InvalidPlan();UnsupportedEvents++;return null;}
+            bool search=schema=="visual-search-v1";
+            if(search&&(!legacy||Required(fields,"task_kind")!="VisualSearch"))throw new InvalidPlan();
             string designPrefix=legacy?"legacy_":"named_";
             string scope=Required(fields,"plan_scope"),attemptText=Required(fields,"attempt"),list=Required(fields,"list"),countText=Required(fields,"item_count"),phase=Required(fields,designPrefix+"phase");
             int attempt,count;
@@ -109,6 +111,14 @@ namespace AvatarStroop.Runtime
             for(int i=0;i<count;i++)
             {
                 string prefix="item_"+i.ToString("D2",CultureInfo.InvariantCulture),wordKey=prefix+"_word",inkKey=prefix+"_ink";
+                if(search)
+                {
+                    string searchKey=prefix+"_search",identity=Required(fields,searchKey);expected.Add(searchKey);
+                    int colon=identity.LastIndexOf(':');
+                    if(colon<1||identity.Length-colon-1!=64)throw new InvalidPlan();
+                    for(int j=colon+1;j<identity.Length;j++)if(!((identity[j]>='0'&&identity[j]<='9')||(identity[j]>='a'&&identity[j]<='f')))throw new InvalidPlan();
+                    values.Add(new ViveRawPreparedPlanItem(i,null,null,identity));continue;
+                }
                 expected.Add(wordKey);expected.Add(inkKey);string word=Required(fields,wordKey),ink=Required(fields,inkKey);
                 if(!ColourName(word)||!ColourName(ink))throw new InvalidPlan();values.Add(new ViveRawPreparedPlanItem(i,word,ink));
             }
@@ -167,7 +177,19 @@ namespace AvatarStroop.Runtime
             else if(!String.IsNullOrEmpty(trialId)&&!String.Equals(trialId,expected,StringComparison.Ordinal))throw new InvalidPlan();
             string schema,word,ink;fields.TryGetValue("planned_stimulus_schema",out schema);fields.TryGetValue("planned_word",out word);fields.TryGetValue("planned_ink",out ink);
             string state=ViveRawTrialAccumulator.StimulusState(schema,word,ink);
-            if(state=="CONFLICT"||(declaresRetry&&state!="DECLARED_V1"))throw new InvalidPlan();
+            string searchIdentity=selected.Items[index].SearchIdentity;
+            if(searchIdentity!=null)
+            {
+                string taskKind,searchSchema,layout;
+                if(!fields.TryGetValue("task_kind",out taskKind)||taskKind!="VisualSearch"||
+                    !fields.TryGetValue("search_schema",out searchSchema)||searchSchema!="visual-search-v1"||
+                    !fields.TryGetValue("visual_search_layout",out layout)||schema!="visual-search-v1"||word!=null||ink!=null)throw new InvalidPlan();
+                VisualSearchTrial parsed;
+                try{parsed=VisualSearchTrial.Parse(layout);}
+                catch(Exception e) when(e is ArgumentException||e is FormatException||e is OverflowException||e is InvalidOperationException){throw new InvalidPlan();}
+                if(parsed.PlanIdentity!=searchIdentity)throw new InvalidPlan();
+            }
+            else if(state=="CONFLICT"||(declaresRetry&&state!="DECLARED_V1"))throw new InvalidPlan();
             if(!String.IsNullOrEmpty(trialId))
             {
                 retrySlots[slotIndex]=currentRetrySlot=new RetrySlot{Trial=trialId,Segment=segment};
