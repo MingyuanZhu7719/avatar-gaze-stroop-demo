@@ -38,9 +38,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          dotnet build AvatarStroop.StudyAnalysisTests.csproj --configuration Release -p:TargetFramework=net48
+          dotnet build AvatarStroop.StudyAnalysisFrameworkTests.csproj --configuration Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & ./build/dotnet/AvatarStroop.StudyAnalysisTests/Release/net48/AvatarStroop.StudyAnalysisTests.exe
+          & ./build/dotnet/AvatarStroop.StudyAnalysisFrameworkTests/Release/net48/AvatarStroop.StudyAnalysisFrameworkTests.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build AvatarStroop.StudyAnalyzerUiTests.csproj --configuration Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
