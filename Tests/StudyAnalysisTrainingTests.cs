@@ -10,15 +10,16 @@ namespace AvatarStroop.Tests
 {
     public static class StudyAnalysisTrainingTests
     {
-        internal static void Trial(StudyAnalysis analysis,string id,string stage,int attempt,int round,bool correct=true,string rule="InkColor",bool search=false,bool interrupted=false)
+        internal static void Trial(StudyAnalysis analysis,string id,string stage,int attempt,int round,bool correct=true,string rule="InkColor",bool search=false,bool interrupted=false,string eyePolicy=null,double onset=2)
         {
             string phase=stage=="tutorial"?"Tutorial":stage=="formal"?"MainTask":"Practice";
             int block=stage=="formal"?0:-1;
             var common=new List<string>{"legacy_phase",phase,"training_protocol","tutorial-exam-v1","learning_stage",stage,
                 "practice_attempt",attempt.ToString(CultureInfo.InvariantCulture),"tutorial_round",round.ToString(CultureInfo.InvariantCulture),
                 "task_kind",search?"VisualSearch":"Stroop","response_rule",rule};
+            if(eyePolicy!=null)common.AddRange(new[]{"eye_recording_policy",eyePolicy});
             var plan=new List<string>(common){"list","training-test"};
-            var response=new List<string>(common){"correct",correct.ToString(),"onset","2","rt_seconds",".5"};
+            var response=new List<string>(common){"correct",correct.ToString(),"onset",onset.ToString("R",CultureInfo.InvariantCulture),"rt_seconds",".5"};
             if(search)
             {
                 var layout=VisualSearchPlans.MainList(71,0)[0].VisualSearch;
@@ -32,10 +33,10 @@ namespace AvatarStroop.Tests
                 string expected=rule=="WordMeaning"?"Red":"Green";
                 response.AddRange(new[]{"response",correct?expected:"Blue"});
             }
-            StudyAnalysisTests.Event(analysis,"trial_planned",id,block,1,plan.ToArray());
-            var presentation=new List<string>(common){"task_onset_seconds","2","task_onset_basis","synthetic","task_onset_clock_id","synthetic-clock"};
-            StudyAnalysisTests.Event(analysis,"stimulus_presented",id,block,2,presentation.ToArray());
-            StudyAnalysisTests.Event(analysis,interrupted?"trial_interrupted":"first_response",id,block,2.52,response.ToArray());
+            StudyAnalysisTests.Event(analysis,"trial_planned",id,block,onset-1,plan.ToArray());
+            var presentation=new List<string>(common){"task_onset_seconds",onset.ToString("R",CultureInfo.InvariantCulture),"task_onset_basis","synthetic","task_onset_clock_id","synthetic-clock"};
+            StudyAnalysisTests.Event(analysis,"stimulus_presented",id,block,onset,presentation.ToArray());
+            StudyAnalysisTests.Event(analysis,interrupted?"trial_interrupted":"first_response",id,block,onset+.52,response.ToArray());
         }
         internal static void Completion(StudyAnalysis a,int attempt,int correct,string rule="InkColor",bool search=false)
         {

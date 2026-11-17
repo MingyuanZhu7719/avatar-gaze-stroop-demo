@@ -10,7 +10,7 @@ namespace AvatarStroop.Tests
 {
     public static class TutorialRecordingRoundtripTests
     {
-        static SessionConfiguration Configuration(bool legacy,int mode)
+        static SessionConfiguration Configuration(bool legacy,int mode,bool formalOnly=false)
         {
             SessionConfiguration config;
             if(legacy)
@@ -18,6 +18,7 @@ namespace AvatarStroop.Tests
                 var allocation=new Allocation("training-allocation",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
                 var design=ViveLegacyRecordingDesign.Select(Actor.Owner,"training-design",allocation,"training-geometry",ViveFixedTrackpadMapping.Version);
                 var basis=new SessionConfiguration("training-raw",73,allocation,RunKind.Simulation,"en",5,30,true,0,true,true,true);
+                if(formalOnly)basis=SessionConfiguration.WithFormalEyeRecordingOnly(basis);
                 if(mode==2)basis=SessionConfiguration.WithTaskKind(basis,TaskKind.VisualSearch);
                 config=SessionConfiguration.LegacyRecordingDevelopment(basis,design,ViveLegacyRecordingIntent.Select(Actor.Owner,"training-intent",true,true));
             }
@@ -27,6 +28,7 @@ namespace AvatarStroop.Tests
                 var n=ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.NoAvatar,1,null);
                 var plan=ViveNamedSimulationPlan.Select(Actor.Owner,"training-plan",a,n,a,n);
                 config=SessionConfiguration.NamedRecordingDevelopment("training-raw",73,plan,ViveNamedRecordingIntent.Select(Actor.Owner,"training-intent",true,true));
+                if(formalOnly)config=SessionConfiguration.WithFormalEyeRecordingOnly(config);
             }
             if(mode==1)config=SessionConfiguration.WithResponseRule(config,ResponseRule.WordMeaning);
             return SessionConfiguration.WithTrainingProtocol(config,TrainingProtocol.TutorialExamV1);
@@ -39,9 +41,9 @@ namespace AvatarStroop.Tests
             else
             {var colour=correct?trial.ExpectedResponse:(Colour)(((int)trial.ExpectedResponse+1)%4);Check.True(e.ButtonChanged(colour,true));e.ButtonChanged(colour,false);}
         }
-        static byte[] Fixture(bool legacy,int mode,out Experiment experiment)
+        static byte[] Fixture(bool legacy,int mode,out Experiment experiment,bool formalOnly=false)
         {
-            var config=Configuration(legacy,mode);var clock=new ManualClock();var e=new Experiment(config,clock);experiment=e;
+            var config=Configuration(legacy,mode,formalOnly);var clock=new ManualClock();var e=new Experiment(config,clock);experiment=e;
             e.RecordRawSoftwareChoices(clock.ClockId,0,0);
             Check.Throws<InvalidOperationException>(()=>e.PrepareRawRecordingBlockPlan(Actor.Owner,true));
             e.BeginFamiliarization(Actor.Owner);e.BeginTutorial(Actor.Owner);Answer(e,clock,false);e.ContinueTutorial();
@@ -95,6 +97,41 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("Formal-only eye policy survives VRAW3 VRAW4 full training and formal roundtrip without invented eye rows",()=>{
+                foreach(bool legacy in new[]{false,true})for(int mode=0;mode<(legacy?3:2);mode++)
+                {
+                    Experiment e;byte[] bytes=Fixture(legacy,mode,out e,true);
+                    Check.True(e.Configuration.FormalEyeRecordingOnly);
+                    Check.True(e.Events.All(x=>x.Fields["eye_recording_policy"]=="formal-session-v1"));
+                    var windows=e.Events.Where(x=>x.Kind=="formal_eye_recording_window_open").ToArray();
+                    Check.Equal(1,windows.Length);var window=windows[0];
+                    Check.Equal(0,window.BlockIndex);Check.Equal("formal",window.Fields["learning_stage"]);
+                    Check.Equal("first_formal_countdown",window.Fields["boundary"]);
+                    Check.Equal("declared_window_not_sample_coverage",window.Fields["evidence"]);
+                    Check.Equal(window.Time,e.FormalEyeRecordingWindowStart.Value);
+                    Check.True(e.Events.Where(x=>x.Fields["learning_stage"]=="tutorial"||x.Fields["learning_stage"]=="practice_exam")
+                        .All(x=>x.Sequence<window.Sequence));
+                    Check.True(e.Events.Where(x=>x.Kind=="first_response"&&x.Fields["learning_stage"]=="formal")
+                        .All(x=>x.Sequence>window.Sequence));
+
+                    var analysis=new StudyAnalysis();StudyDataReadSummary read;
+                    using(var stream=new MemoryStream(bytes,false))read=StudyDataReader.Read(stream,"vraw",analysis.Accept,CancellationToken.None);
+                    Check.True(read.Accepted,read.Message);analysis.Finish();
+                    Check.Equal("formal-session-v1",analysis.EyeRecordingPolicy);
+                    Check.Equal("NOT_REQUESTED_TRAINING",analysis.TrainingEyeExpectation);
+                    Check.Equal(1,analysis.FormalEyeWindowOpenEvents);
+                    Check.Equal(window.Time,analysis.FormalEyeWindowOpenTime.Value);
+                    Check.Equal(36,analysis.Trials.Count(x=>x.EyeRecordingExpectation=="NOT_REQUESTED_TRAINING"));
+                    Check.Equal(96,analysis.Trials.Count(x=>x.EyeRecordingExpectation=="EXPECTED_FORMAL"));
+                    Check.True(analysis.Trials.All(x=>x.EyeRecordingPolicy=="formal-session-v1"));
+                    Check.Equal(3,analysis.TrainingAttempts.Count);
+                    foreach(var attempt in analysis.TrainingAttempts)
+                    {Check.Equal(attempt.Attempt<3?7:8,attempt.ReconstructedCorrect);Check.Equal(attempt.Attempt==3,attempt.Passed);Check.Equal(0,attempt.Flags.Count);}
+                    // This task-event fixture never supplies hardware eye data.
+                    // The declaration must not manufacture coverage or missing-eye observations.
+                    Check.Equal(0,analysis.EyeGroups.Count());Check.True(!analysis.UnexpectedPreformalEyeRows);
+                }
+            });
             suite.Run("Tutorial VRAW3 and VRAW4 roundtrip keeps training scopes retries tenth items and attempt three",()=>{
                 foreach(bool legacy in new[]{false,true})for(int mode=0;mode<(legacy?3:2);mode++)
                 {

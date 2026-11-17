@@ -61,10 +61,19 @@ namespace AvatarStroop.Runtime
             // this reservation ends; the writer never reduces or mutates the
             // cumulative amount. A later exact TryCharge is still required.
             // No disk space or write success is implied.
-            internal bool CanReserveUpper(long ordinal,int upperBytes)
+            internal bool CanReserveUpper(long ordinal,int upperBytes,bool allowInitialTask=false)
             {
-                return Thread.CurrentThread.ManagedThreadId==owner&&initialized&&ordinal>0&&ordinal!=Int64.MaxValue&&
-                    ordinal==nextOrdinal&&upperBytes>0&&budget.FitsData(reserved,upperBytes);
+                if(Thread.CurrentThread.ManagedThreadId!=owner||ordinal<0||ordinal==Int64.MaxValue||ordinal!=nextOrdinal||upperBytes<=0)return false;
+                if(initialized)return ordinal>0&&budget.FitsData(reserved,upperBytes);
+                // A task-only journal has no artificial eye/status first row.
+                // Reserve its real manifest as well as the entire action; the
+                // subsequent exact TryCharge still initializes the ledger.
+                if(!allowInitialTask||ordinal!=0)return false;
+                try
+                {int header=checked(ViveRawSessionJournalCodec.CurrentManifestPayload(manifest).Length+48);
+                    return budget.FitsData(0,header)&&budget.FitsData(header,upperBytes);}
+                catch(Exception e) when(e is InvalidOperationException||e is OverflowException||e is EncoderFallbackException||e is ArgumentException)
+                {return false;}
             }
             internal bool TryFrameBound(long ordinal,object record,out int bytes)
             {

@@ -132,6 +132,13 @@ namespace AvatarStroop.Unity.Editor
                     (camera.cullingMask&(1<<stimulus.layer))==0,
                     "controller-unavailable notice altered the neutral hold boundary");
                 Call(hold,"EndRender");
+                Call(hold,"SetFormalEyeWait",true);
+                Require((bool)Call(hold,"BeginRender",camera,true,false)&&
+                    text.text.Replace("\n"," ").Contains("Preparing eye tracking.")&&
+                    !text.text.Contains("5")&&camera.cullingMask==holdMask,
+                    "formal eye wait leaked a task countdown or omitted its waiting notice");
+                Call(hold,"EndRender");
+                Call(hold,"SetFormalEyeWait",false);
                 Call(hold,"SetTransition",false,0.0,5.0);
                 Call(hold,"SetPracticeInstruction","Choose the colour named by the word.");
                 Require((bool)Call(hold,"BeginRender",camera,true,false)&&text.text.Replace("\n"," ").Contains("Practice starts in 5")&&

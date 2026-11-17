@@ -203,6 +203,8 @@ namespace AvatarStroop.Runtime
             if(!task.TryCaptureRawRecordingTaskStamp(clock,out stamp)||stamp.Phase!=Phase.Preparation||stamp.Context==null||
                 stamp.Context.IsLegacy!=legacy||!stamp.Context.TaskRequested||!stamp.Context.EyeRequested)throw new InvalidOperationException("Explicit pre-practice intent is required.");
             object run;if(!worker.TryGetRecordingRunIdentity(out run))throw new InvalidOperationException("Recording source is unavailable.");
+            if(task.FormalEyeRecordingOnly!=worker.IsTaskOnlyRecordingRun)
+                throw new InvalidOperationException("The eye recording policy does not match the recording source.");
             this.task=task;context=stamp.Context;this.worker=worker;this.clock=clock;plan=stamp.Plan;intent=stamp.Intent;this.capacity=capacity;syntheticOnly=synthetic;runIdentity=run;
             ioFence=new ViveRawIoFence(this,task.NamedRawRevocation);
             manifest=new Manifest(context,clock.ClockId,synthetic,taskObserved,eyeObserved);
@@ -467,7 +469,7 @@ namespace AvatarStroop.Runtime
                 int upper=checked(OrdinaryActionEventLimit*MaximumTaskFrameBytes);
                 if(!ProducerLive()||!taskChoice||!eyeChoice||!statusEnabled||statusSealed||target==null||ledger==null||
                     first<0||last<first||last>Int64.MaxValue-OrdinaryActionEventLimit||last-first>capacity||
-                    capacity-(last-first)<OrdinaryActionEventLimit||!ledger.CanReserveUpper(last,upper)||
+                    capacity-(last-first)<OrdinaryActionEventLimit||!ledger.CanReserveUpper(last,upper,task.FormalEyeRecordingOnly)||
                     !task.TryCaptureRawRecordingTaskStamp(clock,out before)||before==null||before.EventCursor!=lastTaskSequence||
                     !Object.ReferenceEquals(before.Context,context)||!Object.ReferenceEquals(before.Plan,plan)||!Object.ReferenceEquals(before.Intent,intent)||before.Generation>Int64.MaxValue-2)
                 {Fail();return false;}
@@ -527,6 +529,10 @@ namespace AvatarStroop.Runtime
         internal bool TryReserveCountdownWitness(int frame,long revision,double unitySeconds,out CountdownWitnessReservation reservation)
         {
             reservation=null;
+            // The first countdown can be reached after this frame's training
+            // head ticket was issued. It must not inherit that eye-off epoch.
+            // This is an expected wait, not a terminal admission failure.
+            if(task.FormalEyeRecordingOnly&&task.FormalEyeRecordingWindowStart.HasValue&&!worker.FormalEyePersistenceEnabled)return false;
             if(Thread.CurrentThread.ManagedThreadId!=owner||frame<0||revision<0||Double.IsNaN(unitySeconds)||
                 Double.IsInfinity(unitySeconds)||unitySeconds<0||!Reserve()){Fail();return false;}
             try
@@ -979,7 +985,8 @@ namespace AvatarStroop.Runtime
         {
             if(Thread.CurrentThread.ManagedThreadId!=owner||seal==null||!Reserve()){Fail();return false;}
             if(!statusEnabled||statusSealed||!Object.ReferenceEquals(seal.RunIdentity,runIdentity)||
-                seal.FinalSequence!=lastStatusSequence||seal.FinalSequence< -1||(seal.FinalSequence<0&&lastEyeObservation==null)||seal.SealLocalSeconds<lastStatusTime||
+                seal.FinalSequence!=lastStatusSequence||seal.FinalSequence< -1||
+                (seal.FinalSequence<0&&lastEyeObservation==null&&!(task.FormalEyeRecordingOnly&&!task.FormalEyeRecordingWindowStart.HasValue))||seal.SealLocalSeconds<lastStatusTime||
                 Volatile.Read(ref pendingStatusProof)!=null||!seal.TryConsume(runIdentity))
             {Fail();return false;}
             statusSealed=true;
@@ -1097,6 +1104,14 @@ namespace AvatarStroop.Runtime
                         // Context is explicitly at software ingest. It does
                         // not prove sample/trial or eye/head synchronization.
                         lastCommit=now;
+                        if(ticket.EyeNotRequested)
+                        {
+                            if(!task.FormalEyeRecordingOnly||task.FormalEyeRecordingWindowStart.HasValue||!ClearBitIfLive(P)){Fail();return false;}
+                            return true;
+                        }
+                        if(task.FormalEyeRecordingOnly&&(!task.FormalEyeRecordingWindowStart.HasValue||
+                            (!ticket.HeadOnly&&copy.EyeObserved<task.FormalEyeRecordingWindowStart.Value)))
+                        {Fail();return false;}
                         if(ticket.HeadOnly)
                         {
                             var cause=ticket.EyeUnavailable.Value;

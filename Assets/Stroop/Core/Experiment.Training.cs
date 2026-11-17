@@ -7,6 +7,18 @@ namespace AvatarStroop.Core
     public sealed partial class Experiment
     {
         public bool UsesTutorial {get{return Configuration.UsesTutorial;}}
+        // Declaration on the shared task clock, not evidence that any eye
+        // sample has arrived, been written, or reached durable storage.
+        public double? FormalEyeRecordingWindowStart
+        {
+            get
+            {
+                if(!Configuration.FormalEyeRecordingOnly)return null;
+                for(int i=0;i<events.Count;i++)
+                    if(events[i].Kind=="formal_eye_recording_window_open")return events[i].Time;
+                return null;
+            }
+        }
         public bool? PracticePassed {get{return UsesTutorial&&InPhaseOrPaused(Phase.PracticeExamResult)?
             (bool?)(practiceCorrect>=Configuration.PracticePassCorrect):null;}}
         public int TutorialRound

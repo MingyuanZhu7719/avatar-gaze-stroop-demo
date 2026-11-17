@@ -44,7 +44,7 @@ namespace AvatarStroop.Runtime
         static readonly HashSet<string> FocusFields=new HashSet<string>(StringComparer.Ordinal)
         {"focus_schema","desktop_focused","xr_focused","actor","code","reason","detail","source","measurement_quality"};
         static bool ContextField(string key)
-        {return key=="response_rule"||key=="task_kind"||key=="search_schema"||key=="training_protocol"||
+        {return key=="response_rule"||key=="task_kind"||key=="search_schema"||key=="training_protocol"||key=="eye_recording_policy"||
             key=="learning_stage"||key=="practice_attempt"||key=="tutorial_round"||
             key.StartsWith("named_",StringComparison.Ordinal)||key.StartsWith("legacy_",StringComparison.Ordinal);}
         bool FocusEvidenceMatches(JournalEvent item)

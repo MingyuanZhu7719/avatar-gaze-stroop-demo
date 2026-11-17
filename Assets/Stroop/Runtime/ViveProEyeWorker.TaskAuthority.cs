@@ -63,7 +63,7 @@ namespace AvatarStroop.Runtime
                 try
                 {
                     if(!Object.ReferenceEquals(capability,TaskCapability(capability.Run)))return false;
-                    var run=capability.Run;latest=run.Latest;measured=true;
+                    var run=capability.Run;latest=run.EyePersistenceEnabled?run.Latest:null;measured=true;
                     statusRevision=run.StatusRevision;loss=run.LossGeneration;
                 }
                 finally{Monitor.Exit(gate);}
@@ -97,7 +97,8 @@ namespace AvatarStroop.Runtime
                 frame.Head.ObservedLocalSeconds<=lastTaskHeadObserved)return RecordingTicketDisposition.Unavailable;
             ViveRawEyeObservation.Reason? absent=ViveRawEyeObservation.Reason.SnapshotBusy;
             var run=poll.Capability.Run;
-            if(poll.Measured&&!eyeStatusDeferred&&Monitor.TryEnter(gate))
+            bool notRequested=run.DeferredEye&&!Volatile.Read(ref run.EyePersistenceEnabled);
+            if(!notRequested&&poll.Measured&&!eyeStatusDeferred&&Monitor.TryEnter(gate))
             {
                 try
                 {
@@ -111,7 +112,7 @@ namespace AvatarStroop.Runtime
                 finally{Monitor.Exit(gate);}
             }
             if(!Object.ReferenceEquals(poll.Capability,TaskCapability(run)))return RecordingTicketDisposition.Unavailable;
-            ticket=new RecordingFrameTicket(this,run,frame,++taskTicketRevision,poll.Loss,poll.StatusRevision,true,true,absent,true);
+            ticket=new RecordingFrameTicket(this,run,frame,++taskTicketRevision,poll.Loss,poll.StatusRevision,true,true,absent,true,notRequested);
             issuedTaskTicket=ticket;return RecordingTicketDisposition.Issued;
         }
         bool TryConsumeIndependentTaskTicket(RecordingFrameTicket ticket,out ViveProEyePoll frame)

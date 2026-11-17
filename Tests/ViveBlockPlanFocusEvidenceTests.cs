@@ -33,7 +33,7 @@ namespace AvatarStroop.Tests
                     var plan=ViveNamedSimulationPlan.Select(Actor.Owner,"focus-plan",option);
                     config=SessionConfiguration.NamedRecordingDevelopment("focus-plan-session",42,plan,ViveNamedRecordingIntent.Select(Actor.Owner,"focus-plan-intent",true,true));
                 }
-                if(training)config=SessionConfiguration.WithTrainingProtocol(config,TrainingProtocol.TutorialExamV1);
+                if(training)config=SessionConfiguration.WithFormalEyeRecordingOnly(SessionConfiguration.WithTrainingProtocol(config,TrainingProtocol.TutorialExamV1));
                 if(taskKind!=TaskKind.Stroop)config=SessionConfiguration.WithTaskKind(config,taskKind);
                 Participant=new ViveDevelopmentParticipant(config,Clock,geometry,ViveFixedTrackpadMapping.Create(),.5,true);
                 Participant.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));

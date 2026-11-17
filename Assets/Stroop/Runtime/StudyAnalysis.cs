@@ -14,6 +14,7 @@ namespace AvatarStroop.Runtime
         public string Session, Id, Condition, Phase, Rule, RuleProvenance, Word, Ink, Response, Expected, DeclaredExpected, DeclaredCorrect, List, RetryOf;
         public string OnsetBasis, TaskClockId, UnityRenderBasis;
         public string TrainingProtocol, LearningStage;
+        public string EyeRecordingPolicy,EyeRecordingExpectation="LEGACY_OR_UNDECLARED";
         public int? PracticeAttempt, TutorialRound;
         public string TaskKind="Stroop", SearchSchema, TargetItem, SelectedItem, TargetColour, TargetPattern, LayoutSeed;
         public int? SetSize;
@@ -48,6 +49,7 @@ namespace AvatarStroop.Runtime
     {
         public int Block, Segment;
         public string Phase;
+        public string RecordingExpectation="LEGACY_OR_UNDECLARED";
         public long AcquisitionRows, NativeChanges, AdjacentDuplicates, NonIncreasingNativeFrames,
             CombinedValid, CombinedInvalid, CombinedUnknown, Observations, AoiEligible, AoiMissing;
         public double? FirstCallback, LastCallback;
@@ -124,7 +126,7 @@ namespace AvatarStroop.Runtime
 
     public sealed partial class StudyAnalysis
     {
-        public const string Version="1.2.0";
+        public const string Version="1.2.1";
         static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
         readonly Dictionary<string,StudyTrial> byId=new Dictionary<string,StudyTrial>(StringComparer.Ordinal);
         readonly Dictionary<string,StudyEyeGroup> eye=new Dictionary<string,StudyEyeGroup>(StringComparer.Ordinal);
@@ -207,6 +209,7 @@ namespace AvatarStroop.Runtime
             }
             if(kind=="block_task_ended")endedBlocks.Add(block);
             if(kind=="session_ended")SessionEndReason=Get(p,"reason");
+            ReadEyeRecordingPolicy(kind,p,Number(f,"event_local_time"));
             ReadTrainingEvent(kind,p,rule,taskKind,Number(f,"event_local_time"));
             if(kind=="rating")
             {
@@ -233,6 +236,7 @@ namespace AvatarStroop.Runtime
                     RuleProvenance=rule==null?"legacy_inferred":"explicit",TaskKind=taskKind??"Stroop"};byId.Add(id,trial);Trials.Add(trial);
             }
             if(trial.Block!=block||trial.Segment!=segment)trial.Flag("context_conflict");
+            ApplyTrialEyePolicy(trial,p);
             ApplyTrainingTrial(trial,p);
             if(rule!=null&&trial.Rule!=rule)trial.Flag("response_rule_conflict");
             if(rule!=null)trial.RuleProvenance="explicit";
@@ -308,6 +312,7 @@ namespace AvatarStroop.Runtime
                 t.RtIncluded=!t.TimedOut&&t.AccuracyIncluded&&t.Correct==true&&t.Flags.Count==0;
             }
             FinishTraining();
+            FinishEyeRecordingPolicy();
             if(Trials.Any(x=>x.RuleProvenance=="legacy_inferred"))Warn("Older events omit response_rule: InkColor is inferred and labelled, not merged with WordMeaning.");
             if(eye.Values.Any(x=>x.AcquisitionRows>0))Warn("Native acquisition cadence is session-wide and unaligned to task blocks; ingest observations carry separate software task context.");
             if(PlannedBlocks.HasValue&&EndedBlocks<PlannedBlocks.Value)Warn("Only "+EndedBlocks+" of "+PlannedBlocks+" planned blocks have block_task_ended events.");

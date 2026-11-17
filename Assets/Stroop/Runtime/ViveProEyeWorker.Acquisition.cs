@@ -17,7 +17,7 @@ namespace AvatarStroop.Runtime
             try
             {
                 if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||
-                    !current.Ready||current.StopRequested||!GenerationLive(current)||!current.StatusEnabled||
+                    !TaskCarrierLive(current)||current.StopRequested||!GenerationLive(current)||!current.StatusEnabled||
                     current.StatusFault||StatusAuthorityRevoked(current))return AcquisitionSealDisposition.Faulted;
                 if(!current.AcquisitionEnabled||current.AcquisitionSource==null)return AcquisitionSealDisposition.Ready;
                 Interlocked.Exchange(ref current.AcquisitionSealRequested,1);
@@ -45,7 +45,7 @@ namespace AvatarStroop.Runtime
             try
             {
                 if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||
-                    !current.Ready||current.StopRequested||!GenerationLive(current)||!current.StatusEnabled||StatusAuthorityRevoked(current))
+                    !TaskCarrierLive(current)||current.StopRequested||!GenerationLive(current)||!current.StatusEnabled||StatusAuthorityRevoked(current))
                     return StatusDisposition.Unavailable;
                 if(current.StatusFault)return StatusDisposition.Faulted;
                 if(!current.AcquisitionEnabled||current.AcquisitionCount==0)return StatusDisposition.Empty;

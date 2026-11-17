@@ -39,6 +39,22 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("study training-only eye policy exports not-requested status without zero-quality eye rows",()=>{
+                using(var files=new Files())
+                {
+                    Directory.CreateDirectory(files.Output);var analysis=StudyAnalysisTests.Analysis();
+                    StudyAnalysisTrainingTests.Trial(analysis,"tutorial","tutorial",0,1,eyePolicy:StudyAnalysisEyePolicyTests.Policy);
+                    StudyAnalysisTrainingTests.Trial(analysis,"exam","practice_exam",1,1,eyePolicy:StudyAnalysisEyePolicyTests.Policy);
+                    var source=new StudyAnalysisSource{Path=files.Raw,Analysis=analysis,Sha256="synthetic",Read=new StudyDataReadSummary{Format="synthetic",Status="Complete"}};
+                    StudyAnalysisFiles.Write(new[]{source},files.Output,CancellationToken.None);
+                    string trials=File.ReadAllText(Path.Combine(files.Output,"trials.csv"));
+                    Check.True(trials.Contains("eye_recording_policy,eye_recording_expectation")&&trials.Contains("\"NOT_REQUESTED_TRAINING\""));
+                    Check.Equal(1,File.ReadAllLines(Path.Combine(files.Output,"eye_quality.csv")).Length);
+                    Check.Equal(1,File.ReadAllLines(Path.Combine(files.Output,"aoi_observations.csv")).Length);
+                    Check.True(File.ReadAllText(Path.Combine(files.Output,"sources.csv")).Contains("\"formal-session-v1\",\"NOT_REQUESTED_TRAINING\",\"false\",\"0\","));
+                    Check.True(File.ReadAllText(Path.Combine(files.Output,"report.html")).Contains("不是丢失样本或 0% 有效率"));
+                }
+            });
             suite.Run("study reports separate tutorial exam and formal data and preserve exam result provenance",()=>{
                 using(var files=new Files())
                 {

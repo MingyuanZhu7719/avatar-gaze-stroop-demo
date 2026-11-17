@@ -960,8 +960,10 @@ namespace AvatarStroop.Unity
                 participant==null||!MatchesRawRecordingKind(legacy)||participant.Phase!=Phase.Preparation||participant.Completed||namedRawPump!=null||rig==null||
                 !RecordingKindAvailable(legacy)||!ViveRawRelativeFileCapability.ProductionGateOpen||
                 !rig.XrFocused||recordingSelectionFreshFrame!=Time.frameCount)return false;
-            try{return RawStartInputsReady(recordingSetup,rig.XrFocused,rig.RawSceneTrackingCurrent(),rig.RecordingWorkerReady,
-                rig.RawStartReadiness,recordingSelectionFreshFrame,Time.frameCount);}
+            try{return participant.FormalEyeRecordingOnly?
+                RawTaskOnlyStartInputsReady(recordingSetup,rig.XrFocused,rig.RawSceneTrackingCurrent(),rig.TaskOnlyRecordingWorkerReady,recordingSelectionFreshFrame,Time.frameCount):
+                RawStartInputsReady(recordingSetup,rig.XrFocused,rig.RawSceneTrackingCurrent(),rig.RecordingWorkerReady,
+                    rig.RawStartReadiness,recordingSelectionFreshFrame,Time.frameCount);}
             catch(Exception){return false;}
         }
         void TryConfigure(){TryConfigure(false);}
@@ -1033,6 +1035,7 @@ namespace AvatarStroop.Unity
                 config=SessionConfiguration.WithResponseRule(config,selectedResponseRule);
                 config=SessionConfiguration.WithTaskKind(config,selectedTaskKind);
                 config=SessionConfiguration.WithTrainingProtocol(config,TrainingProtocol.TutorialExamV1);
+                config=SessionConfiguration.WithFormalEyeRecordingOnly(config);
                 var taskClock=selected?rig.ActiveViewClock:new MonotonicClock("vive-development-task-"+session);
                 if(taskClock==null)throw new InvalidOperationException("The active headset clock is unavailable.");
                 var candidate=new ViveDevelopmentParticipant(config,taskClock,geometry,map,entered,true,null,4096);
@@ -1468,6 +1471,7 @@ namespace AvatarStroop.Unity
         void RequestNamedBlockPlanStart(bool practice)
         {
             if(namedRawPump==null||participant==null||RecordingBlocked||rawSelectionProvenancePending||rawPlanStartRequested!=0||rawPendingBlockPlan!=null)return;
+            if(!practice&&!FormalEyeReadyForFirstBlock){message=FormalEyeFirstBlockNotice;return;}
             if(!RawPlanStartPhaseMatches(practice,participant.Phase))
             {message="Block-plan request does not match the current task phase; no task or I/O was started.";return;}
             rawPlanStartRequested=practice?1:2;
@@ -1556,6 +1560,7 @@ namespace AvatarStroop.Unity
                 MustWaitForRawPlanNeutral(input.NeutralPending,input.TriggerHeld,input.MenuHeld,input.Trackpad.Pressed))
             {message="Release the controller controls before starting the prepared block.";return;}
             bool practice=rawPlanStartRequested==1;
+            if(!practice&&!FormalEyeReadyForFirstBlock){message=FormalEyeFirstBlockNotice;return;}
             // The owner might have been descheduled while polling the receipt.
             // This is still not a physical hard-real-time guarantee.
             if(!RawPlanDeadlineStillValid())
@@ -1781,6 +1786,7 @@ namespace AvatarStroop.Unity
         // interprets an enabled object as a displayed panel.
         internal bool PrepareRawNonTrialScene()
         {
+            if(HoldFormalEyeActivation())return !RecordingBlocked;
             if(!RawRecordingDesignAvailable||namedRawPump==null||participant==null||view==null||rig==null||
                 pendingRawPresentation!=null||pendingRawPanelFrame>=0||PresentationBlocked||participant.Completed||!rig.RawSceneTrackingCurrent())return false;
             if(!WorldSpaceExperimentView.ViveRawPanelPhase(participant.Phase))return false;
@@ -1868,6 +1874,7 @@ namespace AvatarStroop.Unity
         bool CompleteRawPanelRender(WorldSpaceExperimentView.ViveRawPanelObservation rendered)
         {
             if(namedRawPump==null)return false;
+            if(HoldFormalEyeActivation())return false;
             if(rig!=null&&!rig.XrFocused){PrepareRawFocusBoundary(false);return false;}
             try
             {

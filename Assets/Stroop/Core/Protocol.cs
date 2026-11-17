@@ -140,6 +140,8 @@ namespace AvatarStroop.Core
         public ResponseRule ResponseRule { get; private set; }
         public TaskKind TaskKind {get;private set;}
         public TrainingProtocol TrainingProtocol {get;private set;}
+        public bool FormalEyeRecordingOnly {get;private set;}
+        public string EyeRecordingPolicy {get{return FormalEyeRecordingOnly?"formal-session-v1":"legacy-continuous";}}
         public bool UsesTutorial {get{return TrainingProtocol==Core.TrainingProtocol.TutorialExamV1;}}
         public string TrainingSchema {get{return UsesTutorial?"tutorial-exam-v1":"legacy-practice-8-v1";}}
         public int PracticeTrialCount {get{return UsesTutorial?10:8;}}
@@ -202,6 +204,11 @@ namespace AvatarStroop.Core
             if(!Enum.IsDefined(typeof(TrainingProtocol),protocol))throw new ArgumentOutOfRangeException("protocol");
             var copy=(SessionConfiguration)configuration.MemberwiseClone();copy.TrainingProtocol=protocol;return copy;
         }
+        public static SessionConfiguration WithFormalEyeRecordingOnly(SessionConfiguration configuration,bool enabled=true)
+        {
+            if(configuration==null)throw new ArgumentNullException("configuration");
+            var copy=(SessionConfiguration)configuration.MemberwiseClone();copy.FormalEyeRecordingOnly=enabled;return copy;
+        }
         // A copy is configured before Experiment starts. Existing legacy preview remains unchanged.
         public static SessionConfiguration LegacyRecordingDevelopment(SessionConfiguration legacyConfiguration,
             ViveLegacyRecordingDesign design,ViveLegacyRecordingIntent intent)
@@ -215,7 +222,8 @@ namespace AvatarStroop.Core
                 c.MinimumRestSeconds,c.SkipFinalRest,c.QuestionnaireInstructionSeconds,c.QuestionnaireInstructionRequiresAcknowledgement,
                 c.ParticipantPacedRest,c.RetainControlAcrossBlocks,c.ResponseRule);
             if(c.TaskKind==TaskKind.VisualSearch&&design.OperatorWozRequested)throw new InvalidOperationException("Visual search v1 does not support WoZ");
-            result.TaskKind=c.TaskKind;result.TrainingProtocol=c.TrainingProtocol;result.LegacyRecordingDesign=design;result.LegacyRecordingIntent=intent;return result;
+            result.TaskKind=c.TaskKind;result.TrainingProtocol=c.TrainingProtocol;result.FormalEyeRecordingOnly=c.FormalEyeRecordingOnly;
+            result.LegacyRecordingDesign=design;result.LegacyRecordingIntent=intent;return result;
         }
         // Single-block development preview only: it does not define a four-option
         // roster, establish research admission or create a legacy allocation.

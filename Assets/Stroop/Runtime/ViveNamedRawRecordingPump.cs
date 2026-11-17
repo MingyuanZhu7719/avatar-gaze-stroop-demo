@@ -91,6 +91,7 @@ namespace AvatarStroop.Runtime
             internal override int InstalledDestinationState {get{return -1;}}
         }
         readonly ViveDevelopmentParticipant participant;readonly ViveProEyeWorker worker;
+        internal bool FormalEyeActivationPending {get{return participant.FormalEyeRecordingOnly&&participant.FormalEyeRecordingWindowStart.HasValue&&!worker.FormalEyePersistenceEnabled;}}
         readonly MonotonicClock clock;readonly ViveNamedSessionFrameAdmission admission;
         readonly Writer writer;readonly int owner;readonly object statusRun;
         int statusStopAttempted,statusStopConfirmed;
@@ -334,6 +335,15 @@ namespace AvatarStroop.Runtime
                 Fail();return Preparation.Faulted;}
             if(statusRun==null)return admission.SyntheticOnly?Preparation.Ready:Preparation.Faulted;
 
+            if(participant.FormalEyeRecordingOnly&&participant.FormalEyeRecordingWindowStart.HasValue)
+            {
+                var start=worker.TryEnableFormalEyePersistence(statusRun,participant.FormalEyeRecordingWindowStart.Value);
+                if(start==ViveProEyeWorker.RecordingStartReadinessState.Busy||start==ViveProEyeWorker.RecordingStartReadinessState.Waiting)
+                {stagedEpoch=null;return Preparation.WaitingBaseline;}
+                if(start!=ViveProEyeWorker.RecordingStartReadinessState.Ready)
+                {NoteFirstFault("formal_eye_start_unavailable");Fail();return Preparation.Faulted;}
+            }
+
             var acquisitionPreparation=DrainAcquisitions();
             if(acquisitionPreparation!=Preparation.Ready)return acquisitionPreparation;
             if(pendingStatusTicket==null&&!DrainTaskEvents()){
@@ -451,6 +461,7 @@ namespace AvatarStroop.Runtime
                 if(statusRun!=null)
                 {
                     var preparation=PrepareStatus();
+                    if(preparation==Preparation.WaitingBaseline){waiting=true;return false;}
                     if(preparation==Preparation.Busy&&independent)
                     {
                         // Status remains in its exact reservable/ACK state;

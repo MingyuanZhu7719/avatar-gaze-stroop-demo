@@ -42,10 +42,10 @@ namespace AvatarStroop.Unity
         internal static string ConsentAutoChoiceText(bool eye,bool woz)
         {
             string text=eye?
-                "Self-test, not study consent. Store real eye/head data on this PC? Eye data may identify you. No upload. Withdrawal does not erase files.":
+                "Self-test, not study consent. Store eye data during the formal experiment on this PC? No eye data is saved in Tutorial or Exam. No upload. Withdrawal does not erase files.":
                 "Self-test, not study consent. Store task responses, questionnaire ratings and timing on this PC?";
             if(woz)text+=" LiveWoZ also stores mapped operator head/eye poses and source times.";
-            return text+" Both choices + release start local raw/CSV recording and Tutorial. Formal blocks require the operator.";
+            return text+" Both choices + release start task recording and Tutorial. Eye recording begins with the first formal countdown.";
         }
         internal void ArmConsentAutoStart()
         {
@@ -65,7 +65,7 @@ namespace AvatarStroop.Unity
                 InitialRevision=recordingSetup.Revision,PlanCount=namedPlanCount,Options=(int[])namedPlanOptions.Clone(),Lists=(int[])namedPlanLists.Clone(),
                 Woz=legacyWozRecordingSelected,CsvBytes=bytes,CsvMilliseconds=milliseconds,DeadlineClock=deadlineClock,ArmedAt=now};
             consentAutoStartNotice=null;
-            message="Armed for local raw + CSV recording and first Tutorial after both headset choices and release of all controls. Start the classroom view. No files yet.";
+            message="Armed for task recording and Tutorial after both headset choices and released controls. Eye recording begins with the first formal countdown. No files yet.";
             Debug.Log("VIVE_CONSENT_AUTO_START_ARMED: explicit owner raw/CSV + first-Practice request; both headset choices still required.");
             RenderPreSessionChoice();
         }
@@ -128,7 +128,7 @@ namespace AvatarStroop.Unity
             if(!arm.DeadlineClock.TryReadRecordingAdmissionTime(out confirmed))
             {CancelConsentAutoStart("Automatic start clock unavailable. Review on the desktop; no recording or Tutorial was started.");return;}
             arm.Task=participant;arm.ViewClock=sharedClock;arm.ConfirmedAt=confirmed;
-            message="Both choices accepted. Release Trigger, Menu and trackpad. Local recording and Tutorial will start when tracking is ready.";
+            message="Both choices accepted. Release Trigger, Menu and trackpad. Task recording and Tutorial start when head and controller tracking are ready.";
         }
         void ServiceConsentAutoStart()
         {
@@ -150,7 +150,7 @@ namespace AvatarStroop.Unity
                 if(!rawPracticeRequested){CancelRequestedRawRecordingStart();return;}
                 rawPracticeFromConsent=true;rawConsentInterrupted=arm.Interrupted;
                 rawConsentPracticeTask=participant;rawConsentPracticeClock=sharedClock;
-                message="Both choices accepted and controls released. Starting local recording, then Tutorial automatically; formal blocks still need the operator.";
+                message="Both choices accepted and controls released. Starting task recording and Tutorial. Eye recording waits for the formal experiment.";
                 Debug.Log("VIVE_CONSENT_AUTO_START_REQUESTED: existing one-use recording and first-Practice paths captured once after neutral release.");
             }
             catch(Exception)

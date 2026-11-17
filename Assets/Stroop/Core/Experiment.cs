@@ -356,6 +356,9 @@ namespace AvatarStroop.Core
             countdownAt=Time();TraceMutation(); resumeCountdown=false;TraceMutation();
             if(rawCountdownWitnessRequired){rawCountdownWitnessPending=true;rawCountdownRemaining=Configuration.CountdownSeconds;TraceMutation();}
             Move(Phase.Countdown);
+            if(Configuration.FormalEyeRecordingOnly&&!FormalEyeRecordingWindowStart.HasValue)
+                Log("formal_eye_recording_window_open","boundary","first_formal_countdown",
+                    "scope","formal_blocks_questionnaires_and_rests","evidence","declared_window_not_sample_coverage");
             if(rawCountdownWitnessPending)Log("countdown_waiting_for_software_witness","basis","named_raw_software_render_not_optical");
         }
 
@@ -897,6 +900,7 @@ namespace AvatarStroop.Core
         void Log(string kind, params string[] fields)
         {
             var data=new Dictionary<string,string>(); for(int i=0;i<fields.Length;i+=2) data.Add(fields[i],fields[i+1]);
+            if(Configuration.FormalEyeRecordingOnly)data.Add("eye_recording_policy",Configuration.EyeRecordingPolicy);
             if(UsesTutorial)
             {
                 string stage=LearningStage;string round;

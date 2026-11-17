@@ -43,6 +43,8 @@ namespace AvatarStroop.Runtime
         {
             internal Thread Thread;
             internal readonly ManualResetEvent StopSignal=new ManualResetEvent(false);
+            internal readonly ManualResetEvent NativeStartSignal=new ManualResetEvent(false);
+            internal bool DeferredEye,NativeStartRequested,EyePersistenceEnabled=true,CaptureAcquisitionRequested;
             internal TaskRunCapability TaskCapability;
             internal bool Starting=true,Ready,StopRequested,Completed;
             internal long StopGeneration;internal int PollFence;
@@ -127,7 +129,7 @@ namespace AvatarStroop.Runtime
             run=null;if(!Monitor.TryEnter(gate))return RecordingRunRead.Busy;
             try
             {
-                if(disposed||current==null||!current.Ready||current.StopRequested||!GenerationLive(current))return RecordingRunRead.Unavailable;
+                if(disposed||current==null||!TaskCarrierLive(current)||current.StopRequested||!GenerationLive(current))return RecordingRunRead.Unavailable;
                 run=current;return RecordingRunRead.Ready;
             }
             finally{Monitor.Exit(gate);}
@@ -141,14 +143,14 @@ namespace AvatarStroop.Runtime
             // payload being detached at admission; they do not identify the
             // vendor's hardware sampling time.
             internal readonly double EyeObserved,HeadObserved;
-            internal readonly bool TaskAuthority,IndependentTaskAuthority;
+            internal readonly bool TaskAuthority,IndependentTaskAuthority,EyeNotRequested;
             internal readonly ViveRawEyeObservation.Reason? EyeUnavailable;
-            internal bool HeadOnly {get{return EyeUnavailable.HasValue;}}
+            internal bool HeadOnly {get{return EyeUnavailable.HasValue||EyeNotRequested;}}
             internal bool InstalledPath {get{return Owner.installedSdkPath;}}
             internal RecordingFrameTicket(ViveProEyeWorker owner,object run,ViveProEyePoll frame,long revision,long loss,long statusRevision,bool statusEnabled,
-                bool taskAuthority=false,ViveRawEyeObservation.Reason? eyeUnavailable=null,bool independentTaskAuthority=false)
+                bool taskAuthority=false,ViveRawEyeObservation.Reason? eyeUnavailable=null,bool independentTaskAuthority=false,bool eyeNotRequested=false)
             {Owner=owner;RunIdentity=run;Frame=frame;Revision=revision;LossGeneration=loss;StatusRevision=statusRevision;StatusEnabled=statusEnabled;
-                TaskAuthority=taskAuthority;EyeUnavailable=eyeUnavailable;IndependentTaskAuthority=independentTaskAuthority;
+                TaskAuthority=taskAuthority;EyeUnavailable=eyeUnavailable;IndependentTaskAuthority=independentTaskAuthority;EyeNotRequested=eyeNotRequested;
                 EyeObserved=HeadOnly||frame==null||frame.Eye==null?-1:frame.Eye.ObservedLocalSeconds;
                 HeadObserved=frame==null||frame.Head==null?-1:frame.Head.ObservedLocalSeconds;}
             // Existing adversarial fixture constructor; cannot bypass the
@@ -236,7 +238,7 @@ namespace AvatarStroop.Runtime
             try
             {
                 var run=current;
-                if(disposed||run==null||!run.Ready||run.StopRequested||!GenerationLive(run)||run.StatusEverEnabled||
+                if(disposed||run==null||!run.Ready||run.StopRequested||!GenerationLive(run)||(run.StatusEverEnabled&&(!run.DeferredEye||run.EyePersistenceEnabled))||
                     Volatile.Read(ref statusRevoked)!=0)
                     return new RecordingStartReadiness(RecordingStartReadinessState.Unavailable,RecordingStartReadinessReason.WorkerUnavailable);
                 double now;var clock=sharedClock as MonotonicClock;
@@ -268,11 +270,12 @@ namespace AvatarStroop.Runtime
             try
             {
                 double now;
-                if(disposed||Volatile.Read(ref statusRevoked)!=0||!authority.MayReserve||current==null||!current.Ready||current.StopRequested||current.StatusEverEnabled||
+                if(disposed||Volatile.Read(ref statusRevoked)!=0||!authority.MayReserve||current==null||!TaskCarrierLive(current)||current.StopRequested||current.StatusEverEnabled||
                     !timebase.TryReadRecordingAdmissionTime(out now))return false;
                 current.StatusEverEnabled=true;current.StatusEnabled=true;current.StatusEnabledAt=now;
                 current.StatusAuthority=authority;current.StatusQueue=new ObservedEyeStatus[capacity];
-                if(captureAcquisition)
+                current.CaptureAcquisitionRequested=captureAcquisition;
+                if(captureAcquisition&&current.EyePersistenceEnabled)
                 {
                     current.AcquisitionEnabled=true;current.AcquisitionQueue=new ViveRawEyeAcquisition[AcquisitionCapacity];
                     current.AcquisitionSeen=new HashSet<ulong>();
@@ -293,7 +296,7 @@ namespace AvatarStroop.Runtime
             if(!Monitor.TryEnter(gate))return StatusDisposition.Busy;
             try
             {
-                if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||!current.Ready||current.StopRequested||!current.StatusEnabled||StatusAuthorityRevoked(current))
+                if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||!TaskCarrierLive(current)||current.StopRequested||!current.StatusEnabled||StatusAuthorityRevoked(current))
                     return StatusDisposition.Unavailable;
                 if(current.StatusFault)return StatusDisposition.Faulted;
                 if(current.StatusReserved!=null)return StatusDisposition.Reserved;
@@ -312,7 +315,7 @@ namespace AvatarStroop.Runtime
             if(!Monitor.TryEnter(gate))return StatusDisposition.Busy;
             try
             {
-                if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||!current.Ready||current.StopRequested||!current.StatusEnabled||StatusAuthorityRevoked(current))
+                if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||!TaskCarrierLive(current)||current.StopRequested||!current.StatusEnabled||StatusAuthorityRevoked(current))
                     return StatusDisposition.Unavailable;
                 if(current.StatusFault)return StatusDisposition.Faulted;
                 if(current.StatusReserved!=null)return StatusDisposition.Reserved;
@@ -378,7 +381,7 @@ namespace AvatarStroop.Runtime
             {
                 double now;var timebase=sharedClock as MonotonicClock;
                 if(disposed||Volatile.Read(ref statusRevoked)!=0||current==null||!Object.ReferenceEquals(current,runIdentity)||
-                    !current.Ready||current.StopRequested||!current.StatusEnabled||StatusAuthorityRevoked(current)||current.StatusFault||current.StatusSealed||
+                    !TaskCarrierLive(current)||current.StopRequested||!current.StatusEnabled||StatusAuthorityRevoked(current)||current.StatusFault||current.StatusSealed||
                     current.AcquisitionEnabled&&current.AcquisitionSource!=null&&!current.AcquisitionProviderDrained||
                     !allowEmpty&&current.StatusNextSequence==0||timebase==null||!timebase.TryReadRecordingAdmissionTime(out now)||now<current.LastStatusTime)return false;
                 current.StatusSealed=true;Volatile.Write(ref current.TaskCapability,null);InvalidateTicket(current);
@@ -471,7 +474,10 @@ namespace AvatarStroop.Runtime
         }
         static void RecordStatusEvidence(Run run,ViveProEyePoll poll,bool timeValid,double time)
         {
-            if(!run.StatusEnabled||StatusAuthorityRevoked(run)||run.StatusFault||run.StatusSealed)return;
+            if(!run.StatusEnabled||!run.EyePersistenceEnabled||StatusAuthorityRevoked(run)||run.StatusFault||run.StatusSealed)return;
+            // A post-boundary API return can still expose a cached warmup eye.
+            // Its eye-derived quality flags are outside this recording window too.
+            if(run.DeferredEye&&poll!=null&&poll.Eye!=null&&poll.Eye.ObservedLocalSeconds<=run.StatusEnabledAt)return;
             if(!timeValid||time<run.StatusEnabledAt||time<run.LastStatusTime)
             {
                 // A provider return observed before enable is simply outside
@@ -489,7 +495,7 @@ namespace AvatarStroop.Runtime
         public bool Starting {get{lock(gate){Reap();return current!=null&&current.Starting&&!current.StopRequested;}}}
         // Started means native client initialization succeeded, not valid eye tracking.
         public bool Started {get{lock(gate){Reap();return current!=null&&current.Ready&&!current.StopRequested&&GenerationLive(current);}}}
-        public bool Stopping {get{lock(gate){Reap();return current!=null&&(current.StopRequested||(!current.Starting&&!current.Ready));}}}
+        public bool Stopping {get{lock(gate){Reap();return current!=null&&(current.StopRequested||(!current.Starting&&!TaskCarrierLive(current)));}}}
         public bool CanStart {get{lock(gate){Reap();return !disposed&&!cleanupFailed&&current==null;}}}
         // Completion is independent of permission to restart after cleanup failure/disposal.
         public bool HasExited {get{lock(gate){Reap();return current==null;}}}
@@ -545,18 +551,24 @@ namespace AvatarStroop.Runtime
 
         // true acknowledges the asynchronous request, not completion or tracking readiness.
         public bool Start()
+        {return StartRun(false);}
+        // The carrier retains head/task authority without constructing or calling an eye client.
+        internal bool StartTaskOnly()
+        {return StartRun(true);}
+        bool StartRun(bool deferEye)
         {
             lock(gate)
             {
                 Reap();if(disposed||cleanupFailed||current!=null)return false;
                 long generation=Interlocked.Read(ref stopGeneration);if(generation<0)return false;
-                var run=new Run{StopGeneration=generation};completedDiagnostics=NoCaptureDiagnostics;
+                var run=new Run{StopGeneration=generation,DeferredEye=deferEye,EyePersistenceEnabled=!deferEye,Starting=!deferEye,
+                    Diagnostic=deferEye?"Eye recording is off during tutorial and practice.":"Starting eye client on its background thread."};completedDiagnostics=NoCaptureDiagnostics;
                 run.Thread=new Thread(()=>RunClient(run)){IsBackground=true,Name="VIVE Pro Eye native polling"};
                 Interlocked.Increment(ref recordingStartGeneration);current=run;headDiagnostic=null;
                 try{run.Thread.Start();return true;}
                 catch(Exception error)
                 {
-                    current=null;run.StopSignal.Dispose();
+                    current=null;run.StopSignal.Dispose();run.NativeStartSignal.Dispose();
                     idleDiagnostic="Cannot start eye worker: "+error.GetType().Name;return false;
                 }
             }
@@ -710,7 +722,8 @@ namespace AvatarStroop.Runtime
         {
             ViveRawEyeObservation.Reason? unavailable=null;
             var eye=frame.Eye;
-            if(run.StatusNextSequence==0||run.LastStatus==null||eye==null)unavailable=ViveRawEyeObservation.Reason.NoEye;
+            if(run.StatusNextSequence==0||run.LastStatus==null||eye==null||
+                (run.DeferredEye&&eye.ObservedLocalSeconds<=run.StatusEnabledAt))unavailable=ViveRawEyeObservation.Reason.NoEye;
             else if(!EyeUsableForTicket(frame)||!CallbackHealthFreshAt(frame,now)||now<eye.ObservedLocalSeconds)
                 unavailable=ViveRawEyeObservation.Reason.InvalidQuality;
             else if(run.HasTicketEye&&eye.FrameSequence==run.LastTicketFrame&&eye.Timestamp==run.LastTicketTimestamp)
@@ -945,6 +958,7 @@ namespace AvatarStroop.Runtime
             IViveProEyeClient client=null;ViveNativePollDelay pollDelay=null;string failure=null,finalDiagnostic=null;
             try
             {
+                if(run.DeferredEye&&WaitHandle.WaitAny(new WaitHandle[]{run.StopSignal,run.NativeStartSignal})!=1)return;
                 if(run.StopSignal.WaitOne(0))return;
                 client=factory();if(client==null)throw new InvalidOperationException("Client factory returned null");
                 if(run.StopSignal.WaitOne(0))return;
@@ -964,7 +978,7 @@ namespace AvatarStroop.Runtime
                     // status admission; a pre-admission call returning late
                     // is not evidence within the authorized observation span.
                     bool statusPollEligible;
-                    lock(gate){statusPollEligible=run.StatusEnabled&&!StatusAuthorityRevoked(run)&&!run.StatusFault&&Volatile.Read(ref statusRevoked)==0&&!run.StopRequested;}
+                    lock(gate){statusPollEligible=run.StatusEnabled&&run.EyePersistenceEnabled&&!StatusAuthorityRevoked(run)&&!run.StatusFault&&Volatile.Read(ref statusRevoked)==0&&!run.StopRequested;}
                     // The poll reservation and stop request race atomically.
                     // A call reserved before stop may complete, but its result
                     // is never published once stop wins the fence.
@@ -984,7 +998,7 @@ namespace AvatarStroop.Runtime
                         // Stop clears publication immediately. A late native return
                         // cannot restore a frame after stop/dispose was requested.
                         if(run.StopRequested||!GenerationLive(run))break;
-                        if(!run.StatusEverEnabled&&Volatile.Read(ref statusRevoked)==0)
+                        if((!run.StatusEverEnabled||!run.EyePersistenceEnabled)&&Volatile.Read(ref statusRevoked)==0)
                         {
                             var health=ClassifyRecordingStartStatus(statusTimeValid,statusObserved,livePoll);
                             var eye=livePoll==null?null:livePoll.Eye;
@@ -996,8 +1010,8 @@ namespace AvatarStroop.Runtime
                                 double published=0;bool publicationTimeValid=statusClock!=null&&statusClock.TryReadRecordingAdmissionTime(out published);
                                 RecordAcquisitionEvidence(run,poll,publicationTimeValid,published);}
                             if(Volatile.Read(ref statusRevoked)!=0||(run.StatusEverEnabled&&StatusAuthorityRevoked(run)))ClearStatusEvidence(run);}
-                        if(liveSource!=null&&liveSource.AcquisitionFaulted&&run.StatusEnabled)FaultStatusEvidence(run);
-                        if(!acquisitionSealOk&&run.StatusEnabled)FaultStatusEvidence(run);
+                        if(liveSource!=null&&liveSource.AcquisitionFaulted&&run.StatusEnabled&&run.EyePersistenceEnabled)FaultStatusEvidence(run);
+                        if(!acquisitionSealOk&&run.StatusEnabled&&run.EyePersistenceEnabled)FaultStatusEvidence(run);
                         if(!EyeUsableForTicket(livePoll))
                         {
                             // A channel gap invalidates unconsumed eye data,
@@ -1076,7 +1090,7 @@ namespace AvatarStroop.Runtime
                     run.Latest=null;ClearStatusEvidence(run);run.Ready=false;run.Starting=false;run.Completed=true;
                     run.Diagnostic=failure==null?finalDiagnostic:failure+" "+finalDiagnostic;
                     // Stop only signals an incomplete run under this same lock.
-                    run.StopSignal.Dispose();
+                    run.StopSignal.Dispose();run.NativeStartSignal.Dispose();
                 }
             }
         }

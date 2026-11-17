@@ -77,6 +77,125 @@ namespace AvatarStroop.Unity.Editor
         }
         static string Attempt(object claim,Func<bool> context,Func<bool> inputs,Action action)
         {return Call(claim,"TryExecute",context,inputs,action).ToString();}
+        public static void ValidateTaskOnly()
+        {
+            assertions=0;ViveSyntheticFixtureIsolation.OpenKnownSavedAnchor();
+            var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Additive);
+            var rigObject=new GameObject("TaskOnlyTrainingRig");var ownerObject=new GameObject("TaskOnlyTrainingOwner");
+            SceneManager.MoveGameObjectToScene(rigObject,scene);SceneManager.MoveGameObjectToScene(ownerObject,scene);
+            ViveProEyeWorker worker=null;object rawPump=null;int factories=0;
+            try
+            {
+                var clock=new MonotonicClock("task-only-training-input-fixture");
+                long headSequence=0;
+                worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(++headSequence,clock.Now,true,true,Rotation.Identity),
+                    ()=>{Interlocked.Increment(ref factories);throw new InvalidOperationException("SDK must remain unopened");});
+                Require((bool)Call(worker,"StartTaskOnly"),"dormant carrier did not start");
+                var choices=Choices(clock);
+                Func<bool> inputs=()=>(bool)Factory(typeof(ViveStroopDevelopmentBootstrap),"RawTaskOnlyStartInputsReady",choices,true,true,true,41,41);
+                Require(inputs()&&!Ready(worker)&&!worker.Started,"training unexpectedly required native eye readiness");
+                foreach(int missing in new[]{0,1,2,3})
+                    Require(!(bool)Factory(typeof(ViveStroopDevelopmentBootstrap),"RawTaskOnlyStartInputsReady",choices,
+                        missing!=0,missing!=1,missing!=2,missing==3?40:41,41),"training lost a head/focus/worker/fresh-input gate");
+                Require(!(bool)Factory(typeof(ViveStroopDevelopmentBootstrap),"RawTaskOnlyStartInputsReady",Choices(clock,false),true,true,true,41,41),"training accepted incomplete recording choices");
+                var claimType=typeof(ViveProEyeWorker).Assembly.GetType("AvatarStroop.Runtime.ViveRecordingStartClaim",true);
+                var claim=Activator.CreateInstance(claimType,Instance,null,new object[]{worker,true},null);int attempts=0;
+                Require(Attempt(claim,()=>true,inputs,()=>attempts++)=="Attempted"&&attempts==1,"dormant carrier could not claim task-only recording");
+                Require(Attempt(claim,()=>true,inputs,()=>attempts++)=="Invalid"&&attempts==1,"task-only claim replayed");
+                Require(!(bool)Factory(typeof(ViveStroopDevelopmentBootstrap),"FormalEyeStartRequired",false,true,0),"Preview incorrectly requires eyes");
+                Require((bool)Factory(typeof(ViveStroopDevelopmentBootstrap),"FormalEyeStartRequired",true,true,0),"first recorded formal block did not require eyes");
+                Require(!(bool)Factory(typeof(ViveStroopDevelopmentBootstrap),"FormalEyeStartRequired",true,false,0),"historical protocol changed");
+                var rig=rigObject.AddComponent<ViveStroopPreviewRig>();var owner=ownerObject.AddComponent<ViveStroopDevelopmentBootstrap>();
+                var geometry=DevelopmentGeometry.FromLocalDirections(new Vec3(0,0,1),new Vec3(1,0,0),"synthetic-task-only-geometry");
+                var choice=ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.NoAvatar,0,null);
+                var config=SessionConfiguration.WithFormalEyeRecordingOnly(SessionConfiguration.WithTrainingProtocol(
+                    SessionConfiguration.NamedNoAvatarDevelopment("task-only-ui-preview",51,choice),TrainingProtocol.TutorialExamV1));
+                var preview=new ViveDevelopmentParticipant(config,clock,geometry,ViveFixedTrackpadMapping.Create(),ViveFixedTrackpadMapping.SectorThreshold,true);
+                Set(owner,"participant",preview);Set(owner,"configured",true);Set(owner,"sharedClock",clock);Set(owner,"rig",rig);
+                Set(rig,"development",owner);Set(rig,"worker",worker);Set(rig,"clock",clock);Set(rig,"running",true);Set(rig,"headReady",true);Set(rig,"taskOnlyEyeSource",true);
+                var pumpType=typeof(ViveStroopPreviewRig).Assembly.GetType("AvatarStroop.Unity.ViveStroopEyePump",true);
+                Set(rig,"eyePump",Activator.CreateInstance(pumpType,Instance,null,new object[]{worker},null));
+                Require((bool)Property(rig,"TaskOnlyRecordingWorkerReady")&&!rig.RecordingWorkerReady,"native and task-only readiness were conflated");
+                Require((bool)Property(owner,"FormalEyeReadyForFirstBlock")&&!(bool)Property(owner,"CanWarmupFormalEye"),"Preview requires/warmed native eye tracking");
+                Call(rig,"ServiceFormalEyeWarmup");
+                Require(!(bool)Property(rig,"FormalEyeWarmupRequested")&&Volatile.Read(ref factories)==0,"training or Preview opened the SDK");
+                var plan=ViveNamedSimulationPlan.Select(Actor.Owner,"task-only-ui-plan",choice);
+                var rawConfig=SessionConfiguration.WithFormalEyeRecordingOnly(SessionConfiguration.WithTrainingProtocol(
+                    SessionConfiguration.NamedRecordingDevelopment("task-only-ui-record",51,plan,ViveNamedRecordingIntent.Select(Actor.Owner,"task-only-ui-intent",true,true)),TrainingProtocol.TutorialExamV1));
+                var recorded=new ViveDevelopmentParticipant(rawConfig,clock,geometry,ViveFixedTrackpadMapping.Create(),ViveFixedTrackpadMapping.SectorThreshold,true);
+                var runtime=typeof(ViveDevelopmentParticipant).Assembly;
+                var admissionType=runtime.GetType("AvatarStroop.Runtime.ViveNamedSessionFrameAdmission",true);
+                var admission=Factory(admissionType,"CreateSyntheticForTest",recorded,worker,clock,64);
+                Require((bool)Call(admission,"ConfirmTask")&&(bool)Call(admission,"ConfirmEye"),"task-only pump choices failed");
+                var budgetType=runtime.GetType("AvatarStroop.Runtime.ViveRawByteBudget",true);
+                Require((bool)Call(admission,"TryBindQueueBudget",Factory(budgetType,"SelectExplicit",33554432L)),"task-only queue budget bind failed");
+                var rawPumpType=runtime.GetType("AvatarStroop.Runtime.ViveNamedRawRecordingPump",true);
+                var writer=Activator.CreateInstance(rawPumpType.GetNestedType("SyntheticWriter",BindingFlags.NonPublic),Instance,null,new[]{admission},null);
+                rawPump=Factory(rawPumpType,"StartSyntheticWithStatusForTest",recorded,worker,clock,admission,writer,false);
+                Require(Call(rawPump,"PrepareStatus").ToString()=="Ready","task-only status preparation was unavailable");
+                object[] headFrame={null};
+                Require((bool)Call(worker,"TryPollTaskForRecording",headFrame),"task-only head poll failed");
+                var stage=rawPumpType.GetMethod("StageRigFrame",Instance,null,new[]{typeof(ViveProEyePoll),typeof(double)},null);
+                Require((bool)stage.Invoke(rawPump,new[]{headFrame[0],(object)1.0})&&Get(rawPump,"stagedEpoch")!=null,
+                    "fixture did not stage a real task-only epoch before the formal boundary");
+                var experiment=Get(recorded,"experiment");
+                experiment.GetType().GetProperty("BlockIndex",Instance).SetValue(experiment,0,null);
+                experiment.GetType().GetProperty("Phase",Instance).SetValue(experiment,Phase.BlockReady,null);
+                Set(owner,"participant",recorded);
+                Require(!(bool)Property(owner,"FormalEyeReadyForFirstBlock"),"recorded formal block accepted a dormant eye source");
+                Require(((string)Property(owner,"FormalEyeFirstBlockNotice")).Contains("No formal block"),"missing eye readiness has no actionable notice");
+                Set(owner,"namedRawPump",rawPump);
+                // Fixture-only setup creates the declared formal boundary. It
+                // is not a native block-plan receipt or a hardware readiness
+                // claim. The actual pump/rig hold must still refuse to expose
+                // or spend the five-second countdown without eye activation.
+                Call(experiment,"BeginCountdownCore",Actor.Owner,true);
+                Require(recorded.FormalEyeRecordingWindowStart.HasValue&&(bool)Property(recorded,"RawCountdownAwaitingSoftwareWitness"),
+                    "fixture did not create a pending formal countdown witness");
+                Require((bool)Property(rawPump,"FormalEyeActivationPending")&&(bool)Property(owner,"WaitingForFormalEyeActivation"),
+                    "real dormant pump is not recognized as the exact activation wait");
+                var camera=rigObject.AddComponent<Camera>();Set(rig,"previewCamera",camera);camera.cullingMask=~0;
+                Set(owner,"pendingRawPanelFrame",Time.frameCount);Set(owner,"pendingRawPanelRevision",1L);
+                Require((bool)Call(owner,"PrepareRawNonTrialScene")&&camera.cullingMask==0&&
+                    (int)Get(owner,"pendingRawPanelFrame")==-1&&Get(rawPump,"stagedEpoch")==null&&!owner.RecordingBlocked,
+                    "same-frame formal panel revealed a countdown or retained its old training epoch");
+                camera.cullingMask=~0;Call(rig,"GuardRawTaskBeforeCull",camera);
+                Require(camera.cullingMask==0&&!owner.RecordingBlocked,"pre-cull did not retain the intentional formal activation hold");
+                Require(!(bool)Call(owner,"CompleteRawPanelRender",new object[]{null})&&!owner.RecordingBlocked&&
+                    (bool)Property(recorded,"RawCountdownAwaitingSoftwareWitness"),
+                    "a pending activation callback witnessed the countdown or faulted an intentional hold");
+                using(var held=new ManualResetEvent(false))using(var release=new ManualResetEvent(false))
+                {
+                    var gate=Property(worker,"RecordingTicketGate");
+                    var holder=new Thread(()=>{lock(gate){held.Set();release.WaitOne(3000);}}){IsBackground=true};holder.Start();
+                    try
+                    {
+                        Wait(held);
+                        Require(Call(rawPump,"PrepareStatus").ToString()=="WaitingBaseline",
+                            "contended formal activation did not request a nonterminal wait");
+                    }
+                    finally{release.Set();Require(holder.Join(3000),"formal activation contention did not release");}
+                }
+                Set(rig,"rawBusyFrames",120);Set(rig,"rawBusySince",Time.realtimeSinceStartupAsDouble-3);
+                int eventCount=recorded.ReadEventsAfter(-1,4096).Count;
+                for(int retry=0;retry<3;retry++)Require((bool)Call(rig,"HoldRawBusy"),"formal readiness wait was mistaken for active task failure");
+                Require(!owner.RecordingBlocked&&recorded.Phase==Phase.Countdown&&
+                    (bool)Property(recorded,"RawCountdownAwaitingSoftwareWitness")&&recorded.ReadEventsAfter(-1,4096).Count==eventCount,
+                    "waiting advanced/faulted the formal countdown or emitted task events");
+                Require((int)Get(rig,"rawBusyFrames")==120,"formal activation consumed the unrelated initial startup contention budget");
+                experiment.GetType().GetProperty("Phase",Instance).SetValue(experiment,Phase.MainTask,null);
+                Require(!(bool)Property(owner,"WaitingForFormalEyeActivation"),"pending native eyes allow ordinary active-task waits");
+                Require(Volatile.Read(ref factories)==0,"input/eligibility checks opened the SDK");
+                Debug.Log("VIVE_TASK_ONLY_TRAINING_UI_FIXTURE_PASSED: "+assertions+" assertions; no SDK initialization, eye readiness bypass only for training, preserved head/controller/choice gates, Preview independence and formal block rejection without eyes.");
+                Set(rig,"worker",null);Set(rig,"eyePump",null);Set(rig,"running",false);
+            }
+            finally
+            {
+                if(rawPump!=null)Call(rawPump,"Stop");
+                if(worker!=null){Call(worker,"TryRequestStop");worker.Stop(1000);worker.Dispose();}
+                UnityEngine.Object.DestroyImmediate(ownerObject);UnityEngine.Object.DestroyImmediate(rigObject);EditorSceneManager.CloseScene(scene,true);
+            }
+        }
         public static void Validate()
         {
             assertions=0;ViveSyntheticFixtureIsolation.OpenKnownSavedAnchor();

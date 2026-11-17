@@ -34,6 +34,7 @@ namespace AvatarStroop.Unity.Editor
             Run("recording focus policy",ViveRecordingFocusFixture.Validate);
             Run("recording start readiness",ViveRecordingReadinessUiFixture.Validate);
             Run("asynchronous recording start input/claim",ViveRecordingStartReadinessFixture.Validate);
+            Run("task-only Tutorial and Exam without native eyes",ViveRecordingStartReadinessFixture.ValidateTaskOnly);
             Run("view failure diagnostics",ViveViewFailureDiagnosticFixture.Validate);
             Run("pre-session choices",VivePreSessionChoiceFixture.Validate);
             Run("evidence panel isolation",ViveEvidencePanelIsolationFixture.Validate);
@@ -51,7 +52,7 @@ namespace AvatarStroop.Unity.Editor
             Run("named automatic presentation",ViveNamedAutomaticPresentationFixture.Validate);
             Run("named no-avatar presentation",ViveNamedAutomaticPresentationFixture.ValidateNoAvatar);
             Run("named multi-block presentation",ViveNamedAutomaticPresentationFixture.ValidateMultiBlock);
-            Debug.Log("VIVE_OWNER_UI_REGRESSION_SYNTHETIC_FIXTURE_PASSED: 35 suites; no physical headset acceptance.");
+            Debug.Log("VIVE_OWNER_UI_REGRESSION_SYNTHETIC_FIXTURE_PASSED: 36 suites; no physical headset acceptance.");
         }
     }
 }

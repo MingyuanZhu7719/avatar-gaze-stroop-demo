@@ -80,7 +80,7 @@ namespace AvatarStroop.Unity.Editor
                 Require(bootstrap.Configured,"explicit no-avatar preview rejected");
                 NoHardwareOrRecording(bootstrap,rig);
                 var preview=(ViveDevelopmentParticipant)Get(bootstrap,"participant");
-                Require(preview.UsesTutorial&&preview.PracticeTrialCount==10&&!preview.ObservationEnabled&&!(bool)Get(bootstrap,"observationOptIn"),
+                Require(preview.UsesTutorial&&preview.PracticeTrialCount==10&&preview.FormalEyeRecordingOnly&&!preview.ObservationEnabled&&!(bool)Get(bootstrap,"observationOptIn"),
                     "latest configuration admitted the legacy eight-trial observation adapter");
                 Call(bootstrap,"ChoosePracticeObservation",true);Call(bootstrap,"ChoosePracticeObservation",false);
                 Require(Get(bootstrap,"practicePreview")==null&&!(bool)Get(bootstrap,"practiceEyeChoice")&&!(bool)Get(bootstrap,"practiceTaskChoice"),

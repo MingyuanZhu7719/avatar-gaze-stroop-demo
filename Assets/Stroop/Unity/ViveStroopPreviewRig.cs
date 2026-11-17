@@ -140,7 +140,7 @@ namespace AvatarStroop.Unity
         {
             result=null;
             if(requester==null||!requester.MatchesRawRecordingKind(legacy)||!requester.RawRecordingDesignAvailable||
-                !object.ReferenceEquals(development,requester)||!RecordingWorkerReady||!worker.UsesInstalledSdkPath)return false;
+                !object.ReferenceEquals(development,requester)||!(requester.FormalEyeRecordingOnly?TaskOnlyRecordingWorkerReady:RecordingWorkerReady)||!worker.UsesInstalledSdkPath)return false;
             result=worker;return true;
         }
         internal ViveStroopRecordingController EnableRecording(ViveDevelopmentParticipant task,IClock taskClock,string directory,bool eyeChoice,bool taskChoice)
@@ -252,6 +252,7 @@ namespace AvatarStroop.Unity
                 bool celebration=development!=null&&development.CompletedTaskThankYouReady;
                 bool practice=development!=null&&development.PracticeCountdownVisible&&XrFocused&&!ControllerVisualUnavailable;
                 if(practice){rawHoldView.SetPracticeInstruction(development.PracticeResponseInstruction);rawHoldView.SetPracticeExam(development.PracticeIsExam);}
+                rawHoldView.SetFormalEyeWait(development!=null&&development.WaitingForFormalEyeActivation);
                 // The last questionnaire starts the six-second celebration;
                 // file conversion and native cleanup continue independently.
                 // Only the isolated, input-free layer is ever revealed here.
@@ -340,6 +341,7 @@ namespace AvatarStroop.Unity
                     {BlockTaskPresentation();development.NoteRawFirstFault("raw_precull_other_camera");development.FailNamedRawAfterTask();}
                     return;
                 }
+                if(development.HoldFormalEyeActivation())return;
                 // Update deliberately masks the task on focus/tracking holds
                 // and while a first capture gate is busy. A camera rendering
                 // no task layers and holding no render evidence cannot show
@@ -440,8 +442,8 @@ namespace AvatarStroop.Unity
             GUILayout.Label("Headset and eye tracking",label);
             GUILayout.Label(stopping?"Stopping headset view...":starting?"Starting headset view...":
                 !running?"Headset view is off.":!headReady?"Put on the headset and follow its prompt.":!XrFocused?"Physical head pose ready. XR focus unavailable; task interaction is held.":
-                worker==null?(AutoEyeStartPending?"Headset ready. Eye tracking starts automatically.":"Headset ready. Eye tracking is off."):
-                worker.Starting?"Headset ready. Eye tracking client is starting.":"Headset ready. Eye tracking client is on.");
+                worker==null?(AutoEyeStartPending?"Headset ready. Input starts automatically.":"Headset ready. Eye tracking is off."):
+                TrainingEyeSourceDormant?"Headset ready. Eye tracking is off during Tutorial and Exam.":worker.Starting?"Headset ready. Eye tracking client is starting.":"Headset ready. Eye tracking client is on.");
             if(running&&(!headReady||!XrFocused))GUILayout.Label(CurrentHeadDiagnostic,label);
             if(!String.IsNullOrEmpty(lastEyeClientFailure))GUILayout.Label("Last eye-client failure: "+lastEyeClientFailure,label);
             bool previousEnabled=GUI.enabled;
@@ -455,7 +457,7 @@ namespace AvatarStroop.Unity
             if(stacked)GUILayout.BeginVertical();else GUILayout.BeginHorizontal();
             GUI.enabled=previousEnabled&&!AutoEyeStartPending&&EyeDiagnosticStartAllowed(false);
             if(GUILayout.Button("Enable eye tracking",button,GUILayout.Height(45)))BeginEye();
-            GUI.enabled=previousEnabled&&(worker!=null||AutoEyeStartPending)&&!stopping&&(development==null||!development.NamedRawCompletionActive);
+            GUI.enabled=previousEnabled&&!TrainingEyeSourceDormant&&(worker!=null||AutoEyeStartPending)&&!stopping&&(development==null||!development.NamedRawCompletionActive);
             if(GUILayout.Button("Stop eye tracking",button,GUILayout.Height(45)))StopEye();
             if(stacked)GUILayout.EndVertical();else GUILayout.EndHorizontal();GUI.enabled=previousEnabled;
             if(!String.IsNullOrEmpty(lastViewFailure))GUILayout.Label(lastViewFailure,label);
@@ -517,7 +519,7 @@ namespace AvatarStroop.Unity
                 if(clock==null)throw new InvalidOperationException("Configured task clock is unavailable.");
                 headSequence=0;
                 starting=false;running=true;SetStatus(AutoEyeStartPending?
-                    "Put on the headset and follow the startup prompt. Eye diagnostics will start automatically.":
+                    "Put on the headset and follow the startup prompt. Head and controller input will start automatically.":
                     "Put on the headset and follow the startup prompt. Eye diagnostics are off.");
             }
             catch(Exception e){Fail("Classroom view unavailable: "+e.GetType().Name,e);}
@@ -537,11 +539,13 @@ namespace AvatarStroop.Unity
                 hasSeenUsableEye=false;
                 HideGazeMarker();gazeContinuity.Reset();
                 worker=ViveProEyeWorker.CreateInstalled(clock,ReadHead);
-                if(!worker.Start()){RetainEyeClientFailure(worker.Diagnostic);throw new InvalidOperationException("Eye worker could not start.");}
+                taskOnlyEyeSource=development!=null&&development.DeferEyeForCurrentView;formalEyeWarmupRequested=false;
+                if(!(taskOnlyEyeSource?worker.StartTaskOnly():worker.Start())){RetainEyeClientFailure(worker.Diagnostic);throw new InvalidOperationException("Input worker could not start.");}
                 eyePump=new ViveStroopEyePump(worker);
                 source=new ViveProEyeHeadEyeSource("vive-classroom-preview-"+epoch,0,0,"vive-pro-eye/operator/classroom-diagnostic-"+epoch,
                     clock,eyePump,new ViveProEyeRehearsalCoordinates());
-                SetStatus("Eye diagnostic starting. This does not start task or eye recording.");
+                SetStatus(taskOnlyEyeSource?"Head and controller input ready. Eye tracking is off during Tutorial and Exam.":
+                    "Eye diagnostic starting. This does not start task or eye recording.");
             }
             catch(Exception e){RememberViewFailure("Eye diagnostic unavailable: "+e.GetType().Name,e);StopEye();SetStatus(lastViewFailure);}
         }
@@ -653,6 +657,15 @@ namespace AvatarStroop.Unity
         internal void CompletePreparationPanel(){rawBusyFrames=0;rawBusySince=-1;}
         bool HoldRawBusy()
         {
+            // Native readiness can change between the explicit block start
+            // and persistence activation. No formal frame or countdown
+            // witness is admitted until the same run opens its eye queues.
+            if(development.WaitingForFormalEyeActivation)
+            {
+                BlockTaskPresentation();
+                SetStatus("Waiting for eye tracking before the formal countdown. No trial input was processed.");
+                return true;
+            }
             double now=Time.realtimeSinceStartupAsDouble;
             if(rawBusySince<0)rawBusySince=now;
             if(!development.CanWaitForNamedRawBaseline)
@@ -765,12 +778,19 @@ namespace AvatarStroop.Unity
                 // Preserve ordered status records when available. A busy eye
                 // publication lock does not revoke fresh task/head authority;
                 // the optional observation is explicitly marked SnapshotBusy.
+                ServiceFormalEyeWarmup();
                 var preparation=development.PrepareNamedRawStatus();
                 if(preparation!=ViveNamedRawRecordingPump.Preparation.Ready&&preparation!=ViveNamedRawRecordingPump.Preparation.Busy)
                 {
                     if(previewCamera!=null)previewCamera.cullingMask=0;
-                    if(preparation==ViveNamedRawRecordingPump.Preparation.WaitingBaseline&&development.CanWaitForNamedRawBaseline)
-                    {if(view!=null)view.SetPresentationAvailable(false);SetStatus("Waiting for initial eye status; no task input is processed.");}
+                    if(preparation==ViveNamedRawRecordingPump.Preparation.WaitingBaseline&&
+                        (development.CanWaitForNamedRawBaseline||development.WaitingForFormalEyeActivation))
+                    {
+                        if(view!=null)view.SetPresentationAvailable(false);
+                        SetStatus(development.WaitingForFormalEyeActivation?
+                            "Waiting for eye recording to become ready. The formal countdown has not started.":
+                            "Waiting for initial recording status; no task input is processed.");
+                    }
                     else
                     {development.NoteRawFirstFault("rig_eye_status_unavailable_"+preparation);development.FailNamedRawBeforeFrame();SetStatus("Eye status unavailable; task safety is stopped or pending.");}
                     return;
@@ -803,7 +823,7 @@ namespace AvatarStroop.Unity
                 // Native cleanup may outlive the Stop action. Keep head view
                 // responsive and never dereference the now-cleared eye source.
                 if(stopping){ReadHead();if(development!=null)development.Poll(headReady);SetStatus("Stopping eye preview; waiting for native cleanup. No new samples are accepted.");return;}
-                if((development==null||!development.NamedRawPumpAttached)&&!worker.Starting&&!worker.Started&&!worker.Stopping){HandleUnavailableEyeClient();return;}
+                if((development==null||!development.NamedRawPumpAttached)&&!worker.IsTaskOnlyRecordingRun&&!worker.Starting&&!worker.Started&&!worker.Stopping){HandleUnavailableEyeClient();return;}
                 if(eyePump==null)throw new InvalidOperationException("Eye pump unavailable.");
                 var currentPump=eyePump;
                 if(development!=null&&development.NamedRawPumpAttached)
@@ -938,7 +958,8 @@ namespace AvatarStroop.Unity
                     }
                     if(development!=null)development.ObservePracticeFrame(currentPump.Poll());
                     if(usable)hasSeenUsableEye=true;
-                    SetStatus(!headReady?"Head tracking unavailable; recording is off.":hasSeenUsableEye?
+                    SetStatus(!headReady?"Head tracking unavailable; recording is off.":TrainingEyeSourceDormant?
+                        "Head and controller input ready. Eye tracking is off; no eye data is recorded in Tutorial or Exam.":hasSeenUsableEye?
                         "At least one usable eye direction received since start. Current quality is not verified. Recording is off.":
                         "Waiting for a fresh valid eye direction. Recording is off.");
                 }

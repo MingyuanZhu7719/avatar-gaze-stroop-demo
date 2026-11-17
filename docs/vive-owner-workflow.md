@@ -17,6 +17,8 @@ The current Vive participant flow trains only the task selected for that session
 
 Tracking interruptions are retained as technical events, not scored as incorrect answers. Recording distinguishes `tutorial`, `practice_exam` and `formal`, with exam attempt and tutorial round identifiers. The analyzer keeps training out of formal results. This flow is versioned `tutorial-exam-v1`; older recordings and legacy test configurations keep their original eight-question, six-correct practice protocol.
 
+The current recording build uses eye policy `formal-session-v1`. Tutorial and practice exam record task answers but do not call the eye SDK or save eye, gaze, AOI or eye-quality records. After the exam is passed, eye initialization/readiness can run during formal preparation. Eye persistence begins at the first formal block countdown and continues through all formal blocks, questionnaires and rests until the session ends. Preparation samples are not saved. The analysis report labels training eye recording `NOT_REQUESTED_TRAINING`, so its absence is not treated as missing data.
+
 ## Participant application
 
 | Step | Preview | Record locally |
@@ -24,8 +26,8 @@ Tracking interruptions are retained as technical events, not scored as incorrect
 | Run mode | Choose **Preview (no files)**. | Choose **Record locally**. This is a development self-test, not study admission. |
 | Design | Select the existing design and any required lists. | Select Legacy A/B/C/D or Named multi-block. For Named, choose an option and a stimulus list for each block; scroll to reach all rows. |
 | Setup | **Configure preview (no recording)**. | Review the suggested new private session folder (or enter an existing private local folder). Acknowledge the self-test notice and click **Prepare raw + CSV and arm recording + Tutorial**. |
-| Hardware | **Start classroom view**; eye diagnostics start automatically where supported. | **Start classroom view**; eye diagnostics start automatically when ready. Complete both separate choices in the headset and release controls. |
-| Start | **Begin tutorial**. No task, eye or CSV files are saved. | Recording and tutorial start automatically once both choices and current safety checks pass. The participant chooses when to enter the exam. Formal plan confirmation and **Begin first block** stay separate. |
+| Hardware | **Start classroom view**. | **Start classroom view**, complete both separate recording choices in the headset and release controls. Tutorial and exam need current head/controller tracking; eye readiness is checked after passing, before formal recording. |
+| Start | **Begin tutorial**. No task, eye or CSV files are saved. | Task recording and tutorial start automatically once both choices and current safety checks pass. Eye recording remains off during training. The participant chooses when to enter the exam. Formal plan confirmation and **Begin first block** stay separate. |
 | Completion | Preview results remain in memory until close. | Click **Open CSV** after recording and file cleanup finish to open the current session's CSV in the Windows default app. Raw recording continues to be saved, but its candidate-path controls are no longer displayed. A fault or unconfirmed close keeps CSV opening unavailable. |
 
 Raw + CSV preparation checks that the full generated CSV path fits within 259 characters for the spreadsheet application. New session folders use a compact `s-UTC-GUID` name; use a physically shorter installation or data folder if preparation reports a path-length error. Older overlong files remain unchanged and can be read through the local study analyzer; an 8.3 path alias does not reliably avoid Excel's limit.

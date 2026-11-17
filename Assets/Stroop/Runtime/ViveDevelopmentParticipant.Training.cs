@@ -7,6 +7,8 @@ namespace AvatarStroop.Runtime
     {
         int tutorialMenuSelection;
         public bool UsesTutorial {get{return experiment.Configuration.UsesTutorial;}}
+        public bool FormalEyeRecordingOnly {get{return experiment.Configuration.FormalEyeRecordingOnly;}}
+        public double? FormalEyeRecordingWindowStart {get{return experiment.FormalEyeRecordingWindowStart;}}
         public int PracticeTrialCount {get{return experiment.Configuration.PracticeTrialCount;}}
         public int PracticeAttempt {get{return experiment.PracticeAttempt;}}
         public int PracticeCorrect {get{return experiment.PracticeCorrect;}}

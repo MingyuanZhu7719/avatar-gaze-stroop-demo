@@ -36,6 +36,8 @@ The fixed trackpad mapping is up/red, right/green, down/blue, left/yellow. In qu
 
 Choose **Ink colour** or **Word meaning** before configuring the session. Ink colour remains the default; Word meaning answers RED shown in green with red. The rule stays fixed through tutorial, exam and all blocks and is recorded in task events. Tutorial has no question limit and provides feedback; the exam reports only its final score. The practice exam and each block begin with a five-second countdown; each completed block shows fireworks before its questionnaire. The final questionnaire is followed immediately by six seconds of colorful fireworks and “Thank you for participating!” File conversion and eye cleanup continue in the background; the desktop reports their actual result separately.
 
+Tutorial and practice exam keep behavioural records but do not run or record eye tracking. After the exam is passed, the eye system prepares for formal recording. Eye persistence starts at the first formal block countdown and continues through the formal blocks, questionnaires and rests. This explicit `formal-session-v1` policy is reported as `NOT_REQUESTED_TRAINING` for training; older recordings keep their original eye-recording interpretation.
+
 For the separate accuracy check, choose **Fixed-target eye validation** before configuring a task. The [validation guide](docs/vive-gaze-validation.md) explains target timing, the recorded files and interpretation. Its completion message is not an accuracy pass.
 
 ## Build and test

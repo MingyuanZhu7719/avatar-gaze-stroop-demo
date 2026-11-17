@@ -63,11 +63,11 @@ namespace AvatarStroop.Unity
             double taskPoll,eyePoll,now;
             if(!recordingSetup.TryGetObservedTimes(sharedClock,out taskPoll,out eyePoll)||!sharedClock.TryReadRecordingAdmissionTime(out now))return;
             var startWorker=rig.CurrentRawStartWorker;
-            if(startWorker==null){message="Enable eye tracking before requesting recording. No recording has started.";return;}
+            if(startWorker==null){message=participant.FormalEyeRecordingOnly?"Waiting for head/controller input to start task recording.":"Enable eye tracking before requesting recording. No recording has started.";return;}
             rawStartIntent=new RawStartIntent{Choices=recordingSetup,Participant=participant,Clock=sharedClock,
                 Budget=recordingSetup.Budget,Folder=recordingSetup.DirectoryPath,Revision=recordingSetup.Revision,
                 Design=recordingSetupDesign,Legacy=legacy,Output=output,Csv=csv,CsvBytes=csvBytes,CsvTimeout=csvTimeout,RequestedAt=now,
-                Worker=startWorker,WorkerGeneration=startWorker.RecordingStartGeneration,Claim=new ViveRecordingStartClaim(startWorker),
+                Worker=startWorker,WorkerGeneration=startWorker.RecordingStartGeneration,Claim=new ViveRecordingStartClaim(startWorker,participant.FormalEyeRecordingOnly),
                 AutomaticArm=consentAutoStart!=null&&consentAutoStart.RequestsCaptured?consentAutoStart:null};
             message="Start requested. Recording has not started. Keep the headset on, restore tracking, and release Trigger, Menu and trackpad.";
             Debug.Log("VIVE_RAW_START_REQUESTED: waiting for current neutral controller and head/eye validation.");

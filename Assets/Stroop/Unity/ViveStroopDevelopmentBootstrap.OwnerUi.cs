@@ -63,10 +63,12 @@ namespace AvatarStroop.Unity
                 {ClearRawPracticeRequest();message="Pending practice start canceled. No trial started.";}
             }
             DrawFormalConfirmationControls();
-            GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz;
+            GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&FormalEyeReadyForFirstBlock;
             if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&GUILayout.Button("Begin first block"))
             {if(namedRawPump!=null)RequestNamedBlockPlanStart(false);else Run(()=>participant.OwnerBeginBlock(Actor.Owner));}
             GUI.enabled=true;
+            if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&!FormalEyeReadyForFirstBlock)
+                GUILayout.Label(FormalEyeFirstBlockNotice,recordingWrap);
         }
         // Kept outside the scrollable setup/status body by the desktop rig.
         // Explicit withdrawal remains available; manual pause is not an input action.
@@ -227,7 +229,7 @@ namespace AvatarStroop.Unity
                     csvCleanupSeconds=GUILayout.TextField(csvCleanupSeconds,GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
                 }
                 GUILayout.Label("The offered folder is created only when you explicitly prepare. Custom paths must already exist. The writer checks access again after both choices.",recordingWrap);
-                GUILayout.Label("Task responses, ratings and real eye/head data stay in this folder. No upload. Eye data may identify you.",recordingWrap);
+                GUILayout.Label("Task responses are saved during training and the experiment. Eye data begins with the first formal countdown. No upload. Eye data may identify you.",recordingWrap);
                 if(legacyWozRecordingSelected)GUILayout.Label("WoZ also saves mapped operator head/eye poses locally. Participant eyes, answers and ratings never go to the operator.",recordingWrap);
                 GUILayout.Label("Withdrawal stops further work, but does not delete existing files. Failures leave output unconfirmed. Not validated for study use.",recordingWrap);
                 controlledRecordingNoticeAccepted=GUILayout.Toggle(controlledRecordingNoticeAccepted,"I request a local development self-test (not a study participant session).",GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
@@ -247,7 +249,7 @@ namespace AvatarStroop.Unity
                 if(!available)GUILayout.Label("Recording is unavailable in this build. No preview will start from this path.");
                 else if(!ControlledRecordingNoticeCurrent)GUILayout.Label("Next: review the local-data notice and select the checkbox.");
                 else if(!csvValid)GUILayout.Label("Enter valid CSV size and timeout limits.");
-                OwnerNotice("This button explicitly requests local raw + CSV output and Tutorial after both headset choices. Then start the classroom view once. Eye preview starts without saving data; accepting both choices and releasing controls starts recording and Tutorial automatically. Formal blocks still need the operator. Preparing may create one empty session folder, but no task, gaze or CSV files.");
+                OwnerNotice("This button requests local task output and Tutorial after both headset choices. Start the classroom view once. Tutorial and Exam save task responses only. Eye recording starts with the first formal countdown after its readiness check. Formal blocks still need the operator. Preparing may create one empty folder, but no task, eye or CSV files.");
                 GUILayout.Label("The setup arm expires after 15 minutes; after both choices, the automatic start expires after 3 minutes. No automatic retry.",recordingWrap);
             }
             else
@@ -317,6 +319,9 @@ namespace AvatarStroop.Unity
             if(!ControllerUiChecked)return "Start recording: waiting for a current controller check. "+ControllerUiDiagnostic;
             if(!ControllerUiReady)return "Start recording: controller input is not ready. "+ControllerUiDiagnostic;
             if(recordingSelectionFreshFrame!=Time.frameCount)return "Start recording: waiting for current neutral controls. Release Trigger, Menu and the trackpad.";
+            if(participant!=null&&participant.FormalEyeRecordingOnly)
+                return rig.TaskOnlyRecordingWorkerReady?"Task recording is ready. Tutorial and Exam do not record eye data.":
+                    "Start task recording: waiting for the head/controller input service. Eye tracking is not required for training.";
             if(!rig.RecordingWorkerReady)return "Start recording: enable eye tracking and wait for the client to be ready.";
             var eyeReadiness=rig.RawStartReadiness;
             if(!eyeReadiness.HasValue||!eyeReadiness.Value.Ready)return ViveStroopPreviewRig.DescribeRawStartReadiness(eyeReadiness);

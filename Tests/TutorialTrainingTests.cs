@@ -47,6 +47,31 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("Formal eye recording declaration stays closed through training and opens once at first formal countdown",()=>{
+                for(int mode=0;mode<3;mode++)
+                {
+                    var original=Configuration(mode);var configured=SessionConfiguration.WithFormalEyeRecordingOnly(original);
+                    Check.True(!original.FormalEyeRecordingOnly&&configured.FormalEyeRecordingOnly);
+                    Check.Equal("formal-session-v1",configured.EyeRecordingPolicy);
+                    var clock=new ManualClock();var e=new Experiment(configured,clock);StartTutorial(e);
+                    Check.True(!e.FormalEyeRecordingWindowStart.HasValue);
+                    RequestExam(e,clock);Exam(e,clock,7);e.ContinuePracticeExamResult();
+                    Check.True(!e.FormalEyeRecordingWindowStart.HasValue);
+                    RequestExam(e,clock);Exam(e,clock,8);e.ContinuePracticeExamResult();
+                    Check.Equal(Phase.BlockPreparation,e.Phase);Check.True(!e.FormalEyeRecordingWindowStart.HasValue);
+                    e.LockBlock(Actor.Owner,ControlSelection.Automatic,"owner");
+                    Check.Equal(Phase.BlockReady,e.Phase);Check.True(!e.FormalEyeRecordingWindowStart.HasValue);
+                    Check.Throws<InvalidOperationException>(()=>e.BeginCountdown(Actor.Owner,false));
+                    Check.True(!e.FormalEyeRecordingWindowStart.HasValue);
+                    e.BeginCountdown(Actor.Owner,true);double boundary=e.FormalEyeRecordingWindowStart.Value;
+                    Check.Equal(clock.Now,boundary);Check.Equal(1,e.Events.Count(x=>x.Kind=="formal_eye_recording_window_open"));
+                    e.Pause(Actor.Owner);clock.Advance(1);e.Resume(true);
+                    Check.Equal(boundary,e.FormalEyeRecordingWindowStart.Value);
+                    Check.Equal(1,e.Events.Count(x=>x.Kind=="formal_eye_recording_window_open"));
+                    Check.True(e.Events.All(x=>x.Fields["eye_recording_policy"]=="formal-session-v1"));
+                    Check.True(!New(new ManualClock(),mode).Events[0].Fields.ContainsKey("eye_recording_policy"));
+                }
+            });
             suite.Run("Tutorial protocol preserves historical eight-six practice and explicitly opts in to ten-eight",()=>{
                 var legacy=Fixtures.New(new ManualClock()).Configuration;
                 Check.True(!legacy.UsesTutorial);Check.Equal(8,legacy.PracticeTrialCount);Check.Equal(6,legacy.PracticePassCorrect);
