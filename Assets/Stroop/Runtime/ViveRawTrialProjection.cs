@@ -303,7 +303,7 @@ namespace AvatarStroop.Runtime
         internal void ObserveEyeQuality(long ordinal,double time,int state,int reason,long cursor)
         {if(eyeQuality.Count>=MaxStatuses)throw new ProjectionLimit();eyeQuality.Add(new ViveRawObservedEyeQuality(ordinal,time,state,reason,cursor));}
         internal void ObservePreparedPlan(ViveRawPreparedPlan prepared)
-        {if(prepared==null){checked{unsupportedPlans++;}return;}if(preparedPlans.Count>=6)throw new ProjectionLimit();preparedPlans.Add(prepared);}
+        {if(prepared==null){checked{unsupportedPlans++;}return;}if(preparedPlans.Count>=MaxTrials)throw new ProjectionLimit();preparedPlans.Add(prepared);}
         internal ViveRawTrialProjection Finish()
         {var observed=new List<ViveRawObservedTrial>(trials.Count);foreach(var t in trials)observed.Add(new ViveRawObservedTrial(t));
             return new ViveRawTrialProjection(observed,new List<ViveRawObservedRating>(ratings),new List<ViveRawObservedPlanBlock>(blocks),

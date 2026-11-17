@@ -31,15 +31,18 @@ namespace AvatarStroop.Runtime
         internal sealed class InvalidPlan:Exception {}
         readonly Dictionary<string,ViveRawPreparedPlan> plans=new Dictionary<string,ViveRawPreparedPlan>(StringComparer.Ordinal);
         readonly HashSet<string> priorPracticeLists=new HashSet<string>(StringComparer.Ordinal);
-        readonly bool[] priorMainTrials=new bool[4],priorPracticeAttempts=new bool[2];bool untrackedPriorPractice;
+        readonly bool[] priorMainTrials=new bool[4];
+        readonly HashSet<int> priorPracticeAttempts=new HashSet<int>();bool untrackedPriorPractice;
         sealed class RetrySlot
         {
             internal string Trial;
             internal int Segment;
             internal bool TrackingInterrupted,Responded;
+            internal string StimulusIdentity;
         }
-        // At most 112 fixed slots (two practice attempts + four main blocks).
-        readonly RetrySlot[] retrySlots=new RetrySlot[112];
+        // One slot per observed planned item. The new training protocol may
+        // contain any number of exam attempts; file-reader bounds still apply.
+        readonly Dictionary<string,RetrySlot> retrySlots=new Dictionary<string,RetrySlot>(StringComparer.Ordinal);
         RetrySlot currentRetrySlot;
         int currentRetryBlock;
         internal void ObserveOutcome(string kind,IReadOnlyDictionary<string,string> fields,int block,int segment,string trialId)
@@ -48,7 +51,8 @@ namespace AvatarStroop.Runtime
             if(slot==null||block!=currentRetryBlock||segment!=slot.Segment||String.IsNullOrEmpty(trialId)||trialId!=slot.Trial)return;
             if(kind=="first_response"||kind=="trial_timed_out"){slot.Responded=true;slot.TrackingInterrupted=false;return;}
             string reason;
-            if(!slot.Responded&&fields.TryGetValue("reason",out reason)&&reason=="tracking_gap")slot.TrackingInterrupted=true;
+            if(!slot.Responded&&fields.TryGetValue("reason",out reason)&&
+                (reason=="tracking_gap"||IsTraining(fields)&&reason=="training_interruption"))slot.TrackingInterrupted=true;
         }
         internal int UnsupportedEvents {get;private set;}
         static bool ColourName(string value)
@@ -71,7 +75,9 @@ namespace AvatarStroop.Runtime
             string seed=list.Substring(prefix.Length,list.Length-prefix.Length-suffix.Length);uint value;
             return UInt32.TryParse(seed,NumberStyles.None,CultureInfo.InvariantCulture,out value)&&seed==value.ToString(CultureInfo.InvariantCulture);
         }
-        static bool TryPracticeId(string session,string trialId,out int attempt)
+        static bool IsTraining(IReadOnlyDictionary<string,string> fields)
+        {string value;return fields.TryGetValue("training_protocol",out value)&&value=="tutorial-exam-v1";}
+        static bool TryPracticeId(string session,string trialId,bool training,out int attempt)
         {
             attempt=0;if(String.IsNullOrEmpty(session)||String.IsNullOrEmpty(trialId))return false;
             string prefix=session+"/p";if(!trialId.StartsWith(prefix,StringComparison.Ordinal))return false;
@@ -79,15 +85,15 @@ namespace AvatarStroop.Runtime
             string a=trialId.Substring(prefix.Length,separator-prefix.Length),i=trialId.Substring(separator+2);int index;
             int retry=i.IndexOf("/retry-s",StringComparison.Ordinal);
             if(retry>=0)i=i.Substring(0,retry);
-            return Int32.TryParse(a,NumberStyles.None,CultureInfo.InvariantCulture,out attempt)&&(attempt==1||attempt==2)&&a==attempt.ToString(CultureInfo.InvariantCulture)&&
-                Int32.TryParse(i,NumberStyles.None,CultureInfo.InvariantCulture,out index)&&index>=0&&index<8&&i==index.ToString(CultureInfo.InvariantCulture);
+            return Int32.TryParse(a,NumberStyles.None,CultureInfo.InvariantCulture,out attempt)&&attempt>=1&&(training||attempt<=2)&&a==attempt.ToString(CultureInfo.InvariantCulture)&&
+                Int32.TryParse(i,NumberStyles.None,CultureInfo.InvariantCulture,out index)&&index>=0&&index<(training?10:8)&&i==index.ToString(CultureInfo.InvariantCulture);
         }
         internal ViveRawPreparedPlan Add(IReadOnlyDictionary<string,string> fields,string trial,int block,int segment,long sequence,double time,bool legacy=false)
         {
             string schema;
             if(!fields.TryGetValue("recording_plan_schema",out schema)||(schema!="1"&&schema!="visual-search-v1"))
             {if(UnsupportedEvents==Int32.MaxValue)throw new InvalidPlan();UnsupportedEvents++;return null;}
-            bool search=schema=="visual-search-v1";
+            bool search=schema=="visual-search-v1",training=IsTraining(fields);
             if(search&&(!legacy||Required(fields,"task_kind")!="VisualSearch"))throw new InvalidPlan();
             string designPrefix=legacy?"legacy_":"named_";
             string scope=Required(fields,"plan_scope"),attemptText=Required(fields,"attempt"),list=Required(fields,"list"),countText=Required(fields,"item_count"),phase=Required(fields,designPrefix+"phase");
@@ -95,8 +101,9 @@ namespace AvatarStroop.Runtime
             if(!Int32.TryParse(attemptText,NumberStyles.None,CultureInfo.InvariantCulture,out attempt)||attemptText!=attempt.ToString(CultureInfo.InvariantCulture)||
                 !Int32.TryParse(countText,NumberStyles.None,CultureInfo.InvariantCulture,out count)||countText!=count.ToString(CultureInfo.InvariantCulture)||trial!=null||segment!=0)throw new InvalidPlan();
             if(scope=="PRACTICE")
-            {if(block!=-1||(attempt!=1&&attempt!=2)||count!=8||(phase!="Preparation"&&phase!="Familiarization"&&phase!="PracticeRetry")||
-                !PracticeListMatches(list,attempt)||priorPracticeAttempts[attempt-1]||priorPracticeLists.Contains(list))throw new InvalidPlan();}
+            {if(block!=-1||attempt<1||(!training&&attempt>2)||count!=(training?10:8)||
+                (training?phase!="PracticeExamReady":phase!="Preparation"&&phase!="Familiarization"&&phase!="PracticeRetry")||
+                !PracticeListMatches(list,attempt)||priorPracticeAttempts.Contains(attempt)||priorPracticeLists.Contains(list))throw new InvalidPlan();}
             else if(scope=="MAIN")
             {
                 string started,index;if(block<0||block>=4||attempt!=0||count!=24||phase!="BlockReady"||priorMainTrials[block]||
@@ -128,17 +135,20 @@ namespace AvatarStroop.Runtime
         }
         internal void ObserveTrial(IReadOnlyDictionary<string,string> fields,int block,string session,string trialId,int segment=0)
         {
+            string stage;
+            if(IsTraining(fields)&&fields.TryGetValue("learning_stage",out stage)&&stage=="tutorial")
+            {ObserveTutorial(fields,block,session,trialId,segment);return;}
             string list,indexText;
             bool hasList=fields.TryGetValue("list",out list)&&!String.IsNullOrEmpty(list);
             ViveRawPreparedPlan selected=null;
             if(block<0)
             {
                 int attempt;ViveRawPreparedPlan byAttempt=null;
-                bool knownAttempt=TryPracticeId(session,trialId,out attempt);
+                bool knownAttempt=TryPracticeId(session,trialId,IsTraining(fields),out attempt);
                 // A list declaration alone cannot establish which attempt an
                 // unidentifiable prior trial actually belonged to.
                 if(!knownAttempt)untrackedPriorPractice=true;
-                if(knownAttempt&&!plans.TryGetValue(Key("PRACTICE",-1,attempt),out byAttempt))priorPracticeAttempts[attempt-1]=true;
+                if(knownAttempt&&!plans.TryGetValue(Key("PRACTICE",-1,attempt),out byAttempt))priorPracticeAttempts.Add(attempt);
                 if(byAttempt!=null&&hasList&&!String.Equals(byAttempt.List,list,StringComparison.Ordinal))throw new InvalidPlan();
                 if(hasList)foreach(var p in plans.Values)if(p.Scope=="PRACTICE"&&String.Equals(p.List,list,StringComparison.Ordinal))
                     {if(selected!=null)throw new InvalidPlan();selected=p;}
@@ -161,9 +171,9 @@ namespace AvatarStroop.Runtime
             int index;if(!Int32.TryParse(indexText,NumberStyles.None,CultureInfo.InvariantCulture,out index)||indexText!=index.ToString(CultureInfo.InvariantCulture)||index<0||index>=selected.Items.Count)throw new InvalidPlan();
             // Verify an observed ID only when the plan, list and index are all
             // available. Never synthesize an ID for absent/partial trials.
-            int slotIndex=selected.Scope=="PRACTICE"?(selected.Attempt-1)*8+index:16+block*24+index;
             string expected=session+(selected.Scope=="PRACTICE"?"/p"+selected.Attempt.ToString(CultureInfo.InvariantCulture):"/b"+block.ToString(CultureInfo.InvariantCulture))+"/t"+index.ToString(CultureInfo.InvariantCulture);
-            var prior=retrySlots[slotIndex];
+            if(selected.Scope=="PRACTICE"&&selected.Items.Count!=(IsTraining(fields)?10:8))throw new InvalidPlan();
+            RetrySlot prior;retrySlots.TryGetValue(expected,out prior);
             if(declaresRetry)
             {
                 string version,predecessor;
@@ -192,11 +202,53 @@ namespace AvatarStroop.Runtime
             else if(state=="CONFLICT"||(declaresRetry&&state!="DECLARED_V1"))throw new InvalidPlan();
             if(!String.IsNullOrEmpty(trialId))
             {
-                retrySlots[slotIndex]=currentRetrySlot=new RetrySlot{Trial=trialId,Segment=segment};
+                retrySlots[expected]=currentRetrySlot=new RetrySlot{Trial=trialId,Segment=segment};
                 currentRetryBlock=block;
             }
             else currentRetrySlot=null;
             if(state=="DECLARED_V1"&&(!String.Equals(word,selected.Items[index].Word,StringComparison.Ordinal)||!String.Equals(ink,selected.Items[index].Ink,StringComparison.Ordinal)))throw new InvalidPlan();
         }
+
+        void ObserveTutorial(IReadOnlyDictionary<string,string> fields,int block,string session,string trialId,int segment)
+        {
+            int round,index;uint seed;
+            string roundText=Required(fields,"tutorial_round"),indexText=Required(fields,"planned_index"),list=Required(fields,"list");
+            if(block!=-1||segment<0||!Int32.TryParse(roundText,NumberStyles.None,CultureInfo.InvariantCulture,out round)||round<1||
+                roundText!=round.ToString(CultureInfo.InvariantCulture)||!Int32.TryParse(indexText,NumberStyles.None,CultureInfo.InvariantCulture,out index)||index<0||
+                indexText!=index.ToString(CultureInfo.InvariantCulture))throw new InvalidPlan();
+            string suffix="-"+roundText;
+            if(!list.StartsWith("tutorial-",StringComparison.Ordinal)||!list.EndsWith(suffix,StringComparison.Ordinal)||list.Length<=9+suffix.Length)throw new InvalidPlan();
+            string seedText=list.Substring(9,list.Length-9-suffix.Length);
+            if(!UInt32.TryParse(seedText,NumberStyles.None,CultureInfo.InvariantCulture,out seed)||seedText!=seed.ToString(CultureInfo.InvariantCulture))throw new InvalidPlan();
+            string expected=session+"/tutorial-"+roundText+"/t"+indexText;
+            string schema=Required(fields,"planned_stimulus_schema"),identity;
+            if(schema==VisualSearchTrial.Schema)
+            {
+                try{identity=VisualSearchTrial.Parse(RequiredLayout(fields)).PlanIdentity;}
+                catch(Exception error) when(error is ArgumentException||error is FormatException||error is OverflowException||error is InvalidOperationException){throw new InvalidPlan();}
+                if(Required(fields,"task_kind")!="VisualSearch"||Required(fields,"search_schema")!=VisualSearchTrial.Schema)throw new InvalidPlan();
+            }
+            else
+            {
+                string word=Required(fields,"planned_word"),ink=Required(fields,"planned_ink");
+                if(schema!="1"||!ColourName(word)||!ColourName(ink))throw new InvalidPlan();
+                identity=word+"/"+ink;
+            }
+            RetrySlot prior;retrySlots.TryGetValue(expected,out prior);
+            string predecessor,version;
+            bool retry=fields.ContainsKey("retry_of")||fields.ContainsKey("tracking_retry_schema")||
+                (!String.IsNullOrEmpty(trialId)&&trialId.IndexOf("/retry-s",StringComparison.Ordinal)>=0);
+            if(retry)
+            {
+                if(!fields.TryGetValue("tracking_retry_schema",out version)||version!="1"||!fields.TryGetValue("retry_of",out predecessor)||
+                    prior==null||!Object.ReferenceEquals(prior,currentRetrySlot)||currentRetryBlock!=-1||prior.Responded||!prior.TrackingInterrupted||
+                    predecessor!=prior.Trial||prior.Segment==Int32.MaxValue||segment!=prior.Segment+1||identity!=prior.StimulusIdentity||
+                    trialId!=expected+"/retry-s"+segment.ToString(CultureInfo.InvariantCulture))throw new InvalidPlan();
+            }
+            else if(prior!=null||trialId!=expected)throw new InvalidPlan();
+            retrySlots[expected]=currentRetrySlot=new RetrySlot{Trial=trialId,Segment=segment,StimulusIdentity=identity};currentRetryBlock=-1;
+        }
+        static string RequiredLayout(IReadOnlyDictionary<string,string> fields)
+        {string value;if(!fields.TryGetValue("visual_search_layout",out value)||String.IsNullOrEmpty(value)||value.Length>2048)throw new InvalidPlan();return value;}
     }
 }

@@ -23,7 +23,7 @@ namespace AvatarStroop.Unity
         static readonly Color[] burstColours={new Color(.36f,.86f,.96f),new Color(1f,.80f,.36f),
             new Color(1f,.49f,.52f),new Color(.77f,.60f,1f),new Color(.46f,.95f,.72f),new Color(.51f,.68f,1f)};
         bool completed;
-        bool blockCompleted;
+        bool blockCompleted,practiceIsExam;
         double completionElapsed,practiceRemaining=Double.NaN;
         string practiceInstruction="Get ready";
         bool active,disposed;
@@ -70,6 +70,7 @@ namespace AvatarStroop.Unity
         internal void SetBlockCompletion(double elapsed)
         {completed=true;blockCompleted=true;completionElapsed=elapsed;practiceRemaining=Double.NaN;}
         internal void SetPracticeInstruction(string instruction){practiceInstruction=instruction??"Get ready";}
+        internal void SetPracticeExam(bool exam){practiceIsExam=exam;}
         internal bool BeginRender(Camera candidate,bool trackedNow,bool stopped,bool controllerUnavailable=false)
         {
             if(disposed||!trackedNow||camera==null||candidate!=camera||root==null||text==null||
@@ -82,7 +83,7 @@ namespace AvatarStroop.Unity
                 celebrating?(blockCompleted?"Block complete!\nA few questions are next.":
                     completionElapsed<6?"All blocks complete!\nWell done!":"Thank you for participating!\nYou may remove the headset."):
                 controllerUnavailable?"Controller view unavailable.\nCheck tracking on the desktop.":
-                practice?"Practice starts in\n"+Math.Max(1,Math.Ceiling(practiceRemaining))+"\n"+practiceInstruction:
+                practice?(practiceIsExam?"Practice exam starts in\n":"Practice starts in\n")+Math.Max(1,Math.Ceiling(practiceRemaining))+"\n"+practiceInstruction:
                 "Task on hold.\nCheck the desktop\nfor the next step.";
             noticeLayout.Apply(message,practice?.015f:.012f);
             // Staggered coloured bursts and short fading trails surround a

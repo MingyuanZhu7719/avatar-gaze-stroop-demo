@@ -237,7 +237,7 @@ namespace AvatarStroop.Unity
             pump.State!=ViveNamedRawRecordingPump.Outcome.CloseCallsReturned);}}
         internal bool NamedRawInstallFailed {get{return rawInstallFailed;}}
         internal bool NamedRawTrialActive {get{return namedRawPump!=null&&participant!=null&&participant.CurrentTrial!=null&&
-            (participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask);}}
+            (participant.Phase==Phase.Tutorial||participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask);}}
         internal bool NamedRawPanelPending {get{return namedRawPump!=null&&pendingRawPanelFrame>=0;}}
         // Remains true after post-render until the panel is globally hidden;
         // a second camera later in the same frame must still fail closed.
@@ -296,6 +296,10 @@ namespace AvatarStroop.Unity
                 if(focusPlanConfirmationRequired||focusPlanTriggerAccepted)return FocusPlanAwaitNotice;
                 if(participant.Phase==Phase.Preparation)
                 {var automatic=ConsentAutoStartStatus;if(!String.IsNullOrEmpty(automatic))return automatic;}
+                if(participant.Phase==Phase.TutorialFeedback)
+                    return "Trackpad TOP / BOTTOM: select | Trigger: confirm";
+                if(participant.Phase==Phase.PracticeExamResult)
+                    return "Release controls, then pull Trigger to continue.";
                 if(participant.Phase==Phase.Questionnaire)
                     return "Trackpad UP: lower | DOWN: higher | Trigger: confirm\nSelected: "+participant.CandidateRating+" (not submitted)";
                 return participant!=null&&participant.TaskKind==TaskKind.VisualSearch?
@@ -647,7 +651,7 @@ namespace AvatarStroop.Unity
         }
         void DrawPracticePreviewControls()
         {
-            if(participant!=null&&participant.RawRecordingRequested)return;
+            if(participant!=null&&(participant.RawRecordingRequested||participant.UsesTutorial))return;
             if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
             GUILayout.Label("Optional practice observation rehearsal: local status only, no gaze or task data is saved. These choices do not establish research consent or validate the device.",recordingWrap);
             if(!participant.ObservationEnabled)
@@ -679,6 +683,7 @@ namespace AvatarStroop.Unity
         }
         void ChoosePracticeObservation(bool eye)
         {
+            if(participant==null||participant.UsesTutorial)return;
             try
             {
                 if(practicePreview==null)practicePreview=new VivePracticePreviewCoordinator(participant,sharedClock);
@@ -967,6 +972,10 @@ namespace AvatarStroop.Unity
                 bool selected=fromParticipantChoice&&RecordingSetupEligible&&rig.HeadReady&&
                     SelectedRecordingAvailable&&ViveRawRelativeFileCapability.ProductionGateOpen;
                 if(configured||(rig.ViewRunning&&!selected))throw new InvalidOperationException("Configure once before starting XR.");
+                // The legacy bounded observation rehearsal implements the old
+                // eight-trial practice protocol. New Tutorial sessions use the
+                // ordinary preview or local recording path, never that adapter.
+                observationOptIn=false;
                 if(!fromParticipantChoice&&recordingSetup!=null)throw new InvalidOperationException("Cancel recording setup before choosing a non-recording preview.");
                 if(fromParticipantChoice&&!selected)throw new InvalidOperationException("Participant recording choices are unavailable or no longer valid.");
                 if(selectedDesign<0||selectedDesign>3)throw new InvalidOperationException("Select a development design explicitly.");
@@ -1023,10 +1032,10 @@ namespace AvatarStroop.Unity
                 }
                 config=SessionConfiguration.WithResponseRule(config,selectedResponseRule);
                 config=SessionConfiguration.WithTaskKind(config,selectedTaskKind);
+                config=SessionConfiguration.WithTrainingProtocol(config,TrainingProtocol.TutorialExamV1);
                 var taskClock=selected?rig.ActiveViewClock:new MonotonicClock("vive-development-task-"+session);
                 if(taskClock==null)throw new InvalidOperationException("The active headset clock is unavailable.");
-                var options=observationOptIn?new ExperimentIncrementalOptions(4096,128,16L*1024*1024):null;
-                var candidate=new ViveDevelopmentParticipant(config,taskClock,geometry,map,entered,true,options,4096);
+                var candidate=new ViveDevelopmentParticipant(config,taskClock,geometry,map,entered,true,null,4096);
                 view.SetViveLegacyPreviewNotice(selectedDesign==0&&!selected);
                 view.ConfigureViveDevelopmentPreview(map,entered);
                 CloseLegacyWozTaskBinding();participant=candidate;sharedClock=taskClock;hand=VivePreviewControllerHand.Automatic;
@@ -1038,7 +1047,7 @@ namespace AvatarStroop.Unity
                     (namedRawPump==null||rig.RawSceneTrackingCurrent())&&
                     (recording==null||(!recording.WaitingForFreshEye&&!recording.RecoveryPending)));
                 configured=true;if(selected)suppressInputUntilReleased=true;
-                message=selected?"Participant choices recorded in software. Recording and Practice wait for current tracking and released controls.":"Configured. Start classroom view; release all controls before an owner starts practice.";
+                message=selected?"Participant choices recorded in software. Recording and Tutorial wait for current tracking and released controls.":"Configured. Start classroom view; release all controls before an owner starts the tutorial.";
                 if(selected)ConsentAutoStartConfigured();
                 CheckObservation(true);
                 Render();
@@ -1146,7 +1155,7 @@ namespace AvatarStroop.Unity
             if(!wasConfirmed&&recordingSetup.BothSelected)TryConfigure(true);
         }
         static bool ObservationPausable(Phase phase)
-        {return phase==Phase.Practice||phase==Phase.PracticeCorrection||phase==Phase.Countdown||phase==Phase.MainTask||phase==Phase.Questionnaire||phase==Phase.Rest;}
+        {return phase==Phase.Tutorial||phase==Phase.TutorialFeedback||phase==Phase.PracticeExamReady||phase==Phase.PracticeExamResult||phase==Phase.Practice||phase==Phase.PracticeCorrection||phase==Phase.Countdown||phase==Phase.MainTask||phase==Phase.Questionnaire||phase==Phase.Rest;}
         // Never report an observation failure by throwing through the recorder's
         // action callback: the action may already have happened and the recorder
         // must first preserve its existing event/segment handling. Safety actions
@@ -1377,11 +1386,24 @@ namespace AvatarStroop.Unity
                     message="Owner action accepted; the recording result remains unconfirmed.";
                     Debug.Log("VIVE_RAW_OWNER_ACTION_ACCEPTED: phase="+participant.Phase+"; durability remains unconfirmed. Begin first block is a separate action.");Render();return;
                 }
+                if(participant.UsesTutorial&&participant.Phase==Phase.PracticeExamReady&&
+                    !rawPracticeRequested&&previewPracticeCountdownTask==null&&rawPlanStartRequested==0&&rawPendingBlockPlan==null)
+                {
+                    if(participant.RawRecordingRequested)CaptureRawPracticeRequest();else RequestPreviewPracticeCountdown();
+                }
                 if(rawPracticeRequested&&PracticeExecutionBlocker()==null)
                 {
                     bool automaticFirst=AutomaticFirstPracticeMayProceed();
+                    bool tutorial=participant.UsesTutorial&&participant.Phase==Phase.Preparation;
+                    bool participantExam=participant.UsesTutorial&&participant.Phase==Phase.PracticeExamReady;
                     ClearRawPracticeRequest();
-                    RequestNamedBlockPlanStart(true);if(!automaticFirst)RequirePlanConfirmationAfterXrGap();
+                    if(tutorial)
+                    {
+                        if(Mutate(()=>participant.OwnerBeginTutorial(Actor.Owner)))
+                        {suppressInputUntilReleased=true;message="Tutorial started. Follow the headset instructions.";}
+                        Render();return;
+                    }
+                    RequestNamedBlockPlanStart(true);if(!automaticFirst&&!participantExam)RequirePlanConfirmationAfterXrGap();
                     ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;
                 }
                 if(rawPracticeRequested)ResetPracticeCountdown();
@@ -1391,7 +1413,9 @@ namespace AvatarStroop.Unity
                     {ResetPracticeCountdown();message=PreviewPracticePendingNotice;Render();return;}
                     if(ServicePreviewPracticeCountdown())return;
                 }
-                bool displayReady=participant.Phase==Phase.Questionnaire?
+                bool displayReady=participant.Phase==Phase.TutorialFeedback||participant.Phase==Phase.PracticeExamResult?
+                    view.HasPriorTutorialPanelWitness(participant.ParticipantView,TrainingPanelSelection,Time.frameCount):
+                    participant.Phase==Phase.Questionnaire?
                     (participant.QuestionnaireInstructionPending?view.QuestionnaireInstructionVisible:participant.QuestionnaireInputReady&&view.QuestionnaireResponseVisible):
                     participant.Phase!=Phase.Rest||view.RestResponseVisible;
                 // An enabled text object is not a render witness. For an
@@ -1403,13 +1427,13 @@ namespace AvatarStroop.Unity
                 {
                     int answered=Math.Min(Questionnaire.Count,Math.Max(0,participant.RatingCount-Math.Max(0,participant.BlockIndex)*Questionnaire.Count));
                     bool witnessed=view.HasPriorViveRawPanelWitness(participant.ParticipantView,participant.QuestionnaireInstructionPending,
-                        participant.CandidateRating,answered,Time.frameCount);
+                        TrainingPanelSelection,answered,Time.frameCount);
                     // The panel is globally masked during this Update. Its
                     // prior exact-frame witness is stronger than checking
                     // activeInHierarchy after that deliberate mask.
                     displayReady=witnessed;
                 }
-                int ratingDirection=questionnaireGate.Observe(frame.InputReady,participant.Phase==Phase.Questionnaire,displayReady,frame.Trackpad);
+                int ratingDirection=questionnaireGate.Observe(frame.InputReady,participant.Phase==Phase.Questionnaire||participant.Phase==Phase.TutorialFeedback,displayReady,frame.Trackpad);
                 bool allowResume=!FocusHeldLiveWoz;
                 bool searchInputConsumed=ServiceVisualSearchInput(frame);
                 bool confirmPress=taskTriggerGate.TakeConfirmationPress(frame.InputReady,frame.TriggerHeld,frame.TriggerDown,searchInputConsumed||!allowResume);
@@ -1440,7 +1464,7 @@ namespace AvatarStroop.Unity
             }
         }
         internal static bool RawPlanStartPhaseMatches(bool practice,Phase phase)
-        {return practice?(phase==Phase.Preparation||phase==Phase.PracticeRetry):phase==Phase.BlockReady;}
+        {return practice?(phase==Phase.Preparation||phase==Phase.PracticeRetry||phase==Phase.PracticeExamReady):phase==Phase.BlockReady;}
         void RequestNamedBlockPlanStart(bool practice)
         {
             if(namedRawPump==null||participant==null||RecordingBlocked||rawSelectionProvenancePending||rawPlanStartRequested!=0||rawPendingBlockPlan!=null)return;
@@ -1839,7 +1863,7 @@ namespace AvatarStroop.Unity
                 pendingRawPanelFrame==Time.frameCount&&rendered.Frame==pendingRawPanelFrame&&rendered.Revision==pendingRawPanelRevision&&
                 participant.InputReady&&!PresentationBlocked&&rig.RawSceneTrackingCurrent()&&
                 (legacyWozScene==null||FocusHeldLiveWoz||legacyWozScene.MayShowTask)&&
-                view.MatchesViveRawPanel(rendered,participant.ParticipantView,participant.QuestionnaireInstructionPending,participant.CandidateRating,answered);
+                view.MatchesViveRawPanel(rendered,participant.ParticipantView,participant.QuestionnaireInstructionPending,TrainingPanelSelection,answered);
         }
         bool CompleteRawPanelRender(WorldSpaceExperimentView.ViveRawPanelObservation rendered)
         {
@@ -1856,7 +1880,7 @@ namespace AvatarStroop.Unity
                         participant.TryStartNamedRawCountdownFromSoftwareWitness(rendered.Frame,rendered.Revision,rendered.UnityRenderSeconds)))
                 {AbortRawScenePresentation();return false;}
                 if(!namedRawPump.FinishNonTrialPanelRender()||PresentationBlocked||!participant.InputReady||!rig.RawSceneTrackingCurrent()||
-                    !view.MatchesViveRawPanel(rendered,participant.ParticipantView,participant.QuestionnaireInstructionPending,participant.CandidateRating,
+                    !view.MatchesViveRawPanel(rendered,participant.ParticipantView,participant.QuestionnaireInstructionPending,TrainingPanelSelection,
                         Math.Min(Questionnaire.Count,Math.Max(0,participant.RatingCount-Math.Max(0,participant.BlockIndex)*Questionnaire.Count))))
                 {AbortRawScenePresentation();return false;}
                 pendingRawPanelFrame=-1;pendingRawPanelRevision=-1;return true;
@@ -1871,7 +1895,7 @@ namespace AvatarStroop.Unity
             if(!RawRecordingDesignAvailable||namedRawPump==null||participant==null||view==null||rig==null||
                 pendingRawPresentation!=null||PresentationBlocked||!participant.InputReady||!rig.RawSceneTrackingCurrent())return false;
             var trial=participant.CurrentTrial;
-            if(trial==null||trial.Stimulus==null||(participant.Phase!=Phase.Practice&&participant.Phase!=Phase.MainTask))return false;
+            if(trial==null||trial.Stimulus==null||(participant.Phase!=Phase.Tutorial&&participant.Phase!=Phase.Practice&&participant.Phase!=Phase.MainTask))return false;
             if(participant.LegacyWozRecordingDeclared&&participant.Phase==Phase.MainTask&&
                 (legacyWozScene==null||!legacyWozScene.MayShowTask))return false;
             if(trial.Stimulus.IsVisualSearch&&!trial.Onset.HasValue&&view.VisualSearchCuePending)
@@ -2034,7 +2058,7 @@ namespace AvatarStroop.Unity
             if(view!=null)view.SetVivePauseDiagnostic(pauseDiagnostic!=null&&pauseDiagnostic.Length>180?
                 participant.LastPauseDiagnostic+" See desktop for details.":pauseDiagnostic);
             if(namedRawPump!=null&&participant.CurrentTrial!=null&&
-                (participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask))
+                (participant.Phase==Phase.Tutorial||participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask))
             {
                 if(RawRecordingDesignAvailable)
                 {
@@ -2067,6 +2091,7 @@ namespace AvatarStroop.Unity
             view.SetPhaseProgress(participant.CountdownRemainingSeconds,participant.CountdownDurationSeconds,
                 participant.RestRemainingSeconds,participant.RestDurationSeconds,0,0,participant.Completed,participant.QuestionnaireInstructionPending,answered);
             view.SetViveQuestionnaireRating(participant.CandidateRating);
+            view.SetViveTutorialMenuSelection(participant.TutorialMenuSelection);
             view.ApplyTaskView(participant.ParticipantView);
             if(legacyWozScene!=null)
             {
@@ -2112,7 +2137,7 @@ namespace AvatarStroop.Unity
             }
             if(participant==null||participant.CurrentTrial==null||participant.CurrentTrial.TrialId!=trialId||!participant.InputReady||!rig.HeadReady)return;
             if(!CheckObservation(true)||RecordingBlocked||(recording!=null&&(recording.WaitingForFreshEye||recording.RecoveryPending)))return;
-            if(participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask)
+            if(participant.Phase==Phase.Tutorial||participant.Phase==Phase.Practice||participant.Phase==Phase.MainTask)
             {if(Mutate(()=>participant.MarkPresented(trialId))&&legacyWozScene!=null)legacyWozScene.NotePresented(trialId);}
         }
         void OnViveRawStimulusRendered(WorldSpaceExperimentView.StimulusRenderObservation render)

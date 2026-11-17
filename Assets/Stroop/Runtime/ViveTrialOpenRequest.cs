@@ -97,7 +97,9 @@ namespace AvatarStroop.Runtime
         static bool LegacyTrialMatches(ViveDevelopmentParticipant.NamedRecordingTaskStamp stamp,TrialRecord trial)
         {
             if(trial.NamedPlan!=null||trial.NamedBlock!=null||trial.NamedOption!=null)return false;
-            if(trial.IsPractice)return stamp.Block==-1&&trial.PracticeAttempt>=1&&trial.PracticeAttempt<=2&&
+            if(trial.IsTutorial)return stamp.Configuration.UsesTutorial&&stamp.Phase==Phase.Tutorial&&stamp.Block==-1&&
+                trial.ListId.StartsWith("tutorial-"+stamp.Configuration.Seed+"-",StringComparison.Ordinal);
+            if(trial.IsPractice)return stamp.Block==-1&&trial.PracticeAttempt>=1&&(stamp.Configuration.UsesTutorial||trial.PracticeAttempt<=2)&&
                 trial.ListId=="practice-"+stamp.Configuration.Seed+"-"+trial.PracticeAttempt;
             return stamp.Block>=0&&stamp.Block<4&&trial.Condition==stamp.Configuration.Allocation.Order[stamp.Block]&&
                 trial.ListId==TrialPlans.MainListId(stamp.Configuration.Seed,stamp.Configuration.Allocation.ListByBlock[stamp.Block]);
@@ -110,11 +112,12 @@ namespace AvatarStroop.Runtime
             {
                 ViveDevelopmentParticipant.NamedRecordingTaskStamp before,after;double now;
                 if(!participant.TryCaptureRawRecordingTaskStamp(clock,out before)||before==null||before.Context==null||
-                    (before.Phase!=Phase.Practice&&before.Phase!=Phase.MainTask)||String.IsNullOrEmpty(before.TrialId)||before.EventCursor<0)return false;
+                    (before.Phase!=Phase.Practice&&before.Phase!=Phase.MainTask&&before.Phase!=Phase.Tutorial)||String.IsNullOrEmpty(before.TrialId)||before.EventCursor<0)return false;
                 var trial=participant.CurrentTrial;
                 if(trial==null||trial.Outcome!=TrialOutcome.Pending||trial.Onset.HasValue||!Object.ReferenceEquals(trial.NamedPlan,before.Plan)||
                     !String.Equals(trial.SessionId,before.Session,StringComparison.Ordinal)||!String.Equals(trial.TrialId,before.TrialId,StringComparison.Ordinal)||
-                    trial.BlockIndex!=before.Block||trial.Segment!=before.Segment||trial.IsPractice!=(before.Phase==Phase.Practice)||
+                    trial.BlockIndex!=before.Block||trial.Segment!=before.Segment||trial.IsPractice!=(before.Phase==Phase.Practice||before.Phase==Phase.Tutorial)||
+                    trial.IsTutorial!=(before.Phase==Phase.Tutorial)||
                     trial.PlannedIndex<0||String.IsNullOrWhiteSpace(trial.ListId)||
                     (before.Context.IsLegacy?!LegacyTrialMatches(before,trial):
                         (trial.IsPractice?trial.NamedBlock!=null:(trial.NamedBlock==null||before.Block<0||before.Block>=before.Plan.Blocks.Count||

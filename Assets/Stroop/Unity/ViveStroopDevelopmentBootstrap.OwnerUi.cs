@@ -52,10 +52,10 @@ namespace AvatarStroop.Unity
             {
                 var practiceGate=BeginPracticeBlocker();
                 GUI.enabled=practiceGate==null;
-                if(GUILayout.Button("Begin practice"))TryRequestBeginPractice();
+                if(GUILayout.Button(TrainingStartLabel))TryRequestBeginPractice();
                 ViveOwnerDesktopLayout.Observe("begin-practice",GUILayoutUtility.GetLastRect());
                 GUI.enabled=true;
-                GUILayout.Label(practiceGate??"Select Begin practice. Keep the headset on and release the controls.",
+                GUILayout.Label(practiceGate??("Select "+TrainingStartLabel+". Keep the headset on and release the controls."),
                     recordingWrap,GUILayout.Height(Mathf.Max(60,recordingWrap.lineHeight*3)));
                 if(previewPracticeCountdownTask!=null&&GUILayout.Button("Cancel pending practice start"))
                     CancelPreviewPracticeRequest("Pending practice start canceled. No trial started.");
@@ -118,7 +118,11 @@ namespace AvatarStroop.Unity
             if(!ControllerUiDisplayReady||!participant.InputReady)return "Next: keep one wand connected, release the trackpad and trigger, and restore headset tracking.";
             switch(participant.Phase)
             {
-                case Phase.Preparation:case Phase.PracticeRetry:return BeginPracticeBlocker()??"Next: select Begin practice.";
+                case Phase.Preparation:case Phase.PracticeRetry:return BeginPracticeBlocker()??("Next: select "+TrainingStartLabel+".");
+                case Phase.Tutorial:return "Tutorial in progress. The participant can practise for as long as needed.";
+                case Phase.TutorialFeedback:return "In headset: review feedback, then select Continue tutorial or Start practice exam with trackpad top/bottom and Trigger.";
+                case Phase.PracticeExamReady:return "Practice exam requested. Release controls for the five-second countdown.";
+                case Phase.PracticeExamResult:return "Exam result: "+participant.PracticeCorrect+" / "+participant.PracticeTrialCount+". The participant presses Trigger to continue.";
                 case Phase.Familiarization:return "In headset: follow the controller instructions and confirm with the trigger.";
                 case Phase.Practice:return participant.TaskKind==TaskKind.VisualSearch?
                     "Practice in progress. Point at the matching backpack and pull the trigger.":
@@ -237,22 +241,21 @@ namespace AvatarStroop.Unity
                     if(selectedDesign==3)GUILayout.Label("Scroll up to the indicated block and select both its option and stimulus list. No selection is filled automatically.",recordingWrap,GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
                 }
                 GUI.enabled=!rig.ViewRunning&&!SessionDirectoryPreparationPending&&ControlledRecordingNoticeCurrent&&available&&csvValid&&setupIssue==null;
-                if(GUILayout.Button("Prepare raw + CSV and arm recording + Practice",GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth)))ArmConsentAutoStart();
+                if(GUILayout.Button("Prepare raw + CSV and arm recording + Tutorial",GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth)))ArmConsentAutoStart();
                 ViveOwnerDesktopLayout.Observe("setup-submit",GUILayoutUtility.GetLastRect());
                 GUI.enabled=true;
                 if(!available)GUILayout.Label("Recording is unavailable in this build. No preview will start from this path.");
                 else if(!ControlledRecordingNoticeCurrent)GUILayout.Label("Next: review the local-data notice and select the checkbox.");
                 else if(!csvValid)GUILayout.Label("Enter valid CSV size and timeout limits.");
-                OwnerNotice("This button explicitly requests local raw + CSV output and first Practice after both headset choices. Then start the classroom view once. Eye preview starts without saving data; accepting both choices and releasing controls starts recording and Practice automatically. Formal blocks still need the operator. Preparing may create one empty session folder, but no task, gaze or CSV files.");
+                OwnerNotice("This button explicitly requests local raw + CSV output and Tutorial after both headset choices. Then start the classroom view once. Eye preview starts without saving data; accepting both choices and releasing controls starts recording and Tutorial automatically. Formal blocks still need the operator. Preparing may create one empty session folder, but no task, gaze or CSV files.");
                 GUILayout.Label("The setup arm expires after 15 minutes; after both choices, the automatic start expires after 3 minutes. No automatic retry.",recordingWrap);
             }
             else
             {
+                observationOptIn=false;
                 ownerAdvanced=GUILayout.Toggle(ownerAdvanced,"Advanced preview options");
                 if(ownerAdvanced)
                 {
-                    observationOptIn=GUILayout.Toggle(observationOptIn,"Bounded in-memory observation (Legacy only; no files)");
-                    if(selectedDesign>0&&observationOptIn)GUILayout.Label("Clear Legacy observation for Named previews.");
                     if(selectedDesign==3&&!ViveControlledRecordingBuildPolicy.Available)
                     {
                         namedIntentV3=GUILayout.Toggle(namedIntentV3,"Recording-choice rehearsal (does not record)");
@@ -329,7 +332,7 @@ namespace AvatarStroop.Unity
             {
                 GUILayout.Label(ConsentAutoStartStatus,recordingWrap);
                 GUILayout.Space(12);
-                if(GUILayout.Button("Cancel automatic recording + Practice start"))
+                if(GUILayout.Button("Cancel automatic recording + Tutorial start"))
                     CancelConsentAutoStart("Automatic start canceled. No automatic retry; review recording status before continuing.");
                 return;
             }

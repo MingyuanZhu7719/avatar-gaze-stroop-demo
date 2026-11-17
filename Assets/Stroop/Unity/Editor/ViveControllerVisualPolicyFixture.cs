@@ -29,6 +29,8 @@ namespace AvatarStroop.Unity.Editor
         {
             assertions=0;
             Require(Colours(TaskKind.Stroop,Phase.Practice)&&Colours(TaskKind.Stroop,Phase.MainTask),"Stroop response mapping missing");
+            Require(Colours(TaskKind.Stroop,Phase.Tutorial),"tutorial response mapping missing");
+            Require(!Colours(TaskKind.Stroop,Phase.TutorialFeedback)&&!Colours(TaskKind.Stroop,Phase.PracticeExamResult),"tutorial menu/result uses response colours");
             Require(!Colours(TaskKind.Stroop,Phase.Questionnaire),"colour response mapping conflicts with rating directions");
             Require(!Colours(TaskKind.VisualSearch,Phase.Practice)&&!Colours(TaskKind.VisualSearch,Phase.MainTask),"colour mapping leaks into ray selection task");
             Require(!Colours(TaskKind.Stroop,Phase.Ended)&&!Colours(TaskKind.Stroop,Phase.Paused),"inactive response mapping remains visible");

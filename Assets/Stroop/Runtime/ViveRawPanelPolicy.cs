@@ -17,9 +17,19 @@ namespace AvatarStroop.Runtime
             {
                 case Phase.Preparation: case Phase.Familiarization: case Phase.PracticeCorrection:
                 case Phase.PracticeRetry: case Phase.BlockPreparation: case Phase.BlockReady:
-                case Phase.Countdown: case Phase.Questionnaire: case Phase.Rest: case Phase.Paused:return true;
+                case Phase.Countdown: case Phase.Questionnaire: case Phase.Rest: case Phase.Paused:
+                case Phase.TutorialFeedback: case Phase.PracticeExamReady: case Phase.PracticeExamResult:return true;
                 default:return false;
             }
+        }
+        internal static string PanelCorrection(TaskView task)
+        {
+            if(task==null)return null;
+            if(task.Phase==Phase.TutorialFeedback)
+                return "tutorial|"+task.TrialId+"|"+task.TutorialFeedback+"|"+task.TutorialExpectedAnswer;
+            if(task.Phase==Phase.PracticeExamResult)
+                return "exam|"+task.PracticeAttempt+"|"+task.PracticeCorrect+"/"+task.PracticeTrialCount+"|"+task.PracticePassed;
+            return task.PracticeCorrection;
         }
         internal static bool SamePanelState(Phase expectedPhase,int expectedBlock,bool expectedIntro,int expectedRating,
             int expectedAnswered,bool expectedReady,string expectedItem,string expectedCorrection,
@@ -27,10 +37,10 @@ namespace AvatarStroop.Runtime
         {
             return task!=null&&IsPanelPhase(task.Phase)&&expectedPhase==task.Phase&&expectedBlock==task.BlockIndex&&
                 expectedIntro==(task.Phase==Phase.Questionnaire&&intro)&&
-                expectedRating==(task.Phase==Phase.Questionnaire&&!intro?rating:0)&&
+                expectedRating==((task.Phase==Phase.Questionnaire&&!intro)||task.Phase==Phase.TutorialFeedback?rating:0)&&
                 expectedAnswered==(task.Phase==Phase.Questionnaire?answered:0)&&expectedReady==task.ReadyEnabled&&
                 String.Equals(expectedItem,task.QuestionnaireItem,StringComparison.Ordinal)&&
-                String.Equals(expectedCorrection,task.PracticeCorrection,StringComparison.Ordinal);
+                String.Equals(expectedCorrection,PanelCorrection(task),StringComparison.Ordinal);
         }
     }
 }

@@ -43,6 +43,10 @@ namespace AvatarStroop.Runtime
         }
         static readonly HashSet<string> FocusFields=new HashSet<string>(StringComparer.Ordinal)
         {"focus_schema","desktop_focused","xr_focused","actor","code","reason","detail","source","measurement_quality"};
+        static bool ContextField(string key)
+        {return key=="response_rule"||key=="task_kind"||key=="search_schema"||key=="training_protocol"||
+            key=="learning_stage"||key=="practice_attempt"||key=="tutorial_round"||
+            key.StartsWith("named_",StringComparison.Ordinal)||key.StartsWith("legacy_",StringComparison.Ordinal);}
         bool FocusEvidenceMatches(JournalEvent item)
         {
             if(item==null||item.Kind!="focus_changed"||!stamp.Context.MatchesEvent(item)||item.SessionId!=stamp.Session||
@@ -67,11 +71,11 @@ namespace AvatarStroop.Runtime
             foreach(var pair in item.Fields)
             {
                 if(FocusFields.Contains(pair.Key))continue;
-                if(!(pair.Key=="response_rule"||pair.Key=="task_kind"||pair.Key=="search_schema"||pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))||
+                if(!ContextField(pair.Key)||
                     !prepared.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value)return false;
             }
             foreach(var pair in prepared.Fields)
-                if((pair.Key=="response_rule"||pair.Key=="task_kind"||pair.Key=="search_schema"||pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))&&
+                if(ContextField(pair.Key)&&
                     (!item.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value))return false;
             return true;
         }
@@ -92,13 +96,13 @@ namespace AvatarStroop.Runtime
             {
                 if(pair.Key=="tracking_gap_schema"||pair.Key=="actor"||pair.Key=="code"||pair.Key=="reason"||pair.Key=="detail")continue;
                 string value;
-                if(!(pair.Key=="response_rule"||pair.Key=="task_kind"||pair.Key=="search_schema"||pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))||
+                if(!ContextField(pair.Key)||
                     !prepared.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value)return false;
             }
             foreach(var pair in prepared.Fields)
             {
                 string value;
-                if((pair.Key=="response_rule"||pair.Key=="task_kind"||pair.Key=="search_schema"||pair.Key.StartsWith("named_",StringComparison.Ordinal)||pair.Key.StartsWith("legacy_",StringComparison.Ordinal))&&
+                if(ContextField(pair.Key)&&
                     (!item.Fields.TryGetValue(pair.Key,out value)||value!=pair.Value))return false;
             }
             return true;

@@ -151,7 +151,8 @@ namespace AvatarStroop.Core
         }
         void BeginPracticeCore(Actor actor)
         {
-            RequireOwner(actor); Require(Phase.Familiarization, Phase.PracticeRetry);
+            RequireOwner(actor);
+            if(UsesTutorial)Require(Phase.PracticeExamReady);else Require(Phase.Familiarization,Phase.PracticeRetry);
             // A named recording candidate can prepare the exact next attempt
             // before entering practice. This does not itself authorize start.
             var preparedEvent=!Configuration.HasRawRecordingIntent?null:FindNamedRecordingPlanEvent(true,PracticeAttempt+1);
@@ -189,8 +190,8 @@ namespace AvatarStroop.Core
             int attempt;Stimulus[] items;string list;
             if(practiceScope)
             {
-                Require(Phase.Preparation,Phase.Familiarization,Phase.PracticeRetry);
-                if(BlockIndex!=-1||PracticeAttempt<0||PracticeAttempt>=2)throw new InvalidOperationException("Next practice attempt is unavailable.");
+                if(!PracticePlanPhase)throw new InvalidOperationException("Practice plan is outside its preparation phase.");
+                if(BlockIndex!=-1||PracticeAttempt<0||(!UsesTutorial&&PracticeAttempt>=2)||PracticeAttempt==Int32.MaxValue)throw new InvalidOperationException("Next practice attempt is unavailable.");
                 attempt=PracticeAttempt+1;list="practice-"+Configuration.Seed+"-"+attempt;
             }
             else
@@ -207,7 +208,7 @@ namespace AvatarStroop.Core
             {if(!MatchesRawRecordingBlockPlan(prior))throw new InvalidOperationException("Prepared plan no longer matches the task.");return prior;}
             if(practiceScope){practice=PracticePlan(attempt);TraceMutation();items=practice;}
             else items=lists[RecordingListIndex];
-            if(items==null||items.Length!=(practiceScope?8:24))throw new InvalidOperationException("Stimulus plan is unavailable.");
+            if(items==null||items.Length!=(practiceScope?Configuration.PracticeTrialCount:24))throw new InvalidOperationException("Stimulus plan is unavailable.");
             var fields=new List<string>{"recording_plan_schema",Configuration.TaskKind==TaskKind.VisualSearch?VisualSearchTrial.Schema:"1","plan_scope",practiceScope?"PRACTICE":"MAIN",
                 "attempt",attempt.ToString(CultureInfo.InvariantCulture),"list",list,"item_count",items.Length.ToString(CultureInfo.InvariantCulture)};
             for(int i=0;i<items.Length;i++)
@@ -247,8 +248,8 @@ namespace AvatarStroop.Core
             Stimulus[] items;int attempt;
             if(scope=="PRACTICE")
             {
-                if((Phase!=Phase.Preparation&&Phase!=Phase.Familiarization&&Phase!=Phase.PracticeRetry)||BlockIndex!=-1||
-                    prepared.BlockIndex!=-1||prepared.NamedBlock!=null||PracticeAttempt<0||PracticeAttempt>=2)return false;
+                if(!PracticePlanPhase||BlockIndex!=-1||prepared.BlockIndex!=-1||prepared.NamedBlock!=null||PracticeAttempt<0||
+                    (!UsesTutorial&&PracticeAttempt>=2)||PracticeAttempt==Int32.MaxValue)return false;
                 attempt=PracticeAttempt+1;items=practice;
                 if(list!="practice-"+Configuration.Seed+"-"+attempt)return false;
             }
@@ -260,7 +261,7 @@ namespace AvatarStroop.Core
                 if(list!=TrialPlans.MainListId(Configuration.Seed,RecordingListIndex))return false;
             }
             else return false;
-            if(items==null||items.Length!=(scope=="PRACTICE"?8:24)||count!=items.Length.ToString(CultureInfo.InvariantCulture)||
+            if(items==null||items.Length!=(scope=="PRACTICE"?Configuration.PracticeTrialCount:24)||count!=items.Length.ToString(CultureInfo.InvariantCulture)||
                 attemptText!=attempt.ToString(CultureInfo.InvariantCulture))return false;
             for(int i=0;i<items.Length;i++)
             {
@@ -447,7 +448,7 @@ namespace AvatarStroop.Core
         void MarkPresentedCore(string trialId){MarkPresentedCore(trialId,null,0,0);}
         void MarkPresentedCore(string trialId,double? unityProxySeconds,int frame,long revision)
         {
-            Require(Phase.Practice, Phase.MainTask);
+            Require(Phase.Practice,Phase.MainTask,Phase.Tutorial);
             if(current == null || trialId != current.TrialId) throw new InvalidOperationException("Presentation acknowledges only the current trial");
             if(current.Onset.HasValue) return;
             current.SetOnset(trialAuthority,Time());TraceMutation();
@@ -491,15 +492,17 @@ namespace AvatarStroop.Core
             if(!down) { held.Remove(colour);TraceMutation(); return false; }
             if(!held.Add(colour)) return false;
             TraceMutation();
-            if(Configuration.TaskKind==TaskKind.VisualSearch||(Phase != Phase.Practice && Phase != Phase.MainTask) || current == null || !current.Onset.HasValue || current.Outcome != TrialOutcome.Pending)
+            if(Configuration.TaskKind==TaskKind.VisualSearch||(Phase != Phase.Practice && Phase != Phase.MainTask&&Phase!=Phase.Tutorial) || current == null || !current.Onset.HasValue || current.Outcome != TrialOutcome.Pending)
                 return false;
             current.SetResponseAt(trialAuthority,Time());TraceMutation(); current.SetResponse(trialAuthority,colour);TraceMutation(); current.SetCorrect(trialAuthority,colour == current.ExpectedResponse);TraceMutation();
             current.SetResponded(trialAuthority);TraceMutation();
             Log("first_response", "response", colour.ToString(), "correct", current.Correct.Value.ToString(),
                 "onset", Number(current.Onset.Value), "rt_seconds", Number(current.ReactionSeconds.Value));
-            if(Phase == Phase.Practice)
+            if(Phase==Phase.Tutorial)Move(Phase.TutorialFeedback);
+            else if(Phase == Phase.Practice)
             {
                 if(current.Correct.Value) { practiceCorrect++;TraceMutation(); AdvancePractice(); }
+                else if(UsesTutorial)AdvancePractice();
                 else Move(Phase.PracticeCorrection);
             }
             else AdvanceMain();
@@ -626,10 +629,12 @@ namespace AvatarStroop.Core
                 rawCountdownWitnessPending=true;TraceMutation();
             }
             FreezeActive();
-            if((Phase == Phase.MainTask || Phase == Phase.Practice) && current != null && current.Outcome == TrialOutcome.Pending)
+            if((Phase == Phase.MainTask || Phase == Phase.Practice||Phase==Phase.Tutorial) && current != null && current.Outcome == TrialOutcome.Pending)
             {
                 current.SetInterrupted(trialAuthority);TraceMutation();
                 if(tracking)Log("trial_interrupted", "actor", actor.ToString(), "onset_available", current.Onset.HasValue.ToString(),"reason","tracking_gap");
+                else if(UsesTutorial&&(Phase==Phase.Tutorial||Phase==Phase.Practice))
+                    Log("trial_interrupted","actor",actor.ToString(),"onset_available",current.Onset.HasValue.ToString(),"reason","training_interruption");
                 else Log("trial_interrupted", "actor", actor.ToString(), "onset_available", current.Onset.HasValue.ToString());
             }
             if(tracking)Log("tracking_pause","actor",actor.ToString(),"code","tracking_gap","reason","tracking_unavailable","detail","task_input=blocked");
@@ -674,9 +679,11 @@ namespace AvatarStroop.Core
                 //     Interrupted (unscored); the retry's first response is what
                 //     counts toward the 6/8 rule. The retry reuses the same planned
                 //     index, so it is an extra TrialRecord, not a ninth planned trial.
-                if(tracking){Segment=checked(Segment+1);TraceMutation();Move(Phase.Practice);CreateTrial(true);}
+                if(tracking||UsesTutorial){Segment=checked(Segment+1);TraceMutation();Move(Phase.Practice);CreateTrial(true);}
                 else {Log("practice_resume_next_planned_trial", "interrupted_trial", current.TrialId);AdvancePractice();}
             }
+            else if(beforePause==Phase.Tutorial&&current!=null&&current.Outcome==TrialOutcome.Interrupted)
+            {Segment=checked(Segment+1);TraceMutation();Move(Phase.Tutorial);CreateTutorialTrial(true);}
             else
             {
                 if(beforePause == Phase.Rest) {restAt+=duration;TraceMutation();}
@@ -739,13 +746,17 @@ namespace AvatarStroop.Core
         {
             if(!Enum.IsDefined(typeof(Actor),actor)) throw new ArgumentException("Unknown actor");
             if(Configuration.IsNamedDesign&&actor==Actor.Operator)throw new InvalidOperationException("Legacy operator view does not represent named-option provenance");
-            bool task=Phase == Phase.MainTask || (actor == Actor.Participant && Phase == Phase.Practice);
+            bool task=Phase == Phase.MainTask || (actor == Actor.Participant && (Phase == Phase.Practice||Phase==Phase.Tutorial));
             return new TaskView {
-                Phase=Phase,BlockIndex=BlockIndex,Segment=Segment, TrialId=task && current != null ? current.TrialId : null,
+                Phase=Phase,BlockIndex=BlockIndex,Segment=Segment, TrialId=(task||actor==Actor.Participant&&Phase==Phase.TutorialFeedback) && current != null ? current.TrialId : null,
                 Stimulus=task && current != null ? current.Stimulus : null,
                 ResponseRule=Configuration.ResponseRule,
                 TaskKind=Configuration.TaskKind,
-                VisualSearch=Configuration.TaskKind==TaskKind.VisualSearch&&current!=null&&(task||Phase==Phase.PracticeCorrection)?current.VisualSearch:null,
+                VisualSearch=Configuration.TaskKind==TaskKind.VisualSearch&&current!=null&&(task||Phase==Phase.PracticeCorrection||Phase==Phase.TutorialFeedback)?current.VisualSearch:null,
+                UsesTutorial=UsesTutorial,TrainingSchema=Configuration.TrainingSchema,TutorialFeedback=actor==Actor.Participant?TutorialFeedbackText:null,
+                TutorialCorrect=actor==Actor.Participant&&Phase==Phase.TutorialFeedback&&current!=null?current.Correct:null,
+                TutorialExpectedAnswer=actor==Actor.Participant&&Phase==Phase.TutorialFeedback?TutorialExpectedAnswer:null,
+                PracticeCorrect=practiceCorrect,PracticeTrialCount=Configuration.PracticeTrialCount,PracticeAttempt=PracticeAttempt,PracticePassed=PracticePassed,
                 OperatorAvatarVisible=actor == Actor.Participant && Phase == Phase.MainTask &&
                     (Configuration.IsNamedDesign ? CurrentNamedSelection!=null&&CurrentNamedSelection.Option!=ViveNamedOption.NoAvatar : CurrentCondition != Condition.D),
                 ParticipantAvatarVisible=actor == Actor.Operator && Phase == Phase.MainTask,
@@ -764,7 +775,7 @@ namespace AvatarStroop.Core
         void CreateTrial(bool isPractice)
         {
             int listIndex=isPractice ? -1 : Configuration.IsNamedDesign ? CurrentNamedSelection.ListIndex : Configuration.Allocation.ListByBlock[BlockIndex];
-            string retryOf=Configuration.HasRawRecordingIntent&&current!=null&&current.Outcome==TrialOutcome.Interrupted&&
+            string retryOf=(Configuration.HasRawRecordingIntent||UsesTutorial)&&current!=null&&current.Outcome==TrialOutcome.Interrupted&&
                 current.IsPractice==isPractice&&current.PracticeAttempt==(isPractice?PracticeAttempt:0)&&current.BlockIndex==(isPractice?-1:BlockIndex)&&
                 current.PlannedIndex==trialIndex&&current.Segment<Segment?current.TrialId:null;
             string id=Configuration.SessionId+(isPractice?"/p"+PracticeAttempt:"/b"+BlockIndex)+"/t"+trialIndex;
@@ -800,10 +811,14 @@ namespace AvatarStroop.Core
         void AdvancePractice()
         {
             trialIndex++;TraceMutation();
-            if(trialIndex < 8) { Move(Phase.Practice); CreateTrial(true); return; }
-            Log("practice_completed", "attempt", PracticeAttempt.ToString(), "correct_first", practiceCorrect.ToString(), "planned", "8");
+            if(trialIndex < Configuration.PracticeTrialCount) { Move(Phase.Practice); CreateTrial(true); return; }
+            if(UsesTutorial)Log("practice_completed","attempt",PracticeAttempt.ToString(),"correct_first",practiceCorrect.ToString(),
+                "planned",Configuration.PracticeTrialCount.ToString(),"threshold",Configuration.PracticePassCorrect.ToString(),
+                "passed",(practiceCorrect>=Configuration.PracticePassCorrect).ToString());
+            else Log("practice_completed", "attempt", PracticeAttempt.ToString(), "correct_first", practiceCorrect.ToString(), "planned", "8");
             current=null;TraceMutation();
             if(Configuration.HasRawRecordingIntent&&Segment!=0){Segment=0;TraceMutation();}
+            if(UsesTutorial){Move(Phase.PracticeExamResult);return;}
             if(practiceCorrect >= 6) { BlockIndex=0;TraceMutation(); Move(Phase.BlockPreparation); }
             else if(PracticeAttempt < 2) Move(Phase.PracticeRetry);
             else Finish(Core.EndReason.PracticeFailed, "two_practice_attempts_below_6_of_8");
@@ -882,6 +897,15 @@ namespace AvatarStroop.Core
         void Log(string kind, params string[] fields)
         {
             var data=new Dictionary<string,string>(); for(int i=0;i<fields.Length;i+=2) data.Add(fields[i],fields[i+1]);
+            if(UsesTutorial)
+            {
+                string stage=LearningStage;string round;
+                data.Add("training_protocol",Configuration.TrainingSchema);data.Add("learning_stage",stage);
+                data.Add("practice_attempt",(stage=="tutorial"?0:PracticeAttempt).ToString(CultureInfo.InvariantCulture));
+                data.Add("tutorial_round",kind=="tutorial_started"&&data.TryGetValue("round",out round)?round:TutorialRound.ToString(CultureInfo.InvariantCulture));
+                if(kind=="session_created")
+                {data.Add("practice_trial_count",Configuration.PracticeTrialCount.ToString());data.Add("practice_pass_correct",Configuration.PracticePassCorrect.ToString());data.Add("practice_attempt_limit","unlimited");}
+            }
             if(Configuration.TaskKind==TaskKind.VisualSearch)
             {
                 data.Add("task_kind",TaskKind.VisualSearch.ToString());data.Add("search_schema",VisualSearchTrial.Schema);

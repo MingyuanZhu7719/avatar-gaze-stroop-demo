@@ -1,18 +1,19 @@
 # Visual search development task
 
-Visual search v1 is an additional task in the existing Vive classroom. Select **Visual search** before configuring a session. It uses the existing Legacy A/B/C/D **Automatic** flow, practice, five-second countdowns, block-end fireworks, questionnaire, rests and final thank-you. Named and live WoZ search are not enabled in this first version. Existing Ink colour and Word meaning sessions remain separate task modes.
+Visual search v1 is an additional task in the existing Vive classroom. Select **Visual search** before configuring a session. It uses the existing Legacy A/B/C/D **Automatic** flow, a task-specific tutorial and practice exam, five-second countdowns, block-end fireworks, questionnaire, rests and final thank-you. Named and live WoZ search are not enabled in this first version. Existing Ink colour and Word meaning sessions remain separate task modes.
 
 ## Search and selection
 
 The target is a coloured, patterned backpack. Each trial begins with a **1.5-second target preview**, followed by the search array; the target example remains above the search board. Each trial contains exactly one matching object, plus distractors sharing either its colour or its pattern. Colours are Red, Green, Blue and Yellow; patterns are Plain, Striped, Dotted and Cross. Participants search a fixed front-facing six-column/four-row board using one Vive wand, point at an object and press the trigger to submit.
 
-All objects receive the same hover outline. Clicking anywhere within an object's hit area selects the whole object; hit areas do not overlap. A click on empty board space is logged and does not submit an answer. Formal trials end on the first valid object selection, including an incorrect choice. Practice errors show the target reminder and require a released, fresh trigger press to continue. Eye tracking does not select objects.
+All objects receive the same hover outline. Clicking anywhere within an object's hit area selects the whole object; hit areas do not overlap. A click on empty board space is logged and does not submit an answer. Formal and exam trials end on the first valid object selection, including an incorrect choice. Tutorial responses show correctness feedback and the correct target when needed, followed by the separate continue/enter-exam menu. The exam gives its score only at the end. Eye tracking does not select objects.
 
-The development timeout is **30 seconds from the recorded presentation acknowledgement**. It is an initial pilot setting, not a frozen research exclusion rule. A timeout ends the formal trial and is recorded explicitly; practice provides correction. A missing or interrupted recording is not labelled as a timeout.
+The development timeout for exam and formal trials is **30 seconds from the recorded presentation acknowledgement**. It is an initial pilot setting, not a frozen research exclusion rule. A timeout ends the trial and is recorded explicitly; it counts as an incorrect exam answer. Tutorial has no per-question deadline. A missing or interrupted recording is not labelled as a timeout.
 
 ## Allocation
 
-- Practice: eight trials, four with 12 objects and four with 24. The existing pass criterion is six correct first responses, with at most two attempts.
+- Tutorial: unlimited questions using the same object-matching and controller rules, with feedback after each answer. The participant explicitly chooses when to enter the exam.
+- Practice exam: ten trials, five with 12 objects and five with 24. At least eight correct first responses passes. Failure returns to tutorial, and a new exam can be attempted without a fixed retry limit. This is `tutorial-exam-v1`; historical eight-item, six-correct practice recordings remain readable under their original protocol.
 - Formal task: four blocks of 24 trials, each containing 12 trials at each set size; 96 formal trials in total.
 - The current development condition order remains **B, C, A, D**, with stimulus lists 0–3. Search does not silently introduce a different study counterbalancing schedule.
 - The four lists use distinct deterministic layouts. Each formal list visits all 24 target slots once; the assignment of set size balances rows, columns and board halves. Object size stays fixed across set sizes.

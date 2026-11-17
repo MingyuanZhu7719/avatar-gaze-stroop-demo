@@ -2,9 +2,20 @@
 
 The desktop window now presents setup, the next action and local-output status in one place. The classroom scene, fixed colour mapping, trial protocol and recording authority remain separate from desktop presentation.
 
-Before configuration, select the response rule: **Ink colour** (default: ignore the word and answer its rendered colour) or **Word meaning** (answer the colour named by the word, regardless of ink). For example RED displayed in green requires green in Ink colour mode and red in Word meaning mode. The selected rule is locked for the session, including practice and A/B/C/D. Start a new configured session to change it. Logs preserve both the actual word/ink and the rule/expected response. Word meaning uses its own questionnaire version for the two task-attention items.
+Before configuration, select **Ink colour** (default: ignore the word and answer its rendered colour), **Word meaning** (answer the colour named by the word, regardless of ink), or **Visual search** (match the target backpack's colour and pattern). For example RED displayed in green requires green in Ink colour mode and red in Word meaning mode. The selected task is locked for the session, including tutorial, practice exam and A/B/C/D. Start a new configured session to change it. Logs preserve both the actual word/ink and the rule/expected response. Word meaning uses its own questionnaire version for the two task-attention items.
 
-Practice begins after a five-second headset countdown. Formal block countdown defaults are also five seconds. Each completed formal block shows six seconds of colorful fireworks before the questionnaire; questionnaire input is held until the animation ends, and the logged questionnaire duration excludes that transition. The final questionnaire immediately starts six seconds of staggered fireworks with short fading trails, followed by “Thank you for participating!” and permission to remove the headset. CSV conversion and eye-thread cleanup continue independently; this participant thank-you confirms task completion only. The desktop continues to show the actual recording result, including any export failure. Explicit withdrawal or an unfinished task never receives this completion presentation.
+The practice exam begins after a five-second headset countdown. Formal block countdown defaults are also five seconds. Each completed formal block shows six seconds of colorful fireworks before the questionnaire; questionnaire input is held until the animation ends, and the logged questionnaire duration excludes that transition. The final questionnaire immediately starts six seconds of staggered fireworks with short fading trails, followed by “Thank you for participating!” and permission to remove the headset. CSV conversion and eye-thread cleanup continue independently; this participant thank-you confirms task completion only. The desktop continues to show the actual recording result, including any export failure. Explicit withdrawal or an unfinished task never receives this completion presentation.
+
+## Tutorial and practice exam
+
+The current Vive participant flow trains only the task selected for that session:
+
+1. **Tutorial:** answer as many questions as needed, without a per-question deadline. Every response receives correct/incorrect feedback; an incorrect response shows the correct answer. The response is recorded once, without correction credit.
+2. On the feedback screen, use the trackpad **top/bottom** to choose **Continue tutorial** or **I am ready: start practice exam**, then release and press the trigger to confirm. Answering a question cannot also select this menu. The colour sectors are hidden while the trackpad operates this menu.
+3. **Practice exam:** after the five-second countdown, complete ten questions without per-question correctness feedback. Stroop has five congruent and five incongruent items; Visual search has five 12-object and five 24-object items. Each new attempt has a new plan.
+4. **Result:** eight or more correct first responses passes. The score appears after the tenth question. A fresh trigger confirms the result: a pass proceeds to formal-block preparation; a failure returns to tutorial. There is no fixed limit on tutorial questions or exam attempts. Withdrawal remains available.
+
+Tracking interruptions are retained as technical events, not scored as incorrect answers. Recording distinguishes `tutorial`, `practice_exam` and `formal`, with exam attempt and tutorial round identifiers. The analyzer keeps training out of formal results. This flow is versioned `tutorial-exam-v1`; older recordings and legacy test configurations keep their original eight-question, six-correct practice protocol.
 
 ## Participant application
 
@@ -12,14 +23,14 @@ Practice begins after a five-second headset countdown. Formal block countdown de
 | --- | --- | --- |
 | Run mode | Choose **Preview (no files)**. | Choose **Record locally**. This is a development self-test, not study admission. |
 | Design | Select the existing design and any required lists. | Select Legacy A/B/C/D or Named multi-block. For Named, choose an option and a stimulus list for each block; scroll to reach all rows. |
-| Setup | **Configure preview (no recording)**. | Review the suggested new private session folder (or enter an existing private local folder). Acknowledge the self-test notice and click **Prepare raw + CSV and arm recording + Practice**. |
+| Setup | **Configure preview (no recording)**. | Review the suggested new private session folder (or enter an existing private local folder). Acknowledge the self-test notice and click **Prepare raw + CSV and arm recording + Tutorial**. |
 | Hardware | **Start classroom view**; eye diagnostics start automatically where supported. | **Start classroom view**; eye diagnostics start automatically when ready. Complete both separate choices in the headset and release controls. |
-| Start | **Begin practice**. No task, eye or CSV files are saved. | Recording and Practice start automatically once both choices and current safety checks pass. Formal plan confirmation and **Begin first block** stay separate. |
+| Start | **Begin tutorial**. No task, eye or CSV files are saved. | Recording and tutorial start automatically once both choices and current safety checks pass. The participant chooses when to enter the exam. Formal plan confirmation and **Begin first block** stay separate. |
 | Completion | Preview results remain in memory until close. | Click **Open CSV** after recording and file cleanup finish to open the current session's CSV in the Windows default app. Raw recording continues to be saved, but its candidate-path controls are no longer displayed. A fault or unconfirmed close keeps CSV opening unavailable. |
 
 Raw + CSV preparation checks that the full generated CSV path fits within 259 characters for the spreadsheet application. New session folders use a compact `s-UTC-GUID` name; use a physically shorter installation or data folder if preparation reports a path-length error. Older overlong files remain unchanged and can be read through the local study analyzer; an 8.3 path alias does not reliably avoid Excel's limit.
 
-In Preview, **Begin practice** queues a start request. Keep the headset on, close the SteamVR dashboard and release the controls; the five-second countdown starts after the next valid input check. A temporary tracking/focus interruption or held control restarts that countdown. **Cancel pending practice start**, stopping the view or withdrawing clears the request. Desktop status updates no longer discard mouse clicks between input checks.
+In Preview, **Begin tutorial** queues a start request. Keep the headset on, close the SteamVR dashboard and release the controls; teaching begins after a valid input check. Entering the exam requires a valid, continuously rendered five-second countdown. A temporary tracking/focus interruption or held control restarts that countdown. Stopping the view or withdrawing clears the pending request. Desktop status updates do not discard mouse clicks between input checks.
 
 An incomplete Named plan is identified by block and missing field before folder creation can start. Only explicit preparation creates a suggested session child; showing or replacing the proposal writes nothing. Storage limits are under **Advanced storage limits**. Defaults are 256 MiB raw, 2048 MiB CSV and a 300-second CSV cleanup timeout. The readable CSV retains exact raw values plus expanded eye/AOI columns, so it is substantially larger than VRAW; the previous 256 MiB CSV limit was too small for a complete live four-block session. These are output limits, not reserved disk space or a guarantee of completion. Raw-only alternatives and diagnostic memory views remain under separate advanced sections.
 
@@ -31,7 +42,7 @@ For the Vive wand (`vr_controller_vive_1_5`), the trackpad itself carries the fi
 
 For both Ink colour and Word meaning, the fixed colour guide sits inside the whiteboard's upper-right writing area, above the central word. Its compact card preserves the colour-button and letter sizes. It keeps the same position and size across A/B/C/D, and stays hidden for Visual Search.
 
-The mapping is fixed in practice and formal trials:
+The mapping is fixed in tutorial questions, practice exam and formal trials:
 
 | Trackpad | Colour |
 | --- | --- |

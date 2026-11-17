@@ -175,10 +175,10 @@ class ViveBuildOptionsTests(unittest.TestCase):
 
     def test_guide_requests_short_withdrawal_not_completed_four_block_run(self):
         guide = (ROOT / "docs/controlled-recording-self-test-guide.txt").read_text(encoding="utf-8")
-        for phrase in ("ONLY 1-2 PRACTICE TRIALS", "existing private local directory", "Choose a new session folder", "Prepare raw + CSV and arm recording + Practice", "starts recording and Practice automatically", "incomplete raw prefix", "normal completed-session CSV receipt", "does not request a long rerun", "no data upload is needed", "calibration", "actual tracking loss", "Focus loss alone does not end it", "NON-RECORDING"):
+        for phrase in ("ONLY 1-2 TUTORIAL QUESTIONS", "existing private local directory", "Choose a new session folder", "Prepare raw + CSV and arm recording + Tutorial", "starts recording and Tutorial automatically", "ten-question exam with at least eight correct answers", "incomplete raw prefix", "normal completed-session CSV receipt", "does not request a long rerun", "no data upload is needed", "calibration", "actual tracking loss", "Focus loss alone does not end it", "NON-RECORDING"):
             self.assertIn(phrase, guide)
         self.assertNotIn("Complete 24 Automatic", guide)
-        self.assertNotIn("Separately click Begin practice", guide)
+        self.assertNotIn("Separately click Begin tutorial", guide)
 
     def test_actual_csharp_request_helper_exhaustive_matrix(self):
         csc = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"

@@ -8,6 +8,7 @@ namespace AvatarStroop.Core
     {
         public string TrialId {get;} public string SessionId {get;} public string ListId {get;}
         public bool IsPractice {get;} public int PracticeAttempt {get;} public int BlockIndex {get;} public int PlannedIndex {get;} public int Segment {get;}
+        public bool IsTutorial {get{return IsPractice&&PracticeAttempt==0;}}
         readonly Colour word,ink;
         public Condition? Condition {get;}
         public Colour Word {get{if(TaskKind==TaskKind.VisualSearch)throw new InvalidOperationException("Search snapshot has no word");return word;}}

@@ -1259,7 +1259,8 @@ namespace AvatarStroop.Runtime
         void Release(IEnumerable<Colour> colours)
         {foreach(var colour in colours)experiment.ButtonChanged(colour,false);}
         static bool Pausable(Phase phase)
-        {return phase==Phase.Practice||phase==Phase.PracticeCorrection||phase==Phase.Countdown||phase==Phase.MainTask||phase==Phase.Questionnaire||phase==Phase.Rest;}
+        {return phase==Phase.Practice||phase==Phase.PracticeCorrection||phase==Phase.Countdown||phase==Phase.MainTask||phase==Phase.Questionnaire||phase==Phase.Rest||
+            phase==Phase.Tutorial||phase==Phase.TutorialFeedback||phase==Phase.PracticeExamResult;}
 
         // A connected device may legitimately be waiting for held controls to
         // return neutral at a phase boundary. Suppress actions and release the
@@ -1367,7 +1368,7 @@ namespace AvatarStroop.Runtime
             bool confirmEdge=confirm&&!previousConfirm,pauseEdge=pause&&!previousPause,withdrawEdge=withdraw&&!previousWithdraw;
             previousConfirm=confirm;previousPause=pause;previousWithdraw=withdraw;
             auxiliaryPhase=phase;auxiliaryItem=item;auxSampled=true;previousDisplayReady=phaseDisplayReady;previousInstruction=instruction;
-            if(context)candidate=3;
+            if(context){candidate=3;tutorialMenuSelection=0;}
             // A phase/panel visibility boundary must not consume an explicit
             // safety edge in the attached raw path. Ordinary confirmation
             // still waits for a later neutral sample and a fresh edge.
@@ -1385,8 +1386,23 @@ namespace AvatarStroop.Runtime
             // The attached named-raw scene also requires an actual software
             // panel witness before correction or resume confirmation. Pause
             // and withdrawal above remain independent of that witness.
-            if(!phaseDisplayReady&&(phase==Phase.Questionnaire||phase==Phase.Rest||
+            if(!phaseDisplayReady&&(phase==Phase.Questionnaire||phase==Phase.Rest||phase==Phase.TutorialFeedback||phase==Phase.PracticeExamResult||
                 (rawAdmissionAttached&&(phase==Phase.PracticeCorrection||phase==Phase.Paused))))return;
+            if(phase==Phase.TutorialFeedback)
+            {
+                if(ratingDirection==0)ratingArmed=true;
+                else if(ratingArmed){tutorialMenuSelection=ratingDirection<0?0:1;ratingArmed=false;return;}
+                // A menu movement consumes this sample. Only a later fresh
+                // trigger can select the visibly highlighted action.
+                if(confirmEdge)
+                {
+                    if(tutorialMenuSelection==1)experiment.RequestPracticeExam();
+                    else experiment.ContinueTutorial();
+                }
+                return;
+            }
+            if(phase==Phase.PracticeExamResult)
+            {if(confirmEdge)experiment.ContinuePracticeExamResult();return;}
             if(phase==Phase.Questionnaire)
             {
                 if(instruction){if(confirmEdge)experiment.AcknowledgeQuestionnaireInstruction();return;}

@@ -111,6 +111,17 @@ namespace AvatarStroop.Core
             if(attempt<1||attempt>2)throw new ArgumentOutOfRangeException("attempt");
             return Build(seed,-1,attempt,8);
         }
+        public static Stimulus[] PracticeExam(uint seed,int attempt)
+        {
+            if(attempt<1)throw new ArgumentOutOfRangeException("attempt");
+            return Build(seed,-1,attempt,10);
+        }
+        public static Stimulus Tutorial(uint seed,int round,int index)
+        {
+            if(round<1||index<0)throw new ArgumentOutOfRangeException("round");
+            uint tutorialSeed=unchecked(seed+0xA24BAED5u+(uint)round*0x9E3779B9u);
+            return Build(tutorialSeed,-1,index/8+1,8)[index%8];
+        }
         static Stimulus[] Build(uint seed,int list,int attempt,int count)
         {
             var random=new Random32(unchecked(seed+(uint)(list+2)*0xD1B54A35u+(uint)attempt*0x94D049BBu));

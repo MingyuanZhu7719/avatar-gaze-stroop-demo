@@ -75,10 +75,16 @@ namespace AvatarStroop.Unity.Editor
                 Require(!bootstrap.Configured&&Get(bootstrap,"participant")==null,"missing design accepted");
                 NoHardwareOrRecording(bootstrap,rig);
                 Set(bootstrap,"selectedDesign",2);Set(bootstrap,"namedListIndex",0);
+                Set(bootstrap,"observationOptIn",true); // stale legacy setup state cannot select the old protocol
                 Call(bootstrap,"TryConfigure");
                 Require(bootstrap.Configured,"explicit no-avatar preview rejected");
                 NoHardwareOrRecording(bootstrap,rig);
                 var preview=(ViveDevelopmentParticipant)Get(bootstrap,"participant");
+                Require(preview.UsesTutorial&&preview.PracticeTrialCount==10&&!preview.ObservationEnabled&&!(bool)Get(bootstrap,"observationOptIn"),
+                    "latest configuration admitted the legacy eight-trial observation adapter");
+                Call(bootstrap,"ChoosePracticeObservation",true);Call(bootstrap,"ChoosePracticeObservation",false);
+                Require(Get(bootstrap,"practicePreview")==null&&!(bool)Get(bootstrap,"practiceEyeChoice")&&!(bool)Get(bootstrap,"practiceTaskChoice"),
+                    "tutorial session activated legacy observation rehearsal");
                 Require(((string)Call(bootstrap,"NextOwnerAction")).Contains("start the classroom"),"stopped prepared preview needs a start-view action");
                 preview.ParticipantWithdraw();
                 string ended=(string)Call(bootstrap,"NextOwnerAction");

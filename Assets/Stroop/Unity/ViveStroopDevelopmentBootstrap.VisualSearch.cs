@@ -17,7 +17,7 @@ namespace AvatarStroop.Unity
                 !frame.InputReady||!participant.InputReady||PresentationBlocked||!rig.HeadReady||!rig.XrFocused)return false;
             var trial=participant.CurrentTrial;
             if(trial==null||!trial.Stimulus.IsVisualSearch||!trial.Onset.HasValue||trial.Outcome!=TrialOutcome.Pending||
-                (participant.Phase!=Phase.Practice&&participant.Phase!=Phase.MainTask))return false;
+                (participant.Phase!=Phase.Tutorial&&participant.Phase!=Phase.Practice&&participant.Phase!=Phase.MainTask))return false;
             return namedRawPump==null||committedRawTrial==trial.TrialId;
         }
         bool SearchRay(ViveStroopDeviceFrame frame,out Vector3 origin,out Vector3 direction)

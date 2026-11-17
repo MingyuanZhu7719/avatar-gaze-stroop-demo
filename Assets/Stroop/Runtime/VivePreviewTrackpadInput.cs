@@ -109,7 +109,7 @@ namespace AvatarStroop.Runtime
             // Each phase/reconnection observes its first sample. A press remains
             // latched to its original colour until physical release, even if the
             // contact moves or the phase changes.
-            if(boundary || !pressed || (phase!=Phase.Practice && phase!=Phase.MainTask))
+            if(boundary || !pressed || (phase!=Phase.Practice && phase!=Phase.MainTask && phase!=Phase.Tutorial))
                 return new VivePreviewTrackpadFrame(true,null,releases);
 
             double ax=Math.Abs(sample.X), ay=Math.Abs(sample.Y);

@@ -148,6 +148,28 @@ namespace AvatarStroop.Core
             return result;
         }
 
+        public static Stimulus[] PracticeExam(uint seed,int attempt)
+        {
+            if(attempt<1)throw new ArgumentOutOfRangeException("attempt");
+            var random=new Random32(DeriveSeed(seed,unchecked(0x91E10DA5u+(uint)attempt)));
+            var result=new Stimulus[10];var cycle=new[]{0,1,2,3};Shuffle(cycle,random);
+            int shift=1+random.Next(3);
+            for(int i=0;i<4;i++)
+            {result[i]=new Stimulus((Colour)i,(Colour)i);result[i+5]=new Stimulus((Colour)cycle[i],(Colour)cycle[(i+shift)%4]);}
+            int extra=random.Next(4),word=(extra+1+random.Next(3))%4,ink=(word+1)%4;
+            if(ink==extra)ink=(ink+1)%4;
+            result[4]=new Stimulus((Colour)extra,(Colour)extra);
+            result[9]=new Stimulus((Colour)word,(Colour)ink);
+            Shuffle(result,random);return result;
+        }
+
+        public static Stimulus Tutorial(uint seed,int round,int index)
+        {
+            if(round<1||index<0)throw new ArgumentOutOfRangeException("round");
+            uint tutorialSeed=DeriveSeed(seed,unchecked(0xA24BAED5u+(uint)round*0x9E3779B9u+(uint)(index/8)));
+            return Practice(tutorialSeed,1)[index%8];
+        }
+
         /// <summary>
         /// Pre-generates one frozen allocation roster. Retain this roster and
         /// record assignments/completions; do not regenerate it after withdrawals

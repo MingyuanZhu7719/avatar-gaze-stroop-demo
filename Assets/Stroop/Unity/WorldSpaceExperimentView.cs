@@ -223,10 +223,10 @@ namespace AvatarStroop.Unity
         {
             return ViveRawAttached()&&frame>=0&&rawPanelSeen!=null&&
                 (long)frame-rawPanelSeen.Frame==1&&SameRawPanel(rawPanelSeen,task,intro,rating,answered)&&
-                SameRawPanel(rawPanelSeen,currentView,questionnaireInstructionPending,viveQuestionnaireRating,questionnaireAnsweredCount);
+                SameRawPanel(rawPanelSeen,currentView,questionnaireInstructionPending,CurrentPanelSelection,questionnaireAnsweredCount);
         }
         internal bool MatchesViveRawPanel(ViveRawPanelObservation sample,TaskView task,bool intro,int rating,int answered)
-        {return SameRawPanel(sample,task,intro,rating,answered)&&SameRawPanel(sample,currentView,questionnaireInstructionPending,viveQuestionnaireRating,questionnaireAnsweredCount);}
+        {return SameRawPanel(sample,task,intro,rating,answered)&&SameRawPanel(sample,currentView,questionnaireInstructionPending,CurrentPanelSelection,questionnaireAnsweredCount);}
         internal bool TryPrepareViveRawPanel(int frame,out long revision)
         {
             revision=-1;rawPanelSeen=null;
@@ -235,9 +235,9 @@ namespace AvatarStroop.Unity
             bool intro=currentView.Phase==Phase.Questionnaire&&questionnaireInstructionPending;
             revision=++rawPanelRevision;
             rawPanelExpected=new ViveRawPanelObservation(currentView.Phase,currentView.BlockIndex,frame,
-                currentView.Phase==Phase.Questionnaire&&!intro?viveQuestionnaireRating:0,
+                currentView.Phase==Phase.TutorialFeedback?viveTutorialMenuSelection:currentView.Phase==Phase.Questionnaire&&!intro?viveQuestionnaireRating:0,
                 currentView.Phase==Phase.Questionnaire?questionnaireAnsweredCount:0,intro,currentView.ReadyEnabled,
-                currentView.QuestionnaireItem,currentView.PracticeCorrection,
+                currentView.QuestionnaireItem,ViveRawPanelPolicy.PanelCorrection(currentView),
                 currentView.Phase==Phase.Countdown?Math.Ceiling(countdownRemaining).ToString("0"):null,revision,0);
             return true;
         }
@@ -263,6 +263,7 @@ namespace AvatarStroop.Unity
         {
             if(camera==presentationCamera&&rawPanelExpected!=null&&rawPanelCaptureFrame==Time.frameCount&&
                 rawPanelExpected.Frame==Time.frameCount)rawPanelObserved|=bit;
+            if(camera==presentationCamera&&tutorialPanelCaptureFrame==Time.frameCount)tutorialPanelObserved|=bit;
         }
         public event Action<AvatarPresentationObservation> AvatarPresented;
         public Camera PresentationCamera { get { return presentationCamera; } }
@@ -276,7 +277,7 @@ namespace AvatarStroop.Unity
         public bool CleanTaskPresentation
         {
             get { return headsetPreview&&role==Actor.Participant&&currentView!=null&&
-                (currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask); }
+                (currentView.Phase==Phase.Tutorial||currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask); }
         }
         public AvatarPose AppliedPose
         {
@@ -361,7 +362,7 @@ namespace AvatarStroop.Unity
             RequireLayout();
             if(viveUnconfiguredPreview)throw new InvalidOperationException("VIVE classroom input and task are not configured.");
             if(view == null) throw new ArgumentNullException("view");
-            bool taskPhase = view.Phase == Phase.MainTask || (role == Actor.Participant && view.Phase == Phase.Practice);
+            bool taskPhase = view.Phase == Phase.MainTask || (role == Actor.Participant && (view.Phase == Phase.Tutorial || view.Phase == Phase.Practice));
             bool search=view.TaskKind==TaskKind.VisualSearch;
             string nextTrial = taskPhase && (search?view.VisualSearch!=null:view.Stimulus!=null) && !String.IsNullOrEmpty(view.TrialId) ? view.TrialId : null;
             string nextWord = nextTrial == null||search ? "" : view.Stimulus.Word.ToString().ToUpperInvariant();
@@ -383,6 +384,7 @@ namespace AvatarStroop.Unity
             SetMessageText(role == Actor.Operator ? "" : ParticipantMessage(view));
             RefreshAvatarVisibility();
             RefreshLegendVisibility();
+            RefreshTutorialInstructions();
             RefreshWarnings();
         }
 
@@ -740,7 +742,7 @@ namespace AvatarStroop.Unity
                 FitHud(avatarLabel,"",frustum,new Rect(),.02f,1);
                 return;
             }
-            bool trial=currentView!=null&&(currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask);
+            bool trial=currentView!=null&&(currentView.Phase==Phase.Tutorial||currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask);
             if(phaseAnimationRoot!=null)phaseAnimationRoot.gameObject.SetActive(false);
             if(CleanTaskPresentation)
             {
@@ -764,6 +766,10 @@ namespace AvatarStroop.Unity
                 }
                 LogHudProjection(frustum);
                 return;
+            }
+            if(IsTutorialPanel)
+            {
+                LayoutTutorialPanel(frustum);LogHudProjection(frustum);return;
             }
             if(UsesPhasePanel)
             {
@@ -1188,7 +1194,7 @@ namespace AvatarStroop.Unity
         internal bool PrepareRawAutomaticAvatar(TaskView expected,AvatarOutput output)
         {
             if(!viveTaskPreview||role!=Actor.Participant||expected==null||
-                expected.Phase!=Phase.MainTask&&expected.Phase!=Phase.Practice||
+                expected.Phase!=Phase.MainTask&&expected.Phase!=Phase.Practice&&expected.Phase!=Phase.Tutorial||
                 !SameRawAvatarTrial(expected,currentView)||avatarRoot==null||avatarLabel==null)return false;
             bool visible=expected.Phase==Phase.MainTask&&expected.OperatorAvatarVisible;
             if(visible)
@@ -1337,7 +1343,7 @@ namespace AvatarStroop.Unity
         void RefreshLegendVisibility()
         {
             bool useful=!viveUnconfiguredPreview&&headsetPreview&&role==Actor.Participant&&currentView!=null&&currentView.TaskKind!=TaskKind.VisualSearch&&
-                (currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask||currentView.Phase==Phase.PracticeCorrection);
+                (currentView.Phase==Phase.Tutorial||currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask||currentView.Phase==Phase.PracticeCorrection);
             if(controllerLegend!=null)controllerLegend.gameObject.SetActive(useful&&!viveTaskPreview);
             if(viveControllerLegend!=null)viveControllerLegend.gameObject.SetActive(useful&&viveTaskPreview);
         }
@@ -1370,7 +1376,7 @@ namespace AvatarStroop.Unity
             rawPanelCaptureFrame=-1;rawPanelObserved=rawPanelRequired=0;
             var expected=rawPanelExpected;
             if(expected==null||camera!=presentationCamera||expected.Frame!=Time.frameCount||!ViveRawAttached()||
-                !MatchesViveRawPanel(expected,currentView,questionnaireInstructionPending,viveQuestionnaireRating,questionnaireAnsweredCount)||
+                !MatchesViveRawPanel(expected,currentView,questionnaireInstructionPending,CurrentPanelSelection,questionnaireAnsweredCount)||
                 !PresentationIsAvailable()||hasPresentationFault||!isActiveAndEnabled||GraphicsSettings.currentRenderPipeline!=null||
                 !camera.isActiveAndEnabled||camera.targetTexture!=null||camera.cullingMask==0||camera.rect.width<=0||camera.rect.height<=0)return;
             // The actual renderers, not a camera callback alone, must be
@@ -1396,10 +1402,12 @@ namespace AvatarStroop.Unity
             }
             else if(expected.Phase==Phase.Questionnaire)
             {required|=512;ready=BindRawPanelElement(viveSelectionText==null?null:viveSelectionText.transform,this,512)&&ready;}
+            if(expected.Phase==Phase.TutorialFeedback)
+            {required|=4096;ready=BindRawPanelElement(previewInputText==null?null:previewInputText.transform,this,4096)&&ready;}
             if(!ready)return;
             rawPanelRequired=required;rawPanelCaptureFrame=Time.frameCount;
             rawPanelPhaseText=phaseText.text;rawPanelMessageText=messageText.text;
-            rawPanelSelectionText=expected.Phase==Phase.Questionnaire&&!expected.Intro?viveSelectionText.text:null;
+            rawPanelSelectionText=expected.Phase==Phase.TutorialFeedback?previewInputText.text:expected.Phase==Phase.Questionnaire&&!expected.Intro?viveSelectionText.text:null;
             rawPanelCountdownText=expected.Phase==Phase.Countdown?phaseNumber.text:null;
         }
         void FinishViveRawPanelRender(Camera camera)
@@ -1409,10 +1417,10 @@ namespace AvatarStroop.Unity
                 expected.Frame!=Time.frameCount||rawPanelRequired==0||(rawPanelObserved&rawPanelRequired)!=rawPanelRequired||
                 !ViveRawAttached()||!PresentationIsAvailable()||hasPresentationFault||!isActiveAndEnabled||
                 !camera.isActiveAndEnabled||camera.targetTexture!=null||camera.cullingMask==0||
-                !MatchesViveRawPanel(expected,currentView,questionnaireInstructionPending,viveQuestionnaireRating,questionnaireAnsweredCount)||
+                !MatchesViveRawPanel(expected,currentView,questionnaireInstructionPending,CurrentPanelSelection,questionnaireAnsweredCount)||
                 !String.Equals(rawPanelPhaseText,phaseText.text,StringComparison.Ordinal)||
                 !String.Equals(rawPanelMessageText,messageText.text,StringComparison.Ordinal)||
-                (rawPanelSelectionText!=null&&!String.Equals(rawPanelSelectionText,viveSelectionText.text,StringComparison.Ordinal))||
+                (rawPanelSelectionText!=null&&!String.Equals(rawPanelSelectionText,expected.Phase==Phase.TutorialFeedback?previewInputText.text:viveSelectionText.text,StringComparison.Ordinal))||
                 (expected.Phase==Phase.Countdown&&!ViveRawPanelPolicy.CountdownTextMatches(expected.CountdownText,rawPanelCountdownText,phaseNumber==null?null:phaseNumber.text)))return;
             double at=Time.realtimeSinceStartupAsDouble;
             if(Double.IsNaN(at)||Double.IsInfinity(at)||at<0)return;
@@ -1450,6 +1458,7 @@ namespace AvatarStroop.Unity
             PrepareViveRecordingChoiceRender(camera);
 #endif
             PrepareViveRawPanelCull(camera);
+            PrepareTutorialPanelCull(camera);
             PrepareVisualSearchCueCapture(camera);
             ResetCapture();
             capturedAvatar = null; capturedAvatarFrame = -1; avatarObservedByCamera = false;
@@ -1494,6 +1503,7 @@ namespace AvatarStroop.Unity
 #endif
             ObserveViveEyeAoiCameraRender(camera);
             FinishViveRawPanelRender(camera);
+            FinishTutorialPanelRender(camera);
             FinishVisualSearchCueCapture(camera);
             var avatarCallback = AvatarPresented;
             if(PresentationIsAvailable() && capturedAvatar != null && capturedAvatarFrame == Time.frameCount && capturedAvatarRevision == avatarRevision &&
@@ -1544,7 +1554,7 @@ namespace AvatarStroop.Unity
                 presentationCamera != null && presentationCamera.isActiveAndEnabled && presentationCamera.targetTexture == null &&
                 presentationCamera.rect.width > 0 && presentationCamera.rect.height > 0 &&
                 !String.IsNullOrEmpty(displayedTrial) && currentView != null && currentView.TrialId == displayedTrial &&
-                (currentView.Phase == Phase.Practice || currentView.Phase == Phase.MainTask) &&
+                (currentView.Phase == Phase.Tutorial || currentView.Phase == Phase.Practice || currentView.Phase == Phase.MainTask) &&
                 (IsVisualSearchTrial?VisualSearchMeshesAvailable():stimulusText != null && stimulusText.gameObject.activeInHierarchy &&
                 stimulusText.GetComponent<MeshRenderer>().enabled);
         }
@@ -1768,7 +1778,8 @@ namespace AvatarStroop.Unity
             if(viveTaskPreview)
             {
                 if(view.Phase==Phase.Ended&&ShowViveLegacyPreviewNotice)return ViveStroopRecordingScopePresentation.LegacyEndMessage(completed);
-                if(view.Phase==Phase.Preparation||view.Phase==Phase.Familiarization)return TaskInstructions(view)+"\nWaiting for practice to begin.";
+                if(view.UsesTutorial&&(view.Phase==Phase.TutorialFeedback||view.Phase==Phase.PracticeExamResult||view.Phase==Phase.PracticeExamReady))return TrainingPanelMessage(view);
+                if(view.Phase==Phase.Preparation||view.Phase==Phase.Familiarization)return TaskInstructions(view)+(view.UsesTutorial?"\nTutorial comes first. Practise until you feel ready.\nThen take a 10-question exam; 8 correct answers pass.":"\nWaiting for practice to begin.");
                 if(view.Phase==Phase.PracticeCorrection)return view.PracticeCorrection+"\nPress the trigger to continue.";
                 if(view.Phase==Phase.Questionnaire&&QuestionnaireIntro)return "Click top or bottom, then release.\nPull the trigger when ready.";
                 if(view.Phase==Phase.Rest)return "Rest as long as you need.\nPress the trigger to continue.";

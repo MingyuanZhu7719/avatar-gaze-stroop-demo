@@ -33,7 +33,7 @@ namespace AvatarStroop.Unity
             practiceCountdownFrame=Time.frameCount;
             if(view!=null)view.SetPresentationAvailable(false);
             if(rig!=null)rig.BlockTaskPresentation();
-            message="Practice starts in "+Math.Max(1,Math.Ceiling(practiceCountdown.RemainingSeconds))+" seconds. Keep the headset on and release the controls.";
+            message=(participant!=null&&participant.UsesTutorial?"Practice exam starts in ":"Practice starts in ")+Math.Max(1,Math.Ceiling(practiceCountdown.RemainingSeconds))+" seconds. Keep the headset on and release the controls.";
             return false;
         }
         internal void ObservePracticeCountdownRender()
@@ -97,6 +97,11 @@ namespace AvatarStroop.Unity
             if(previewPracticeCountdownTask==null)return false;
             if(!PreviewPracticeRequestCurrent)
             {CancelPreviewPracticeRequest("Practice request canceled because the task, view or safety state changed.");return false;}
+            if(participant.UsesTutorial&&participant.Phase==Phase.Preparation)
+            {
+                previewPracticeCountdownTask=null;ResetPracticeCountdown();
+                Run(()=>participant.OwnerBeginTutorial(Actor.Owner));return true;
+            }
             if(!ServicePracticeCountdown())return true;
             previewPracticeCountdownTask=null;ResetPracticeCountdown();
             Run(()=>{participant.OwnerBeginPractice(Actor.Owner);if(practicePreview!=null)practicePreview.OnPracticeStarted();});

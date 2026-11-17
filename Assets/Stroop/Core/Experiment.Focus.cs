@@ -30,8 +30,12 @@ namespace AvatarStroop.Core
         }
         static bool FocusHoldPhase(Phase phase)
         {
+            // A prepared exam has not presented a trial. Keep its exact plan
+            // context while the host masks input/countdown on lost XR focus,
+            // as for the earlier Preparation and PracticeRetry states.
             return phase==Phase.Familiarization||phase==Phase.Practice||phase==Phase.PracticeCorrection||
-                phase==Phase.Countdown||phase==Phase.MainTask||phase==Phase.Questionnaire||phase==Phase.Rest;
+                phase==Phase.Countdown||phase==Phase.MainTask||phase==Phase.Questionnaire||phase==Phase.Rest||
+                phase==Phase.Tutorial||phase==Phase.TutorialFeedback||phase==Phase.PracticeExamResult;
         }
         internal void RecordFocusForwardingSuspension(bool acknowledged,bool cleanupUnknown,bool noPositiveGrant)
         {

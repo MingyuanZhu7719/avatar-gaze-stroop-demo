@@ -13,6 +13,8 @@ namespace AvatarStroop.Runtime
     {
         public string Session, Id, Condition, Phase, Rule, RuleProvenance, Word, Ink, Response, Expected, DeclaredExpected, DeclaredCorrect, List, RetryOf;
         public string OnsetBasis, TaskClockId, UnityRenderBasis;
+        public string TrainingProtocol, LearningStage;
+        public int? PracticeAttempt, TutorialRound;
         public string TaskKind="Stroop", SearchSchema, TargetItem, SelectedItem, TargetColour, TargetPattern, LayoutSeed;
         public int? SetSize;
         public int TimeoutCount;
@@ -23,7 +25,9 @@ namespace AvatarStroop.Runtime
         internal double? PlanEventTime, PresentationEventTime;
         public bool Interrupted;
         public readonly List<string> Flags = new List<string>();
-        public bool Practice { get { return Phase != null && Phase.StartsWith("Practice",StringComparison.Ordinal); } }
+        public string Scope { get { return StudyAnalysis.TrialScope(TrainingProtocol,LearningStage,Phase); } }
+        public bool Practice { get { return Scope=="Practice"||Scope=="PracticeExam"; } }
+        public bool Tutorial { get { return Scope=="Tutorial"; } }
         public bool? Correct { get; internal set; }
         public bool AccuracyIncluded { get; internal set; }
         public bool RtIncluded { get; internal set; }
@@ -111,7 +115,8 @@ namespace AvatarStroop.Runtime
     public sealed class StudyBlockSummary
     {
         public int Block;
-        public string Condition, Rule, Scope, Congruence, TaskKind;
+        public string Condition, Rule, Scope, Congruence, TaskKind, TrainingProtocol;
+        public int? PracticeAttempt, TutorialRound;
         public int? SetSize;
         public int Trials, Planned, Presented, Responded, Interrupted, TimedOut, AccuracyN, Correct, RtN;
         public double? Accuracy, MeanRt, MedianRt, SdRt, P95Rt;
@@ -119,7 +124,7 @@ namespace AvatarStroop.Runtime
 
     public sealed partial class StudyAnalysis
     {
-        public const string Version="1.1.0";
+        public const string Version="1.2.0";
         static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
         readonly Dictionary<string,StudyTrial> byId=new Dictionary<string,StudyTrial>(StringComparer.Ordinal);
         readonly Dictionary<string,StudyEyeGroup> eye=new Dictionary<string,StudyEyeGroup>(StringComparer.Ordinal);
@@ -202,6 +207,7 @@ namespace AvatarStroop.Runtime
             }
             if(kind=="block_task_ended")endedBlocks.Add(block);
             if(kind=="session_ended")SessionEndReason=Get(p,"reason");
+            ReadTrainingEvent(kind,p,rule,taskKind,Number(f,"event_local_time"));
             if(kind=="rating")
             {
                 string item=Get(p,"item"),value=Get(p,"value"),flag="";
@@ -227,6 +233,7 @@ namespace AvatarStroop.Runtime
                     RuleProvenance=rule==null?"legacy_inferred":"explicit",TaskKind=taskKind??"Stroop"};byId.Add(id,trial);Trials.Add(trial);
             }
             if(trial.Block!=block||trial.Segment!=segment)trial.Flag("context_conflict");
+            ApplyTrainingTrial(trial,p);
             if(rule!=null&&trial.Rule!=rule)trial.Flag("response_rule_conflict");
             if(rule!=null)trial.RuleProvenance="explicit";
             if(taskKind!=null&&trial.TaskKind!=taskKind)trial.Flag("task_kind_conflict");
@@ -276,7 +283,7 @@ namespace AvatarStroop.Runtime
                 {if(t.TimeoutCount!=1||t.ResponseCount!=0)t.Flag("conflicting_trial_outcomes");}
                 else if(t.ResponseCount!=1)t.Flag(t.ResponseCount==0?"no_response":"duplicate_response");
                 if(t.Interrupted)t.Flag("interrupted");
-                if(t.Phase=="Unknown"||(!t.Practice&&t.Phase!="MainTask"))t.Flag("unknown_trial_phase");
+                if(t.Scope=="Unknown")t.Flag("unknown_trial_phase");
                 if(t.VisualSearch)FinishSearch(t);
                 else
                 {
@@ -300,6 +307,7 @@ namespace AvatarStroop.Runtime
                 if(t.TimeoutTime.HasValue&&t.TimeoutEventTime.HasValue&&t.TimeoutTime.Value>t.TimeoutEventTime.Value+0.0001)t.Flag("timeout_time_after_event");
                 t.RtIncluded=!t.TimedOut&&t.AccuracyIncluded&&t.Correct==true&&t.Flags.Count==0;
             }
+            FinishTraining();
             if(Trials.Any(x=>x.RuleProvenance=="legacy_inferred"))Warn("Older events omit response_rule: InkColor is inferred and labelled, not merged with WordMeaning.");
             if(eye.Values.Any(x=>x.AcquisitionRows>0))Warn("Native acquisition cadence is session-wide and unaligned to task blocks; ingest observations carry separate software task context.");
             if(PlannedBlocks.HasValue&&EndedBlocks<PlannedBlocks.Value)Warn("Only "+EndedBlocks+" of "+PlannedBlocks+" planned blocks have block_task_ended events.");
@@ -311,13 +319,14 @@ namespace AvatarStroop.Runtime
         public IEnumerable<StudyBlockSummary> Summaries()
         {
             Finish();
-            foreach(var group in Trials.GroupBy(t=>new{t.Block,t.Condition,t.Rule,Scope=t.Practice?"Practice":"Formal",t.Congruence,t.TaskKind,t.SetSize})
+            foreach(var group in Trials.GroupBy(t=>new{t.Block,t.Condition,t.Rule,t.Scope,t.Congruence,t.TaskKind,t.SetSize,t.TrainingProtocol,t.PracticeAttempt,t.TutorialRound})
                 .OrderBy(g=>g.Key.Block).ThenBy(g=>g.Key.Rule,StringComparer.Ordinal).ThenBy(g=>g.Key.SetSize).ThenBy(g=>g.Key.Congruence,StringComparer.Ordinal))
             {
                 var rt=group.Where(x=>x.RtIncluded).Select(x=>x.ReactionSeconds.Value).OrderBy(x=>x).ToArray();
                 int n=group.Count(x=>x.AccuracyIncluded),correct=group.Count(x=>x.AccuracyIncluded&&x.Correct==true);
                 double? mean=rt.Length>0?(double?)rt.Average():null;
                 yield return new StudyBlockSummary{Block=group.Key.Block,Condition=group.Key.Condition,Rule=group.Key.Rule,Scope=group.Key.Scope,Congruence=group.Key.Congruence,TaskKind=group.Key.TaskKind,SetSize=group.Key.SetSize,
+                    TrainingProtocol=group.Key.TrainingProtocol,PracticeAttempt=group.Key.PracticeAttempt,TutorialRound=group.Key.TutorialRound,
                     Trials=group.Count(),Planned=group.Count(x=>x.PlannedCount>0),Presented=group.Count(x=>x.PresentedCount>0),Responded=group.Count(x=>x.ResponseCount>0),
                     Interrupted=group.Count(x=>x.Interrupted),TimedOut=group.Count(x=>x.TimedOut),AccuracyN=n,Correct=correct,Accuracy=n>0?(double?)correct/n:null,RtN=rt.Length,MeanRt=mean,
                     MedianRt=Quantile(rt,.5),P95Rt=Quantile(rt,.95),SdRt=rt.Length>1?(double?)Math.Sqrt(rt.Sum(x=>(x-mean.Value)*(x-mean.Value))/(rt.Length-1)):null};

@@ -45,7 +45,7 @@ namespace AvatarStroop.Unity
                 "Self-test, not study consent. Store real eye/head data on this PC? Eye data may identify you. No upload. Withdrawal does not erase files.":
                 "Self-test, not study consent. Store task responses, questionnaire ratings and timing on this PC?";
             if(woz)text+=" LiveWoZ also stores mapped operator head/eye poses and source times.";
-            return text+" Both choices + release start local raw/CSV recording and Practice. Formal blocks require the operator.";
+            return text+" Both choices + release start local raw/CSV recording and Tutorial. Formal blocks require the operator.";
         }
         internal void ArmConsentAutoStart()
         {
@@ -65,7 +65,7 @@ namespace AvatarStroop.Unity
                 InitialRevision=recordingSetup.Revision,PlanCount=namedPlanCount,Options=(int[])namedPlanOptions.Clone(),Lists=(int[])namedPlanLists.Clone(),
                 Woz=legacyWozRecordingSelected,CsvBytes=bytes,CsvMilliseconds=milliseconds,DeadlineClock=deadlineClock,ArmedAt=now};
             consentAutoStartNotice=null;
-            message="Armed for local raw + CSV recording and first Practice after both headset choices and release of all controls. Start the classroom view. No files yet.";
+            message="Armed for local raw + CSV recording and first Tutorial after both headset choices and release of all controls. Start the classroom view. No files yet.";
             Debug.Log("VIVE_CONSENT_AUTO_START_ARMED: explicit owner raw/CSV + first-Practice request; both headset choices still required.");
             RenderPreSessionChoice();
         }
@@ -123,12 +123,12 @@ namespace AvatarStroop.Unity
             var arm=consentAutoStart;if(arm==null)return;
             if(!ConsentAutoStartContextCurrent(arm)||!recordingSetup.BothSelected||participant==null||participant.Phase!=Phase.Preparation||
                 rig==null||sharedClock==null||!object.ReferenceEquals(sharedClock,rig.ActiveViewClock))
-            {CancelConsentAutoStart("Automatic start setup changed. Review on the desktop; no recording or Practice was started.");return;}
+            {CancelConsentAutoStart("Automatic start setup changed. Review on the desktop; no recording or Tutorial was started.");return;}
             double confirmed;
             if(!arm.DeadlineClock.TryReadRecordingAdmissionTime(out confirmed))
-            {CancelConsentAutoStart("Automatic start clock unavailable. Review on the desktop; no recording or Practice was started.");return;}
+            {CancelConsentAutoStart("Automatic start clock unavailable. Review on the desktop; no recording or Tutorial was started.");return;}
             arm.Task=participant;arm.ViewClock=sharedClock;arm.ConfirmedAt=confirmed;
-            message="Both choices accepted. Release Trigger, Menu and trackpad. Local recording and Practice will start when tracking is ready.";
+            message="Both choices accepted. Release Trigger, Menu and trackpad. Local recording and Tutorial will start when tracking is ready.";
         }
         void ServiceConsentAutoStart()
         {
@@ -150,7 +150,7 @@ namespace AvatarStroop.Unity
                 if(!rawPracticeRequested){CancelRequestedRawRecordingStart();return;}
                 rawPracticeFromConsent=true;rawConsentInterrupted=arm.Interrupted;
                 rawConsentPracticeTask=participant;rawConsentPracticeClock=sharedClock;
-                message="Both choices accepted and controls released. Starting local recording, then Practice automatically; formal blocks still need the operator.";
+                message="Both choices accepted and controls released. Starting local recording, then Tutorial automatically; formal blocks still need the operator.";
                 Debug.Log("VIVE_CONSENT_AUTO_START_REQUESTED: existing one-use recording and first-Practice paths captured once after neutral release.");
             }
             catch(Exception)
@@ -187,11 +187,11 @@ namespace AvatarStroop.Unity
                 if(consentAutoStart==null&&!rawPracticeFromConsent)
                     return rawStartIntent==null&&namedRawPump==null&&!rawPracticeRequested&&rawPlanStartRequested==0&&rawPendingBlockPlan==null&&
                         !RecordingBlocked&&!ObservationBlocked&&!focusPlanConfirmationRequired&&!focusPlanTriggerAccepted?consentAutoStartNotice:null;
-                if(recordingSetup==null||!recordingSetup.BothSelected)return "Automatic recording + Practice armed. Both separate headset choices are required. No files have been requested.";
-                if(namedRawPump==null)return "Automatic recording + Practice: "+RecordingStartBlocker();
+                if(recordingSetup==null||!recordingSetup.BothSelected)return "Automatic recording + Tutorial armed. Both separate headset choices are required. No files have been requested.";
+                if(namedRawPump==null)return "Automatic recording + Tutorial: "+RecordingStartBlocker();
                 if(focusPlanConfirmationRequired||focusPlanTriggerAccepted)return FocusPlanAwaitNotice;
-                if(rawPlanStartRequested!=0||rawPendingBlockPlan!=null)return "Preparing Practice. Waiting for the block-plan write and flush confirmation; release all controls.";
-                return PracticeExecutionBlocker()??"Local recording started. Preparing first Practice automatically. Formal blocks still require the operator.";
+                if(rawPlanStartRequested!=0||rawPendingBlockPlan!=null)return "Preparing Tutorial. Waiting for the block-plan write and flush confirmation; release all controls.";
+                return PracticeExecutionBlocker()??"Local recording started. Preparing first Tutorial automatically. Formal blocks still require the operator.";
             }
         }
     }

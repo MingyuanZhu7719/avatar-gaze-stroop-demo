@@ -11,12 +11,16 @@ namespace AvatarStroop.Runtime
     public sealed class StudySearchItem
     {
         public string Session,Trial,Condition,Id,Colour,Pattern,LayoutId,LayoutSeed;
+        public string Scope,TrainingProtocol,LearningStage;
+        public int? PracticeAttempt,TutorialRound;
         public int Block,Segment,Slot,SetSize;
         public bool IsTarget;
     }
     public sealed class StudySearchEvent
     {
         public string Session,Trial,Condition,Action,Item,Flags,CueBasis;
+        public string Scope,TrainingProtocol,LearningStage;
+        public int? PracticeAttempt,TutorialRound;
         public int Block,Segment;
         public double? LocalTime,CueFirstRenderUnitySeconds,CueRenderedElapsedSeconds;
     }
@@ -61,7 +65,8 @@ namespace AvatarStroop.Runtime
                 searchLayouts.Add(trial.Id,layout);
                 foreach(var item in layout.Items)SearchItems.Add(new StudySearchItem{Session=SessionId,Trial=trial.Id,Block=trial.Block,Segment=trial.Segment,
                     Condition=trial.Condition,Id=item.Id,Slot=item.Slot,Colour=item.Colour.ToString(),Pattern=item.Pattern.ToString(),SetSize=layout.SetSize,
-                    IsTarget=item.Id==layout.TargetId,LayoutId=layout.LayoutId,LayoutSeed=layout.LayoutSeed.ToString(CultureInfo.InvariantCulture)});
+                    IsTarget=item.Id==layout.TargetId,LayoutId=layout.LayoutId,LayoutSeed=layout.LayoutSeed.ToString(CultureInfo.InvariantCulture),
+                    Scope=trial.Scope,TrainingProtocol=trial.TrainingProtocol,LearningStage=trial.LearningStage,PracticeAttempt=trial.PracticeAttempt,TutorialRound=trial.TutorialRound});
             }
             if(kind=="first_response")SearchText(trial,Get(payload,"selected_item"),ref trial.SelectedItem);
             if(kind=="trial_timed_out")
@@ -86,7 +91,9 @@ namespace AvatarStroop.Runtime
             double? time=Number(fields,"event_local_time");
             if(!time.HasValue)flags+=(flags.Length>0?";":"")+"missing_event_time";
             SearchEvents.Add(new StudySearchEvent{Session=SessionId,Trial=trial,Block=block,Segment=segment,Condition=Condition(block),Action=action,
-                Item=Get(payload,"item_id"),LocalTime=time,Flags=flags});
+                Item=Get(payload,"item_id"),LocalTime=time,Flags=flags,
+                Scope=TrialScope(Get(payload,"training_protocol"),Get(payload,"learning_stage"),Get(payload,"legacy_phase")??Get(payload,"named_phase")??currentPhase),
+                TrainingProtocol=Get(payload,"training_protocol"),LearningStage=Get(payload,"learning_stage"),PracticeAttempt=OptionalInt(payload,"practice_attempt"),TutorialRound=OptionalInt(payload,"tutorial_round")});
         }
         void SearchCue(IDictionary<string,string> fields,IDictionary<string,string> payload,int block,int segment)
         {
@@ -100,7 +107,9 @@ namespace AvatarStroop.Runtime
             if(!elapsed.HasValue||elapsed.Value<0)flags.Add("invalid_cue_elapsed_time");
             if(basis!="software_camera_callbacks_not_photon")flags.Add("unknown_cue_timing_basis");
             SearchEvents.Add(new StudySearchEvent{Session=SessionId,Trial=trial,Block=block,Segment=segment,Condition=Condition(block),Action="cue",
-                LocalTime=time,CueFirstRenderUnitySeconds=first,CueRenderedElapsedSeconds=elapsed,CueBasis=basis,Flags=String.Join(";",flags)});
+                LocalTime=time,CueFirstRenderUnitySeconds=first,CueRenderedElapsedSeconds=elapsed,CueBasis=basis,Flags=String.Join(";",flags),
+                Scope=TrialScope(Get(payload,"training_protocol"),Get(payload,"learning_stage"),Get(payload,"legacy_phase")??Get(payload,"named_phase")??currentPhase),
+                TrainingProtocol=Get(payload,"training_protocol"),LearningStage=Get(payload,"learning_stage"),PracticeAttempt=OptionalInt(payload,"practice_attempt"),TutorialRound=OptionalInt(payload,"tutorial_round")});
         }
         void FinishSearch(StudyTrial trial)
         {

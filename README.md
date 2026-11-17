@@ -12,7 +12,7 @@ Use the [local study analyzer](docs/study-analyzer.md) to read completed VRAW/CS
 
 | Component | Current scope |
 | --- | --- |
-| VIVE participant | Classroom presentation, one VIVE wand, practice, Legacy A/B/C/D and Named multi-block development plans, automatic avatar control, questionnaires, and explicit local recording. |
+| VIVE participant | Classroom presentation, one VIVE wand, unlimited task-specific tutorial, ten-question practice exam, Legacy A/B/C/D and Named multi-block development plans, automatic avatar control, questionnaires, and explicit local recording. |
 | Eye acquisition | Installed SRanipal native callbacks, a bounded acquisition queue independent of Unity updates, channel-validity and calibration-query evidence, and graceful completion draining. |
 | Fixed-target eye validation | Separate opt-in recording in controlled VIVE builds; known classroom targets, steady-head and gentle head-turn passes, software timing and descriptive accuracy/AOI summaries. |
 | Gaze analysis records | Raw native frame identity and software timestamps; admitted observations add head pose, completed-render scene geometry and exclusive task/eyes/remaining-face AOI proxies. |
@@ -27,14 +27,14 @@ The [experiment design](docs/experiment-design.md) defines the research baseline
 
 1. Open the package's outer `AvatarStroopViveEyePreview.exe` launcher and follow its `START-HERE.txt`. Keep exactly one VIVE wand connected.
 2. Choose **Preview (no files)** or **Record locally**. Recording availability depends on the explicit build options.
-3. For a local self-test, choose the design, complete any required block/list choices, review the new session folder, and select **Prepare raw + CSV and arm recording + Practice**.
-4. Select **Start classroom view**, complete the two separate headset recording choices, and release the controls. Practice starts once the current readiness checks pass.
-5. After practice, use the displayed source confirmation action, such as **Confirm Automatic**, then **Begin first block**.
+3. For a local self-test, choose the design, complete any required block/list choices, review the new session folder, and select **Prepare raw + CSV and arm recording + Tutorial**.
+4. Select **Start classroom view**, complete the two separate headset recording choices, and release the controls. Tutorial starts once the current readiness checks pass. Learn the selected task with feedback, then choose to enter the ten-question practice exam.
+5. At least eight correct answers passes; otherwise return to tutorial and try again. After passing, use the displayed source confirmation action, such as **Confirm Automatic**, then **Begin first block**.
 6. After normal completion and file closure, use **Open CSV** to open the session CSV in the Windows default application.
 
 The fixed trackpad mapping is up/red, right/green, down/blue, left/yellow. In questionnaires, up/down changes the rating and trigger confirms. The [self-test guide](docs/controlled-recording-self-test-guide.txt) covers setup, withdrawal checks, output limits and completed-session verification. The [WoZ guide](docs/woz-participant-local-recording.md) covers the separate two-PC path.
 
-Choose **Ink colour** or **Word meaning** before configuring the session. Ink colour remains the default; Word meaning answers RED shown in green with red. The rule stays fixed through practice and all blocks and is recorded in task events. Practice and each block begin with a five-second countdown; each completed block shows fireworks before its questionnaire. The final questionnaire is followed immediately by six seconds of colorful fireworks and “Thank you for participating!” File conversion and eye cleanup continue in the background; the desktop reports their actual result separately.
+Choose **Ink colour** or **Word meaning** before configuring the session. Ink colour remains the default; Word meaning answers RED shown in green with red. The rule stays fixed through tutorial, exam and all blocks and is recorded in task events. Tutorial has no question limit and provides feedback; the exam reports only its final score. The practice exam and each block begin with a five-second countdown; each completed block shows fireworks before its questionnaire. The final questionnaire is followed immediately by six seconds of colorful fireworks and “Thank you for participating!” File conversion and eye cleanup continue in the background; the desktop reports their actual result separately.
 
 For the separate accuracy check, choose **Fixed-target eye validation** before configuring a task. The [validation guide](docs/vive-gaze-validation.md) explains target timing, the recorded files and interpretation. Its completion message is not an accuracy pass.
 

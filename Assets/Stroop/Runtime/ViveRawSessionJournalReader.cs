@@ -316,7 +316,7 @@ namespace AvatarStroop.Runtime
                     int runtime=I32(r,rows,"runtime");if(runtime<0||runtime>3)throw new Invalid();int cal=I32(r,rows,"calibration");if(cal<0||cal>2)throw new Invalid();Flag(r,rows,"eye_connected");
                     NullableI32(r,rows,"native_result");NullableI32(r,rows,"runtime_status");Flag(r,rows,"no_user");Eye(r,rows,"left");Eye(r,rows,"right");Eye(r,rows,"combined");
                     Flag(r,rows,"head_connected");Flag(r,rows,"head_valid");foreach(string axis in new[]{"x","y","z","w"})F64(r,rows,"head_rotation_"+axis);
-                    int phase=I32(r,rows,"ingest_phase");if(phase<0||phase>13)throw new Invalid();I32(r,rows,"ingest_block");I32(r,rows,"ingest_segment");Text(r,rows,"ingest_trial_id");if(I64(r,rows,"task_cursor")!=context.LastTask)throw new Invalid();
+                    int phase=I32(r,rows,"ingest_phase");if(!Enum.IsDefined(typeof(Phase),phase))throw new Invalid();I32(r,rows,"ingest_block");I32(r,rows,"ingest_segment");Text(r,rows,"ingest_trial_id");if(I64(r,rows,"task_cursor")!=context.LastTask)throw new Invalid();
                     if(memory.Position<memory.Length)ReadEyeFrameExtension(r,rows,nativeFrame,nativeTimestamp,eye,check);
                     context.Eyes++;
                 }

@@ -20,7 +20,7 @@ namespace AvatarStroop.Tests
             var intent=ViveNamedRecordingIntent.Select(Actor.Owner,"intent-fixture",true,true);
             var value=new ViveNamedSessionFrameAdmission.Manifest("session-fixture","clock-fixture",plan,intent,true);value.SealChoiceTime(0.5,11);return value;
         }
-        internal static byte[] Fixture(out long manifestEnd,out long taskEnd)
+        internal static byte[] Fixture(out long manifestEnd,out long taskEnd,Phase ingestPhase=Phase.MainTask)
         {
             var m=Manifest();byte[] prior=new byte[32];var output=new MemoryStream();
             Action<byte[],bool> frame=(payload,magic)=>{byte[] next,encoded=ViveRawSessionJournalCodec.Frame(payload,prior,magic,out next);output.Write(encoded,0,encoded.Length);prior=next;};
@@ -36,7 +36,7 @@ namespace AvatarStroop.Tests
             var c=new ViveEyeRay(2,false,true,new Vec3(0,0,0),new Vec3(Double.NaN,0,1));
             var poll=new ViveProEyePoll(new ViveHeadFrame(7,2.5,true,true,new Rotation(.1,.2,.3,.4)),
                 new ViveEyeFrame(9,123,2.25,false,l,null,c),ViveEyeRuntimeState.Working,ViveEyeCalibrationState.ReportedReady,true,0,2);
-            var stamp=new ViveDevelopmentParticipant.NamedRecordingTaskStamp(null,null,m.Plan,m.Intent,1,12,m.Session,Phase.MainTask,0,2,"trial-fixture");
+            var stamp=new ViveDevelopmentParticipant.NamedRecordingTaskStamp(null,null,m.Plan,m.Intent,1,12,m.Session,ingestPhase,0,2,"trial-fixture");
             var eye=new ViveNamedSessionFrameAdmission.Frame(poll,stamp,3,2.75);
             frame(ViveRawSessionJournalCodec.RecordPayload(2,eye,m),false);return output.ToArray();
         }
@@ -110,6 +110,15 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("VRAW eye frames round-trip appended tutorial and exam phases without accepting unknown enum values",()=>{
+                foreach(var phase in new[]{Phase.Tutorial,Phase.TutorialFeedback,Phase.PracticeExamReady,Phase.PracticeExamResult})
+                {
+                    long a,b;var result=Read(Fixture(out a,out b,phase));
+                    Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,result.Status);
+                    Row(result.DisplayText,2,"observation","ingest_phase","int",((int)phase).ToString(CultureInfo.InvariantCulture));
+                }
+                long first,last;Check.Throws<InvalidOperationException>(()=>Fixture(out first,out last,(Phase)999));
+            });
             suite.Run("VRAW keeps participant software choice polls separate from admission time",()=>{
                 var clock=new MonotonicClock("choice-roundtrip-clock");
                 double task=clock.Now,eye=clock.Now;

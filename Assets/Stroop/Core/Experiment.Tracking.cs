@@ -12,7 +12,7 @@ namespace AvatarStroop.Core
             if(!Configuration.HasRawRecordingIntent||!Enum.IsDefined(typeof(RawTrackingLoss),cause)||
                 Phase==Phase.Ended||Phase==Phase.NeedsProtocolDecision)
                 throw new InvalidOperationException("Raw tracking hold has no active context.");
-            if(planPending&&Phase!=Phase.Preparation&&Phase!=Phase.Familiarization&&Phase!=Phase.PracticeRetry&&Phase!=Phase.BlockReady)
+            if(planPending&&Phase!=Phase.Preparation&&Phase!=Phase.Familiarization&&Phase!=Phase.PracticeRetry&&Phase!=Phase.BlockReady&&Phase!=Phase.PracticeExamReady)
                 throw new InvalidOperationException("Raw pending plan is outside its preparation phase.");
             Log("tracking_gap_begin","tracking_gap_schema","1","actor","Owner","code","tracking_gap",
                 "reason",cause.ToString(),"detail","task_input=blocked;missing_measurement=UNKNOWN");

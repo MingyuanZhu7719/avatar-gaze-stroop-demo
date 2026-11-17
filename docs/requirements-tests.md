@@ -15,7 +15,7 @@ Acceptance identifiers refer to [PRD section 7](prd.md). This map identifies exe
 
 ## Task and control invariants
 
-The portable tests retain the accepted 24-trial list constraints and 96 planned main trials, independent counterbalancing factors, the practice threshold and bounded retry, explicit presentation before RT, and separate questionnaire items. Interrupted observations are not silently scored as errors or replaced with successful trials. Synthetic clocks and headless presentation acknowledgments are labelled as such.
+The portable tests retain the accepted 24-trial list constraints and 96 planned main trials, independent counterbalancing factors, explicit presentation before RT, and separate questionnaire items. Versioned tutorial/exam coverage checks current-task teaching, ten-question exams with an eight-correct threshold, feedback/result boundaries and return to tutorial after failure. Historical eight-question, six-correct and bounded-retry configurations retain their compatibility tests. Interrupted observations are not silently scored as errors or replaced with successful trials. Synthetic clocks and headless presentation acknowledgments are labelled as such.
 
 Control-source tests bind role, stream, source, device, session, block and segment. Participant measurement gaze cannot become operator control. Raw validity, effective transport usability and actual applied/held avatar output remain distinct. A connection recovery latch cannot be cleared by simply receiving another packet, and absence of live input does not select Automatic.
 

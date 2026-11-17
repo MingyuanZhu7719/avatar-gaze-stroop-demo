@@ -19,7 +19,7 @@ namespace AvatarStroop.Tests
             var result=new StudyAnalysis();result.Accept(Record("manifest",Fields("session_id","synthetic","design_variant","LEGACY_ABCD","block_count","4",
                 "block_0_condition","1","block_1_condition","2","block_2_condition","0","block_3_condition","3")));return result;
         }
-        static void Event(StudyAnalysis analysis,string kind,string trial,int block,double time,params string[] payload)
+        internal static void Event(StudyAnalysis analysis,string kind,string trial,int block,double time,params string[] payload)
         {
             var fields=Fields("session_id","synthetic","clock_id","synthetic-clock","event_kind",kind,"trial_id",trial,
                 "block",block.ToString(CultureInfo.InvariantCulture),"segment","0","event_local_time",time.ToString("R",CultureInfo.InvariantCulture),"field_count",(payload.Length/2).ToString(CultureInfo.InvariantCulture));
@@ -53,6 +53,7 @@ namespace AvatarStroop.Tests
         {Event(analysis,"visual_search_cue",id,0,2.01,"task_kind","VisualSearch","cue_first_render_unity_seconds","10.25","cue_rendered_elapsed_seconds","1.51","basis","software_camera_callbacks_not_photon");}
         public static void Register(TestSuite suite)
         {
+            StudyAnalysisTrainingTests.Register(suite);
             suite.Run("study visual search cue timing is separate from pointer observations and response timing",()=>{
                 var analysis=Analysis();SearchTrial(analysis,"cue",12);SearchCue(analysis,"cue");analysis.Finish();
                 var cue=analysis.SearchEvents.Single(x=>x.Action=="cue");Check.Near(10.25,cue.CueFirstRenderUnitySeconds.Value);Check.Near(1.51,cue.CueRenderedElapsedSeconds.Value);

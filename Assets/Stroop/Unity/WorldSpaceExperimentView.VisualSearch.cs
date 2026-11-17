@@ -43,7 +43,7 @@ namespace AvatarStroop.Unity
             internal Renderer[][] PatternRenderers;
         }
         bool IsVisualSearchTrial {get{return currentView!=null&&currentView.TaskKind==TaskKind.VisualSearch&&
-            currentView.VisualSearch!=null&&(currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask);}}
+            currentView.VisualSearch!=null&&(currentView.Phase==Phase.Tutorial||currentView.Phase==Phase.Practice||currentView.Phase==Phase.MainTask);}}
         static string TaskInstructions(TaskView view)
         {return view.TaskKind==TaskKind.VisualSearch?"Find the matching backpack.\nPoint at it and pull the trigger.":ResponseRuleInstructions.Participant(view.ResponseRule);}
 
@@ -70,7 +70,7 @@ namespace AvatarStroop.Unity
             visualSearchCue=BuildSearchBag("TargetExample",visualSearchRoot,new Vector3(.49f,.405f,-.02f));
             visualSearchCue.Root.localScale=Vector3.one*.88f;
             visualSearchControls=Text("SearchControls",visualSearchRoot,new Vector3(0,-.466f,-.03f),.0062f,64,new Color(.12f,.16f,.20f));
-            visualSearchControls.text="Point at a backpack, then pull the trigger.";
+            visualSearchControls.text=(currentView!=null&&currentView.Phase==Phase.Tutorial?"Point at a backpack, then pull the trigger. Take your time.":"Point at a backpack, then pull the trigger.");
             visualSearchCueMessage=Text("SearchCueMessage",visualSearchRoot,new Vector3(0,-.04f,-.03f),.009f,64,new Color(.12f,.16f,.20f));
             visualSearchCueMessage.text="Look at the target above.\nThe search starts shortly.";
             visualSearchBags=new VisualSearchBag[24];
@@ -139,6 +139,7 @@ namespace AvatarStroop.Unity
             {shownVisualSearch=null;SuppressVisualSearchStimulus();return;}
             EnsureVisualSearchLayout();
             var trial=view.VisualSearch;
+            visualSearchInstruction.text=view.Phase==Phase.Tutorial?"TUTORIAL: match both colour and pattern":"FIND THIS BACKPACK";
             if(!object.ReferenceEquals(shownVisualSearch,trial)||visualSearchCueTrial!=view.TrialId)
             {
                 shownVisualSearch=trial;visualSearchRequired.Clear();visualSearchRequiredColours.Clear();
@@ -203,7 +204,7 @@ namespace AvatarStroop.Unity
             bool cue=VisualSearchCuePending;
             foreach(var item in shownVisualSearch.Items)visualSearchBags[item.Slot].Root.gameObject.SetActive(!cue&&!visualSearchRawArrayHeld);
             visualSearchCueMessage.gameObject.SetActive(cue);
-            visualSearchControls.text=cue?"Look at the example. Selection begins with the search array.":"Point at a backpack, then pull the trigger.";
+            visualSearchControls.text=cue?"Look at the example. Selection begins with the search array.":(currentView!=null&&currentView.Phase==Phase.Tutorial?"Point at a backpack, then pull the trigger. Take your time.":"Point at a backpack, then pull the trigger.");
             if(cue)SetSearchHover(-1);
         }
         void PrepareVisualSearchCueCapture(Camera camera)

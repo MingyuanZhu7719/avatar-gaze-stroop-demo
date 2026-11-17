@@ -39,6 +39,26 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("study reports separate tutorial exam and formal data and preserve exam result provenance",()=>{
+                using(var files=new Files())
+                {
+                    Directory.CreateDirectory(files.Output);var analysis=StudyAnalysisTests.Analysis();
+                    StudyAnalysisTrainingTests.Trial(analysis,"tutorial","tutorial",0,1,false);
+                    for(int i=0;i<10;i++)StudyAnalysisTrainingTests.Trial(analysis,"exam"+i,"practice_exam",1,1,i<8);
+                    StudyAnalysisTrainingTests.Completion(analysis,1,8);
+                    StudyAnalysisTrainingTests.Trial(analysis,"formal","formal",1,1);
+                    var source=new StudyAnalysisSource{Path=files.Raw,Analysis=analysis,Sha256="synthetic",Read=new StudyDataReadSummary{Format="synthetic",Status="Complete"}};
+                    StudyAnalysisFiles.Write(new[]{source},files.Output,CancellationToken.None);
+                    string trials=File.ReadAllText(Path.Combine(files.Output,"trials.csv"));
+                    Check.True(trials.Contains("training_protocol,learning_stage,practice_attempt,tutorial_round")&&trials.Contains("\"Tutorial\"")&&trials.Contains("\"PracticeExam\""));
+                    string training=File.ReadAllText(Path.Combine(files.Output,"training_attempts.csv"));
+                    Check.Equal(2,File.ReadAllLines(Path.Combine(files.Output,"training_attempts.csv")).Length);
+                    Check.True(training.Contains("reconstructed_correct")&&training.Contains("\"tutorial-exam-v1\"")&&training.Contains("\"explicit\",\"true\""));
+                    Check.Equal(2,File.ReadAllLines(Path.Combine(files.Output,"contrasts.csv")).Length);
+                    string html=File.ReadAllText(Path.Combine(files.Output,"report.html"));
+                    Check.True(html.Contains("training_attempts.csv")&&html.Contains("1 个正式试次；1 个教学试次；10 个考试／旧版练习试次"));
+                }
+            });
             suite.Run("full visual search VRAW4 and CSV preserve 104 trials layouts timeouts and identical analysis tables",()=>{
                 using(var files=new Files())
                 {

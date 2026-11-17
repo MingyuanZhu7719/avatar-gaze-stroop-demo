@@ -629,7 +629,7 @@ namespace AvatarStroop.Runtime
                     !ledger.CanReserveUpper(last,1048616)||!PresentationEpochFresh(ticket,maximumAge)||
                     !task.TryCaptureRawRecordingTaskStamp(clock,out stamp)||stamp==null||stamp.EventCursor!=lastTaskSequence||
                     !Object.ReferenceEquals(stamp.Context,context)||!Object.ReferenceEquals(stamp.Plan,plan)||!Object.ReferenceEquals(stamp.Intent,intent)||
-                    (stamp.Phase!=Phase.Practice&&stamp.Phase!=Phase.MainTask)||!task.InputReady||task.ObservationEnabled||
+                    (stamp.Phase!=Phase.Practice&&stamp.Phase!=Phase.MainTask&&stamp.Phase!=Phase.Tutorial)||!task.InputReady||task.ObservationEnabled||
                     !ViveTrialOpenRequest.TryCapture(task,clock,out planned)||planned==null)
                 {Fail();return false;}
                 var trial=task.CurrentTrial;

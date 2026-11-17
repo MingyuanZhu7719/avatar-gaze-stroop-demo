@@ -251,7 +251,7 @@ namespace AvatarStroop.Unity
                 if(rawHoldView==null)rawHoldView=new ViveRawHoldView(camera);
                 bool celebration=development!=null&&development.CompletedTaskThankYouReady;
                 bool practice=development!=null&&development.PracticeCountdownVisible&&XrFocused&&!ControllerVisualUnavailable;
-                if(practice)rawHoldView.SetPracticeInstruction(development.PracticeResponseInstruction);
+                if(practice){rawHoldView.SetPracticeInstruction(development.PracticeResponseInstruction);rawHoldView.SetPracticeExam(development.PracticeIsExam);}
                 // The last questionnaire starts the six-second celebration;
                 // file conversion and native cleanup continue independently.
                 // Only the isolated, input-free layer is ever revealed here.

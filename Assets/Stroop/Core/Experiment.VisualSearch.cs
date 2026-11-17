@@ -5,9 +5,12 @@ namespace AvatarStroop.Core
     public sealed partial class Experiment
     {
         Stimulus[] PracticePlan(int attempt)
-        {return Configuration.TaskKind==TaskKind.VisualSearch?VisualSearchPlans.Practice(Configuration.Seed,attempt):TrialPlans.Practice(Configuration.Seed,attempt);}
+        {
+            if(UsesTutorial)return Configuration.TaskKind==TaskKind.VisualSearch?VisualSearchPlans.PracticeExam(Configuration.Seed,attempt):TrialPlans.PracticeExam(Configuration.Seed,attempt);
+            return Configuration.TaskKind==TaskKind.VisualSearch?VisualSearchPlans.Practice(Configuration.Seed,attempt):TrialPlans.Practice(Configuration.Seed,attempt);
+        }
         bool VisualSearchPending(string trialId)
-        {return Configuration.TaskKind==TaskKind.VisualSearch&&(Phase==Phase.Practice||Phase==Phase.MainTask)&&
+        {return Configuration.TaskKind==TaskKind.VisualSearch&&(Phase==Phase.Practice||Phase==Phase.MainTask||Phase==Phase.Tutorial)&&
             current!=null&&current.TrialId==trialId&&current.Onset.HasValue&&current.Outcome==TrialOutcome.Pending;}
         public bool SelectVisualSearchItem(string trialId,string itemId)
         {
@@ -24,8 +27,9 @@ namespace AvatarStroop.Core
             current.SetCorrect(trialAuthority,itemId==current.VisualSearch.TargetId);TraceMutation();current.SetResponded(trialAuthority);TraceMutation();
             Log("first_response","selected_item",itemId,"correct",current.Correct.Value.ToString(),
                 "onset",Number(current.Onset.Value),"rt_seconds",Number(current.ReactionSeconds.Value),"rt_meaning","search_and_controller_selection");
-            if(Phase==Phase.Practice)
-            {if(current.Correct.Value){practiceCorrect++;TraceMutation();AdvancePractice();}else Move(Phase.PracticeCorrection);}
+            if(Phase==Phase.Tutorial)Move(Phase.TutorialFeedback);
+            else if(Phase==Phase.Practice)
+            {if(current.Correct.Value){practiceCorrect++;TraceMutation();AdvancePractice();}else if(UsesTutorial)AdvancePractice();else Move(Phase.PracticeCorrection);}
             else AdvanceMain();
             return true;
         }
@@ -64,11 +68,11 @@ namespace AvatarStroop.Core
         }
         bool ExpireVisualSearchCore(double now)
         {
-            if(current==null||!VisualSearchPending(current.TrialId)||now<current.Onset.Value+VisualSearchTrial.TimeoutSeconds)return false;
+            if(Phase==Phase.Tutorial||current==null||!VisualSearchPending(current.TrialId)||now<current.Onset.Value+VisualSearchTrial.TimeoutSeconds)return false;
             current.SetTimedOut(trialAuthority);TraceMutation();
             Log("trial_timed_out","onset",Number(current.Onset.Value),"elapsed_seconds",Number(now-current.Onset.Value),
                 "timeout_seconds",Number(VisualSearchTrial.TimeoutSeconds));
-            if(Phase==Phase.Practice)Move(Phase.PracticeCorrection);else AdvanceMain();
+            if(Phase==Phase.Practice){if(UsesTutorial)AdvancePractice();else Move(Phase.PracticeCorrection);}else AdvanceMain();
             return true;
         }
     }

@@ -16,7 +16,7 @@ namespace AvatarStroop.Tests
             internal readonly JournalEvent Plan;
             internal readonly ViveBlockPlanRequest Request;
             internal readonly Experiment Engine;
-            internal Fixture(int design=0)
+            internal Fixture(int design=0,bool training=false,TaskKind taskKind=TaskKind.Stroop)
             {
                 var geometry=DevelopmentGeometry.FromLocalDirections(new Vec3(0,0,1),new Vec3(1,0,0),"focus-plan-geometry");
                 SessionConfiguration config;
@@ -33,9 +33,26 @@ namespace AvatarStroop.Tests
                     var plan=ViveNamedSimulationPlan.Select(Actor.Owner,"focus-plan",option);
                     config=SessionConfiguration.NamedRecordingDevelopment("focus-plan-session",42,plan,ViveNamedRecordingIntent.Select(Actor.Owner,"focus-plan-intent",true,true));
                 }
+                if(training)config=SessionConfiguration.WithTrainingProtocol(config,TrainingProtocol.TutorialExamV1);
+                if(taskKind!=TaskKind.Stroop)config=SessionConfiguration.WithTaskKind(config,taskKind);
                 Participant=new ViveDevelopmentParticipant(config,Clock,geometry,ViveFixedTrackpadMapping.Create(),.5,true);
                 Participant.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));
                 Engine=(Experiment)typeof(ViveDevelopmentParticipant).GetField("experiment",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(Participant);
+                if(training)
+                {
+                    Participant.OwnerBeginTutorial(Actor.Owner);
+                    Participant.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));
+                    var trial=Participant.CurrentTrial;Participant.MarkPresented(trial.TrialId);
+                    if(trial.VisualSearch!=null)Participant.SelectVisualSearchItem(trial.TrialId,trial.VisualSearch.TargetId);
+                    else
+                    {
+                        var colour=trial.ExpectedResponse;
+                        double x=colour==Colour.Green?1:colour==Colour.Yellow?-1:0,y=colour==Colour.Red?1:colour==Colour.Blue?-1:0;
+                        Participant.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,true,x,y));
+                    }
+                    Participant.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));
+                    Participant.RequestPracticeExam();Check.Equal(Phase.PracticeExamReady,Participant.Phase);
+                }
                 Plan=design==2?Participant.PrepareLegacyRecordingBlockPlan(Actor.Owner,true):Participant.PrepareNamedRecordingBlockPlan(Actor.Owner,true);
                 Check.True(ViveBlockPlanRequest.TryCapture(Participant,Clock,Plan,out Request));
             }
@@ -53,6 +70,26 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("pending tutorial exam plan survives XR focus gap without consuming receipt or starting examination",()=>{
+                foreach(int design in new[]{0,1,2})foreach(var kind in design==2?new[]{TaskKind.Stroop,TaskKind.VisualSearch}:new[]{TaskKind.Stroop})
+                {
+                    var f=new Fixture(design,true,kind);var copied=f.Participant.ReadEventsAfter(f.Plan.Sequence-1,1)[0];
+                    Check.Equal("10",f.Plan.Fields["item_count"]);Check.True(f.Current());
+                    f.Focus(false,false);
+                    Check.Equal(Phase.PracticeExamReady,f.Participant.Phase,"XR focus loss must leave the prepared exam context unchanged");
+                    Check.True(f.Current(),"XR focus loss invalidated the pending exam plan");
+                    Check.True(f.Participant.IsXrFocusInteractionHeld);Check.Equal(0,f.Participant.PracticeAttempt);
+                    Check.Equal((TrialRecord)null,f.Participant.CurrentTrial);
+                    f.Focus(true,true);Check.True(f.Current(),"XR focus restoration invalidated the pending exam plan");
+                    Check.True(!f.Participant.IsXrFocusInteractionHeld);Check.True(f.Request.MatchesWriterPlannedEvent(copied));
+                    Check.Equal(Phase.PracticeExamReady,f.Participant.Phase);Check.Equal(0,f.Participant.PracticeAttempt);
+                    Check.Equal(2,f.Participant.ReadEventsAfter(f.Plan.Sequence,10).Count);
+                    Check.True(!f.Participant.ReadEventsAfter(f.Plan.Sequence,10).Any(x=>x.Kind=="focus_pause"||x.Kind=="practice_started"));
+                    f.Participant.RecordRawTrackingGapStart(RawTrackingLoss.HeadPose,true);Check.True(f.Current());
+                    f.Participant.RecordRawTrackingGapEnd(RawTrackingLoss.HeadPose);Check.True(f.Current());
+                    Check.Equal(Phase.PracticeExamReady,f.Participant.Phase);Check.Equal(0,f.Participant.PracticeAttempt);
+                }
+            });
             suite.Run("pending block receipt survives only validated desktop focus loss and restoration",()=>{
                 foreach(int design in new[]{0,1,2})
                 {

@@ -7,6 +7,7 @@ namespace AvatarStroop.Core
     public enum Colour { Red, Green, Blue, Yellow }
     // Selected once before a session; the stimulus word and rendered ink never change meaning.
     public enum ResponseRule { InkColor, WordMeaning }
+    public enum TrainingProtocol { LegacyPractice, TutorialExamV1 }
     public static class ResponseRuleInstructions
     {
         public static string Participant(ResponseRule rule)
@@ -26,7 +27,8 @@ namespace AvatarStroop.Core
         // Retained for a future fault-recovery decision. It is not currently entered:
         // explicit pause/resume now follows PRD section 3 for practice as well as the
         // main task, so no state waits for an owner decision that does not exist.
-        NeedsProtocolDecision, Ended }
+        NeedsProtocolDecision, Ended,
+        Tutorial, TutorialFeedback, PracticeExamReady, PracticeExamResult }
     public enum EndReason { Completed, PracticeFailed, Withdrawn, TechnicalEnd }
     public enum TrialOutcome { Pending, Responded, Interrupted, TimedOut }
 
@@ -137,6 +139,11 @@ namespace AvatarStroop.Core
         public RunKind RunKind { get; private set; }
         public ResponseRule ResponseRule { get; private set; }
         public TaskKind TaskKind {get;private set;}
+        public TrainingProtocol TrainingProtocol {get;private set;}
+        public bool UsesTutorial {get{return TrainingProtocol==Core.TrainingProtocol.TutorialExamV1;}}
+        public string TrainingSchema {get{return UsesTutorial?"tutorial-exam-v1":"legacy-practice-8-v1";}}
+        public int PracticeTrialCount {get{return UsesTutorial?10:8;}}
+        public int PracticePassCorrect {get{return UsesTutorial?8:6;}}
         public string QuestionnaireLanguage { get; private set; }
         public double CountdownSeconds { get; private set; }
         public double MinimumRestSeconds { get; private set; }
@@ -189,6 +196,12 @@ namespace AvatarStroop.Core
                 throw new InvalidOperationException("Visual search v1 requires Legacy A/B/C/D with Automatic control");
             var copy=(SessionConfiguration)configuration.MemberwiseClone();copy.TaskKind=taskKind;return copy;
         }
+        public static SessionConfiguration WithTrainingProtocol(SessionConfiguration configuration,TrainingProtocol protocol)
+        {
+            if(configuration==null)throw new ArgumentNullException("configuration");
+            if(!Enum.IsDefined(typeof(TrainingProtocol),protocol))throw new ArgumentOutOfRangeException("protocol");
+            var copy=(SessionConfiguration)configuration.MemberwiseClone();copy.TrainingProtocol=protocol;return copy;
+        }
         // A copy is configured before Experiment starts. Existing legacy preview remains unchanged.
         public static SessionConfiguration LegacyRecordingDevelopment(SessionConfiguration legacyConfiguration,
             ViveLegacyRecordingDesign design,ViveLegacyRecordingIntent intent)
@@ -202,7 +215,7 @@ namespace AvatarStroop.Core
                 c.MinimumRestSeconds,c.SkipFinalRest,c.QuestionnaireInstructionSeconds,c.QuestionnaireInstructionRequiresAcknowledgement,
                 c.ParticipantPacedRest,c.RetainControlAcrossBlocks,c.ResponseRule);
             if(c.TaskKind==TaskKind.VisualSearch&&design.OperatorWozRequested)throw new InvalidOperationException("Visual search v1 does not support WoZ");
-            result.TaskKind=c.TaskKind;result.LegacyRecordingDesign=design;result.LegacyRecordingIntent=intent;return result;
+            result.TaskKind=c.TaskKind;result.TrainingProtocol=c.TrainingProtocol;result.LegacyRecordingDesign=design;result.LegacyRecordingIntent=intent;return result;
         }
         // Single-block development preview only: it does not define a four-option
         // roster, establish research admission or create a legacy allocation.
@@ -243,6 +256,7 @@ namespace AvatarStroop.Core
         public string SessionId { get; private set; }
         public string ListId { get; private set; }
         public bool IsPractice { get; private set; }
+        public bool IsTutorial {get{return IsPractice&&PracticeAttempt==0;}}
         public int PracticeAttempt { get; private set; }
         public int BlockIndex { get; private set; }
         public int PlannedIndex { get; private set; }
@@ -373,6 +387,15 @@ namespace AvatarStroop.Core
         public bool ParticipantAvatarVisible { get; internal set; }
         public bool OperatorViewProvisional { get; internal set; }
         public string PracticeCorrection { get; internal set; }
+        public bool UsesTutorial {get;internal set;}
+        public string TrainingSchema {get;internal set;}
+        public string TutorialFeedback {get;internal set;}
+        public bool? TutorialCorrect {get;internal set;}
+        public string TutorialExpectedAnswer {get;internal set;}
+        public int PracticeCorrect {get;internal set;}
+        public int PracticeTrialCount {get;internal set;}
+        public int PracticeAttempt {get;internal set;}
+        public bool? PracticePassed {get;internal set;}
         public string QuestionnaireItem { get; internal set; }
         public bool ReadyEnabled { get; internal set; }
         public bool SourceContinuationPending { get; internal set; }
