@@ -1259,7 +1259,7 @@ namespace AvatarStroop.Unity
                     if(faultLatched||!headReady||device==null){FailNamedRawBeforeFrame();return;}
                     recordedWozFrame=device.Read(participant.Phase,headReady);
                     RecordControllerUiPoll(headReady,recordedWozFrame.InputReady,recordedWozFrame.Diagnostic);
-                    if(HandleActiveRawTrackingController(recordedWozFrame))return;
+                    if(HandleRawControllerBeforeDispatch(recordedWozFrame))return;
                 }
                 if(RecordedLegacyWoz&&namedRawPump!=null)
                 {
@@ -1474,6 +1474,8 @@ namespace AvatarStroop.Unity
         void RequestNamedBlockPlanStart(bool practice)
         {
             if(namedRawPump==null||participant==null||RecordingBlocked||rawSelectionProvenancePending||rawPlanStartRequested!=0||rawPendingBlockPlan!=null)return;
+            if(!practice&&FirstFormalControllerWaiting)
+            {message=FormalControllerWaitNotice;return;}
             if(!practice&&!FormalEyeReadyForFirstBlock){message=FormalEyeFirstBlockNotice;return;}
             if(!RawPlanStartPhaseMatches(practice,participant.Phase))
             {message="Block-plan request does not match the current task phase; no task or I/O was started.";return;}
@@ -1524,6 +1526,7 @@ namespace AvatarStroop.Unity
                 if(rig!=null&&!rig.XrFocused){PrepareRawFocusBoundary(false);return;}
                 var heldInput=recordedWozFrame??device.Read(participant.Phase,headReady);
                 RecordControllerUiPoll(headReady,heldInput.InputReady,heldInput.Diagnostic);
+                if(HandleRawControllerBeforeDispatch(heldInput))return;
                 if(AwaitFocusActionActivation(heldInput))return;
                 if(!heldInput.DeviceReady||!heldInput.Trackpad.Usable||heldInput.DeviceChanged)
                 {FailNamedRawBeforeFrame();return;}
@@ -1537,6 +1540,7 @@ namespace AvatarStroop.Unity
             if(!headReady||device==null){FailNamedRawBeforeFrame();return;}
             var input=recordedWozFrame??device.Read(participant.Phase,headReady);
             RecordControllerUiPoll(headReady,input.InputReady,input.Diagnostic);
+            if(HandleRawControllerBeforeDispatch(input))return;
             if(AwaitFocusActionActivation(input))return;
             if(!input.DeviceReady&&rig!=null&&!rig.XrFocused)
             {PrepareRawFocusBoundary(false);return;}

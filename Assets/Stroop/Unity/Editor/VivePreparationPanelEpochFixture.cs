@@ -236,14 +236,15 @@ namespace AvatarStroop.Unity.Editor
         // only the old post-render epoch logic is restored.
         public static void ValidateHealthyOnly(){Execute(scene=>Run(scene,0,false));}
         static ViveStroopDeviceFrame ControllerFrame(ViveStroopNeutralGate gate, bool phaseChanged,
-            bool triggerHeld, bool padHeld, Colour colour, bool connected=true,bool poseLoss=false,bool deviceChanged=false)
+            bool triggerHeld, bool padHeld, Colour colour, bool connected=true,bool poseLoss=false,bool deviceChanged=false,
+            bool actionsPending=false)
         {
             var edges=gate.Observe(connected,phaseChanged,false,padHeld,triggerHeld,false);
             double x=colour==Colour.Green?1:colour==Colour.Yellow?-1:0;
             double y=colour==Colour.Red?1:colour==Colour.Blue?-1:0;
             var pad=new VivePreviewTrackpadSample(connected,padHeld,padHeld?x:0,padHeld?y:0);
             return (ViveStroopDeviceFrame)Activator.CreateInstance(typeof(ViveStroopDeviceFrame),Instance,null,
-                new object[]{pad,edges.NeutralPending,edges.LostReady,triggerHeld,edges.TriggerDown,false,false,"synthetic wand",deviceChanged,false,poseLoss},null);
+                new object[]{pad,edges.NeutralPending,edges.LostReady,triggerHeld,edges.TriggerDown,false,false,"synthetic wand",deviceChanged,actionsPending,poseLoss},null);
         }
 
         static void RenderTutorialFrame(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
@@ -477,6 +478,62 @@ namespace AvatarStroop.Unity.Editor
                 !(bool)Call(owner,"ExpirePendingRawPresentation")&&!owner.RecordingBlocked&&
                 Get(view,"rawPanelExpected")==null&&task.Phase==Phase.BlockReady&&task.CurrentTrial==null,
                 "missing first BlockReady status panel started a trial or stopped the recording");
+            CheckFormalControllerRecovery(owner,rig,camera,pump,worker,task);
+        }
+        static void CheckFormalControllerRecovery(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
+            Camera camera,object pump,ViveProEyeWorker worker,ViveDevelopmentParticipant task)
+        {
+            using(var wand=new SyntheticVivePoseDevice(useVendorOverlay:false))
+            using(var adapter=new ViveStroopDeviceInput(VivePreviewControllerHand.Automatic))
+            {
+                Set(owner,"device",adapter);
+                Set(owner,"questionnaireGate",new ViveQuestionnaireTrackpadGate(.5));
+                wand.SetPose(Vector3.zero,Quaternion.identity);
+                wand.PrepareBindings(adapter);
+                var gate=new ViveStroopNeutralGate();
+                Func<ViveStroopDeviceFrame,bool> dispatch=frame=>{
+                    Require((bool)Call(pump,"DrainTaskEvents"),"formal controller frame events did not drain");
+                    Stage(pump,worker);
+                    return (bool)Call(owner,"HandleRawControllerBeforeDispatch",frame);
+                };
+                Call(owner,"InitializeRawFocusObservations",true,true);
+                Stage(pump,worker);
+                Require((bool)Call(owner,"ProcessRawFocusFrame",true),"healthy formal focus baseline missing");
+                int baseline=task.ReadEventsAfter(-1,4096).Count(e=>e.Kind=="focus_changed");
+
+                // The synthetic rig reports focused. In a batch editor without an XR loader,
+                // the actual action adapter reads the real vendor focus value as false.
+                Require((bool)Prop(rig,"XrFocused"),"fixture has no focused rig");
+                Call(owner,"PollWithFocus",true,true);
+                Require(!owner.RecordingBlocked&&(bool)Get(owner,"rawXrFocusLossUnrecorded")&&camera.cullingMask==0,
+                    "focus loss during the actual controller poll was treated as a disconnected wand");
+                Require((bool)Call(owner,"PrepareRawFocusBoundary",true),"focus restoration guard refused the reacquired session");
+                Require((bool)Call(pump,"DrainTaskEvents"),"focus boundary failed to drain");Stage(pump,worker);
+                Require((bool)Call(owner,"ProcessRawFocusFrame",true),"transient XR focus change was lost");
+                var changes=task.ReadEventsAfter(-1,4096).Where(e=>e.Kind=="focus_changed").Skip(baseline).ToArray();
+                Require(changes.Length==2&&changes[0].Fields["xr_focused"]=="False"&&changes[1].Fields["xr_focused"]=="True",
+                    "short XR focus loss and restoration were not both journaled");
+                Require(dispatch(ControllerFrame(gate,false,true,false,Colour.Red))&&!owner.RecordingBlocked,
+                    "held trigger resumed the task on return from the dashboard");
+                var neutral=ControllerFrame(gate,false,false,false,Colour.Red);
+                Require(!dispatch(neutral)&&!(bool)Call(owner,"AwaitControllerRelease",neutral)&&
+                    task.Phase==Phase.BlockReady&&task.CurrentTrial==null&&task.FormalEyeRecordingWindowStart==null&&
+                    !(bool)Prop(worker,"FormalEyePersistenceEnabled")&&(int)Get(owner,"rawPlanStartRequested")==0,
+                    "recovery started a block, recorded eye data or left neutral input blocked");
+                // Action deactivation may precede any reported XR focus loss.
+                var inactive=ControllerFrame(gate,false,false,false,Colour.Red,connected:false,actionsPending:true);
+                Require(dispatch(inactive)&&!owner.RecordingBlocked&&camera.cullingMask==0&&
+                    task.Phase==Phase.BlockReady&&task.CurrentTrial==null,"inactive actions stopped or started the waiting formal task");
+                Require(dispatch(ControllerFrame(gate,false,true,false,Colour.Red))&&!owner.RecordingBlocked,
+                    "held trigger crossed the action recovery boundary");
+                neutral=ControllerFrame(gate,false,false,false,Colour.Red);
+                Require(!dispatch(neutral)&&!(bool)Call(owner,"AwaitControllerRelease",neutral),
+                    "neutral same-wand recovery did not release the action hold");
+                Require(dispatch(inactive)&&!owner.RecordingBlocked,"repeat action hold incorrectly stopped recording");
+                Require(dispatch(ControllerFrame(gate,false,false,false,Colour.Red,deviceChanged:true))&&owner.RecordingBlocked,
+                    "a different controller was accepted during the action hold");
+                Set(owner,"device",null);
+            }
         }
         static void RunTaskOnlyTutorial(bool enterExam)
         {
@@ -524,7 +581,7 @@ namespace AvatarStroop.Unity.Editor
                     Require(task.CurrentTrial.Onset.HasValue&&!owner.RecordingBlocked,"tutorial first actual camera witness failed");
                     TutorialControllerBoundaries(owner,rig,view,camera,pump,worker,task,enterExam);
                     if(enterExam)CheckFormalPreparation(owner,rig,view,camera,pump,worker,task,client,clock);
-                    Debug.Log(enterExam?"VIVE_PRACTICE_EXAM_HANDOFF_PASSED: tutorial, tracking recovery, exam countdown and ten answers, formal eye warm-up, discarded partial render, fresh panel confirmation and BlockReady.":
+                    Debug.Log(enterExam?"VIVE_PRACTICE_EXAM_HANDOFF_PASSED: exam, formal eye warm-up, panel redraw, BlockReady dashboard focus loss, inactive actions, neutral recovery and rejected replacement wand.":
                         "VIVE_TASK_ONLY_TUTORIAL_RENDER_FIXTURE_PASSED: dormant-worker tutorial, initial camera onset, tracked controller release, fresh answer, feedback Continue, second camera onset and disconnected controller.");
                 }
                 finally

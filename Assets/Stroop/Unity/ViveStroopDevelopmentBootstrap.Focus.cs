@@ -12,6 +12,11 @@ namespace AvatarStroop.Unity
         bool RawFocusBoundaryMasksThisFrame {get{return rawFocusBoundaryFrame==UnityEngine.Time.frameCount;}}
         bool previewFocusKnown,previewDesktopFocus,previewXrFocus;
         bool focusRecoveryPending,focusPausedTask;
+        bool firstFormalControllerHeld;
+        int formalControllerWaitLogs;
+        const string FormalControllerWaitNotice="Return from the HTC or SteamVR menu and release all controls on the same wand. The formal block has not started.";
+        bool FirstFormalControllerWaiting
+        {get{return CanWarmupFormalEye&&(firstFormalControllerHeld||focusRecoveryPending||xrFocusGapActive||rig==null||!rig.XrFocused);}}
         readonly System.Collections.Generic.Queue<bool> desktopFocusTransitions=new System.Collections.Generic.Queue<bool>(16);
         bool desktopFocusTransitionOverflow;
         bool rawFocusBaselinePending,rawBaselineDesktopFocus,rawBaselineXrFocus;
@@ -370,6 +375,61 @@ namespace AvatarStroop.Unity
             if(!MaintainPendingRawPlanReceiptDuringFocus())return true;
             message="XR focus restored; waiting for current controller actions. "+(namedRawPump!=null?"Recording continues. ":"Recording has not started. ")+"Release all controls; the task will not resume automatically.";
             Render();return true;
+        }
+        // Run before task/plan dispatch using the actual controller poll. A
+        // menu may deactivate button actions before OpenXR reports focus loss.
+        // Only the passive, pre-recording first-block gate may wait on that
+        // observation without an already-established tracking/focus gap.
+        bool HandleRawControllerBeforeDispatch(ViveStroopDeviceFrame frame)
+        {
+            if(HandleActiveRawTrackingController(frame))return true;
+            bool preformal=CanWarmupFormalEye&&participant.CurrentTrial==null&&!participant.FormalEyeRecordingWindowStart.HasValue;
+            if(!frame.DeviceChanged&&frame.XrFocusUnavailable)
+            {
+                if(preformal)BeginFirstFormalControllerHold("xr_focus_lost_in_controller_poll");
+                MaskRawTrackingFrame(preformal?FormalControllerWaitNotice:RawFocusHoldStatus);
+                PrepareRawFocusBoundary(false);
+                return true;
+            }
+            if(!preformal)return false;
+            if(frame.DeviceChanged||(!frame.DeviceReady||!frame.Trackpad.Usable)&&!frame.ActionActivationPending)
+            {
+                UnityEngine.Debug.LogWarning("VIVE_FORMAL_CONTROLLER_REJECTED: "+frame.Diagnostic+"; changed="+frame.DeviceChanged+
+                    "; ready="+frame.DeviceReady+"; frame="+UnityEngine.Time.frameCount);
+                NoteRawFirstFault(frame.DeviceChanged?"formal_controller_identity_changed":"formal_controller_input_invalid");
+                FailNamedRawBeforeFrame();return true;
+            }
+            if(!frame.ActionActivationPending&&!firstFormalControllerHeld&&!focusRecoveryPending)return false;
+            if(frame.InputReady&&!MustWaitForRawPlanNeutral(frame.NeutralPending,frame.TriggerHeld,frame.MenuHeld,frame.Trackpad.Pressed))
+            {
+                if(firstFormalControllerHeld)LogFormalControllerWait("same_wand_neutral");
+                firstFormalControllerHeld=false;
+                ObserveFocusControllerRecovery(frame);
+                return false;
+            }
+            BeginFirstFormalControllerHold(frame.ActionActivationPending?"same_wand_actions_inactive":"awaiting_neutral_controls");
+            MaskRawTrackingFrame(FormalControllerWaitNotice);
+            // No input, start or receipt consumption while waiting. The
+            // original writer deadline still applies and focus metadata may
+            // still extend a valid prepared request.
+            if(!MaintainLegacyWozDuringFocusGap()||!MaintainPendingRawPlanReceiptDuringFocus()||!namedRawPump.DrainTaskEvents())
+                FailNamedRawBeforeFrame();
+            return true;
+        }
+        void BeginFirstFormalControllerHold(string reason)
+        {
+            if(firstFormalControllerHeld)return;
+            firstFormalControllerHeld=true;
+            ClearPendingRawOwnerAction();
+            RequirePlanConfirmationAfterXrGap();
+            LogFormalControllerWait(reason);
+        }
+        void LogFormalControllerWait(string reason)
+        {
+            if(formalControllerWaitLogs>=16)return;
+            formalControllerWaitLogs++;
+            UnityEngine.Debug.Log("VIVE_FORMAL_CONTROLLER: "+reason+"; phase="+participant.Phase+
+                "; plan_requested="+(rawPlanStartRequested!=0)+"; frame="+UnityEngine.Time.frameCount);
         }
         void ObserveFocusControllerRecovery(ViveStroopDeviceFrame frame)
         {

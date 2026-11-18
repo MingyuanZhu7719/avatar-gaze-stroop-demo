@@ -63,7 +63,8 @@ namespace AvatarStroop.Unity
                 {ClearRawPracticeRequest();message="Pending practice start canceled. No trial started.";}
             }
             DrawFormalConfirmationControls();
-            GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&FormalEyeReadyForFirstBlock;
+            GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&FormalEyeReadyForFirstBlock&&
+                !FirstFormalControllerWaiting;
             if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&GUILayout.Button("Begin first block"))
             {if(namedRawPump!=null)RequestNamedBlockPlanStart(false);else Run(()=>participant.OwnerBeginBlock(Actor.Owner));}
             GUI.enabled=true;
@@ -98,6 +99,7 @@ namespace AvatarStroop.Unity
                 "Task ended. Review recording status and output paths below; faults or incomplete output remain unconfirmed.":
                 "Preview ended. No files were saved. Reopen the application to start again.";
             if(RecordingBlocked||ObservationBlocked)return "Task blocked. Review the fault below or withdraw the task.";
+            if(firstFormalControllerHeld)return FormalControllerWaitNotice;
             if(formalConfirmationRequest!=null)return FormalConfirmationStatus;
             if(focusPlanConfirmationRequired||focusPlanTriggerAccepted)return FocusPlanAwaitNotice;
             if(participant.Phase==Phase.Preparation&&ConsentAutoStartActive)

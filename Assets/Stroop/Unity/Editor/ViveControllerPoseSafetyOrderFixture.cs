@@ -22,12 +22,12 @@ namespace AvatarStroop.Unity.Editor
         const BindingFlags StaticHidden=BindingFlags.Static|BindingFlags.NonPublic;
         public HTCViveControllerProfile.ViveController Device {get;private set;}
         bool ownHaptic,ownVive,ownPose,ownLayout;
-        public SyntheticVivePoseDevice(string role="LeftHand")
+        public SyntheticVivePoseDevice(string role="LeftHand",bool useVendorOverlay=true)
         {
             if(InputSystem.devices.Any(d=>d is HTCViveControllerProfile.ViveController)||
                 InputSystem.ListLayouts().Contains(Layout)||InputSystem.ListLayouts().Contains(PoseLayout))
                 throw new InvalidOperationException("Synthetic Vive device requires an isolated fixture.");
-            SetVendorFocus(true);SetVendorActionsActive(true);
+            if(useVendorOverlay){SetVendorFocus(true);SetVendorActionsActive(true);}
             try
             {
                 if(!InputSystem.ListLayouts().Contains("Haptic"))
