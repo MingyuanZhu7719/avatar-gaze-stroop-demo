@@ -24,7 +24,7 @@ namespace AvatarStroop.Tests
             internal void Trigger(bool held,bool consumed=false,bool displayed=true)
             {
                 bool down=held&&!previousHeld;previousHeld=held;
-                Task.UpdateAuxiliary(gate.TakeConfirmationPress(Task.InputReady,held,down,consumed),false,false,0,displayed);
+                Task.UpdateAuxiliary(gate.TakeConfirmationPress(Task.Phase,Task.InputReady,held,down,consumed),false,false,0,displayed);
             }
             internal void Answer(bool correct=true)
             {
@@ -46,21 +46,31 @@ namespace AvatarStroop.Tests
         {
             suite.Run("VIVE task trigger requires a fresh physical press and consumes unavailable or already-used holds",()=>{
                 var gate=new ViveTaskTriggerGate();
-                Check.True(!gate.TakeConfirmationPress(true,false,false,false));
-                Check.True(!gate.TakeConfirmationPress(true,true,false,false));
-                Check.True(!gate.TakeConfirmationPress(true,true,true,false),"a late down bit must not resurrect a held press");
-                Check.True(!gate.TakeConfirmationPress(true,false,false,false));
-                Check.True(gate.TakeConfirmationPress(true,true,true,false));
-                Check.True(!gate.TakeConfirmationPress(true,true,true,false));
-                Check.True(!gate.TakeConfirmationPress(true,true,false,false));
-                Check.True(!gate.TakeConfirmationPress(true,false,false,false));
-                Check.True(!gate.TakeConfirmationPress(false,true,true,false));
-                Check.True(!gate.TakeConfirmationPress(true,true,true,false));
-                Check.True(!gate.TakeConfirmationPress(true,false,false,false));
-                Check.True(!gate.TakeConfirmationPress(true,true,true,true));
-                Check.True(!gate.TakeConfirmationPress(true,true,true,false));
-                Check.True(!gate.TakeConfirmationPress(true,false,false,false));
-                Check.True(gate.TakeConfirmationPress(true,true,true,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,false,false,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,true,false,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,true,true,false),"a late down bit must not resurrect a held press");
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,false,false,false));
+                Check.True(gate.TakeConfirmationPress(Phase.Rest,true,true,true,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,true,true,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,true,false,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,false,false,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,false,true,true,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,true,true,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,false,false,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,true,true,true));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,true,true,false));
+                Check.True(!gate.TakeConfirmationPress(Phase.Rest,true,false,false,false));
+                Check.True(gate.TakeConfirmationPress(Phase.Rest,true,true,true,false));
+            });
+            suite.Run("VIVE trigger on a trial or countdown cannot act on the next panel",()=>{
+                foreach(var phase in new[]{Phase.Tutorial,Phase.Practice,Phase.Countdown,Phase.MainTask})
+                {
+                    var gate=new ViveTaskTriggerGate();
+                    Check.True(!gate.TakeConfirmationPress(phase,true,true,true,false));
+                    Check.True(!gate.TakeConfirmationPress(Phase.Questionnaire,true,true,true,false));
+                    Check.True(!gate.TakeConfirmationPress(Phase.Questionnaire,true,false,false,false));
+                    Check.True(gate.TakeConfirmationPress(Phase.Questionnaire,true,true,true,false));
+                }
             });
             suite.Run("VIVE trigger held across correction cannot skip it and release never confirms or pauses",()=>{
                 var f=new Fixture();f.Trigger(true);f.Answer(false);var incorrect=f.Task.CurrentTrial;

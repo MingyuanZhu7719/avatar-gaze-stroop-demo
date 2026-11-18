@@ -29,12 +29,16 @@ namespace AvatarStroop.Unity.Editor
             Set(value,"TaskKind",kind);Set(value,"ResponseRule",rule);Set(value,"BlockIndex",-1);Set(value,"TrialId","tutorial-fixture-"+kind+"-"+rule+"-"+phase);
             Set(value,"PracticeTrialCount",10);Set(value,"PracticeCorrect",8);Set(value,"PracticeAttempt",1);Set(value,"PracticePassed",true);
             Set(value,"Stimulus",new Stimulus(Colour.Red,Colour.Green));
-            Set(value,"TutorialCorrect",false);Set(value,"TutorialExpectedAnswer",kind==TaskKind.VisualSearch?"yellow striped backpack":"Green");
-            Set(value,"TutorialFeedback",kind==TaskKind.VisualSearch?"Not quite. The correct target is the yellow striped backpack. Match both its colour and pattern.":
-                rule==ResponseRule.WordMeaning?"Not quite. The correct answer is Red. Read the word and ignore the ink colour.":
-                "Not quite. The correct answer is Green. Choose the font colour and ignore the word.");
             if(kind==TaskKind.VisualSearch)Set(value,"VisualSearch",VisualSearchPlans.Practice(19,1)[0].VisualSearch);
+            Set(value,"TutorialExpectedAnswer",kind==TaskKind.VisualSearch?value.VisualSearch.TargetLabel:rule==ResponseRule.WordMeaning?"Red":"Green");
+            SetFeedback(value,false);
             return value;
+        }
+        static void SetFeedback(TaskView task,bool correct)
+        {
+            Set(task,"TutorialCorrect",correct);
+            Set(task,"TutorialFeedback",(correct?"Correct! ":"Incorrect. ")+(task.TaskKind==TaskKind.VisualSearch?"Match both colour and pattern. The target is the ":
+                task.ResponseRule==ResponseRule.WordMeaning?"Choose the colour named by the word: ":"Choose the font colour: ")+task.TutorialExpectedAnswer+".");
         }
         static Rect Bounds(TextMesh text,Transform parent)
         {
@@ -58,10 +62,38 @@ namespace AvatarStroop.Unity.Editor
                 Require(!text.text.Contains("...")&&!text.text.Contains("…"),"panel replaced instructions with ellipsis");
             }
             Require(!Bounds(body,panel).Overlaps(Bounds(options,panel)),"feedback and choices overlap");
+            var mark=(Transform)Get(view,"tutorialAnswerMark");
+            string outcome="";
             if(task.Phase==Phase.TutorialFeedback)
+            {
+                bool correct=task.TutorialCorrect.Value;
+                outcome=correct?"Correct":"Wrong";
+                var heading=(TextMesh)Get(view,"phaseText");
+                Require(heading.text==(correct?"Correct!":"Incorrect")&&Words(body.text).Contains(task.TutorialExpectedAnswer),"answer or correctness missing");
                 Require(Words(options.text)==Words((string)Static(typeof(WorldSpaceExperimentView),"TutorialMenuText",selection)),"selected tutorial option missing");
-            var filename=Environment.GetEnvironmentVariable("STROOP_TUTORIAL_RENDER_OUTPUT");
-            if(!String.IsNullOrWhiteSpace(filename))Screenshot(camera,Path.Combine(filename,task.TaskKind+"-"+task.ResponseRule+"-"+task.Phase+"-"+selection+".png"));
+                Require(mark!=null&&mark.parent==panel&&mark.gameObject.activeInHierarchy,"answer mark outside visible participant panel");
+                var first=mark.GetChild(0);var second=mark.GetChild(1);
+                Require(first.GetComponent<Renderer>().enabled&&second.GetComponent<Renderer>().enabled&&
+                    (camera.cullingMask&(1<<first.gameObject.layer))!=0&&(camera.cullingMask&(1<<second.gameObject.layer))!=0,"answer strokes hidden from camera");
+                float strokeSpacing=Vector3.Distance(first.localPosition,second.localPosition);
+                Require(correct?strokeSpacing>.25f:strokeSpacing<.01f,"wrong check or X geometry");
+                var start=typeof(WorldSpaceExperimentView).GetField("tutorialMarkStarted",Private);
+                var since=Time.realtimeSinceStartupAsDouble;
+                start.SetValue(view,since);Call(view,"LayoutHud");float initial=mark.localScale.x;
+                start.SetValue(view,since-1);view.ApplyTaskView(task);Call(view,"LayoutHud");
+                Require((double)start.GetValue(view)==since-1&&mark.localScale.x>initial*1.25f,"animation did not grow and settle across repeated task updates");
+            }
+            else
+            {
+                if(mark!=null)Require(!mark.gameObject.activeInHierarchy,"tutorial animation leaked into practice exam");
+                if(task.Phase==Phase.PracticeExamResult)outcome=task.PracticePassed==true?"Passed":"Retry";
+            }
+            Capture(camera,task,task.Phase+(outcome==""?"":"-"+outcome)+"-Selection"+selection);
+        }
+        static void Capture(Camera camera,TaskView task,string stage)
+        {
+            var directory=Environment.GetEnvironmentVariable("STROOP_TUTORIAL_RENDER_OUTPUT");
+            if(!String.IsNullOrWhiteSpace(directory))Screenshot(camera,Path.Combine(directory,task.TaskKind+"-"+task.ResponseRule+"-"+stage+".png"));
         }
         static void Screenshot(Camera camera,string path)
         {
@@ -97,16 +129,35 @@ namespace AvatarStroop.Unity.Editor
                         var stimulus=(TextMesh)Get(view,"stimulusText");var instructions=(TextMesh)Get(view,"tutorialBoardInstructions");
                         Require(stimulus.gameObject.activeInHierarchy&&instructions.gameObject.activeInHierarchy,"tutorial word/instruction hidden");
                         Require(!stimulus.GetComponent<Renderer>().bounds.Intersects(instructions.GetComponent<Renderer>().bounds),"tutorial instructions overlap the stimulus");
-                        Require(instructions.text.Contains(rule==ResponseRule.WordMeaning?"named by the word":"font colour"),"tutorial rule mismatch");
+                        Require(instructions.text.Contains(rule==ResponseRule.WordMeaning?"Read the word":"ink colour"),"tutorial rule mismatch");
+                        Capture(camera,trial,"Tutorial-Question");
+                    }
+                    else
+                    {
+                        var searchRoot=(Transform)Get(view,"visualSearchRoot");
+                        var header=(TextMesh)Get(view,"visualSearchInstruction");var target=(TextMesh)Get(view,"visualSearchTargetLabel");
+                        Require(!Bounds(header,searchRoot).Overlaps(Bounds(target,searchRoot))&&Bounds(header,searchRoot).xMax<.39f&&
+                            Bounds(target,searchRoot).xMax<.39f,"larger search instruction overlaps the target example or name");
+                        Require(Bounds((TextMesh)Get(view,"visualSearchControls"),searchRoot).yMin>=-.483f,"search cue footer touches board edge");
+                        Capture(camera,trial,"Tutorial-Cue");
                     }
                     foreach(var witness in viewRoot.GetComponentsInChildren<StimulusRenderWitness>(true))witness.runInEditMode=true;
                     var timer=System.Diagnostics.Stopwatch.StartNew();
                     do{camera.Render();if(acknowledged==trial.TrialId)break;System.Threading.Thread.Sleep(30);}while(timer.Elapsed.TotalSeconds<4);
                     Require(acknowledged==trial.TrialId,"tutorial stimulus did not receive its camera onset witness: "+kind+"/"+rule);
+                    if(kind==TaskKind.VisualSearch)
+                    {
+                        Require(Bounds((TextMesh)Get(view,"visualSearchControls"),(Transform)Get(view,"visualSearchRoot")).yMin>=-.483f,"search array footer touches board edge");
+                        Capture(camera,trial,"Tutorial-Array");
+                    }
                     Require((bool)Call(view,"PrepareRawAutomaticAvatar",trial,null),"tutorial failed hidden-avatar admission");
                     view.StimulusRendered-=onPresented;
                     var feedback=Task(Phase.TutorialFeedback,kind,rule);
-                    foreach(int selected in new[]{0,1})CheckPanel(view,camera,feedback,selected);
+                    foreach(bool correct in new[]{false,true})
+                    {
+                        SetFeedback(feedback,correct);
+                        foreach(int selected in new[]{0,1})CheckPanel(view,camera,feedback,selected);
+                    }
                     var result=Task(Phase.PracticeExamResult,kind,rule);CheckPanel(view,camera,result,0);
                     Set(result,"PracticeCorrect",7);Set(result,"PracticePassed",false);CheckPanel(view,camera,result,0);
                     CheckPanel(view,camera,Task(Phase.PracticeExamReady,kind,rule),0);

@@ -88,7 +88,7 @@ namespace AvatarStroop.Unity
                     // A held control at a phase change disarms responses on an
                     // otherwise tracked wand. Keep the trial masked until release.
                     if(headReady&&frame.DeviceReady&&!frame.DeviceChanged&&frame.Trackpad.Usable&&
-                        NamedRawTrialActive&&participant.Phase==Phase.Tutorial)
+                        NamedRawTrialActive&&(participant.Phase==Phase.Tutorial||!participant.CurrentTrial.Onset.HasValue))
                         suppressInputUntilReleased=true;
                 }
                 else participant.UpdateTrackpad(headReady,frame.Trackpad);
@@ -1372,6 +1372,7 @@ namespace AvatarStroop.Unity
                     if(!frame.InputReady||MustWaitForRawPlanNeutral(frame.NeutralPending,frame.TriggerHeld,frame.MenuHeld,frame.Trackpad.Pressed))
                     {questionnaireGate.Reset();message="Release controller controls before the pending owner action.";Render();return;}
                 }
+                var inputPhase=participant.Phase;
                 if(!Mutate(()=>ApplyInputFrame(headReady,frame))){questionnaireGate.Reset();Render();return;}
                 if(NamedRawInputBoundaryPending){questionnaireGate.Reset();Render();return;}
                 if(ServiceBlockCompletionAnimation())return;
@@ -1442,13 +1443,16 @@ namespace AvatarStroop.Unity
                 int ratingDirection=questionnaireGate.Observe(frame.InputReady,participant.Phase==Phase.Questionnaire||participant.Phase==Phase.TutorialFeedback,displayReady,frame.Trackpad);
                 bool allowResume=!FocusHeldLiveWoz;
                 bool searchInputConsumed=ServiceVisualSearchInput(frame);
-                bool confirmPress=taskTriggerGate.TakeConfirmationPress(frame.InputReady,frame.TriggerHeld,frame.TriggerDown,searchInputConsumed||!allowResume);
+                bool confirmPress=taskTriggerGate.TakeConfirmationPress(inputPhase,frame.InputReady,frame.TriggerHeld,frame.TriggerDown,
+                    searchInputConsumed||!allowResume||inputPhase!=participant.Phase);
                 if(!ApplyAuxiliaryInput(confirmPress,ratingDirection,displayReady)||NamedRawInputBoundaryPending){Render();return;}
                 // Rest confirmation can enter BlockReady in this same Poll.
                 // Prepare before Tick's retained-source auto-countdown.
                 if(namedRawPump!=null&&participant.Phase==Phase.BlockReady&&participant.BlockIndex>0)
                 {RequestNamedBlockPlanStart(false);ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;}
+                var phaseBeforeTick=participant.Phase;
                 if(!Mutate(()=>participant.Tick())){Render();return;}
+                if(phaseBeforeTick!=participant.Phase&&NamedRawTrialActive)suppressInputUntilReleased=true;
                 if(ServiceBlockCompletionAnimation())return;
                 message=FocusHeldLiveWoz?LiveWozFocusHoldNotice:frame.Diagnostic;Render();RefreshVisualSearchPointer(frame);
             }
@@ -1497,9 +1501,9 @@ namespace AvatarStroop.Unity
         {
             var previousPhase=participant.Phase;
             if(!Mutate(()=>participant.UpdateAuxiliary(confirmPress,false,false,ratingDirection,displayReady)))return false;
-            // The trigger selecting Continue is still down on this frame.
-            // Issue the new trial's first presentation after a neutral poll.
-            if(previousPhase==Phase.TutorialFeedback&&participant.Phase==Phase.Tutorial&&NamedRawTrialActive)
+            // A panel confirmation can start a tutorial, correction retry or resumed
+            // trial. Wait for the physical control to return neutral before onset.
+            if(previousPhase!=participant.Phase&&NamedRawTrialActive)
                 suppressInputUntilReleased=true;
             return true;
         }

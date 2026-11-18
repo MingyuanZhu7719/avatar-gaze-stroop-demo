@@ -397,7 +397,14 @@ namespace AvatarStroop.Unity.Editor
                 Set(owner,"rawPlanStartRequested",0);Set(owner,"rawPendingBlockPlan",null);
                 var firstExam=task.CurrentTrial;
                 Require(task.Phase==Phase.Practice&&task.PracticeAttempt==1&&firstExam!=null&&!firstExam.Onset.HasValue,"missing first exam question");
-                nextFrame();Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,neutral));
+                nextFrame();
+                var examHold=ControllerFrame(gate,true,true,false,Colour.Red);
+                Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,examHold));
+                Require((bool)Prop(owner,"NamedRawInputBoundaryPending")&&(bool)Call(owner,"AwaitControllerRelease",examHold)&&
+                    !firstExam.Onset.HasValue&&task.Phase==Phase.Practice&&!owner.RecordingBlocked,"held trigger blocked or answered the first exam question");
+                nextFrame();neutral=ControllerFrame(gate,false,false,false,Colour.Red);
+                Require(!(bool)Call(owner,"AwaitControllerRelease",neutral),"exam release did not arm the new trial");
+                Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,neutral));
                 RenderTutorialFrame(owner,rig,view,camera);
                 Require(firstExam.Onset.HasValue&&!firstExam.Response.HasValue&&task.FormalEyeRecordingWindowStart==null&&
                     !owner.RecordingBlocked,"first exam onset or dormant eye boundary failed");
@@ -585,6 +592,15 @@ namespace AvatarStroop.Unity.Editor
                     "five-second formal countdown did not start a trial");
                 var first=task.CurrentTrial;
                 contended(()=>{
+                    var held=ControllerFrame(gate,true,true,false,first.ExpectedResponse);
+                    Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,held));
+                    Require((bool)Prop(owner,"NamedRawInputBoundaryPending")&&(bool)Call(owner,"AwaitControllerRelease",held)&&
+                        !first.Onset.HasValue&&task.Phase==Phase.MainTask&&!owner.RecordingBlocked,"held trigger interrupted the first formal trial");
+                    Require((bool)Call(owner,"DrainNamedRawTaskEvents"),"formal trigger hold did not drain");
+                });
+                contended(()=>{
+                    neutral=ControllerFrame(gate,false,false,false,first.ExpectedResponse);
+                    Require(!(bool)Call(owner,"AwaitControllerRelease",neutral),"formal release did not arm the new trial");
                     Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,neutral));RenderTutorialFrame(owner,rig,view,camera);
                     Require(first.Onset.HasValue&&!first.Response.HasValue&&!owner.RecordingBlocked,"formal onset failed under publisher contention");
                 });

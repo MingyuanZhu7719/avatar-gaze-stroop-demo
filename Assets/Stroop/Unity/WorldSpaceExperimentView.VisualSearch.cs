@@ -70,7 +70,6 @@ namespace AvatarStroop.Unity
             visualSearchCue=BuildSearchBag("TargetExample",visualSearchRoot,new Vector3(.49f,.405f,-.02f));
             visualSearchCue.Root.localScale=Vector3.one*.88f;
             visualSearchControls=Text("SearchControls",visualSearchRoot,new Vector3(0,-.466f,-.03f),.0062f,64,new Color(.12f,.16f,.20f));
-            visualSearchControls.text=(currentView!=null&&currentView.Phase==Phase.Tutorial?"Point at a backpack, then pull the trigger. Take your time.":"Point at a backpack, then pull the trigger.");
             visualSearchCueMessage=Text("SearchCueMessage",visualSearchRoot,new Vector3(0,-.04f,-.03f),.009f,64,new Color(.12f,.16f,.20f));
             visualSearchCueMessage.text="Look at the target above.\nThe search starts shortly.";
             visualSearchBags=new VisualSearchBag[24];
@@ -139,14 +138,30 @@ namespace AvatarStroop.Unity
             {shownVisualSearch=null;SuppressVisualSearchStimulus();return;}
             EnsureVisualSearchLayout();
             var trial=view.VisualSearch;
-            visualSearchInstruction.text=view.Phase==Phase.Tutorial?"TUTORIAL: match both colour and pattern":"FIND THIS BACKPACK";
+            bool tutorial=viveTaskPreview&&role==Actor.Participant&&view.Phase==Phase.Tutorial;
             if(!object.ReferenceEquals(shownVisualSearch,trial)||visualSearchCueTrial!=view.TrialId)
             {
                 shownVisualSearch=trial;visualSearchRequired.Clear();visualSearchRequiredColours.Clear();
                 visualSearchCueTrial=view.TrialId;visualSearchCueElapsed=0;visualSearchCueLastRender=visualSearchCueFirstRender=-1;
                 foreach(var bag in visualSearchBags)bag.Root.gameObject.SetActive(false);
                 ConfigureSearchBag(visualSearchCue,trial.TargetColour,trial.TargetPattern);
-                visualSearchTargetLabel.text=trial.TargetLabel;
+                visualSearchControls.transform.localPosition=new Vector3(0,tutorial?-.442f:-.466f,-.03f);
+                if(tutorial)
+                {
+                    FitBoardInstruction(visualSearchInstruction,"Match colour and pattern",.011f,1.00f,.068f);
+                    FitBoardInstruction(visualSearchTargetLabel,trial.TargetLabel,.010f,1.00f,.064f);
+                    FitBoardInstruction(visualSearchCueMessage,"Remember the example.",.015f,1.20f,.16f);
+                }
+                else
+                {
+                    visualSearchInstruction.text=view.Phase==Phase.Tutorial?"TUTORIAL: match both colour and pattern":"FIND THIS BACKPACK";
+                    visualSearchTargetLabel.text=trial.TargetLabel;
+                    visualSearchCueMessage.text="Look at the target above.\nThe search starts shortly.";
+                    visualSearchInstruction.characterSize=.0070f;visualSearchTargetLabel.characterSize=.0058f;
+                    visualSearchCueMessage.characterSize=.009f;visualSearchControls.characterSize=.0062f;
+                    foreach(var label in new[]{visualSearchInstruction,visualSearchTargetLabel,visualSearchCueMessage,visualSearchControls})
+                        label.transform.localScale=Vector3.one;
+                }
                 AddSearchWitness(visualSearchInstruction.GetComponent<Renderer>());AddSearchWitness(visualSearchTargetLabel.GetComponent<Renderer>());
                 AddBagWitnesses(visualSearchCue,trial.TargetPattern);
                 visualSearchCueRequiredCount=visualSearchRequired.Count;
@@ -204,7 +219,10 @@ namespace AvatarStroop.Unity
             bool cue=VisualSearchCuePending;
             foreach(var item in shownVisualSearch.Items)visualSearchBags[item.Slot].Root.gameObject.SetActive(!cue&&!visualSearchRawArrayHeld);
             visualSearchCueMessage.gameObject.SetActive(cue);
-            visualSearchControls.text=cue?"Look at the example. Selection begins with the search array.":(currentView!=null&&currentView.Phase==Phase.Tutorial?"Point at a backpack, then pull the trigger. Take your time.":"Point at a backpack, then pull the trigger.");
+            if(viveTaskPreview&&role==Actor.Participant&&currentView.Phase==Phase.Tutorial)
+                FitBoardInstruction(visualSearchControls,cue?"The search starts shortly.":"Point at the match and pull the trigger.",.0095f,1.24f,.072f);
+            else
+                visualSearchControls.text=cue?"Look at the example. Selection begins with the search array.":(currentView.Phase==Phase.Tutorial?"Point at a backpack, then pull the trigger. Take your time.":"Point at a backpack, then pull the trigger.");
             if(cue)SetSearchHover(-1);
         }
         void PrepareVisualSearchCueCapture(Camera camera)

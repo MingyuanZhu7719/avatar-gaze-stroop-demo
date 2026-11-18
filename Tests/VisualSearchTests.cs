@@ -142,7 +142,7 @@ namespace AvatarStroop.Tests
                 config=SessionConfiguration.WithTaskKind(new SessionConfiguration(config.SessionId,config.Seed,config.Allocation,RunKind.Simulation,"en",5,30,true,0,true,true,true),TaskKind.VisualSearch);
                 var p=new ViveDevelopmentParticipant(config,clock,DevelopmentFixtures.Geometry(),ViveFixedTrackpadMapping.Create(),.5,true);
                 var gate=new ViveTaskTriggerGate();bool wasHeld=false;
-                Action<bool,bool> auxiliary=(held,consumed)=>{bool down=held&&!wasHeld;wasHeld=held;p.UpdateAuxiliary(gate.TakeConfirmationPress(true,held,down,consumed),false,false,0,true);};
+                Action<bool,bool> auxiliary=(held,consumed)=>{bool down=held&&!wasHeld;wasHeld=held;p.UpdateAuxiliary(gate.TakeConfirmationPress(p.Phase,true,held,down,consumed),false,false,0,true);};
                 p.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0));p.OwnerBeginPractice(Actor.Owner);auxiliary(false,false);
                 var trial=p.CurrentTrial;p.MarkPresented(trial.TrialId);clock.Advance(.2);
                 p.SelectVisualSearchItem(trial.TrialId,trial.VisualSearch.Items.First(x=>x.Id!=trial.VisualSearch.TargetId).Id);

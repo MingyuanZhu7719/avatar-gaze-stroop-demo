@@ -28,14 +28,11 @@ namespace AvatarStroop.Unity.Editor
         public static void Validate()
         {
             assertions=0;
-            Require(Colours(TaskKind.Stroop,Phase.Practice)&&Colours(TaskKind.Stroop,Phase.MainTask),"Stroop response mapping missing");
-            Require(Colours(TaskKind.Stroop,Phase.Tutorial),"tutorial response mapping missing");
-            Require(!Colours(TaskKind.Stroop,Phase.TutorialFeedback)&&!Colours(TaskKind.Stroop,Phase.PracticeExamResult),"tutorial menu/result uses response colours");
-            Require(!Colours(TaskKind.Stroop,Phase.Questionnaire),"colour response mapping conflicts with rating directions");
-            Require(!Colours(TaskKind.VisualSearch,Phase.Practice)&&!Colours(TaskKind.VisualSearch,Phase.MainTask),"colour mapping leaks into ray selection task");
-            Require(!Colours(TaskKind.Stroop,Phase.Ended)&&!Colours(TaskKind.Stroop,Phase.Paused),"inactive response mapping remains visible");
             foreach(Phase phase in Enum.GetValues(typeof(Phase)))
             {
+                bool answersWithColour=phase==Phase.Tutorial||phase==Phase.Practice||phase==Phase.MainTask;
+                Require(Colours(TaskKind.Stroop,phase)==answersWithColour,"Stroop colour mapping in "+phase);
+                Require(!Colours(TaskKind.VisualSearch,phase),"Visual Search colour mapping in "+phase);
                 foreach(bool configured in new[]{false,true})foreach(int block in new[]{-1,0,3})
                     Require(Permitted(configured,phase,block),"apparatus remains visible in "+phase+" block "+block);
             }

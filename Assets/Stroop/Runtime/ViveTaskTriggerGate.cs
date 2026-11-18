@@ -1,3 +1,5 @@
+using AvatarStroop.Core;
+
 namespace AvatarStroop.Runtime
 {
     // A physical press belongs to one context, even if selection or recovery
@@ -5,12 +7,24 @@ namespace AvatarStroop.Runtime
     public sealed class ViveTaskTriggerGate
     {
         bool consumed;
-        public bool TakeConfirmationPress(bool inputReady,bool held,bool down,bool usedByAnotherAction)
+        public bool TakeConfirmationPress(Phase inputPhase,bool inputReady,bool held,bool down,bool usedByAnotherAction)
         {
             if(!held){consumed=false;return false;}
             if(consumed)return false;
             consumed=true;
-            return inputReady&&down&&!usedByAnotherAction;
+            if(!inputReady||!down||usedByAnotherAction)return false;
+            switch(inputPhase)
+            {
+                case Phase.TutorialFeedback:
+                case Phase.PracticeCorrection:
+                case Phase.PracticeExamResult:
+                case Phase.Questionnaire:
+                case Phase.Rest:
+                case Phase.Paused:
+                    return true;
+                default:
+                    return false;
+            }
         }
     }
 }

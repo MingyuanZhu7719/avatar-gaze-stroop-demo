@@ -10,8 +10,8 @@ The practice exam begins after a five-second headset countdown. Formal block cou
 
 The current Vive participant flow trains only the task selected for that session:
 
-1. **Tutorial:** answer as many questions as needed, without a per-question deadline. Every response receives correct/incorrect feedback; an incorrect response shows the correct answer. The response is recorded once, without correction credit.
-2. On the feedback screen, use the trackpad **top/bottom** to choose **Continue tutorial** or **I am ready: start practice exam**, then release and press the trigger to confirm. Answering a question cannot also select this menu. The colour sectors are hidden while the trackpad operates this menu.
+1. During the **tutorial**, answer as many questions as needed at your own pace. A correct answer shows an animated check mark. An incorrect answer shows an animated X and gives the correct answer. Each response is recorded once.
+2. On the feedback screen, use the trackpad **top/bottom** to choose **Continue tutorial** or **Start practice exam**, then release and press the trigger to confirm. Answering a question cannot also select this menu. The colour sectors are hidden while the trackpad operates this menu.
 3. **Practice exam:** after the five-second countdown, complete ten questions without per-question correctness feedback. Stroop has five congruent and five incongruent items; Visual search has five 12-object and five 24-object items. Each new attempt has a new plan.
 4. **Result:** eight or more correct first responses passes. The score appears after the tenth question. A fresh trigger confirms the result: a pass proceeds to formal-block preparation; a failure returns to tutorial. There is no fixed limit on tutorial questions or exam attempts. Withdrawal remains available.
 
@@ -40,7 +40,7 @@ Keep exactly one VIVE wand connected. The application automatically selects its 
 
 The visible controller uses the model and texture supplied by the installed SteamVR runtime, aligned to its grip component. It is shown across participant screens while current head/controller tracking is valid, including countdowns, questionnaires and completion. Vendor model files are not bundled. A missing model is reported separately; a stale controller pose is never displayed as current tracking.
 
-For the Vive wand (`vr_controller_vive_1_5`), the trackpad itself carries the fixed Stroop colours: red up, green right, blue down and yellow left. These markings follow the native model and grip pose. They appear in Stroop preparation, practice and task phases, and are hidden during questionnaires, inactive task states and Visual Search, where the controls have different meanings. Other controller models retain their native appearance without a guessed trackpad overlay. The controller draws in the camera's forward geometry stage, with a minimum surface brightness for dark plastic; physical alignment and both-eye appearance still require a wearer check.
+The Vive wand (`vr_controller_vive_1_5`) shows red up, green right, blue down and yellow left on its trackpad while the participant answers an **Ink colour** or **Word meaning** question in the tutorial, practice exam or formal blocks. The markings follow the native model and grip pose. All other screens, including tutorial feedback, countdowns, questionnaires and Visual search, show the native trackpad surface. Other controller models use their native appearance. The controller draws in the camera's forward geometry stage with a minimum surface brightness for dark plastic.
 
 For both Ink colour and Word meaning, the fixed colour guide sits inside the whiteboard's upper-right writing area, above the central word. Its compact card preserves the colour-button and letter sizes. It keeps the same position and size across A/B/C/D, and stays hidden for Visual Search.
 
