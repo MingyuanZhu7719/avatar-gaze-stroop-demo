@@ -307,6 +307,9 @@ namespace AvatarStroop.Unity
         }
         bool RawHoldPoseCurrent()
         {
+#if UNITY_EDITOR
+            if(SyntheticRawTrackingCurrent)return true;
+#endif
             // A live render callback can also occur while the session is
             // visible but unfocused. Optional instructions don't establish
             // visual delivery, task readiness, eye coverage or input focus.

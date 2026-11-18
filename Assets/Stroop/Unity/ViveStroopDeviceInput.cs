@@ -74,6 +74,7 @@ namespace AvatarStroop.Unity
         // activated its button actions after focus restoration.
         public bool ActionActivationPending { get; private set; }
         internal bool SameDevicePoseLoss {get;private set;}
+        internal bool XrFocusUnavailable {get;set;}
         internal ViveStroopDeviceFrame(VivePreviewTrackpadSample trackpad,bool neutralPending,bool lostReady,
             bool triggerHeld,bool triggerDown,bool menuHeld,bool menuDown,string diagnostic,bool deviceChanged=false,bool actionActivationPending=false,bool sameDevicePoseLoss=false)
         {
@@ -404,21 +405,34 @@ namespace AvatarStroop.Unity
         {return candidate!=null&&candidate.added&&candidate.enabled&&lastDevice!=null&&object.ReferenceEquals(candidate,lastDevice)&&
             (!tracked||(trackingFlags&3)!=3);}
 
-        bool PhysicalCandidateCurrentForActivation()
+        bool TryReadActivationCandidate(out bool sameDevicePoseLoss)
         {
+            sameDevicePoseLoss=false;
             if(!Bound(position)||!Bound(rotation)||!Bound(tracked)||!Bound(trackingState)||!Bound(trackpad)||
                 !Bound(trackpadClick)||!Bound(trigger)||!Bound(menu))return false;
             var candidate=position.controls[0].device;
             if(!(candidate is HTCViveControllerProfile.ViveController)||!candidate.added||!candidate.enabled||!CandidateMatches(candidate)||
+                lastDevice!=null&&!object.ReferenceEquals(candidate,lastDevice)||
                 rotation.controls[0].device!=candidate||tracked.controls[0].device!=candidate||trackingState.controls[0].device!=candidate||
                 trackpad.controls[0].device!=candidate||trackpadClick.controls[0].device!=candidate||
                 trigger.controls[0].device!=candidate||menu.controls[0].device!=candidate)return false;
-            // Read only physical pose bits. No trigger/menu/trackpad value or
-            // edge is consumed while the action set is still inactive.
-            var p=position.ReadValue<Vector3>();var q=rotation.ReadValue<Quaternion>();
-            float tracking=tracked.ReadValue<float>();int flags=trackingState.ReadValue<int>();
+            // Inactive actions can report default values. Read the bound pose
+            // controls so a malformed value cannot masquerade as a pose outage.
+            // No button value or edge is consumed.
+            var positionControl=position.controls[0] as InputControl<Vector3>;
+            var rotationControl=rotation.controls[0] as InputControl<Quaternion>;
+            var trackedControl=tracked.controls[0] as InputControl<float>;
+            var stateControl=trackingState.controls[0] as InputControl<int>;
+            if(positionControl==null||rotationControl==null||trackedControl==null||stateControl==null)return false;
+            var p=positionControl.ReadValue();var q=rotationControl.ReadValue();
+            float tracking=trackedControl.ReadValue();int flags=stateControl.ReadValue();
             poseBitsObserved=true;observedTracked=tracking>.5f;observedTrackingValid=ValidButton(tracking);observedTrackingFlags=flags;
-            return ValidPosition(p)&&ValidRotation(q)&&ValidButton(tracking)&&tracking>.5f&&(flags&3)==3;
+            if(!ValidPosition(p)||!Finite(q.x)||!Finite(q.y)||!Finite(q.z)||!Finite(q.w)||!ValidButton(tracking))return false;
+            // SteamVR can deactivate the buttons during a lighthouse pose reset.
+            // A finite stale pose may describe a hold only for the established wand.
+            // Do not accept task input or acquire a controller from this observation.
+            sameDevicePoseLoss=IsEstablishedDevicePoseLoss(candidate,tracking>.5f,flags);
+            return !sameDevicePoseLoss&&tracking>.5f&&(flags&3)==3&&ValidRotation(q);
         }
 
         // Independent device continuity for pre-placement confirmation. A
@@ -496,7 +510,12 @@ namespace AvatarStroop.Unity
             {
                 if(!SelectUniqueController())return Unavailable(ControllerStatus);
                 if(!presentationReady)return Unavailable("XR presentation or head tracking is not ready.");
-                if(!OpenXRUtility.IsSessionFocused)return Unavailable("OpenXR session is not focused.");
+                if(!OpenXRUtility.IsSessionFocused)
+                {
+                    var unfocused=Unavailable("OpenXR session is not focused.");
+                    unfocused.XrFocusUnavailable=true;
+                    return unfocused;
+                }
                 var positionState=Inspect(position,false);var rotationState=Inspect(rotation,false);
                 var trackedState=Inspect(tracked,false);var trackingStateState=Inspect(trackingState,false);
                 var trackpadState=Inspect(trackpad,true);var clickState=Inspect(trackpadClick,true);
@@ -505,9 +524,10 @@ namespace AvatarStroop.Unity
                    !trackpadState.Ready||!clickState.Ready||!triggerState.Ready||!menuState.Ready)
                 {
                     var states=new[]{positionState,rotationState,trackedState,trackingStateState,trackpadState,clickState,triggerState,menuState};
-                    bool activationPending=ViveControllerReadinessDiagnostic.OnlyActivationPending(states)&&PhysicalCandidateCurrentForActivation();
+                    bool sameDevicePoseLoss=false;
+                    bool activationPending=ViveControllerReadinessDiagnostic.OnlyActivationPending(states)&&TryReadActivationCandidate(out sameDevicePoseLoss);
                     return Unavailable(ViveControllerReadinessDiagnostic.Bindings(Hand.ToString(),states)+
-                        (automatic?" "+ControllerStatus:DetectedWandHands()),activationPending);
+                        (automatic?" "+ControllerStatus:DetectedWandHands()),activationPending,sameDevicePoseLoss);
                 }
                 InputDevice device=trackpad.controls[0].device;
                 if(!(device is HTCViveControllerProfile.ViveController))

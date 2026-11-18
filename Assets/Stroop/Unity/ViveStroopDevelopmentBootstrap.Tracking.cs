@@ -87,12 +87,25 @@ namespace AvatarStroop.Unity
         {
             bool held=namedRawPump.TrackingGapOpen;
             if(!held&&!frame.SameDevicePoseLoss)return false;
-            if(!ActiveRawTrackingContext()||frame.DeviceChanged||
-                !frame.DeviceReady&&!frame.SameDevicePoseLoss&&!frame.ActionActivationPending)
-            {FailNamedRawBeforeFrame();return true;}
-            if(rig!=null&&!rig.XrFocused){ObserveFocusLossDuringTracking();return false;}
+            if(!ActiveRawTrackingContext()||frame.DeviceChanged)
+            {NoteRawFirstFault(frame.DeviceChanged?"tracking_controller_identity_changed":"tracking_context_unavailable");FailNamedRawBeforeFrame();return true;}
+            if(!frame.DeviceReady&&!frame.SameDevicePoseLoss&&!frame.ActionActivationPending&&!frame.XrFocusUnavailable)
+            {
+                Debug.LogWarning("VIVE_RAW_TRACKING_CONTROLLER_REJECTED: "+frame.Diagnostic+"; frame="+Time.frameCount);
+                NoteRawFirstFault("tracking_controller_input_invalid");FailNamedRawBeforeFrame();return true;
+            }
+            if(frame.XrFocusUnavailable||rig!=null&&!rig.XrFocused)
+            {
+                // Focus may change between the rig's check and the action poll.
+                // Preserve that negative observation even if focus has already returned.
+                ObserveFocusLossDuringTracking();
+                MaskRawTrackingFrame("XR focus lost during tracking recovery. Restore headset focus and release the controls.");
+                if(!PrepareRawFocusBoundary(false))FailNamedRawBeforeFrame();
+                return true;
+            }
             if(frame.SameDevicePoseLoss)
             {
+                if(!held)Debug.Log("VIVE_RAW_CONTROLLER_TRACKING_HELD: phase="+participant.Phase+"; frame="+Time.frameCount);
                 BeginRawTrackingHostBoundary();
                 MaskRawTrackingFrame("Controller pose temporarily unavailable. Task held; recording stays open.");
                 if(!namedRawPump.ObserveTrackingControllerLoss(TrackingPlanPending)||!MaintainRawTrackingWoZ(false)||
@@ -119,6 +132,7 @@ namespace AvatarStroop.Unity
             {
                 ClearPendingRawOwnerAction();
                 if(!namedRawPump.EndTrackingGap()){FailNamedRawBeforeFrame();return true;}
+                Debug.Log("VIVE_RAW_TRACKING_RESTORED: phase="+participant.Phase+"; plan_confirmation="+focusPlanConfirmationRequired+"; frame="+Time.frameCount);
                 trackingRequiresExplicitFocusResume=false;
                 ResetRawTrackingNeutralStreak();device.ResetTaskInputForFocusGap();
                 MaskRawTrackingFrame(FocusHeldLiveWoz?LiveWozFocusHoldNotice:TrackingPlanPending?FocusPlanAwaitNotice:

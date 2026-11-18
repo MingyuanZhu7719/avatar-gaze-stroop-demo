@@ -66,7 +66,7 @@ namespace AvatarStroop.Unity.Editor
         {
             object[] frame={null};
             Require((bool)Call(worker,"TryPollTaskForRecording",frame)&&
-                (bool)Call(pump,"StageRigFrame",new[]{frame[0],(object)1.0}),"fresh raw frame could not be staged");
+                (bool)Call(pump,"StageRigFrame",new[]{frame[0],(object)1.0}),"fresh raw frame could not be staged: "+Prop(pump,"FailureSnapshot"));
         }
         static void Mutate(object pump,Action operation)
         {Require((bool)Call(pump,"TryRunReservedOrdinaryMutation",operation),"synthetic reserved mutation failed");}
@@ -227,14 +227,14 @@ namespace AvatarStroop.Unity.Editor
         // only the old post-render epoch logic is restored.
         public static void ValidateHealthyOnly(){Execute(scene=>Run(scene,0,false));}
         static ViveStroopDeviceFrame ControllerFrame(ViveStroopNeutralGate gate, bool phaseChanged,
-            bool triggerHeld, bool padHeld, Colour colour, bool connected=true)
+            bool triggerHeld, bool padHeld, Colour colour, bool connected=true,bool poseLoss=false,bool deviceChanged=false)
         {
             var edges=gate.Observe(connected,phaseChanged,false,padHeld,triggerHeld,false);
             double x=colour==Colour.Green?1:colour==Colour.Yellow?-1:0;
             double y=colour==Colour.Red?1:colour==Colour.Blue?-1:0;
             var pad=new VivePreviewTrackpadSample(connected,padHeld,padHeld?x:0,padHeld?y:0);
             return (ViveStroopDeviceFrame)Activator.CreateInstance(typeof(ViveStroopDeviceFrame),Instance,null,
-                new object[]{pad,edges.NeutralPending,edges.LostReady,triggerHeld,edges.TriggerDown,false,false,"synthetic wand",false,false,false},null);
+                new object[]{pad,edges.NeutralPending,edges.LostReady,triggerHeld,edges.TriggerDown,false,false,"synthetic wand",deviceChanged,false,poseLoss},null);
         }
 
         static void RenderTutorialFrame(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
@@ -247,7 +247,7 @@ namespace AvatarStroop.Unity.Editor
         }
 
         static void TutorialControllerBoundaries(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
-            WorldSpaceExperimentView view,Camera camera,object pump,ViveProEyeWorker worker,ViveDevelopmentParticipant task)
+            WorldSpaceExperimentView view,Camera camera,object pump,ViveProEyeWorker worker,ViveDevelopmentParticipant task,bool enterExam)
         {
             var gate=new ViveStroopNeutralGate();
             var first=task.CurrentTrial;
@@ -286,6 +286,23 @@ namespace AvatarStroop.Unity.Editor
             Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,released));RenderTutorialFrame(owner,rig,view,camera);
             Require(next.Onset.HasValue&&next.Outcome==TrialOutcome.Pending&&!owner.RecordingBlocked,"fresh trial onset failed");
 
+            if(enterExam)
+            {
+                released=ControllerFrame(gate,false,false,false,next.ExpectedResponse);
+                Stage(pump,worker);
+                Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,released));
+                Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,ControllerFrame(gate,false,false,true,next.ExpectedResponse)));
+                Require(next.Correct==true&&task.Phase==Phase.TutorialFeedback,"second ink-colour answer did not reach feedback");
+                Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,released));
+                Require((bool)Call(owner,"ApplyAuxiliaryInput",false,0,true)&&
+                    (bool)Call(owner,"ApplyAuxiliaryInput",false,1,true)&&task.TutorialMenuSelection==1,
+                    "Start practice exam option could not be selected");
+                Require((bool)Call(owner,"ApplyAuxiliaryInput",true,0,true)&&task.Phase==Phase.PracticeExamReady&&task.CurrentTrial==null,
+                    "fresh trigger did not request the exam");
+                Require((bool)Call(owner,"DrainNamedRawTaskEvents"),"exam request events did not drain");
+                CheckExamHandoff(owner,rig,view,camera,pump,worker,task,gate,released);
+                return;
+            }
             Stage(pump,worker);
             var disconnected=ControllerFrame(gate,false,false,false,next.ExpectedResponse,false);
             Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,disconnected));
@@ -293,7 +310,94 @@ namespace AvatarStroop.Unity.Editor
                 !next.Response.HasValue,"controller disconnection was treated as an ordinary held control");
         }
 
-        public static void ValidateTaskOnlyTutorial()
+        static void CheckExamHandoff(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
+            WorldSpaceExperimentView view,Camera camera,object pump,ViveProEyeWorker worker,ViveDevelopmentParticipant task,
+            ViveStroopNeutralGate gate,ViveStroopDeviceFrame neutral)
+        {
+            // The real adapter owns the recovery gate; frames are supplied by this test.
+            using(var adapter=new ViveStroopDeviceInput(VivePreviewControllerHand.Automatic))
+            {
+                Action nextFrame=()=>{
+                    Require((bool)Call(owner,"DrainNamedRawTaskEvents"),"exam frame events did not drain");
+                    Stage(pump,worker);
+                };
+                Set(owner,"device",adapter);
+                Set(rig,"headReady",true);
+                nextFrame();Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,neutral));
+                Call(owner,"CaptureRawPracticeRequest");Call(owner,"RecordControllerUiPoll",true,true,"synthetic wand");
+                Require(Call(owner,"PracticeExecutionBlocker")==null,"neutral exam request remained blocked");
+                Call(owner,"ClearRawPracticeRequest");Call(owner,"RequestNamedBlockPlanStart",true);
+
+                nextFrame();
+                Require((bool)Call(owner,"HandleActiveRawTrackingController",ControllerFrame(gate,false,false,false,Colour.Red,false,true))&&
+                    (bool)Prop(pump,"TrackingGapOpen")&&!owner.RecordingBlocked&&task.Phase==Phase.PracticeExamReady,
+                    "loss of the same controller pose closed the pending exam");
+                neutral=ControllerFrame(gate,false,false,false,Colour.Red);
+                for(int i=0;i<3;i++)
+                {
+                    // This Editor fixture runs within one frame. Model successive frame numbers
+                    // while the production recovery code counts each neutral observation.
+                    Set(owner,"trackingNeutralFrame",Time.frameCount-1);
+                    nextFrame();
+                    Require((bool)Call(owner,"HandleActiveRawTrackingController",neutral)&&!owner.RecordingBlocked,
+                        "recovering the same controller stopped the recording");
+                }
+                Require(!(bool)Prop(pump,"TrackingGapOpen")&&task.Phase==Phase.PracticeExamReady&&task.PracticeAttempt==0,
+                    "tracking recovery consumed the pending exam start");
+                // Receipt-ready polling sets this frame when the neutral controller can
+                // act on the prompt. The in-memory writer cannot publish a native receipt.
+                Set(owner,"focusPlanPromptFrame",Time.frameCount);
+                Call(owner,"Render");Call(view,"LayoutHud");
+                Require(((TextMesh)Get(view,"previewInputText")).text.IndexOf("trigger",StringComparison.OrdinalIgnoreCase)>=0,
+                    "exam recovery panel does not tell the wearer to confirm with the trigger");
+                var trigger=ControllerFrame(gate,false,true,false,Colour.Red);
+                Require(!(bool)Call(owner,"ObservePreparedPlanStartConfirmation",neutral)&&
+                    !(bool)Call(owner,"ObservePreparedPlanStartConfirmation",trigger)&&
+                    (bool)Call(owner,"ObservePreparedPlanStartConfirmation",neutral),"prepared exam requires neutral, confirmation and release");
+                Call(owner,"AwaitControllerRelease",neutral);
+                nextFrame();
+                Call(owner,"ProcessNamedBlockPlanStart",true,neutral);
+                Require(Get(owner,"rawPendingBlockPlan")!=null&&task.Phase==Phase.PracticeExamReady&&task.PracticeAttempt==0&&
+                    task.ReadEventsAfter(-1,4096).Count(e=>e.Kind=="block_plan_prepared"&&e.Fields["item_count"]=="10")==1,
+                    "missing or duplicate ten-question practice plan");
+                Require((bool)Call(owner,"DrainNamedRawTaskEvents"),"exam plan events did not drain");
+                Require(!(bool)Call(owner,"ServicePracticeCountdown")&&(bool)Prop(owner,"PracticeCountdownVisible"),
+                    "exam did not start the visible countdown");
+                Call(rig,"GuardRawSceneBeforeCull",camera);
+                var hold=Get(rig,"rawHoldView");
+                Require(hold!=null&&(bool)Get(rig,"practiceCountdownRenderPending")&&
+                    ((TextMesh)Get(hold,"text")).text.Contains("Practice exam starts in"),"countdown was hidden in the headset hold layer");
+                Call(rig,"AfterRawHoldCameraRender",camera);
+                var countdown=Get(owner,"practiceCountdown");
+                int first=(int)Get(countdown,"lastFrame");double start=(double)Get(countdown,"lastTime");
+                Require(first==Time.frameCount&&camera.cullingMask==0,"countdown camera callback did not acknowledge the frame");
+                // Advance the same timer with consecutive software render times. Duplicate
+                // stereo callbacks cannot advance it; no five seconds pass off screen.
+                for(int i=1;i<=100;i++)
+                {
+                    Require(!(bool)Call(countdown,"CompleteForFrame",start+i*.05,first+i),"exam countdown completed early");
+                    Call(countdown,"ObserveRendered",start+i*.05,first+i);
+                }
+                Require((bool)Call(countdown,"CompleteForFrame",start+5.05,first+101),"five rendered seconds did not release the countdown");
+                // The synthetic Editor writer cannot return a native file receipt. Start at
+                // its accepted-plan boundary, then exercise the real first question camera/input.
+                Call(owner,"ResetPracticeCountdown");nextFrame();
+                Action startExam=()=>Call(task,"OwnerBeginPracticeCore",Actor.Owner);
+                Mutate(pump,()=>Call(task,"RunNamedRecordingMutation",startExam,0,null,false));
+                Set(owner,"rawPlanStartRequested",0);Set(owner,"rawPendingBlockPlan",null);
+                var firstExam=task.CurrentTrial;
+                Require(task.Phase==Phase.Practice&&task.PracticeAttempt==1&&firstExam!=null&&!firstExam.Onset.HasValue,"missing first exam question");
+                nextFrame();Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,neutral));
+                RenderTutorialFrame(owner,rig,view,camera);
+                Require(firstExam.Onset.HasValue&&!firstExam.Response.HasValue&&task.FormalEyeRecordingWindowStart==null&&
+                    !owner.RecordingBlocked,"first exam onset or dormant eye boundary failed");
+                Set(owner,"device",null);
+            }
+        }
+
+        public static void ValidateTaskOnlyTutorial(){RunTaskOnlyTutorial(false);}
+        public static void ValidatePracticeExamHandoff(){RunTaskOnlyTutorial(true);}
+        static void RunTaskOnlyTutorial(bool enterExam)
         {
             Execute(scene=>{
                 GameObject cameraObject=null,viewObject=null,rigObject=null,ownerObject=null;
@@ -335,8 +439,9 @@ namespace AvatarStroop.Unity.Editor
                     Require((bool)Call(owner,"PrepareRawScenePresentation"),"actual dormant tutorial scene preparation refused; input="+task.InputReady+"; identity="+Get(view,"displayedTrial")+"; blocked="+owner.PresentationBlocked);
                     Call(rig,"GuardRawSceneBeforeCull",camera);Call(view,"BeforeCameraCull",camera);Call(view,"ObserveStimulusRender",camera);Call(view,"AfterCameraRender",camera);
                     Require(task.CurrentTrial.Onset.HasValue&&!owner.RecordingBlocked,"tutorial first actual camera witness failed");
-                    TutorialControllerBoundaries(owner,rig,view,camera,pump,worker,task);
-                    Debug.Log("VIVE_TASK_ONLY_TUTORIAL_RENDER_FIXTURE_PASSED: dormant-worker tutorial, initial camera onset, tracked controller release, fresh answer, feedback Continue, second camera onset and disconnected controller.");
+                    TutorialControllerBoundaries(owner,rig,view,camera,pump,worker,task,enterExam);
+                    Debug.Log(enterExam?"VIVE_PRACTICE_EXAM_HANDOFF_PASSED: two ink tutorial answers, participant-selected exam, tracking recovery, five-second countdown and first exam camera onset.":
+                        "VIVE_TASK_ONLY_TUTORIAL_RENDER_FIXTURE_PASSED: dormant-worker tutorial, initial camera onset, tracked controller release, fresh answer, feedback Continue, second camera onset and disconnected controller.");
                 }
                 finally
                 {

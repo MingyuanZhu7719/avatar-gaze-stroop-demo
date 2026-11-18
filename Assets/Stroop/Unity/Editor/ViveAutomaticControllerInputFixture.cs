@@ -32,6 +32,14 @@ namespace AvatarStroop.Unity.Editor
             var method=target.GetType().GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic);
             Require(method!=null,"missing method "+name);return method.Invoke(target,arguments);
         }
+        // Invoke the physical classification used when OpenXR reports inactive
+        // button actions. This fixture supplies pose/binding states only.
+        static void ExpectActivationCandidate(ViveStroopDeviceInput input,bool activationPending,bool sameDevicePoseLoss,string reason)
+        {
+            var arguments=new object[]{false};
+            bool actual=(bool)Call(input,"TryReadActivationCandidate",arguments);
+            Require(actual==activationPending&&(bool)arguments[0]==sameDevicePoseLoss,reason);
+        }
         static HTCViveControllerProfile.ViveController Add(string role)
         {
             var device=InputSystem.AddDevice(SyntheticLayout) as HTCViveControllerProfile.ViveController;
@@ -157,21 +165,47 @@ namespace AvatarStroop.Unity.Editor
                     "explicit synthetic Right positive pose prerequisite is missing");
                 Require((bool)Call(input,"CommitCandidate",right)&&selection.IsCommitted&&selection.SelectedDeviceId==right.deviceId&&selection.SelectedRole==2,
                     "validated synthetic Right candidate did not acquire first ownership");
-                Require((bool)Call(input,"PhysicalCandidateCurrentForActivation"),"focused-action recovery lost a valid same-device physical pose");
+                ExpectActivationCandidate(input,true,false,"a valid pose did not permit waiting for button activation");
                 using(StateEvent.From(right,out var lostTracking))
                 {right.trackingState.WriteValueIntoEvent(1,lostTracking);InputState.Change(right,lostTracking);}
-                Require(!(bool)Call(input,"PhysicalCandidateCurrentForActivation"),"genuine pose loss was mislabeled as action activation delay");
+                ExpectActivationCandidate(input,false,false,"an unseen controller supplied recovery evidence before a validated read");
                 var last=typeof(ViveStroopDeviceInput).GetField("lastDevice",BindingFlags.Instance|BindingFlags.NonPublic);
                 Require(last!=null,"validated identity field missing");
                 last.SetValue(input,right);
-                Require((bool)Call(input,"IsEstablishedDevicePoseLoss",right,true,1),"established pose loss was not classified");
+                ExpectActivationCandidate(input,false,true,"inactive buttons with partial tracking on the established controller lost the recoverable hold");
+                using(StateEvent.From(right,out var untracked))
+                {
+                    right.isTracked.WriteValueIntoEvent(0f,untracked);
+                    right.trackingState.WriteValueIntoEvent(0,untracked);
+                    InputState.Change(right,untracked);
+                }
+                ExpectActivationCandidate(input,false,true,"inactive buttons with no tracking on the established controller lost the recoverable hold");
                 Call(input,"Unavailable","synthetic unavailable",false,false);
                 Require(object.ReferenceEquals(last.GetValue(input),right),"invalid frame erased established identity");
-                second=Add("RightHand");
-                Require(!(bool)Call(input,"IsEstablishedDevicePoseLoss",second,false,0),"replacement was classified as the same controller");
+                second=Add("LeftHand");
+                last.SetValue(input,second);
+                ExpectActivationCandidate(input,false,false,"a substituted device supplied recovery evidence");
+                last.SetValue(input,right);
+                var triggerField=typeof(ViveStroopDeviceInput).GetField("trigger",BindingFlags.Instance|BindingFlags.NonPublic);
+                var rightTrigger=(InputAction)Get(input,"trigger");
+                var leftTrigger=((InputAction[])Get(input,"leftActions"))[6];
+                Require(leftTrigger.controls.Count==1&&object.ReferenceEquals(leftTrigger.controls[0].device,second),"cross-device trigger setup failed");
+                triggerField.SetValue(input,leftTrigger);
+                ExpectActivationCandidate(input,false,false,"a button bound to a different controller supplied recovery evidence");
+                triggerField.SetValue(input,rightTrigger);
                 InputSystem.RemoveDevice(second);second=null;
-                Require(!(bool)Call(input,"IsEstablishedDevicePoseLoss",right,true,3),"good pose was classified as lost");
+                rightTrigger.Disable();
+                ExpectActivationCandidate(input,false,false,"a disabled button binding supplied recovery evidence");
+                rightTrigger.Enable();
+                using(StateEvent.From(right,out var malformed))
+                {
+                    right.devicePosition.WriteValueIntoEvent(new Vector3(float.NaN,0,0),malformed);
+                    InputState.Change(right,malformed);
+                }
+                Require(float.IsNaN(right.devicePosition.ReadValue().x),"nonfinite physical position did not reach the synthetic controller");
+                ExpectActivationCandidate(input,false,false,"a nonfinite position was accepted as a recoverable pose outage");
                 SetSyntheticTrackedPose(right);
+                ExpectActivationCandidate(input,true,false,"the same controller could not await button activation after reacquiring its pose");
                 var neutral=(ViveStroopNeutralGate)Get(input,"neutralGate");
                 neutral.Observe(true,false,false,false,false,false);
                 Require(neutral.Observe(true,false,false,false,true,false).TriggerDown,"synthetic pre-gap trigger edge missing");

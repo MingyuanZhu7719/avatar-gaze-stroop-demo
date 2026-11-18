@@ -8,6 +8,8 @@ namespace AvatarStroop.Unity
     public sealed partial class WorldSpaceExperimentView
     {
         int viveTutorialMenuSelection;
+        bool practicePlanConfirmation;
+        internal void SetVivePracticePlanConfirmation(bool required){practicePlanConfirmation=required;}
         int tutorialPanelCaptureFrame=-1,tutorialPanelSeenFrame=-1,tutorialPanelObserved;
         string tutorialPanelCapturedIdentity,tutorialPanelSeenIdentity,tutorialPanelCapturedBody,tutorialPanelCapturedOptions;
         TextMesh tutorialBoardInstructions;
@@ -53,7 +55,7 @@ namespace AvatarStroop.Unity
         internal static string TrainingPanelMessage(TaskView task)
         {
             if(task.Phase==Phase.TutorialFeedback)return task.TutorialFeedback??"Review the answer before continuing.";
-            if(task.Phase==Phase.PracticeExamReady)return "10 questions. At least 8 correct answers pass.\nYour score appears at the end.\nRelease the controls for the five-second countdown.";
+            if(task.Phase==Phase.PracticeExamReady)return "10 questions. At least 8 correct answers pass.\nYour score appears at the end.";
             if(task.Phase==Phase.PracticeExamResult)return "You answered "+task.PracticeCorrect+" of "+task.PracticeTrialCount+" correctly.\n"+
                 (task.PracticePassed==true?"You passed. You are ready for the experiment.":"You need at least 8 correct answers.\nReturn to the tutorial, then try again when ready.");
             return "";
@@ -78,7 +80,8 @@ namespace AvatarStroop.Unity
             FitHud(messageText,TrainingPanelMessage(currentView),frustum,new Rect(.06f,.20f,.88f,.34f),.043f,100);
             string action=feedback?TutorialMenuText(viveTutorialMenuSelection):
                 currentView.Phase==Phase.PracticeExamResult?(currentView.PracticePassed==true?"Release, then pull the trigger to continue.":"Release, then pull the trigger to return to the tutorial."):
-                "Keep the headset on and release the controls.";
+                practicePlanConfirmation?"Release all controls. Then pull and release the trigger to restart the countdown.":
+                "Release the controls for the five-second countdown.";
             FitHud(previewInputText,action,frustum,new Rect(.06f,.57f,.88f,.22f),.039f,100);
             FitHud(previewStatusText,feedback?"Trackpad TOP / BOTTOM: select | Trigger: confirm":"",frustum,new Rect(.04f,.84f,.92f,.07f),.028f,3);
             FitHud(faultText,faultCaption,frustum,new Rect(.04f,.93f,.92f,.06f),.025f,100);

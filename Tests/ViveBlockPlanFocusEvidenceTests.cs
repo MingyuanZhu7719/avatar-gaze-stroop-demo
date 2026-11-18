@@ -90,6 +90,24 @@ namespace AvatarStroop.Tests
                     Check.Equal(Phase.PracticeExamReady,f.Participant.Phase);Check.Equal(0,f.Participant.PracticeAttempt);
                 }
             });
+            suite.Run("prepared Ink colour exam keeps its plan through overlapping controller and XR focus gaps",()=>{
+                var f=new Fixture(2,true);
+                var copied=f.Participant.ReadEventsAfter(f.Plan.Sequence-1,1)[0];
+                f.Participant.RecordRawTrackingGapStart(RawTrackingLoss.ControllerPose,true);
+                Check.True(f.Current(),"controller gap invalidated the pending exam plan");
+                f.Focus(true,false);
+                Check.True(f.Current()&&f.Participant.IsXrFocusInteractionHeld,"overlapping XR focus loss invalidated the plan");
+                f.Focus(true,true);
+                Check.True(f.Current()&&!f.Participant.IsXrFocusInteractionHeld&&f.Participant.RawTrackingInteractionHeld,
+                    "restoring focus granted controller input or invalidated the plan");
+                f.Participant.RecordRawTrackingGapEnd(RawTrackingLoss.ControllerPose);
+                Check.True(f.Current()&&f.Request.MatchesWriterPlannedEvent(copied),"recovery invalidated the original writer plan");
+                Check.True(f.Participant.InputReady&&!f.Participant.RawTrackingInteractionHeld);
+                Check.Equal(Phase.PracticeExamReady,f.Participant.Phase);Check.Equal(0,f.Participant.PracticeAttempt);
+                Check.Equal((TrialRecord)null,f.Participant.CurrentTrial);
+                var events=f.Participant.ReadEventsAfter(f.Plan.Sequence,10);
+                Check.True(events.Select(x=>x.Kind).SequenceEqual(new[]{"tracking_gap_begin","focus_changed","focus_changed","tracking_gap_end"}));
+            });
             suite.Run("pending block receipt survives only validated desktop focus loss and restoration",()=>{
                 foreach(int design in new[]{0,1,2})
                 {

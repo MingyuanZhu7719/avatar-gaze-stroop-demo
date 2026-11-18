@@ -2130,6 +2130,7 @@ namespace AvatarStroop.Unity
                 participant.RestRemainingSeconds,participant.RestDurationSeconds,0,0,participant.Completed,participant.QuestionnaireInstructionPending,answered);
             view.SetViveQuestionnaireRating(participant.CandidateRating);
             view.SetViveTutorialMenuSelection(participant.TutorialMenuSelection);
+            view.SetVivePracticePlanConfirmation(FocusPlanPromptCurrent);
             view.ApplyTaskView(participant.ParticipantView);
             if(legacyWozScene!=null)
             {
@@ -2206,6 +2207,9 @@ namespace AvatarStroop.Unity
                         namedRawPump.CommitVisualSearchPresentation(token,render.Frame,render.Revision,render.TrialId,token.Search.LayoutId,render.UnityRenderSeconds)))
                     {AbortRawScenePresentation();return;}
                     committedRawTrial=render.TrialId;committedRawRevision=render.Revision;
+                    if(participant.Phase==Phase.Practice&&participant.UsesTutorial&&
+                        participant.CurrentTrial!=null&&participant.CurrentTrial.PlannedIndex==0)
+                        Debug.Log("VIVE_PRACTICE_EXAM_FIRST_TRIAL_RENDERED: camera witness committed; frame="+render.Frame);
                     if(legacyWozScene!=null)legacyWozScene.NotePresented(render.TrialId);
                     rawGenericCallbackTrial=render.TrialId;rawGenericCallbackFrame=render.Frame;
                     return;

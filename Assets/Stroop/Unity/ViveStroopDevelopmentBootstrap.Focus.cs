@@ -80,6 +80,7 @@ namespace AvatarStroop.Unity
         {
             NoteConsentAutoStartInterruption();
             if(rawPlanStartRequested==0&&rawPendingBlockPlan==null)return;
+            if(rawPlanStartRequested==1)ResetPracticeCountdown();
             focusPlanConfirmationRequired=true;focusPlanConfirmationArmed=focusPlanTriggerAccepted=false;focusPlanPromptFrame=-1;
         }
         // Input levels and the fresh edge are from the existing real adapter
@@ -102,7 +103,9 @@ namespace AvatarStroop.Unity
             if(focusPlanTriggerAccepted)
             {
                 if(!frame.InputReady||frame.NeutralPending||frame.TriggerHeld||frame.MenuHeld||frame.Trackpad.Pressed)return false;
-                focusPlanTriggerAccepted=false;return true;
+                focusPlanTriggerAccepted=false;
+                UnityEngine.Debug.Log("VIVE_RAW_PLAN_RECONFIRMED: fresh trigger press and release; frame="+UnityEngine.Time.frameCount);
+                return true;
             }
             if(!focusPlanConfirmationRequired)return true;
             if(ObserveFocusPlanConfirmation(frame.InputReady,frame.NeutralPending,frame.TriggerHeld,frame.TriggerDown,frame.MenuHeld,frame.Trackpad.Pressed))

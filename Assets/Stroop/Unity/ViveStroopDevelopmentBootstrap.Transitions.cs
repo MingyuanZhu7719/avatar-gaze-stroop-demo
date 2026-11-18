@@ -11,6 +11,7 @@ namespace AvatarStroop.Unity
         readonly VivePracticeCountdown practiceCountdown=new VivePracticeCountdown();
         ViveDevelopmentParticipant previewPracticeCountdownTask;
         int practiceCountdownFrame=-1;
+        bool practiceCountdownRenderLogged;
         readonly VivePracticeCountdown blockCelebration=new VivePracticeCountdown(6);
         ViveDevelopmentParticipant blockCelebrationTask;
         int blockCelebrationIndex=-1,blockCelebrationFinished=-1,blockCelebrationFrame=-1;
@@ -26,7 +27,7 @@ namespace AvatarStroop.Unity
         internal string PracticeResponseInstruction
         {get{return participant!=null&&participant.TaskKind==TaskKind.VisualSearch?"Find the matching backpack. Point and pull the trigger.":
             ResponseRuleInstructions.Participant(participant==null?ResponseRule.InkColor:participant.ParticipantView.ResponseRule);}}
-        void ResetPracticeCountdown(){practiceCountdown.Reset();practiceCountdownFrame=-1;}
+        void ResetPracticeCountdown(){practiceCountdown.Reset();practiceCountdownFrame=-1;practiceCountdownRenderLogged=false;}
         bool ServicePracticeCountdown()
         {
             if(practiceCountdown.CompleteForFrame(Time.realtimeSinceStartupAsDouble,Time.frameCount))return true;
@@ -39,7 +40,14 @@ namespace AvatarStroop.Unity
         internal void ObservePracticeCountdownRender()
         {
             if(PracticeCountdownVisible&&rig!=null&&rig.XrFocused)
+            {
                 practiceCountdown.ObserveRendered(Time.realtimeSinceStartupAsDouble,Time.frameCount);
+                if(!practiceCountdownRenderLogged)
+                {
+                    practiceCountdownRenderLogged=true;
+                    Debug.Log("VIVE_PRACTICE_COUNTDOWN_RENDERED: first camera witness; frame="+Time.frameCount);
+                }
+            }
         }
         internal void ObserveBlockCelebrationRender()
         {
