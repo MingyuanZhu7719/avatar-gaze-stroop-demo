@@ -226,6 +226,126 @@ namespace AvatarStroop.Unity.Editor
         // Baseline uses the same synthetic tracking/design seam and this test;
         // only the old post-render epoch logic is restored.
         public static void ValidateHealthyOnly(){Execute(scene=>Run(scene,0,false));}
+        static ViveStroopDeviceFrame ControllerFrame(ViveStroopNeutralGate gate, bool phaseChanged,
+            bool triggerHeld, bool padHeld, Colour colour, bool connected=true)
+        {
+            var edges=gate.Observe(connected,phaseChanged,false,padHeld,triggerHeld,false);
+            double x=colour==Colour.Green?1:colour==Colour.Yellow?-1:0;
+            double y=colour==Colour.Red?1:colour==Colour.Blue?-1:0;
+            var pad=new VivePreviewTrackpadSample(connected,padHeld,padHeld?x:0,padHeld?y:0);
+            return (ViveStroopDeviceFrame)Activator.CreateInstance(typeof(ViveStroopDeviceFrame),Instance,null,
+                new object[]{pad,edges.NeutralPending,edges.LostReady,triggerHeld,edges.TriggerDown,false,false,"synthetic wand",false,false,false},null);
+        }
+
+        static void RenderTutorialFrame(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
+            WorldSpaceExperimentView view,Camera camera)
+        {
+            Call(owner,"Render");
+            Require((bool)Call(owner,"PrepareRawScenePresentation"),"released tutorial frame was not admitted");
+            Call(rig,"GuardRawSceneBeforeCull",camera);
+            Call(view,"BeforeCameraCull",camera);Call(view,"ObserveStimulusRender",camera);Call(view,"AfterCameraRender",camera);
+        }
+
+        static void TutorialControllerBoundaries(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
+            WorldSpaceExperimentView view,Camera camera,object pump,ViveProEyeWorker worker,ViveDevelopmentParticipant task)
+        {
+            var gate=new ViveStroopNeutralGate();
+            var first=task.CurrentTrial;
+            var onset=first.Onset;
+            Stage(pump,worker);
+            var held=ControllerFrame(gate,true,true,true,first.ExpectedResponse);
+            Require(held.DeviceReady&&held.NeutralPending,"expected tracked wand waiting for release");
+            Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,held));
+            Require(!task.InputReady&&(bool)Prop(owner,"NamedRawInputBoundaryPending"),"tracked neutral wait entered trial preparation");
+            Require((bool)Call(owner,"AwaitControllerRelease",held),"held input was accepted");
+            Call(owner,"Render");
+            Require(camera.cullingMask==0&&first.Onset==onset&&!first.Response.HasValue,"hold altered presented tutorial or exposed it");
+            Require((bool)Call(owner,"DrainNamedRawTaskEvents")&&!owner.RecordingBlocked,"held tutorial faulted");
+
+            Stage(pump,worker);
+            var released=ControllerFrame(gate,false,false,false,first.ExpectedResponse);
+            Require(!(bool)Call(owner,"AwaitControllerRelease",released),"release did not lift the mask");
+            Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,released));
+            RenderTutorialFrame(owner,rig,view,camera);
+            Require(task.InputReady&&first.Onset==onset&&!first.Response.HasValue,"release duplicated onset or answered");
+            var freshPress=ControllerFrame(gate,false,false,true,first.ExpectedResponse);
+            Stage(pump,worker);Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,freshPress));
+            Require(task.Phase==Phase.TutorialFeedback&&first.Correct==true,"fresh colour press did not score exactly after release");
+            Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,released));
+            Require((bool)Call(owner,"ApplyAuxiliaryInput",false,0,true),"feedback neutral failed");
+            Require((bool)Call(owner,"ApplyAuxiliaryInput",true,0,true),"feedback Continue failed");
+            var next=task.CurrentTrial;
+            Require(task.Phase==Phase.Tutorial&&next!=first&&!next.Onset.HasValue&&
+                (bool)Prop(owner,"NamedRawInputBoundaryPending"),"Continue permitted an onset on the held confirmation frame");
+            Call(owner,"Render");
+            Require((bool)Call(owner,"AwaitControllerRelease",ControllerFrame(gate,true,true,false,next.ExpectedResponse))&&
+                camera.cullingMask==0&&!next.Response.HasValue&&!next.Onset.HasValue,"held trigger escaped the new trial boundary");
+            Require((bool)Call(owner,"DrainNamedRawTaskEvents"),"Continue hold failed to drain");
+            Stage(pump,worker);
+            Require(!(bool)Call(owner,"AwaitControllerRelease",released),"second release did not arm the next trial");
+            Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,released));RenderTutorialFrame(owner,rig,view,camera);
+            Require(next.Onset.HasValue&&next.Outcome==TrialOutcome.Pending&&!owner.RecordingBlocked,"fresh trial onset failed");
+
+            Stage(pump,worker);
+            var disconnected=ControllerFrame(gate,false,false,false,next.ExpectedResponse,false);
+            Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,disconnected));
+            Require(task.Phase==Phase.Paused&&!task.InputReady&&!(bool)Prop(owner,"NamedRawInputBoundaryPending")&&
+                !next.Response.HasValue,"controller disconnection was treated as an ordinary held control");
+        }
+
+        public static void ValidateTaskOnlyTutorial()
+        {
+            Execute(scene=>{
+                GameObject cameraObject=null,viewObject=null,rigObject=null,ownerObject=null;
+                ViveProEyeWorker worker=null;object pump=null;
+                try
+                {
+                    cameraObject=Root(scene,"TaskOnlyTutorialCamera");var camera=cameraObject.AddComponent<Camera>();camera.cullingMask=0;
+                    viewObject=Root(scene,"TaskOnlyTutorialView");var view=viewObject.AddComponent<WorldSpaceExperimentView>();view.Initialize(camera,Actor.Participant);
+                    view.ConfigureViveDevelopmentPreview(ViveFixedTrackpadMapping.Create(),.5);
+                    rigObject=Root(scene,"TaskOnlyTutorialRig");var rig=rigObject.AddComponent<ViveStroopPreviewRig>();
+                    ownerObject=Root(scene,"TaskOnlyTutorialOwner");var owner=ownerObject.AddComponent<ViveStroopDevelopmentBootstrap>();owner.Configure(rig,view);
+                    var clock=new MonotonicClock("task-only-tutorial-render");int heads=0;
+                    worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(++heads,clock.Now,true,true,Rotation.Identity),
+                        ()=>{throw new InvalidOperationException("Tutorial must not start the SDK");});
+                    Require((bool)Call(worker,"StartTaskOnly"),"dormant worker failed to start");
+                    var geometry=DevelopmentGeometry.FromLocalDirections(new Vec3(0,0,1),new Vec3(1,0,0),"task-only-tutorial-geometry");
+                    var allocation=new Allocation("task-only-tutorial-allocation",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
+                    var design=ViveLegacyRecordingDesign.Select(Actor.Owner,"task-only-tutorial-design",allocation,geometry.Version,ViveFixedTrackpadMapping.Version);
+                    var config=SessionConfiguration.WithFormalEyeRecordingOnly(SessionConfiguration.WithTrainingProtocol(
+                        SessionConfiguration.LegacyRecordingDevelopment(new SessionConfiguration("task-only-tutorial",73,allocation,RunKind.Simulation,"en",5,30,true,0,true,true,true),
+                            design,ViveLegacyRecordingIntent.Select(Actor.Owner,"task-only-tutorial-intent",true,true)),TrainingProtocol.TutorialExamV1));
+                    var task=new ViveDevelopmentParticipant(config,clock,geometry,ViveFixedTrackpadMapping.Create(),.5,true);var a=typeof(ViveDevelopmentParticipant).Assembly;
+                    var admission=Factory(a.GetType("AvatarStroop.Runtime.ViveNamedSessionFrameAdmission",true),"CreateLegacySyntheticForTest",task,worker,clock,64,clock.Now,clock.Now);
+                    Require((bool)Call(admission,"ConfirmTask")&&(bool)Call(admission,"ConfirmEye"),"task-only tutorial choices failed");
+                    Require((bool)Call(admission,"TryBindQueueBudget",Factory(a.GetType("AvatarStroop.Runtime.ViveRawByteBudget",true),"SelectExplicit",33554432L)),"task-only tutorial budget failed");
+                    var pumpType=a.GetType("AvatarStroop.Runtime.ViveNamedRawRecordingPump",true);
+                    var writer=Activator.CreateInstance(pumpType.GetNestedType("SyntheticWriter",BindingFlags.NonPublic),Instance,null,new[]{admission},null);
+                    pump=Factory(pumpType,"StartLegacySyntheticWithStatusForTest",task,worker,clock,admission,writer);
+                    Set(owner,"SyntheticRawOwnerForFixture",true);Set(owner,"configured",true);Set(owner,"participant",task);Set(owner,"sharedClock",clock);Set(owner,"namedRawPump",pump);
+                    Set(rig,"previewCamera",camera);Set(rig,"view",view);Set(rig,"development",owner);Set(rig,"worker",worker);Set(rig,"running",true);
+                    Set(rig,"visibleMask",~0);Set(rig,"SyntheticRawTrackingForFixture",true);Call(owner,"Awake");
+                    Require(Call(pump,"PrepareStatus").ToString()=="Ready","dormant status unavailable");Stage(pump,worker);
+                    Mutate(pump,()=>task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0)));
+                    Mutate(pump,()=>task.OwnerBeginTutorial(Actor.Owner));Call(owner,"Render");
+                    Require(task.Phase==Phase.Tutorial&&task.CurrentTrial!=null&&!task.CurrentTrial.Onset.HasValue,"tutorial did not create pending first trial");
+                    Require((bool)Call(pump,"DrainTaskEvents"),"tutorial start events did not drain");
+                    Require(Call(pump,"PrepareStatus").ToString()=="Ready","next dormant status unavailable");Stage(pump,worker);
+                    Mutate(pump,()=>task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0)));Call(owner,"Render");
+                    Require((bool)Call(owner,"PrepareRawScenePresentation"),"actual dormant tutorial scene preparation refused; input="+task.InputReady+"; identity="+Get(view,"displayedTrial")+"; blocked="+owner.PresentationBlocked);
+                    Call(rig,"GuardRawSceneBeforeCull",camera);Call(view,"BeforeCameraCull",camera);Call(view,"ObserveStimulusRender",camera);Call(view,"AfterCameraRender",camera);
+                    Require(task.CurrentTrial.Onset.HasValue&&!owner.RecordingBlocked,"tutorial first actual camera witness failed");
+                    TutorialControllerBoundaries(owner,rig,view,camera,pump,worker,task);
+                    Debug.Log("VIVE_TASK_ONLY_TUTORIAL_RENDER_FIXTURE_PASSED: dormant-worker tutorial, initial camera onset, tracked controller release, fresh answer, feedback Continue, second camera onset and disconnected controller.");
+                }
+                finally
+                {
+                    if(pump!=null)Call(pump,"Stop");
+                    if(worker!=null){Call(worker,"TryRequestStop");worker.Stop(1000);worker.Dispose();}
+                    foreach(var item in new[]{ownerObject,rigObject,viewObject,cameraObject})if(item!=null)UnityEngine.Object.DestroyImmediate(item);
+                }
+            });
+        }
         public static void Validate()
         {
             Execute(scene=>{Run(scene,0,true);Run(scene,1,false);Run(scene,2,false);Run(scene,3,false);Run(scene,4,false);});

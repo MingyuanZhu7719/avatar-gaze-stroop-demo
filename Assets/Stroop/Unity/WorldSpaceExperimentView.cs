@@ -538,12 +538,22 @@ namespace AvatarStroop.Unity
         internal bool TryGetViveRawTrialIdentity(string trialId,Colour word,Colour ink,out long revision)
         {
             revision=-1;
-            if(!viveTaskPreview||role!=Actor.Participant||currentView==null||currentView.Stimulus==null||
-                String.IsNullOrEmpty(trialId)||!String.Equals(displayedTrial,trialId,StringComparison.Ordinal)||
-                !String.Equals(currentView.TrialId,trialId,StringComparison.Ordinal)||currentView.Stimulus.Word!=word||currentView.Stimulus.Ink!=ink||
-                stimulusText==null||stimulusText.gameObject.activeSelf||contentRoot==null||!contentRoot.gameObject.activeInHierarchy||
-                !String.Equals(stimulusText.text,word.ToString().ToUpperInvariant(),StringComparison.Ordinal)||!stimulusText.color.Equals(Ink(ink)))return false;
+            if(ViveRawTrialIdentityBlocker(trialId,word,ink)!=null)return false;
             revision=presentationRevision;return revision>=0;
+        }
+        internal string ViveRawTrialIdentityBlocker(string trialId,Colour word,Colour ink)
+        {
+            if(!viveTaskPreview||role!=Actor.Participant)return "view_not_configured";
+            if(currentView==null||currentView.Stimulus==null)return "view_stimulus_missing";
+            if(String.IsNullOrEmpty(trialId)||!String.Equals(displayedTrial,trialId,StringComparison.Ordinal)||
+                !String.Equals(currentView.TrialId,trialId,StringComparison.Ordinal))return "trial_changed";
+            if(currentView.Stimulus.Word!=word||currentView.Stimulus.Ink!=ink)return "model_changed";
+            if(stimulusText==null)return "mesh_missing";
+            if(stimulusText.gameObject.activeSelf)return "mesh_not_hidden";
+            if(contentRoot==null||!contentRoot.gameObject.activeInHierarchy)return "content_inactive";
+            if(!String.Equals(stimulusText.text,word.ToString().ToUpperInvariant(),StringComparison.Ordinal))return "word_changed";
+            if(!stimulusText.color.Equals(Ink(ink)))return "ink_changed";
+            return presentationRevision<0?"revision_invalid":null;
         }
         internal bool TryRevealViveRawTrial(string trialId,Colour word,Colour ink,long expectedRevision)
         {

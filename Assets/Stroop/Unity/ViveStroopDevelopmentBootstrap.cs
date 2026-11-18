@@ -82,7 +82,15 @@ namespace AvatarStroop.Unity
             long before=participant.PauseDiagnosticRevision;
             try
             {
-                if(frame.NeutralPending)participant.UpdateNeutralPending(headReady);
+                if(frame.NeutralPending)
+                {
+                    participant.UpdateNeutralPending(headReady);
+                    // A held control at a phase change disarms responses on an
+                    // otherwise tracked wand. Keep the trial masked until release.
+                    if(headReady&&frame.DeviceReady&&!frame.DeviceChanged&&frame.Trackpad.Usable&&
+                        NamedRawTrialActive&&participant.Phase==Phase.Tutorial)
+                        suppressInputUntilReleased=true;
+                }
                 else participant.UpdateTrackpad(headReady,frame.Trackpad);
             }
             finally
@@ -1341,15 +1349,7 @@ namespace AvatarStroop.Unity
                     rawSelectionProvenancePending=false;
                     message="Participant software-choice observations were queued; storage remains unconfirmed.";Render();return;
                 }
-                if(suppressInputUntilReleased)
-                {
-                    // Do not replay held confirm, colour or menu input when the
-                    // observer catches up. Wait until all controls return neutral;
-                    // Menu does not request a task pause.
-                    if(!frame.InputReady||MustWaitForRawPlanNeutral(frame.NeutralPending,frame.TriggerHeld,frame.MenuHeld,frame.Trackpad.Pressed))
-                    {questionnaireGate.Reset();Render();return;}
-                    suppressInputUntilReleased=false;
-                }
+                if(AwaitControllerRelease(frame)){questionnaireGate.Reset();Render();return;}
                 if(FocusHeldLiveWoz)
                 {
                     // The positive remote choice is revoked. Do not route a
@@ -1371,6 +1371,7 @@ namespace AvatarStroop.Unity
                     {questionnaireGate.Reset();message="Release controller controls before the pending owner action.";Render();return;}
                 }
                 if(!Mutate(()=>ApplyInputFrame(headReady,frame))){questionnaireGate.Reset();Render();return;}
+                if(NamedRawInputBoundaryPending){questionnaireGate.Reset();Render();return;}
                 if(ServiceBlockCompletionAnimation())return;
                 if(namedRawPump!=null&&pendingRawOwnerAction!=null)
                 {
@@ -1440,7 +1441,7 @@ namespace AvatarStroop.Unity
                 bool allowResume=!FocusHeldLiveWoz;
                 bool searchInputConsumed=ServiceVisualSearchInput(frame);
                 bool confirmPress=taskTriggerGate.TakeConfirmationPress(frame.InputReady,frame.TriggerHeld,frame.TriggerDown,searchInputConsumed||!allowResume);
-                if(!Mutate(()=>participant.UpdateAuxiliary(confirmPress,false,false,ratingDirection,displayReady))){Render();return;}
+                if(!ApplyAuxiliaryInput(confirmPress,ratingDirection,displayReady)||NamedRawInputBoundaryPending){Render();return;}
                 // Rest confirmation can enter BlockReady in this same Poll.
                 // Prepare before Tick's retained-source auto-countdown.
                 if(namedRawPump!=null&&participant.Phase==Phase.BlockReady&&participant.BlockIndex>0)
@@ -1480,6 +1481,24 @@ namespace AvatarStroop.Unity
         static bool IsWithinRawPlanDeadline(double deadline,double now)
         {return !Double.IsNaN(deadline)&&!Double.IsInfinity(deadline)&&deadline>=0&&
             !Double.IsNaN(now)&&!Double.IsInfinity(now)&&now>=0&&now<deadline;}
+        bool AwaitControllerRelease(ViveStroopDeviceFrame frame)
+        {
+            if(!suppressInputUntilReleased)return false;
+            if(!frame.InputReady||MustWaitForRawPlanNeutral(frame.NeutralPending,frame.TriggerHeld,frame.MenuHeld,frame.Trackpad.Pressed))
+                return true;
+            suppressInputUntilReleased=false;
+            return false;
+        }
+        bool ApplyAuxiliaryInput(bool confirmPress,int ratingDirection,bool displayReady)
+        {
+            var previousPhase=participant.Phase;
+            if(!Mutate(()=>participant.UpdateAuxiliary(confirmPress,false,false,ratingDirection,displayReady)))return false;
+            // The trigger selecting Continue is still down on this frame.
+            // Issue the new trial's first presentation after a neutral poll.
+            if(previousPhase==Phase.TutorialFeedback&&participant.Phase==Phase.Tutorial&&NamedRawTrialActive)
+                suppressInputUntilReleased=true;
+            return true;
+        }
         static bool MustWaitForRawPlanNeutral(bool neutralPending,bool triggerHeld,bool menuHeld,bool trackpadHeld)
         {return neutralPending||triggerHeld||menuHeld||trackpadHeld;}
         bool RawPlanDeadlineStillValid()
@@ -1899,36 +1918,48 @@ namespace AvatarStroop.Unity
         // callback is not research consent, file durability or HMD visibility.
         internal bool PrepareRawScenePresentation()
         {
-            if(!RawRecordingDesignAvailable||namedRawPump==null||participant==null||view==null||rig==null||
-                pendingRawPresentation!=null||PresentationBlocked||!participant.InputReady||!rig.RawSceneTrackingCurrent())return false;
+            string blocked=!RawRecordingDesignAvailable?"design_unavailable":namedRawPump==null?"pump_missing":participant==null?"participant_missing":
+                view==null?"view_missing":rig==null?"rig_missing":pendingRawPresentation!=null?"previous_reservation_pending":
+                PresentationBlocked?"presentation_blocked":!participant.InputReady?"controller_not_ready":!rig.RawSceneTrackingCurrent()?"current_tracking_unavailable":null;
+            if(blocked!=null){NoteRawFirstFault("raw_trial_prepare_"+blocked);return false;}
             var trial=participant.CurrentTrial;
-            if(trial==null||trial.Stimulus==null||(participant.Phase!=Phase.Tutorial&&participant.Phase!=Phase.Practice&&participant.Phase!=Phase.MainTask))return false;
+            if(trial==null||trial.Stimulus==null||(participant.Phase!=Phase.Tutorial&&participant.Phase!=Phase.Practice&&participant.Phase!=Phase.MainTask))
+            {NoteRawFirstFault("raw_trial_prepare_task_context_invalid");return false;}
             if(participant.LegacyWozRecordingDeclared&&participant.Phase==Phase.MainTask&&
-                (legacyWozScene==null||!legacyWozScene.MayShowTask))return false;
+                (legacyWozScene==null||!legacyWozScene.MayShowTask))
+            {NoteRawFirstFault("raw_trial_prepare_woz_scene_unavailable");return false;}
             if(trial.Stimulus.IsVisualSearch&&!trial.Onset.HasValue&&view.VisualSearchCuePending)
             {
                 // Cue-only frames reserve no array-onset callback. Drain the
                 // task FIFO and release this frame before the next independent
                 // head poll expires its ticket, including busy eye-status frames.
-                if(!namedRawPump.DrainTaskEvents()||!rig.RawSceneTrackingCurrent()||
-                    !PrepareRawAutomaticAvatar()||!view.TryRevealVisualSearchCue(trial.TrialId,trial.Stimulus.VisualSearch.LayoutId))return false;
+                if(!namedRawPump.DrainTaskEvents()){NoteRawFirstFault("raw_trial_search_cue_drain_failed");return false;}
+                if(!rig.RawSceneTrackingCurrent()){NoteRawFirstFault("raw_trial_search_cue_tracking_changed");return false;}
+                if(!PrepareRawAutomaticAvatar()){NoteRawFirstFault("raw_trial_search_cue_avatar_unavailable");return false;}
+                if(!view.TryRevealVisualSearchCue(trial.TrialId,trial.Stimulus.VisualSearch.LayoutId))
+                {NoteRawFirstFault("raw_trial_search_cue_identity_changed");return false;}
                 view.SetPresentationAvailable(true);
-                return rig.TryRevealRawScene();
+                if(!rig.TryRevealRawScene()){NoteRawFirstFault("raw_trial_search_cue_camera_unavailable");return false;}
+                return true;
             }
             long revision;
             bool identity=trial.Stimulus.IsVisualSearch?
                 view.TryGetViveRawVisualSearchIdentity(trial.TrialId,trial.Stimulus.VisualSearch.LayoutId,out revision):
                 view.TryGetViveRawTrialIdentity(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,out revision);
-            if(!identity)return false;
+            if(!identity)
+            {NoteRawFirstFault("raw_trial_view_identity_"+(trial.Stimulus.IsVisualSearch?"search_mismatch":view.ViveRawTrialIdentityBlocker(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink)??"changed"));return false;}
             if(trial.Onset.HasValue)
             {
-                if(!String.Equals(committedRawTrial,trial.TrialId,StringComparison.Ordinal)||committedRawRevision!=revision||
-                    !namedRawPump.DrainTaskEvents()||!rig.RawSceneTrackingCurrent())return false;
+                if(!String.Equals(committedRawTrial,trial.TrialId,StringComparison.Ordinal)||committedRawRevision!=revision)
+                {NoteRawFirstFault("raw_trial_committed_identity_changed");return false;}
+                if(!namedRawPump.DrainTaskEvents()){NoteRawFirstFault("raw_trial_prepare_event_drain_failed");return false;}
+                if(!rig.RawSceneTrackingCurrent()){NoteRawFirstFault("raw_trial_prepare_tracking_changed");return false;}
             }
             else
             {
                 ViveNamedSessionFrameAdmission.PresentationReservation token;
-                if(!namedRawPump.TryPreparePresentation(Time.frameCount,revision,out token)||token==null)return false;
+                if(!namedRawPump.TryPreparePresentation(Time.frameCount,revision,out token)||token==null)
+                {NoteRawFirstFault("raw_trial_prepare_reservation_failed");return false;}
                 pendingRawPresentation=token;
             }
             if(legacyWozScene!=null&&participant.Phase==Phase.MainTask)
@@ -1936,15 +1967,15 @@ namespace AvatarStroop.Unity
                 legacyWozScene.Present();
                 if(!legacyWozScene.MayShowTask||PresentationBlocked||
                     (pendingRawPresentation!=null&&(pendingRawPresentation.WozEvidence==null||!pendingRawPresentation.WozEvidence.Applied)))
-                {AbortRawScenePresentation();return false;}
+                {NoteRawFirstFault("raw_trial_prepare_woz_presentation_invalid");AbortRawScenePresentation();return false;}
             }
             if(!PrepareRawAutomaticAvatar())
             {NoteRawFirstFault("raw_automatic_avatar_unavailable");AbortRawScenePresentation();return false;}
             if(!(trial.Stimulus.IsVisualSearch?view.TryRevealViveRawVisualSearchTrial(trial.TrialId,trial.Stimulus.VisualSearch.LayoutId,revision):
                 view.TryRevealViveRawTrial(trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,revision)))
-            {AbortRawScenePresentation();return false;}
+            {NoteRawFirstFault("raw_trial_prepare_reveal_identity_changed");AbortRawScenePresentation();return false;}
             view.SetPresentationAvailable(true);
-            if(!rig.TryRevealRawScene()){AbortRawScenePresentation();return false;}
+            if(!rig.TryRevealRawScene()){NoteRawFirstFault("raw_trial_prepare_reveal_camera_unavailable");AbortRawScenePresentation();return false;}
             ApplyCachedSearchPointer();
             return true;
         }
