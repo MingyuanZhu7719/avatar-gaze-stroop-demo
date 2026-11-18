@@ -91,7 +91,10 @@ namespace AvatarStroop.Runtime
             internal override int InstalledDestinationState {get{return -1;}}
         }
         readonly ViveDevelopmentParticipant participant;readonly ViveProEyeWorker worker;
-        internal bool FormalEyeActivationPending {get{return participant.FormalEyeRecordingOnly&&participant.FormalEyeRecordingWindowStart.HasValue&&!worker.FormalEyePersistenceEnabled;}}
+        // Owner-thread receipt for this pump's immutable statusRun. The
+        // first formal countdown opens persistence once for the whole run.
+        double? activatedFormalEyeBoundary;
+        internal bool FormalEyeActivationPending {get{return participant.FormalEyeRecordingOnly&&participant.FormalEyeRecordingWindowStart.HasValue&&!activatedFormalEyeBoundary.HasValue;}}
         readonly MonotonicClock clock;readonly ViveNamedSessionFrameAdmission admission;
         readonly Writer writer;readonly int owner;readonly object statusRun;
         int statusStopAttempted,statusStopConfirmed;
@@ -241,7 +244,7 @@ namespace AvatarStroop.Runtime
             catch{admission.Withdraw();worker.TryStopStatusEvidence(run);throw;}
         }
         internal static ViveNamedRawRecordingPump StartLegacyNativeFixtureForTest(ViveDevelopmentParticipant participant,ViveProEyeWorker worker,
-            MonotonicClock clock,ViveNamedSessionFrameAdmission admission,ViveRawSessionJournalSink sink)
+            MonotonicClock clock,ViveNamedSessionFrameAdmission admission,ViveRawSessionJournalSink sink,bool captureAcquisitionForTest=false)
         {
             if(participant==null||worker==null||clock==null||admission==null||!admission.SyntheticOnly||!admission.IsLegacy||
                 admission.SessionContext==null||!admission.SessionContext.IsLegacy||sink==null||
@@ -250,7 +253,7 @@ namespace AvatarStroop.Runtime
                 sink.ProductionGateOpen||sink.CompletionGateOpen||ViveLegacyRawRecordingBuildPolicy.Available)
                 throw new InvalidOperationException("Legacy native fixture requires exact synthetic legacy sources and closed production gates.");
             if(!admission.TryBindQueueBudget(sink.SelectedBudget))throw new InvalidOperationException("Fixture budget unavailable.");
-            object run;if(!admission.TryEnableWorkerStatus(128,out run))throw new InvalidOperationException("Synthetic status unavailable.");
+            object run;if(!admission.TryEnableWorkerStatus(128,out run,captureAcquisitionForTest))throw new InvalidOperationException("Synthetic status unavailable.");
             try{return new ViveNamedRawRecordingPump(participant,worker,clock,admission,new RawWriter(sink),run);}
             catch{admission.Withdraw();worker.TryStopStatusEvidence(run);throw;}
         }
@@ -335,13 +338,26 @@ namespace AvatarStroop.Runtime
                 Fail();return Preparation.Faulted;}
             if(statusRun==null)return admission.SyntheticOnly?Preparation.Ready:Preparation.Faulted;
 
-            if(participant.FormalEyeRecordingOnly&&participant.FormalEyeRecordingWindowStart.HasValue)
+            if(participant.FormalEyeRecordingOnly)
             {
-                var start=worker.TryEnableFormalEyePersistence(statusRun,participant.FormalEyeRecordingWindowStart.Value);
-                if(start==ViveProEyeWorker.RecordingStartReadinessState.Busy||start==ViveProEyeWorker.RecordingStartReadinessState.Waiting)
-                {stagedEpoch=null;return Preparation.WaitingBaseline;}
-                if(start!=ViveProEyeWorker.RecordingStartReadinessState.Ready)
-                {NoteFirstFault("formal_eye_start_unavailable");Fail();return Preparation.Faulted;}
+                var boundary=participant.FormalEyeRecordingWindowStart;
+                // The terminal seal retires task input but still owns the FIFO
+                // tail. All other phases must retain the attached capability,
+                // even when the native publication gate is busy.
+                if(pendingCompletionStatusSeal==null&&!worker.IsAttachedTaskRunCurrent(statusRun))
+                {NoteFirstFault("formal_eye_run_unavailable");Fail();return Preparation.Faulted;}
+                if(activatedFormalEyeBoundary.HasValue&&activatedFormalEyeBoundary!=boundary)
+                {NoteFirstFault("formal_eye_boundary_changed");Fail();return Preparation.Faulted;}
+                if(boundary.HasValue&&!activatedFormalEyeBoundary.HasValue)
+                {
+                    var start=worker.TryEnableFormalEyePersistence(statusRun,boundary.Value);
+                    if(start==ViveProEyeWorker.RecordingStartReadinessState.Busy||start==ViveProEyeWorker.RecordingStartReadinessState.Waiting)
+                    {stagedEpoch=null;return Preparation.WaitingBaseline;}
+                    if(start!=ViveProEyeWorker.RecordingStartReadinessState.Ready)
+                    {NoteFirstFault("formal_eye_start_unavailable");Fail();return Preparation.Faulted;}
+                    stagedEpoch=null;
+                    activatedFormalEyeBoundary=boundary;
+                }
             }
 
             var acquisitionPreparation=DrainAcquisitions();

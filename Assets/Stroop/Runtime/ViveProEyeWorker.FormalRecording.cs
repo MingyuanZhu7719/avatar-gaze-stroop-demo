@@ -36,8 +36,16 @@ namespace AvatarStroop.Runtime
         // sample or pre-boundary callback is eligible for persistence.
         internal RecordingStartReadinessState TryEnableFormalEyePersistence(object expectedRun,double boundary)
         {
-            if(!Object.ReferenceEquals(Thread.CurrentThread,headThread)||!WireCodec.Finite(boundary)||boundary<0)
+            var expected=expectedRun as Run;
+            if(!Object.ReferenceEquals(Thread.CurrentThread,headThread)||!WireCodec.Finite(boundary)||boundary<0||
+                expected==null||!expected.DeferredEye||!IsAttachedTaskRunCurrent(expected))
                 return RecordingStartReadinessState.Unavailable;
+            // The owner opens this window once. A published boundary remains
+            // readable during native sampling, while faults and revocation
+            // independently invalidate the capability checked above.
+            if(Volatile.Read(ref expected.EyePersistenceEnabled))
+                return expected.StatusEnabledAt==boundary&&IsAttachedTaskRunCurrent(expected)?
+                    RecordingStartReadinessState.Ready:RecordingStartReadinessState.Unavailable;
             if(!Monitor.TryEnter(gate))return RecordingStartReadinessState.Busy;
             try
             {
@@ -47,14 +55,13 @@ namespace AvatarStroop.Runtime
                     run.StopRequested||!GenerationLive(run)||!run.StatusEnabled||StatusAuthorityRevoked(run)||run.StatusFault||
                     run.StatusSealed||Volatile.Read(ref statusRevoked)!=0||clock==null||!clock.TryReadRecordingAdmissionTime(out now)||boundary>now)
                     return RecordingStartReadinessState.Unavailable;
-                if(run.EyePersistenceEnabled)return RecordingStartReadinessState.Ready;
                 var readiness=ReadRecordingStartReadiness();
                 if(!readiness.Ready)return readiness.State;
                 run.StatusEnabledAt=boundary;
                 if(run.CaptureAcquisitionRequested)
                 {run.AcquisitionEnabled=true;run.AcquisitionQueue=new ViveRawEyeAcquisition[AcquisitionCapacity];
                     run.AcquisitionSeen=new System.Collections.Generic.HashSet<ulong>();}
-                run.EyePersistenceEnabled=true;
+                Volatile.Write(ref run.EyePersistenceEnabled,true);
                 return RecordingStartReadinessState.Ready;
             }
             finally{Monitor.Exit(gate);}

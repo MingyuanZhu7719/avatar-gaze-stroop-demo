@@ -6,15 +6,17 @@ using AvatarStroop.Runtime;
 
 namespace AvatarStroop.Tests
 {
-    public static class ViveFormalEyeRecordingTests
+    public static partial class ViveFormalEyeRecordingTests
     {
         sealed class Client : IViveProEyeClient
         {
             readonly Queue<ViveProEyePoll> pending=new Queue<ViveProEyePoll>();
+            readonly int pollTimeoutMilliseconds;
+            internal Client(int pollTimeoutMilliseconds=3000){this.pollTimeoutMilliseconds=pollTimeoutMilliseconds;}
             internal readonly AutoResetEvent Waiting=new AutoResetEvent(false),Permit=new AutoResetEvent(false);
             public string Diagnostic {get{return "synthetic formal eye boundary";}}
             public bool Start(){return true;}
-            public ViveProEyePoll Poll(){Waiting.Set();Check.True(Permit.WaitOne(3000));lock(pending)return pending.Dequeue();}
+            public ViveProEyePoll Poll(){Waiting.Set();Check.True(Permit.WaitOne(pollTimeoutMilliseconds));lock(pending)return pending.Dequeue();}
             internal void Send(ViveProEyePoll value,bool wait=true)
             {lock(pending)pending.Enqueue(value);Permit.Set();if(wait)Check.True(Waiting.WaitOne(3000));}
             public void Dispose(){}
@@ -154,6 +156,18 @@ namespace AvatarStroop.Tests
                     Check.Equal(Phase.Countdown,f.Task.Phase);Check.Equal(ViveNamedRawRecordingPump.Outcome.Running,f.Pump.State);
                     f.Healthy(ref frame);Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,f.Pump.PrepareStatus());
                     Check.True(f.Worker.FormalEyePersistenceEnabled&&!f.Pump.FormalEyeActivationPending);f.Stage();
+                    Check.True(f.Pump.DrainTaskEvents());
+                    using(var held=new ViveTaskAuthorityContentionTests.GateHolder(f.Worker.RecordingTicketGate))
+                    {
+                        var status=f.Pump.PrepareStatus();
+                        Check.True(status==ViveNamedRawRecordingPump.Preparation.Busy||status==ViveNamedRawRecordingPump.Preparation.Ready,
+                            "formal eye persistence was already enabled; status was "+status);
+                        Check.True(f.Worker.TryPollTaskForRecording(out poll));
+                        Check.True(f.Pump.StageRigFrame(poll,1,false,out waiting)&&!waiting&&f.Pump.RawTaskEpochThisFrame,
+                            "the eye publication lock blocked the first formal countdown frame: "+f.Pump.FirstFault+"; waiting="+waiting+"; admission="+f.Admission.FirstFault);
+                        Check.True(f.Task.RawCountdownAwaitingSoftwareWitness&&!f.Pump.FormalEyeActivationPending);
+                    }
+                    f.Stage();
                     Check.True(!f.Admission.IoFence.IsRevoked);
                 }
             });
@@ -219,6 +233,9 @@ namespace AvatarStroop.Tests
                     Check.True(worker.TryConsumeRecordingTicket(formal,out consumed));
                     object same;Check.True(worker.TryGetRecordingRunIdentity(out same)&&Object.ReferenceEquals(run,same));
                     Check.Equal(ViveProEyeWorker.RecordingStartReadinessState.Ready,worker.TryEnableFormalEyePersistence(run,boundary));
+                    Check.Equal(ViveProEyeWorker.RecordingStartReadinessState.Unavailable,worker.TryEnableFormalEyePersistence(run,boundary+.001));
+                    worker.RevokeStatusEvidence();
+                    Check.Equal(ViveProEyeWorker.RecordingStartReadinessState.Unavailable,worker.TryEnableFormalEyePersistence(run,boundary));
                 }
                 finally{worker.TryRequestStop();if(native)client.Send(null,false);worker.Stop(1000);worker.Dispose();client.Waiting.Dispose();client.Permit.Dispose();}
             });

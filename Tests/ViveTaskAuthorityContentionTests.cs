@@ -29,7 +29,7 @@ namespace AvatarStroop.Tests
             {this.next=next;Ready.Set();if(wait)Check.True(Waiting.WaitOne(3000));}
             public void Dispose(){}
         }
-        sealed class GateHolder : IDisposable
+        internal sealed class GateHolder : IDisposable
         {
             readonly ManualResetEvent entered=new ManualResetEvent(false), release=new ManualResetEvent(false);
             readonly Thread thread;

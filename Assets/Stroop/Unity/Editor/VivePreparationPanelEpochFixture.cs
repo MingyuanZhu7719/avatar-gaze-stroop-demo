@@ -407,9 +407,10 @@ namespace AvatarStroop.Unity.Editor
 
         public static void ValidateTaskOnlyTutorial(){RunTaskOnlyTutorial(false);}
         public static void ValidatePracticeExamHandoff(){RunTaskOnlyTutorial(true);}
+        public static void ValidateFirstFormalEyeCountdown(){RunTaskOnlyTutorial(true,true);}
         static void CheckFormalPreparation(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
             WorldSpaceExperimentView view,Camera camera,object pump,ViveProEyeWorker worker,ViveDevelopmentParticipant task,
-            Client client,MonotonicClock clock)
+            Client client,MonotonicClock clock,bool startFormal)
         {
             var gate=new ViveStroopNeutralGate();
             var neutral=ControllerFrame(gate,false,false,false,Colour.Red);
@@ -478,7 +479,127 @@ namespace AvatarStroop.Unity.Editor
                 !(bool)Call(owner,"ExpirePendingRawPresentation")&&!owner.RecordingBlocked&&
                 Get(view,"rawPanelExpected")==null&&task.Phase==Phase.BlockReady&&task.CurrentTrial==null,
                 "missing first BlockReady status panel started a trial or stopped the recording");
-            CheckFormalControllerRecovery(owner,rig,camera,pump,worker,task);
+            if(startFormal)CheckFirstFormalEyeCountdown(owner,rig,view,camera,pump,worker,task,client,clock);
+            else CheckFormalControllerRecovery(owner,rig,camera,pump,worker,task);
+        }
+
+        static void WhileEyePublicationLocked(ViveProEyeWorker worker,Action action)
+        {
+            var gate=Prop(worker,"RecordingTicketGate");
+            using(var acquired=new ManualResetEventSlim())
+            using(var release=new ManualResetEventSlim())
+            {
+                var thread=new Thread(()=>{lock(gate){acquired.Set();release.Wait(5000);}}){IsBackground=true};
+                thread.Start();
+                try
+                {
+                    Require(acquired.Wait(3000),"could not create eye publisher contention");
+                    action();
+                    Require(thread.IsAlive,"owner waited for the publisher lock instead of using the independent head frame");
+                }
+                finally{release.Set();thread.Join();}
+            }
+        }
+
+        static void CheckFirstFormalEyeCountdown(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
+            WorldSpaceExperimentView view,Camera camera,object pump,ViveProEyeWorker worker,ViveDevelopmentParticipant task,
+            Client client,MonotonicClock clock)
+        {
+            Set(rig,"clock",clock);
+            var eyePumpType=typeof(ViveStroopPreviewRig).Assembly.GetType("AvatarStroop.Unity.ViveStroopEyePump",true);
+            Set(rig,"eyePump",Activator.CreateInstance(eyePumpType,Instance,null,new object[]{worker},null));
+            int sample=2;
+            double deadline=clock.Now+3;
+            while(!(bool)Prop(owner,"FormalEyeReadyForFirstBlock")&&clock.Now<deadline)
+            {Thread.Sleep(20);Send(client,clock,sample++,3);}
+            Require((bool)Prop(owner,"FormalEyeReadyForFirstBlock")&&!(bool)Prop(worker,"FormalEyePersistenceEnabled"),
+                "eye warm-up failed to enable the formal start button");
+            var gate=new ViveStroopNeutralGate();
+            var neutral=ControllerFrame(gate,true,false,false,Colour.Red);
+            using(var adapter=new ViveStroopDeviceInput(VivePreviewControllerHand.Automatic))
+            {
+                Set(owner,"device",adapter);Stage(pump,worker);
+                Call(owner,"RequestNamedBlockPlanStart",false);Call(owner,"ProcessNamedBlockPlanStart",true,neutral);
+                Require(Get(owner,"rawPendingBlockPlan")!=null&&task.Phase==Phase.BlockReady,"formal plan did not reach the receipt boundary");
+                // The Editor memory writer cannot issue the native file receipt. Exercise
+                // the same formal task mutation immediately following an accepted receipt.
+                Require((bool)Call(pump,"DrainTaskEvents"),"formal plan failed to drain");Stage(pump,worker);
+                Action begin=()=>Call(task,"OwnerBeginBlockCore",Actor.Owner);
+                Mutate(pump,()=>Call(task,"RunNamedRecordingMutation",begin,0,null,false));
+                Set(owner,"rawPendingBlockPlan",null);Set(owner,"rawPlanStartRequested",0);
+                Require(task.Phase==Phase.Countdown&&task.FormalEyeRecordingWindowStart.HasValue&&
+                    (bool)Call(owner,"HoldFormalEyeActivation")&&camera.cullingMask==0,
+                    "training epoch was permitted to present the first formal countdown");
+
+                Func<bool> stage=()=>{
+                    object[] poll={null};
+                    Require((bool)Call(worker,"TryPollTaskForRecording",poll),"current independent head observation unavailable");
+                    object[] args={poll[0],false};
+                    bool admitted=(bool)Call(owner,"StageNamedRawFrame",args);
+                    if(!admitted&&(bool)args[1])Call(rig,"HoldRawBusy");
+                    return admitted;
+                };
+                WhileEyePublicationLocked(worker,()=>{
+                    Require(!stage()&&!owner.RecordingBlocked&&!(bool)Prop(worker,"FormalEyePersistenceEnabled")&&
+                        (bool)Prop(task,"RawCountdownAwaitingSoftwareWitness"),"contended initial activation did not remain masked");
+                });
+                Send(client,clock,sample++,3);
+                Require(Call(owner,"PrepareNamedRawStatus").ToString()=="Ready"&&(bool)Prop(worker,"FormalEyePersistenceEnabled"),
+                    "eye persistence never activated on the warm worker");
+                // The first completed poll was already waiting inside the native
+                // client before persistence opened. The following poll starts inside it.
+                Send(client,clock,sample++,3);
+                Send(client,clock,sample++,3);
+                Require(Call(owner,"PrepareNamedRawStatus").ToString()=="Ready","first formal SDK acquisition did not drain");
+                Require(stage(),"first post-boundary eye frame was not admitted");
+                var payload=Get(pump,"stagedEpoch");
+                Require(!(bool)Prop(payload,"HeadOnly")&&(double)Get(payload,"EyeObserved")>=task.FormalEyeRecordingWindowStart.Value,
+                    "formal head frame lacks an actual post-boundary eye sample: "+Get(payload,"EyeUnavailable"));
+                Require((bool)Call(owner,"DrainNamedRawTaskEvents"),"formal eye frame failed to drain");
+
+                Action<Action> contended=work=>WhileEyePublicationLocked(worker,()=>{
+                    Require(stage()&&!owner.RecordingBlocked,"active publisher contention blocked task authority");
+                    var ticket=Get(pump,"stagedEpoch");
+                    Require((bool)Prop(ticket,"HeadOnly")&&!(bool)Get(ticket,"EyeNotRequested")&&Get(ticket,"EyeUnavailable")!=null,
+                        "contended formal frame claimed a gaze sample");
+                    work();
+                });
+                contended(()=>{
+                    Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,neutral));Call(owner,"Render");
+                    Require((bool)Call(owner,"PrepareRawNonTrialScene"),"formal countdown panel refused before its first witness");
+                    Call(rig,"GuardRawSceneBeforeCull",camera);Call(view,"BeforeCameraCull",camera);
+                    Require((int)Get(view,"rawPanelRequired")==7,"formal countdown omitted the numbered renderer");
+                    foreach(int bit in new[]{1,2,4})Call(view,"ObserveViveRawPanelElement",camera,bit);
+                    Call(view,"AfterCameraRender",camera);
+                    Require(!(bool)Prop(task,"RawCountdownAwaitingSoftwareWitness")&&Get(view,"rawPanelSeen")!=null&&
+                        !owner.RecordingBlocked&&task.CurrentTrial==null,"first formal countdown witness failed under contention");
+                });
+                double firstWitness=clock.Now;
+                while(task.Phase==Phase.Countdown&&clock.Now<firstWitness+7)
+                {
+                    Thread.Sleep(50);Send(client,clock,sample++,3);
+                    Require(stage(),"formal countdown lost an admitted frame");Mutate(pump,task.Tick);
+                    Require((bool)Call(owner,"DrainNamedRawTaskEvents"),"formal countdown journals did not drain");
+                }
+                Require(task.Phase==Phase.MainTask&&clock.Now>=firstWitness+4.9&&task.CurrentTrial!=null,
+                    "five-second formal countdown did not start a trial");
+                var first=task.CurrentTrial;
+                contended(()=>{
+                    Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,neutral));RenderTutorialFrame(owner,rig,view,camera);
+                    Require(first.Onset.HasValue&&!first.Response.HasValue&&!owner.RecordingBlocked,"formal onset failed under publisher contention");
+                });
+                contended(()=>Mutate(pump,()=>Call(owner,"ApplyInputFrame",true,ControllerFrame(gate,false,false,true,first.ExpectedResponse))));
+                Require(first.Correct==true&&task.CurrentTrial!=first&&!owner.RecordingBlocked,"first formal answer failed under publisher contention");
+                Require((bool)Call(owner,"DrainNamedRawTaskEvents"),"first formal answer failed to drain");
+                object[] beforeRevoke={null};Require((bool)Call(worker,"TryPollTaskForRecording",beforeRevoke),"no candidate for revocation control");
+                Call(pump,"Withdraw");
+                WhileEyePublicationLocked(worker,()=>{
+                    object[] args={beforeRevoke[0],false};
+                    Require(!(bool)Call(owner,"StageNamedRawFrame",args)&&!(bool)args[1]&&owner.RecordingBlocked,
+                        "revoked formal recording accepted a new frame while its publisher was busy");
+                });
+                Set(owner,"device",null);
+            }
         }
         static void CheckFormalControllerRecovery(ViveStroopDevelopmentBootstrap owner,ViveStroopPreviewRig rig,
             Camera camera,object pump,ViveProEyeWorker worker,ViveDevelopmentParticipant task)
@@ -535,7 +656,7 @@ namespace AvatarStroop.Unity.Editor
                 Set(owner,"device",null);
             }
         }
-        static void RunTaskOnlyTutorial(bool enterExam)
+        static void RunTaskOnlyTutorial(bool enterExam,bool startFormal=false)
         {
             Execute(scene=>{
                 GameObject cameraObject=null,viewObject=null,rigObject=null,ownerObject=null;
@@ -580,8 +701,9 @@ namespace AvatarStroop.Unity.Editor
                     Call(rig,"GuardRawSceneBeforeCull",camera);Call(view,"BeforeCameraCull",camera);Call(view,"ObserveStimulusRender",camera);Call(view,"AfterCameraRender",camera);
                     Require(task.CurrentTrial.Onset.HasValue&&!owner.RecordingBlocked,"tutorial first actual camera witness failed");
                     TutorialControllerBoundaries(owner,rig,view,camera,pump,worker,task,enterExam);
-                    if(enterExam)CheckFormalPreparation(owner,rig,view,camera,pump,worker,task,client,clock);
-                    Debug.Log(enterExam?"VIVE_PRACTICE_EXAM_HANDOFF_PASSED: exam, formal eye warm-up, panel redraw, BlockReady dashboard focus loss, inactive actions, neutral recovery and rejected replacement wand.":
+                    if(enterExam)CheckFormalPreparation(owner,rig,view,camera,pump,worker,task,client,clock,startFormal);
+                    Debug.Log(startFormal?"VIVE_FIRST_FORMAL_EYE_COUNTDOWN_PASSED: real formal eye activation, contended first countdown witness, five-second countdown, formal trial onset and answer, revoked recording rejected.":
+                        enterExam?"VIVE_PRACTICE_EXAM_HANDOFF_PASSED: exam, formal eye warm-up, panel redraw, BlockReady dashboard focus loss, inactive actions, neutral recovery and rejected replacement wand.":
                         "VIVE_TASK_ONLY_TUTORIAL_RENDER_FIXTURE_PASSED: dormant-worker tutorial, initial camera onset, tracked controller release, fresh answer, feedback Continue, second camera onset and disconnected controller.");
                 }
                 finally
