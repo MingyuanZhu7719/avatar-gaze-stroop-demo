@@ -680,6 +680,21 @@ namespace AvatarStroop.Runtime
             if(CheckPreparationPanelEpoch(out reason)!=PreparationPanelEpochResult.Retry)return false;
             stagedEpoch=null;return true;
         }
+        // A missed waiting-panel render grants no action. Retire only its
+        // already-consumed task ticket, before the next headset poll. There is
+        // no trial/countdown reservation or persisted eye sample to abandon.
+        internal bool TryDiscardUnwitnessedFirstFormalPanel()
+        {
+            var ticket=stagedEpoch;
+            if(!VerifyTaskRunAuthorityForDisplay()||Volatile.Read(ref finishRequested)!=0||
+                !admission.AllowsUnacceptedPreparationPanelDiscard||trackingGap.HasValue||
+                !participant.FormalEyeRecordingOnly||participant.BlockIndex!=0||participant.CurrentTrial!=null||
+                (participant.Phase!=Phase.BlockPreparation&&participant.Phase!=Phase.BlockReady)||
+                participant.FormalEyeRecordingWindowStart.HasValue||worker.FormalEyePersistenceEnabled||
+                ticket==null||!ticket.IndependentTaskAuthority||!ticket.EyeNotRequested||
+                worker.ClassifyRecordingEpoch(ticket,true)!=ViveProEyeWorker.RecordingEpochDetail.Current)return false;
+            stagedEpoch=null;return true;
+        }
         internal static bool EpochTimeFresh(double now,double previous,double eye,double head,double maximumAge)
         {
             return WireCodec.Finite(now)&&WireCodec.Finite(previous)&&WireCodec.Finite(eye)&&WireCodec.Finite(head)&&

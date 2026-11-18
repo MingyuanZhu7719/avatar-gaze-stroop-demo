@@ -127,7 +127,7 @@ namespace AvatarStroop.Unity
                 case "trigger_held":return "Confirmation requested. Release the controller Trigger.";
                 case "menu_held":return "Confirmation requested. Release the controller Menu button.";
                 case "trackpad_held":return "Confirmation requested. Release the controller trackpad.";
-                case "panel_not_witnessed":return "Confirmation requested. Waiting for the current plan panel to render in the headset; release all controls.";
+                case "panel_not_witnessed":return "Confirmation requested. Face the plan panel at the front of the classroom and release all controls.";
                 default:return "Confirmation requested. Waiting for the next healthy neutral recording frame. Begin first block remains a separate operator action.";
             }
         }
@@ -176,7 +176,7 @@ namespace AvatarStroop.Unity
                 if(formalConfirmationRequest.WaitFrame==Time.frameCount&&formalConfirmationRequest.WaitReason!=null)
                     return FormalConfirmationWaitNotice(formalConfirmationRequest.WaitReason);
                 if(!ControllerUiReady||participant==null||!participant.InputReady)return "Confirmation requested. Restore the controller and release Trigger, Menu and trackpad.";
-                if(!FormalConfirmationPanelCurrent())return "Confirmation requested. Waiting for the current plan panel to render in the headset; release all controls.";
+                if(!FormalConfirmationPanelCurrent())return FormalConfirmationWaitNotice("panel_not_witnessed");
                 return "Confirmation requested. Waiting for the next healthy neutral recording frame. Begin first block remains a separate operator action.";
             }
         }

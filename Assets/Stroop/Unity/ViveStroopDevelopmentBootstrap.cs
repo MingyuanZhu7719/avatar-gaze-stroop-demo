@@ -146,6 +146,8 @@ namespace AvatarStroop.Unity
         Phase pendingRawOwnerPhase;
         ViveNamedSessionFrameAdmission.PresentationReservation pendingRawPresentation;
         int pendingRawPanelFrame=-1;long pendingRawPanelRevision=-1;
+        Phase? pendingFirstFormalWaitPhase;
+        bool firstFormalPanelRetryLogged;
         bool rawPanelExposed;
         string committedRawTrial,rawGenericCallbackTrial;
         long committedRawRevision=-1;
@@ -1778,13 +1780,31 @@ namespace AvatarStroop.Unity
             if(!drained||RecordingBlocked){FailNamedRawAfterTask();return false;}
             return true;
         }
-        // Runs before ordinary input on the next owner frame. Missing or late
-        // callbacks are never retried and cannot leave the FIFO producer bit held.
+        // Runs before ordinary input on the next owner frame. A waiting panel
+        // can be drawn afresh; a missed trial or timed presentation cannot.
         internal bool ExpirePendingRawPresentation()
         {
             if(NamedRawCompletionActive||participant!=null&&participant.Completed)return false;
             if(pendingRawPresentation==null&&pendingRawPanelFrame<0)return false;
             if(rig!=null&&!rig.XrFocused)return !PrepareRawFocusBoundary(false);
+            if(pendingRawPresentation==null&&pendingRawPanelFrame>=0&&pendingRawPanelRevision>=0&&
+                pendingFirstFormalWaitPhase.HasValue&&participant!=null&&participant.Phase==pendingFirstFormalWaitPhase.Value&&
+                PassiveFirstFormalPanel&&rig!=null&&view!=null&&namedRawPump.TryDiscardUnwitnessedFirstFormalPanel())
+            {
+                // The world-fixed menu can be outside the camera frustum or a
+                // render can be skipped. Invalidate the old witness before an
+                // owner confirmation can inspect it, and poll a new frame.
+                if(!firstFormalPanelRetryLogged)
+                {
+                    firstFormalPanelRetryLogged=true;
+                    Debug.Log("VIVE_FORMAL_WAIT_PANEL_REDRAW: phase="+participant.Phase+"; pending_frame="+pendingRawPanelFrame+
+                        "; "+view.PendingViveRawPanelDiagnostic+"; no confirmation accepted.");
+                }
+                pendingRawPanelFrame=-1;pendingRawPanelRevision=-1;pendingFirstFormalWaitPhase=null;
+                rig.BlockTaskPresentation();view.SetPresentationAvailable(false);
+                return false;
+            }
+            NoteRawFirstFault(pendingRawPresentation!=null?"raw_trial_render_witness_expired":"raw_panel_render_witness_expired");
             AbortRawScenePresentation();return true;
         }
         void AbortRawScenePresentation()
@@ -1799,6 +1819,9 @@ namespace AvatarStroop.Unity
             finally{if(namedRawPump!=null)FailNamedRawAfterTask();}
         }
         internal bool NamedRawTaskCompleted {get{return namedRawPump!=null&&participant!=null&&participant.Completed;}}
+        bool PassiveFirstFormalPanel
+        {get{return CanWarmupFormalEye&&participant.CurrentTrial==null&&!PresentationBlocked&&pendingRawOwnerAction==null&&
+            rawPlanStartRequested==0&&rawPendingBlockPlan==null&&!focusPlanConfirmationRequired&&!focusPlanTriggerAccepted;}}
         // Non-trial content is prepared while the real participant camera is
         // masked. Until input is neutral or a pending block plan is confirmed,
         // stay masked but keep draining the actual task FIFO. This never
@@ -1816,6 +1839,7 @@ namespace AvatarStroop.Unity
             long revision;
             if(!view.TryPrepareViveRawPanel(Time.frameCount,out revision)||revision<0)return false;
             pendingRawPanelFrame=Time.frameCount;pendingRawPanelRevision=revision;
+            pendingFirstFormalWaitPhase=PassiveFirstFormalPanel?(Phase?)participant.Phase:null;
             rawPanelExposed=true;
             if(!view.TryRevealViveRawPanel()||!rig.TryRevealRawScene()){AbortRawScenePresentation();return false;}
             return true;

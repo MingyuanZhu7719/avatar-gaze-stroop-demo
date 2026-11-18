@@ -201,6 +201,8 @@ namespace AvatarStroop.Unity
         internal Func<ViveRawPanelObservation,bool> ViveRawPanelRendered;
         ViveRawPanelObservation rawPanelExpected,rawPanelSeen;
         long rawPanelRevision; int rawPanelCaptureFrame=-1,rawPanelObserved,rawPanelRequired;
+        internal string PendingViveRawPanelDiagnostic
+        {get{return "capture_frame="+rawPanelCaptureFrame+"; required_mask="+rawPanelRequired+"; observed_mask="+rawPanelObserved;}}
         string rawPanelPhaseText,rawPanelMessageText,rawPanelSelectionText,rawPanelCountdownText;
         // A failed status query must never assert that recording is off.
         // This is a display choice, not authority to record or expose a task.
