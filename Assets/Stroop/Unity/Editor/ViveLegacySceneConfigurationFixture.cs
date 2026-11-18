@@ -63,6 +63,18 @@ namespace AvatarStroop.Unity.Editor
             Reject(()=>Call("SelectRecording",recorded,"synthetic-geometry","synthetic-mapping","design-2","intent-2",false),"already-recording configuration");
             var named=SessionConfiguration.NamedNoAvatarDevelopment("synthetic-named",1,ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.NoAvatar,0,null));
             Reject(()=>Call("SelectRecording",named,"synthetic-geometry","synthetic-mapping","design","intent",false),"named configuration alias");
+            for(int task=0;task<3;task++)
+            {
+                var kind=task==2?TaskKind.VisualSearch:TaskKind.Stroop;
+                var rule=task==0?ResponseRule.InkColor:ResponseRule.WordMeaning;
+                ParticipantAssignment assignment;
+                Require(ParticipantAssignment.TryCreate("p012",kind,rule,out assignment),"valid participant ID");
+                var config=Call("CreateParticipantRecording","run-"+task,assignment,"geometry","mapping","design","intent");
+                Require(config.RunKind==RunKind.Apparatus&&config.ParticipantAssignment.ParticipantId=="P012","participant identity and run kind");
+                Require(config.TaskKind==kind&&config.ResponseRule==assignment.ResponseRule,"task bound before raw recording");
+                Require(Object.ReferenceEquals(config.Allocation,assignment.Allocation)&&!config.LegacyRecordingDesign.OperatorWozRequested,
+                    "exact Automatic study allocation");
+            }
             Console.WriteLine("PASS "+assertions+" pure legacy scene configuration assertions. No task/device/recording or native execution.");
         }
     }

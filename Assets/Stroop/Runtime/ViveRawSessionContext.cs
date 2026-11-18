@@ -14,6 +14,7 @@ namespace AvatarStroop.Runtime
         internal readonly ViveLegacyRecordingDesign LegacyDesign;
         internal readonly ViveLegacyRecordingIntent LegacyIntent;
         internal bool IsLegacy {get{return LegacyDesign!=null;}}
+        internal bool IsParticipant {get{return Configuration.ParticipantAssignment!=null;}}
         internal bool IsLegacyWoz {get{return IsLegacy&&LegacyDesign.OperatorWozRequested;}}
         internal bool TaskRequested {get{return IsLegacy?LegacyIntent.TaskRequested:Intent.TaskRequested;}}
         internal bool EyeRequested {get{return IsLegacy?LegacyIntent.EyeRequested:Intent.EyeRequested;}}
@@ -26,7 +27,13 @@ namespace AvatarStroop.Runtime
         }
         internal static ViveRawSessionContext FromConfiguration(SessionConfiguration configuration)
         {
-            if(configuration==null||configuration.RunKind!=RunKind.Simulation)throw new InvalidOperationException("Raw development configuration required.");
+            if(configuration==null)throw new ArgumentNullException("configuration");
+            var assignment=configuration.ParticipantAssignment;
+            if(assignment==null ? configuration.RunKind!=RunKind.Simulation :
+                configuration.RunKind!=RunKind.Apparatus||configuration.LegacyRecordingDesign==null||
+                configuration.LegacyRecordingDesign.OperatorWozRequested||!Object.ReferenceEquals(assignment.Allocation,configuration.Allocation)||
+                assignment.TaskKind!=configuration.TaskKind||assignment.ResponseRule!=configuration.ResponseRule||configuration.Seed!=ParticipantAssignment.StimulusSeed)
+                throw new InvalidOperationException("Raw recording configuration and allocation do not match.");
             bool named=configuration.NamedRecordingIntent!=null,legacy=configuration.LegacyRecordingIntent!=null;
             if(named==legacy)throw new InvalidOperationException("Exactly one recording design is required.");
             if(named&&(configuration.NamedPlan==null||configuration.LegacyRecordingDesign!=null))

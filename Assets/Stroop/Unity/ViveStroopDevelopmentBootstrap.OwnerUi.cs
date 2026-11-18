@@ -151,7 +151,48 @@ namespace AvatarStroop.Unity
             ClearNamedTaskView();
             message=ownerRunMode==1?"Choose a design and local output below. Recording is still off.":"Preview never saves task or eye files.";
         }
+        string checkedParticipantEntry;
+        TaskKind checkedParticipantTask;
+        ResponseRule checkedParticipantRule;
+        ParticipantAssignment entryAssignment;
+        ParticipantAssignment EntryAssignment
+        {
+            get
+            {
+                if(checkedParticipantEntry!=participantIdEntry||checkedParticipantTask!=selectedTaskKind||checkedParticipantRule!=selectedResponseRule)
+                {
+                    ParticipantAssignment.TryCreate(participantIdEntry,selectedTaskKind,selectedResponseRule,out entryAssignment);
+                    checkedParticipantEntry=participantIdEntry;checkedParticipantTask=selectedTaskKind;checkedParticipantRule=selectedResponseRule;
+                }
+                return entryAssignment;
+            }
+        }
+        static string DescribeParticipantAllocation(ParticipantAssignment assignment)
+        {
+            var allocation=assignment.Allocation;
+            return assignment.ParticipantId+"  |  Block order "+String.Join(" → ",Array.ConvertAll(allocation.Order,c=>c.ToString()))+
+                "  |  Lists "+String.Join(", ",Array.ConvertAll(allocation.ListByBlock,i=>i.ToString()));
+        }
         void DrawSetupControls()
+        {
+            if(ParticipantBuild)
+            {
+                OwnerHeading("1  Participant ID");
+                GUILayout.Label("Use the same anonymous code for all three tasks. Enter P001 to P999.");
+                GUI.SetNextControlName("participant-id");
+                participantIdEntry=GUILayout.TextField(participantIdEntry,16,GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
+                ViveOwnerDesktopLayout.Observe("participant-id",GUILayoutUtility.GetLastRect());
+                OwnerHeading("2  Task");
+            }
+            else DrawDevelopmentModeAndDesign();
+            if(selectedDesign<0)return;
+            if(view!=null)view.SetViveLegacyPreviewNotice(LegacyPreviewSelected);
+            DrawResponseRuleChoice();
+            if(ParticipantBuild&&EntryAssignment!=null)
+                GUILayout.Label(DescribeParticipantAllocation(EntryAssignment),recordingWrap);
+            DrawTaskOptionsAndOutput();
+        }
+        void DrawDevelopmentModeAndDesign()
         {
             OwnerHeading("1  Run mode");
             int nextMode=ViveOwnerDesktopLayout.Selection("run-mode",ownerRunMode,new[]{"Preview (no files)","Record locally"},1);
@@ -172,9 +213,10 @@ namespace AvatarStroop.Unity
             }
             else selectedDesign=ViveOwnerDesktopLayout.Selection("preview-design",selectedDesign,new[]{"Legacy A/B/C/D","Named Automatic (one block)","Named No Avatar (one block)","Named multi-block"},1);
             if(selectedDesign!=previousDesign){controlledRecordingNoticeAccepted=false;legacyWozRecordingSelected=false;ownerPreviewWoz=false;}
-            if(view!=null)view.SetViveLegacyPreviewNotice(LegacyPreviewSelected);
-            if(selectedDesign<0)return;
-            DrawResponseRuleChoice();
+        }
+        void DrawTaskOptionsAndOutput()
+        {
+            bool local=ownerRunMode==1;
             if(selectedDesign==1||selectedDesign==2)
             {
                 GUILayout.Label("Stimulus list");
@@ -195,7 +237,7 @@ namespace AvatarStroop.Unity
                     {GUILayout.Label(missing,recordingWrap,GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));ViveOwnerDesktopLayout.Observe("block-"+i+"-validation",GUILayoutUtility.GetLastRect());}
                 }
             }
-            if(selectedDesign==0&&selectedTaskKind!=TaskKind.VisualSearch)
+            if(!ParticipantBuild&&selectedDesign==0&&selectedTaskKind!=TaskKind.VisualSearch)
             {
                 if(local&&ViveLegacyWozRecordingBuildPolicy.Available)
                 {
@@ -215,7 +257,7 @@ namespace AvatarStroop.Unity
                 ViveOwnerDesktopLayout.Observe("folder-path",GUILayoutUtility.GetLastRect());
                 GUI.enabled=!SessionDirectoryPreparationPending;
                 if(GUILayout.Button("Choose a new session folder",GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth)))
-                    OfferFreshSessionDirectory(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","LocalSelfTestData")));
+                    OfferFreshSessionDirectory(DefaultSessionDirectoryParent);
                 GUI.enabled=true;
                 if(SessionDirectoryPreparationPending&&GUILayout.Button("Cancel folder preparation"))
                     CancelSessionDirectoryPreparation("Folder preparation canceled. No recording was armed; an empty folder may remain.");
@@ -233,8 +275,10 @@ namespace AvatarStroop.Unity
                 GUILayout.Label("The offered folder is created only when you explicitly prepare. Custom paths must already exist. The writer checks access again after both choices.",recordingWrap);
                 GUILayout.Label("Task responses are saved during training and the experiment. Eye data begins with the first formal countdown. No upload. Eye data may identify you.",recordingWrap);
                 if(legacyWozRecordingSelected)GUILayout.Label("WoZ also saves mapped operator head/eye poses locally. Participant eyes, answers and ratings never go to the operator.",recordingWrap);
-                GUILayout.Label("Withdrawal stops further work, but does not delete existing files. Failures leave output unconfirmed. Not validated for study use.",recordingWrap);
-                controlledRecordingNoticeAccepted=GUILayout.Toggle(controlledRecordingNoticeAccepted,"I request a local development self-test (not a study participant session).",GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
+                GUILayout.Label(ParticipantBuild?"Withdrawal stops further recording and keeps the files already written. Study consent is handled separately.":
+                    "Withdrawal stops further work, but does not delete existing files. Failures leave output unconfirmed. Not validated for study use.",recordingWrap);
+                controlledRecordingNoticeAccepted=GUILayout.Toggle(controlledRecordingNoticeAccepted,ParticipantBuild?
+                    "I have checked the participant ID and task for this session.":"I request a local development self-test (not a study participant session).",GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
                 long bytes;int timeout;
                 bool csvValid=TryParseCsvLimits(csvBudgetMiB,csvCleanupSeconds,out bytes,out timeout);
                 bool available=SelectedRecordingAvailable&&ViveRawRelativeFileCapability.ProductionGateOpen;
@@ -361,6 +405,7 @@ namespace AvatarStroop.Unity
             else if(!csvParameters)
                 GUILayout.Label("Start with CSV is unavailable: review the CSV size and cleanup limits.",recordingWrap);
             GUILayout.Label("This explicitly requests local raw and CSV files. Completion must be checked separately; it is not proof of coverage or durable storage.",recordingWrap);
+            if(ParticipantBuild)return;
             ownerOutputOptions=GUILayout.Toggle(ownerOutputOptions,"Advanced output options");
             if(ownerOutputOptions)
             {

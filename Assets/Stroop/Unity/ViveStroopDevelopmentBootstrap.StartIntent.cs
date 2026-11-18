@@ -47,6 +47,7 @@ namespace AvatarStroop.Unity
             choices.CanStart(true,xrFocused,sceneTrackingCurrent,workerReady,neutralFrame,currentFrame);}
         bool RawStartCanBeRequested(bool legacy,bool output,bool csv)
         {
+            if(ParticipantBuild&&(!legacy||!output||!csv))return false;
             return configured&&recordingSetup!=null&&recordingSetup.BothSelected&&RecordingSetupEligible&&
                 recordingSetupDesign==(legacy?0:3)&&participant!=null&&MatchesRawRecordingKind(legacy)&&
                 participant.Phase==Phase.Preparation&&!participant.Completed&&namedRawPump==null&&rig!=null&&

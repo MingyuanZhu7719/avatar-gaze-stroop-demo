@@ -9,6 +9,7 @@ namespace AvatarStroop.Core
         public const string SchemaVersion="vive-legacy-abcd-design-v1";
         public string DesignId {get;private set;}
         public Allocation Allocation {get;private set;}
+        public ParticipantAssignment ParticipantAssignment {get;private set;}
         public string GeometryVersion {get;private set;}
         public string MappingVersion {get;private set;}
         // Explicit before participant recording choices. The ordinary local
@@ -29,6 +30,15 @@ namespace AvatarStroop.Core
         }
         public static ViveLegacyRecordingDesign SelectOperatorWoz(Actor actor,string id,Allocation allocation,string geometryVersion,string mappingVersion)
         {var result=Select(actor,id,allocation,geometryVersion,mappingVersion);result.OperatorWozRequested=true;return result;}
+
+        public static ViveLegacyRecordingDesign SelectParticipant(Actor actor,string id,ParticipantAssignment assignment,
+            string geometryVersion,string mappingVersion)
+        {
+            if(actor!=Actor.Owner)throw new UnauthorizedAccessException("Owner selection is required.");
+            if(assignment==null||String.IsNullOrWhiteSpace(id)||String.IsNullOrWhiteSpace(geometryVersion)||String.IsNullOrWhiteSpace(mappingVersion))
+                throw new ArgumentException("Participant assignment, design, geometry and mapping are required.");
+            return new ViveLegacyRecordingDesign(id,assignment.Allocation,geometryVersion,mappingVersion) {ParticipantAssignment=assignment};
+        }
     }
     public sealed class ViveLegacyRecordingIntent
     {

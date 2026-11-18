@@ -20,28 +20,32 @@ def load(name, file):
 prepare = load("quest_prepare", "prepare-quest-preview.py")
 rehearsal = load("vive_rehearsal_build", "build-vive-eye-preview.py")
 
-def validate_recording_options(controlled, legacy, woz=False):
+def validate_recording_options(controlled, legacy, woz=False, participant=False):
+    if participant and (not controlled or not legacy or woz):
+        raise ValueError("Participant recording requires the local A/B/C/D recorder and Automatic control.")
     if woz and not (controlled and legacy):
         raise ValueError("--legacy-woz-recording-development requires both --controlled-recording-development and --legacy-raw-recording-development.")
     if legacy and not controlled:
         raise ValueError("--legacy-raw-recording-development requires --controlled-recording-development.")
 
 
-def editor_environment(output, controlled=False, legacy=False, woz=False):
-    validate_recording_options(controlled, legacy, woz)
+def editor_environment(output, controlled=False, legacy=False, woz=False, participant=False):
+    validate_recording_options(controlled, legacy, woz, participant)
     environment = dict(os.environ, STROOP_VIVE_CLASSROOM_OUTPUT=str(output))
     # Ambient variables must never turn an ordinary/named build into a legacy build.
     environment.pop("STROOP_VIVE_CONTROLLED_RECORDING_DEVELOPMENT", None)
     environment.pop("STROOP_VIVE_LEGACY_RAW_RECORDING_DEVELOPMENT", None)
     environment.pop("STROOP_VIVE_LEGACY_WOZ_RECORDING_DEVELOPMENT", None)
+    environment.pop("STROOP_VIVE_PARTICIPANT_RECORDING", None)
+    if participant: environment["STROOP_VIVE_PARTICIPANT_RECORDING"] = "1"
     if controlled: environment["STROOP_VIVE_CONTROLLED_RECORDING_DEVELOPMENT"] = "1"
     if legacy: environment["STROOP_VIVE_LEGACY_RAW_RECORDING_DEVELOPMENT"] = "1"
     if woz: environment["STROOP_VIVE_LEGACY_WOZ_RECORDING_DEVELOPMENT"] = "1"
     return environment
 
 
-def recording_manifest(controlled=False, legacy=False, woz=False):
-    validate_recording_options(controlled, legacy, woz)
+def recording_manifest(controlled=False, legacy=False, woz=False, participant=False):
+    validate_recording_options(controlled, legacy, woz, participant)
     return {"recording_default": False,
             "fixed_target_validation_available": controlled,
             "fixed_target_validation_default": False,
@@ -49,31 +53,38 @@ def recording_manifest(controlled=False, legacy=False, woz=False):
             "controlled_recording_development": controlled,
             "legacy_raw_recording_development": legacy,
             "legacy_woz_recording_development": woz,
+            "participant_recording": participant,
             "network_recording_available": woz,
             "participant_local_woz_recording_available": woz,
             "woz_recording_scope": ("participant-local storage after explicit choices; hardware, LAN and session coverage unvalidated" if woz else
                                     "unavailable; Legacy WoZ remains unrecorded"),
-            "named_explicit_recording_requested": controlled,
+            "named_explicit_recording_requested": controlled and not participant,
             "legacy_explicit_recording_requested": legacy,
             "preview_configuration_records": False,
-            "preview_task_records": "memory only until close; no task or eye files",
-            "recording_scope": ("named and legacy explicit self-tests; optional participant-local Legacy WoZ recording" if woz else
+            "preview_task_records": "preview unavailable" if participant else "memory only until close; no task or eye files",
+            "recording_scope": ("participant A/B/C/D with assigned orders and local Automatic recording" if participant else
+                                "named and legacy explicit self-tests; optional participant-local Legacy WoZ recording" if woz else
                                 "named and legacy explicit self-tests" if legacy else
                                 "named explicit self-tests only; legacy is memory-only" if controlled else
                                 "ordinary preview only; recording unavailable"),
-            "coverage_scope": ("controlled local self-test; real hardware and session coverage unvalidated" if controlled else
+            "coverage_scope": ("verify completed sessions in the local raw and CSV files" if participant else
+                               "controlled local self-test; real hardware and session coverage unvalidated" if controlled else
                                "local VIVE recording unavailable; no session coverage established")}
 
 
-def build_intent(source, output, controlled=False, legacy=False, woz=False):
-    validate_recording_options(controlled, legacy, woz)
-    return {"source": str(source), "output": str(output), "purpose": "VIVE development task preview",
+def build_intent(source, output, controlled=False, legacy=False, woz=False, participant=False):
+    validate_recording_options(controlled, legacy, woz, participant)
+    return {"source": str(source), "output": str(output),
+            "purpose": "VIVE Automatic participant recording" if participant else "VIVE development task preview",
+            "participant_recording": participant,
             "controlled_recording_development": controlled, "legacy_raw_recording_development": legacy,
             "legacy_woz_recording_development": woz}
 
 
-def start_here_text(controlled=False, legacy=False, guide="", woz=False):
-    scope = recording_manifest(controlled, legacy, woz)["recording_scope"]
+def start_here_text(controlled=False, legacy=False, guide="", woz=False, participant=False):
+    scope = recording_manifest(controlled, legacy, woz, participant)["recording_scope"]
+    if participant:
+        return guide
     heading = ("VIVE DEVELOPMENT PREVIEW / LOCAL SELF-TEST\nPackage scope: " + scope + ".\n"
                "Recording is OFF by default. Building or opening the package starts no task, XR, eye source or file capture.\n"
                "Choose Preview (no files) for a non-recording run. Task records stay in memory until close, with no task or eye files.\n")
@@ -114,8 +125,8 @@ def start_here_text(controlled=False, legacy=False, guide="", woz=False):
         "WoZ recording/export is unavailable. Existing separate local-recording packages are unchanged. No data submission is needed.\n")
 
 
-def run_editor(editor, project, output, action, controlled=False, legacy=False, woz=False):
-    environment = editor_environment(output, controlled, legacy, woz)
+def run_editor(editor, project, output, action, controlled=False, legacy=False, woz=False, participant=False):
+    environment = editor_environment(output, controlled, legacy, woz, participant)
     suffix = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     log = output / ("unity-vive-classroom-" + action.lower() + "-" + suffix + ".log")
     command = [str(editor), "-batchmode", "-quit", "-projectPath", str(project), "-buildTarget", "Win64",
@@ -138,11 +149,14 @@ def main():
     parser.add_argument("--controlled-recording-development", action="store_true", help="Build a separately marked Development player with explicit opt-in local test recording; never starts it.")
     parser.add_argument("--legacy-raw-recording-development", action="store_true", help="Also opt into legacy A/B/C/D raw recording capability; requires --controlled-recording-development. No recording starts automatically.")
     parser.add_argument("--legacy-woz-recording-development", action="store_true", help="Also opt into participant-local Legacy WoZ recording; requires both existing recording flags. No network or recording starts automatically.")
+    parser.add_argument("--participant-recording", action="store_true", help="Build the Automatic A/B/C/D participant package with pseudonymous IDs and assigned stimulus lists.")
     parser.add_argument("--render-fixture", action="store_true", help="Render a synthetic Editor image; no XR or eye capture.")
     args = parser.parse_args()
     try:
-        validate_recording_options(args.controlled_recording_development, args.legacy_raw_recording_development, args.legacy_woz_recording_development)
-        woz_options = {"woz": True} if args.legacy_woz_recording_development else {}
+        if args.participant_recording:
+            args.controlled_recording_development = args.legacy_raw_recording_development = True
+        validate_recording_options(args.controlled_recording_development, args.legacy_raw_recording_development, args.legacy_woz_recording_development, args.participant_recording)
+        mode_options = {k: True for k, enabled in (("woz", args.legacy_woz_recording_development), ("participant", args.participant_recording)) if enabled}
         if sys.platform != "win32": raise ValueError("Windows is required.")
         source, project, editor, output = ROOT.resolve(), args.project.resolve(), args.editor.resolve(), args.output.resolve()
         prepare.verify_workspace_project(source, project)
@@ -162,31 +176,34 @@ def main():
         intent = project / "vive-classroom-isolated-intent.json"
         if intent.exists():
             raise ValueError("Classroom intent already exists. Preserve the previous project and use a new isolated project.")
-        prepare.write_json(intent, build_intent(source, output, args.controlled_recording_development, args.legacy_raw_recording_development, **woz_options))
+        prepare.write_json(intent, build_intent(source, output, args.controlled_recording_development, args.legacy_raw_recording_development, **mode_options))
         marker = output / "vive-classroom-build.json"
         provenance = {"format": 1, "project": str(project), "editor_version": prepare.EDITOR_VERSION,
                       "source_files": record["source_files"], "packages": prepare.PACKAGES, "status": "configuring",
                       "explicit_xr_start": True, "explicit_eye_start": True, "development_task_requires_configuration": True,
                       "separate_eye_and_task_choices_required": True, "existing_local_directory_required": True,
-                      "network_default": False, "unrecorded_legacy_woz_available": True,
+                      "network_default": False, "unrecorded_legacy_woz_available": not args.participant_recording,
                       "network_requires_explicit_pairing": True, "network_recording_available": False, "input_configured": False,
                       "headset_validated": False, "eye_accuracy_validated": False, "system_runtime_changed": False}
-        provenance.update(recording_manifest(args.controlled_recording_development, args.legacy_raw_recording_development, **woz_options))
+        provenance.update(recording_manifest(args.controlled_recording_development, args.legacy_raw_recording_development, **mode_options))
         prepare.write_json(marker, provenance)
-        run_editor(editor, project, output, "Configure", args.controlled_recording_development, args.legacy_raw_recording_development, **woz_options);prepare.verify_prepared(source, project)
-        run_editor(editor, project, output, "BuildWindowsPreview", args.controlled_recording_development, args.legacy_raw_recording_development, **woz_options);prepare.verify_prepared(source, project)
+        run_editor(editor, project, output, "Configure", args.controlled_recording_development, args.legacy_raw_recording_development, **mode_options);prepare.verify_prepared(source, project)
+        run_editor(editor, project, output, "BuildWindowsPreview", args.controlled_recording_development, args.legacy_raw_recording_development, **mode_options);prepare.verify_prepared(source, project)
         player = output / "UnityPlayer/AvatarStroopViveEyePlayer.exe"
         launcher = rehearsal.compile_launcher(editor, source, output)
         prepare.verify_prepared(source, project)
         if args.render_fixture:
-            run_editor(editor, project, output, "RenderFixture", args.controlled_recording_development, args.legacy_raw_recording_development, **woz_options);prepare.verify_prepared(source, project)
+            run_editor(editor, project, output, "RenderFixture", args.controlled_recording_development, args.legacy_raw_recording_development, **mode_options);prepare.verify_prepared(source, project)
         if not player.is_file() or not launcher.is_file() or list(output.rglob("SRanipal.dll")):
             raise ValueError("Missing player/launcher or unexpected vendor DLL.")
         guide = ""
-        if args.controlled_recording_development:
+        if args.participant_recording:
+            (output / "LocalParticipantData").mkdir(exist_ok=False)
+            guide = (source / "docs/vive-participant-recording.md").read_text(encoding="utf-8")
+        elif args.controlled_recording_development:
             (output / "LocalSelfTestData").mkdir(exist_ok=False)
             guide = (source / "docs/controlled-recording-self-test-guide.txt").read_text(encoding="utf-8")
-        (output / "START-HERE.txt").write_text(start_here_text(args.controlled_recording_development, args.legacy_raw_recording_development, guide, **woz_options), encoding="utf-8")
+        (output / "START-HERE.txt").write_text(start_here_text(args.controlled_recording_development, args.legacy_raw_recording_development, guide, **mode_options), encoding="utf-8")
         provenance.update(status="built", executable=launcher.name, executable_sha256=prepare.digest(launcher),
                           player=player.relative_to(output).as_posix(), player_sha256=prepare.digest(player),
                           scene_checks=prepare.read_json(output / "vive-classroom-scene-validation.json"))

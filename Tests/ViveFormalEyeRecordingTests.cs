@@ -51,13 +51,23 @@ namespace AvatarStroop.Tests
             internal readonly ViveNamedRawRecordingPump Pump;
             internal readonly ViveNamedRawRecordingPump.SyntheticWriter Writer;
             internal int Factories;long head;int renderFrame;bool nativeStarted;
-            internal PumpFixture()
+            internal PumpFixture(ParticipantAssignment assignment=null)
             {
                 var geometry=DevelopmentFixtures.Geometry();
-                var allocation=new Allocation("formal-allocation",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
-                var design=ViveLegacyRecordingDesign.Select(Actor.Owner,"formal-design",allocation,geometry.Version,ViveFixedTrackpadMapping.Version);
-                var config=SessionConfiguration.LegacyRecordingDevelopment(new SessionConfiguration("formal-pump",73,allocation,RunKind.Simulation,"en",5,30,true,0,true,true,true),
-                    design,ViveLegacyRecordingIntent.Select(Actor.Owner,"formal-intent",true,true));
+                var intent=ViveLegacyRecordingIntent.Select(Actor.Owner,"formal-intent",true,true);
+                SessionConfiguration config;
+                if(assignment!=null)
+                {
+                    var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,"formal-design",assignment,geometry.Version,ViveFixedTrackpadMapping.Version);
+                    config=SessionConfiguration.ParticipantRecording(new SessionConfiguration("formal-pump",ParticipantAssignment.StimulusSeed,assignment.Allocation,
+                        RunKind.Apparatus,"en",5,30,true,0,true,true,true,assignment.ResponseRule),design,intent);
+                }
+                else
+                {
+                    var allocation=new Allocation("formal-allocation",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
+                    var design=ViveLegacyRecordingDesign.Select(Actor.Owner,"formal-design",allocation,geometry.Version,ViveFixedTrackpadMapping.Version);
+                    config=SessionConfiguration.LegacyRecordingDevelopment(new SessionConfiguration("formal-pump",73,allocation,RunKind.Simulation,"en",5,30,true,0,true,true,true),design,intent);
+                }
                 config=SessionConfiguration.WithFormalEyeRecordingOnly(SessionConfiguration.WithTrainingProtocol(config,TrainingProtocol.TutorialExamV1));
                 Worker=new ViveProEyeWorker(Clock,()=>new ViveHeadFrame(++head,Clock.Now,true,true,Rotation.Identity),()=>{Factories++;return Native;});
                 Check.True(Worker.StartTaskOnly());
@@ -89,7 +99,7 @@ namespace AvatarStroop.Tests
                 Mutate(()=>Task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,true,x,y)));
                 Mutate(()=>Task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,false,0,0)));
             }
-            internal void BeginPlan(bool practice)
+            internal JournalEvent BeginPlan(bool practice)
             {
                 var plan=Task.PrepareRawRecordingBlockPlan(Actor.Owner,practice);Check.True(Pump.DrainTaskEvents());
                 ViveBlockPlanRequest request;ViveNamedSessionFrameAdmission.SyntheticPlanProof proof;
@@ -97,6 +107,7 @@ namespace AvatarStroop.Tests
                 Check.True(Admission.TryIssueSyntheticPlanProof(request,plan,out proof));
                 Check.True(practice?Task.TryBeginSyntheticPracticeForFixture(Admission,request,proof):
                     Task.TryBeginSyntheticLegacyBlockForFixture(Admission,request,proof));Check.True(Pump.DrainTaskEvents());
+                return plan;
             }
             internal void StartNative()
             {Check.True(Worker.RequestFormalEyeStart());nativeStarted=true;Check.True(Native.Waiting.WaitOne(3000));}
@@ -131,6 +142,23 @@ namespace AvatarStroop.Tests
                 Check.True(!shortOne.CanReserveUpper(0,upper,true),"manifest or terminal reserve was omitted");
             });
 #if VIVE_SYNTHETIC_BATCH_FIXTURE
+            suite.Run("Participant Word meaning opens recorded tutorial trials, exam and assigned first block",()=>{
+                ParticipantAssignment assignment;
+                Check.True(ParticipantAssignment.TryCreate("P007",TaskKind.Stroop,ResponseRule.WordMeaning,out assignment));
+                using(var f=new PumpFixture(assignment))
+                {
+                    Check.True(f.Task.IsResearchSession);
+                    f.Answer();f.Mutate(f.Task.RequestPracticeExam);f.BeginPlan(true);
+                    for(int i=0;i<10;i++)f.Answer();
+                    Check.Equal(10,f.Task.PracticeCorrect);Check.Equal(0,f.Factories);
+                    f.Mutate(f.Task.ContinuePracticeExamResult);
+                    f.Mutate(()=>f.Task.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"operator"));
+                    var plan=f.BeginPlan(false);
+                    Check.Equal(Phase.Countdown,f.Task.Phase);
+                    Check.Equal(assignment.Allocation.Order[0].ToString(),plan.Fields["legacy_condition"]);
+                    Check.Equal(TrialPlans.MainListId(ParticipantAssignment.StimulusSeed,assignment.Allocation.ListByBlock[0]),plan.Fields["list"]);
+                }
+            });
             suite.Run("Task-only raw pump completes tutorial and ten-question exam then holds first formal countdown until eye readiness recovers",()=>{
                 using(var f=new PumpFixture())
                 {

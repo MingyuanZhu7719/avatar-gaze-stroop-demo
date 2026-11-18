@@ -159,7 +159,7 @@ namespace AvatarStroop.Runtime
         }
         internal static bool TryCapture(ViveDevelopmentParticipant p,MonotonicClock c,JournalEvent plan,out ViveBlockPlanRequest request)
         {
-            request=null;if(p==null||c==null||plan==null||p.IsResearchSession||!p.RawRecordingRequested||p.NamedRawRevocation.IsRevoked||
+            request=null;if(p==null||c==null||plan==null||!p.RawRecordingRequested||p.NamedRawRevocation.IsRevoked||
                 !p.UsesEventClock(c))return false;
             try
             {

@@ -7,16 +7,18 @@ using UnityEngine;
 
 namespace AvatarStroop.Unity
 {
-    // Local, owner-operated development task. Recording is separately opt-in,
-    // single-segment development evidence only; no study or live WoZ admission.
+    // Owner-operated classroom and recording setup for Vive players.
     public sealed partial class ViveStroopDevelopmentBootstrap : MonoBehaviour
     {
         [SerializeField] ViveStroopPreviewRig rig;
         [SerializeField] WorldSpaceExperimentView view;
-        int ownerRunMode=-1;
+        internal static bool ParticipantBuild {get{return ViveStroopRecordingScopePresentation.ParticipantBuild;}}
+        int ownerRunMode=ParticipantBuild?1:-1;
         bool ownerAdvanced,ownerDiagnostics,ownerStorageLimits,ownerOutputOptions;
         bool ownerPreviewWoz;
-        int selectedDesign=-1,namedListIndex=-1;
+        int selectedDesign=ParticipantBuild?0:-1,namedListIndex=-1;
+        string participantIdEntry="";
+        ParticipantAssignment preparedAssignment;
         int namedPlanCount=-1;
         readonly int[] namedPlanOptions={-1,-1,-1,-1},namedPlanLists={-1,-1,-1,-1};
         bool namedIntentV3,namedTaskRecordingChoice,namedEyeRecordingChoice;
@@ -41,7 +43,7 @@ namespace AvatarStroop.Unity
         string namedTaskPage;
         int namedTaskPageOffset,namedTaskTable;
         const int NamedTaskPageSize=8192;
-        string message="Choose Preview or Record locally.";
+        string message=ParticipantBuild?"Enter the participant ID and select the task.":"Choose Preview or Record locally.";
         string avatarOutputNotice;
         string inputDiagnostic="Controller not checked in this update.";
         int inputDiagnosticFrame=-1;
@@ -171,7 +173,7 @@ namespace AvatarStroop.Unity
         public bool Configured {get{return configured;}}
         internal bool LegacyDesignSelected
         {get{return ViveStroopRecordingScopePresentation.IsLegacy(selectedDesign,participant!=null,participant!=null&&participant.HasNamedOption);}}
-        internal bool LegacyPreviewSelected {get{return LegacyDesignSelected&&(participant==null||!participant.LegacyRecordingRequested);}}
+        internal bool LegacyPreviewSelected {get{return !ParticipantBuild&&LegacyDesignSelected&&(participant==null||!participant.LegacyRecordingRequested);}}
         internal bool LegacyRawRecordingRequested {get{return participant!=null&&participant.LegacyRecordingRequested;}}
         internal static bool LegacyRecordingAvailable
         {get{return ViveControlledRecordingBuildPolicy.Available&&ViveLegacyRawRecordingBuildPolicy.Available;}}
@@ -313,8 +315,8 @@ namespace AvatarStroop.Unity
                 if(participant.Phase==Phase.Questionnaire)
                     return "Trackpad UP: lower | DOWN: higher | Trigger: confirm\nSelected: "+participant.CandidateRating+" (not submitted)";
                 return participant!=null&&participant.TaskKind==TaskKind.VisualSearch?
-                    "Point at the matching backpack | Trigger: select / continue\nEscape on desktop: withdraw development task":
-                    "Trackpad: colour | Trigger: confirm the current instruction\nEscape on desktop: withdraw development task";
+                    "Point at the matching backpack | Trigger: select / continue\nEscape on desktop: withdraw task":
+                    "Trackpad: colour | Trigger: confirm the current instruction\nEscape on desktop: withdraw task";
             }
         }
         public void Configure(ViveStroopPreviewRig preview,WorldSpaceExperimentView presentation)
@@ -525,7 +527,7 @@ namespace AvatarStroop.Unity
             }
             if(recordingSetup!=null&&!configured)
             {
-                GUILayout.Label((recordingSetupDesign==0?"Legacy A/B/C/D":"Named multi-block")+" recording selection: "+recordingSetup.Current+". Recording has not started.");
+                GUILayout.Label((ParticipantBuild?preparedAssignment.ParticipantId:recordingSetupDesign==0?"Legacy A/B/C/D":"Named multi-block")+" recording selection: "+recordingSetup.Current+". Recording has not started.");
                 GUILayout.Label("The participant must respond in the headset. Study consent is separate.");
                 if(GUILayout.Button("Cancel recording setup")){CancelRecordingChoices();recordingSetup=null;recordingSetupDesign=-1;preSessionShownRevision=-1;message="Recording setup cancelled; no recording was started.";if(view!=null){view.SetViveLegacyPreviewNotice(LegacyPreviewSelected);view.SetViveUnconfiguredPreview(message);}}
                 return;
@@ -538,7 +540,7 @@ namespace AvatarStroop.Unity
             {
                 string design=participant.NamedPlan!=null?participant.NamedPlan.Blocks.Count+" planned blocks":participant.HasNamedOption?
                     (participant.NamedOption.Option==ViveNamedOption.NoAvatar?"No Avatar | 1 block":"Automatic | 1 block"):
-                    "Legacy A/B/C/D | 4 blocks";
+                    ParticipantBuild?DescribeParticipantAllocation(preparedAssignment):"Legacy A/B/C/D | 4 blocks";
                 OwnerHeading("Task status");
                 GUILayout.Label(design+"  |  "+participant.Phase,recordingWrap);
                 GUILayout.Label("Controller (latest check): "+ControllerUiDisplayState,recordingWrap);
@@ -744,7 +746,7 @@ namespace AvatarStroop.Unity
             if(participant!=null&&participant.HasNamedOption)
             {GUILayout.Label("Preview only: no task, eye or CSV files are saved.",recordingWrap);return;}
             if(LegacyRawRecordingRequested)
-            {GUILayout.Label("Legacy self-test selected. Recording has not started; practice remains blocked until the explicit recording start.",recordingWrap);return;}
+            {GUILayout.Label("Local recording selected. Training will start after recording begins.",recordingWrap);return;}
             GUILayout.Label("Preview only: no task, eye or CSV files are saved.",recordingWrap);
             if(recording!=null)
             {
@@ -910,8 +912,11 @@ namespace AvatarStroop.Unity
         {BeginRawRecordingSetup(true);}
         void BeginRawRecordingSetup(bool legacy)
         {
-            if(!ControlledRecordingNoticeCurrent){message="Read and accept the local development recording notice first.";return;}
+            if(!ControlledRecordingNoticeCurrent){message="Read and accept the local recording notice first.";return;}
             if(configured||rig==null||rig.ViewRunning||selectedDesign!=(legacy?0:3)||!RecordingKindAvailable(legacy))return;
+            var assignment=ParticipantBuild?EntryAssignment:null;
+            if(ParticipantBuild&&(!legacy||legacyWozRecordingSelected||assignment==null))
+            {message="Choose a participant ID (P001 to P999) and a supported Automatic task.";return;}
             string reason;
             var choice=ViveNamedRecordingSetup.TryPrepare(RecordingKindAvailable(legacy)&&ViveRawRelativeFileCapability.ProductionGateOpen,
                 recordingDirectory,recordingBudgetMiB,System.IO.Directory.Exists,out reason);
@@ -931,6 +936,7 @@ namespace AvatarStroop.Unity
                 var map=ConfiguredTrackpadMapping();
                 new VivePreviewTrackpadInput(map,entered);
                 hand=VivePreviewControllerHand.Automatic;
+                preparedAssignment=assignment;
                 recordingSetup=choice;recordingSetupDesign=selectedDesign;preSessionShownRevision=-1;preSessionShownFrame=-1;
                 if(view!=null)view.SetViveLegacyPreviewNotice(false);
                 message="Start the classroom view so the participant can make the recording choices. No recording has started.";
@@ -983,6 +989,9 @@ namespace AvatarStroop.Unity
             {
                 bool selected=fromParticipantChoice&&RecordingSetupEligible&&rig.HeadReady&&
                     SelectedRecordingAvailable&&ViveRawRelativeFileCapability.ProductionGateOpen;
+                if(ParticipantBuild&&(!selected||selectedDesign!=0||legacyWozRecordingSelected||
+                    preparedAssignment==null||!object.ReferenceEquals(preparedAssignment,EntryAssignment)))
+                    throw new InvalidOperationException("Participant recording requires a prepared Automatic assignment and both headset choices.");
                 if(configured||(rig.ViewRunning&&!selected))throw new InvalidOperationException("Configure once before starting XR.");
                 // The legacy bounded observation rehearsal implements the old
                 // eight-trial practice protocol. New Tutorial sessions use the
@@ -1012,13 +1021,16 @@ namespace AvatarStroop.Unity
                     message="Start classroom view for the input rehearsal. Recording and the session remain unavailable.";
                     RenderPreSessionChoice();return;
                 }
-                string session="vive-development-"+Guid.NewGuid().ToString("N");
+                string session=(ParticipantBuild?"vive-participant-":"vive-development-")+Guid.NewGuid().ToString("N");
                 var root=view.AvatarRoot;var from=view.AvatarHead.position;
                 Vector3 participantDirection=root.InverseTransformDirection(view.ParticipantReferencePosition-from);
                 Vector3 taskDirection=root.InverseTransformDirection(view.TaskWorldPosition-from);
                 var geometry=DevelopmentGeometry.FromLocalDirections(ToVec(participantDirection),ToVec(taskDirection),WorldSpaceExperimentView.GeometryVersion);
                 SessionConfiguration config;
-                if(selectedDesign==1)
+                if(ParticipantBuild)
+                    config=ViveLegacySceneConfiguration.CreateParticipantRecording(session,preparedAssignment,geometry.Version,
+                        ViveFixedTrackpadMapping.Version,"participant-design-"+Guid.NewGuid().ToString("N"),"participant-intent-"+Guid.NewGuid().ToString("N"));
+                else if(selectedDesign==1)
                     config=SessionConfiguration.NamedAutomaticDevelopment(session,20261028,
                         ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.Automatic,namedListIndex,geometry.Version));
                 else if(selectedDesign==2)
@@ -1042,8 +1054,11 @@ namespace AvatarStroop.Unity
                         config=ViveLegacySceneConfiguration.SelectRecording(config,geometry.Version,ViveFixedTrackpadMapping.Version,
                             "legacy-design-"+Guid.NewGuid().ToString("N"),"legacy-intent-"+Guid.NewGuid().ToString("N"),legacyWozRecordingSelected);
                 }
-                config=SessionConfiguration.WithResponseRule(config,selectedResponseRule);
-                config=SessionConfiguration.WithTaskKind(config,selectedTaskKind);
+                if(!ParticipantBuild)
+                {
+                    config=SessionConfiguration.WithResponseRule(config,selectedResponseRule);
+                    config=SessionConfiguration.WithTaskKind(config,selectedTaskKind);
+                }
                 config=SessionConfiguration.WithTrainingProtocol(config,TrainingProtocol.TutorialExamV1);
                 config=SessionConfiguration.WithFormalEyeRecordingOnly(config);
                 var taskClock=selected?rig.ActiveViewClock:new MonotonicClock("vive-development-task-"+session);
@@ -1104,7 +1119,10 @@ namespace AvatarStroop.Unity
                         recordingText="Recording declined. No recording has started.";break;
                     default:recordingText="Recording choices cancelled. No recording has started.";break;
                 }
-                recordingText=(recordingSetupDesign==0?"Legacy A/B/C/D self-test. ":"Named multi-block self-test. ")+recordingText;
+                if(ParticipantBuild&&(recordingSetup.Current==ViveNamedRecordingSetup.Step.Task||recordingSetup.Current==ViveNamedRecordingSetup.Step.Eye))
+                    recordingText=ParticipantChoiceText(recordingSetup.Current==ViveNamedRecordingSetup.Step.Eye);
+                else if(!ParticipantBuild)
+                    recordingText=(recordingSetupDesign==0?"Legacy A/B/C/D self-test. ":"Named multi-block self-test. ")+recordingText;
                 if(recordingSetupDesign==0&&legacyWozRecordingSelected)
                     recordingText="LiveWoZ local recording: files also store mapped operator head/eye poses and source times. "+recordingText;
                 if(ConsentAutoStartActive&&(recordingSetup.Current==ViveNamedRecordingSetup.Step.Task||recordingSetup.Current==ViveNamedRecordingSetup.Step.Eye))
@@ -1611,7 +1629,7 @@ namespace AvatarStroop.Unity
             rawPendingBlockPlan=null;rawPlanStartRequested=0;rawPlanDeadline=-1;ClearRawPlanReadyObservation();suppressInputUntilReleased=true;
             ResetPracticeCountdown();
             if(practice)UnityEngine.Debug.Log("VIVE_RAW_PRACTICE_STARTED: plan receipt consumed; presentation remains pending.");
-            message="Block plan write and flush APIs returned; input must be released before continuing. Recording remains development-only.";
+            message="Block plan recorded. Release the controller controls to continue.";
             // Refresh the hidden model after the phase mutation. The rig keeps
             // it masked until a later neutral input sample clears the boundary.
             Render();
@@ -2186,7 +2204,7 @@ namespace AvatarStroop.Unity
                 avatarOutputNotice=ViveWozPresentationPolicy.BlockedFeedback(avatar);
             }
             else view.ApplyAvatarOutput(avatar);
-            view.SetViveDevelopmentStatus(namedRawPump!=null?"Local self-test. "+RecordingStatus:LegacyRawRecordingRequested?"Legacy self-test selected; recording has not started.":participant.NamedPlan!=null||participant.HasNamedOption?"Preview: no durable recording.":recording==null?"LEGACY PREVIEW: recording/export unavailable.":
+            view.SetViveDevelopmentStatus(namedRawPump!=null?"Local recording. "+RecordingStatus:LegacyRawRecordingRequested?"Local recording selected; recording has not started.":participant.NamedPlan!=null||participant.HasNamedOption?"Preview: no durable recording.":recording==null?"LEGACY PREVIEW: recording/export unavailable.":
                 "VIVE development task; local recording enabled. "+recording.Status,ControlsHint);
         }
         void OnStimulusRendered(string trialId,double renderProxySeconds)
@@ -2472,6 +2490,17 @@ namespace AvatarStroop.Unity
 {
     internal static class ViveStroopRecordingScopePresentation
     {
+        internal static bool ParticipantBuild
+        {
+            get
+            {
+#if STROOP_PARTICIPANT_RECORDING
+                return true;
+#else
+                return false;
+#endif
+            }
+        }
         internal const string LegacyBanner="LEGACY PREVIEW | RECORDING/EXPORT UNAVAILABLE";
         internal const string LegacyMemoryNotice="No eye/task files. Task records: memory only until close.";
         internal const string LegacyNotice="LEGACY PREVIEW: recording/export unavailable. No eye or task files are created. Task records are memory-only until this preview closes; they are not saved.";
@@ -2522,6 +2551,16 @@ namespace AvatarStroop.Unity
     using AvatarStroop.Runtime;
     internal static class ViveLegacySceneConfiguration
     {
+        internal static SessionConfiguration CreateParticipantRecording(string session,ParticipantAssignment assignment,string geometryVersion,
+            string mappingVersion,string designId,string intentId)
+        {
+            if(assignment==null)throw new ArgumentNullException("assignment");
+            var config=new SessionConfiguration(session,ParticipantAssignment.StimulusSeed,assignment.Allocation,RunKind.Apparatus,
+                "en",5,30,true,0,true,true,true,assignment.ResponseRule);
+            config=SessionConfiguration.WithTaskKind(config,assignment.TaskKind);
+            var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,designId,assignment,geometryVersion,mappingVersion);
+            return SessionConfiguration.ParticipantRecording(config,design,ViveLegacyRecordingIntent.Select(Actor.Owner,intentId,true,true));
+        }
         internal static SessionConfiguration CreatePreview(string session)
         {
             var allocation=new Allocation("development-fixture-BCAD",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});

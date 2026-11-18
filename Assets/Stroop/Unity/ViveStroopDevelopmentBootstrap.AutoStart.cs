@@ -41,11 +41,16 @@ namespace AvatarStroop.Unity
         // clipped notice as the participant's rendered-choice witness.
         internal static string ConsentAutoChoiceText(bool eye,bool woz)
         {
-            string text=eye?
+            string text=ParticipantBuild?ParticipantChoiceText(eye):eye?
                 "Self-test, not study consent. Store eye data during the formal experiment on this PC? No eye data is saved in Tutorial or Exam. No upload. Withdrawal does not erase files.":
                 "Self-test, not study consent. Store task responses, questionnaire ratings and timing on this PC?";
             if(woz)text+=" LiveWoZ also stores mapped operator head/eye poses and source times.";
             return text+" Both choices + release start task recording and Tutorial. Eye recording begins with the first formal countdown.";
+        }
+        static string ParticipantChoiceText(bool eye)
+        {
+            return eye?"Allow local recording of eye and head data during the formal blocks? Eye data may identify you. No upload. Withdrawal keeps existing files.":
+                "Allow this PC to save your task answers, ratings and timing under your participant ID?";
         }
         internal void ArmConsentAutoStart()
         {
@@ -92,6 +97,7 @@ namespace AvatarStroop.Unity
                 arm.Design!=selectedDesign||arm.Design!=recordingSetupDesign||ownerRunMode!=1||
                 arm.DirectorySelection!=recordingDirectory||arm.RawLimit!=recordingBudgetMiB||arm.CsvLimit!=csvBudgetMiB||arm.CsvTimeout!=csvCleanupSeconds||
                 arm.Woz!=legacyWozRecordingSelected||arm.PlanCount!=namedPlanCount||!SameAutoPlan(arm.Options,namedPlanOptions)||!SameAutoPlan(arm.Lists,namedPlanLists))return false;
+            if(ParticipantBuild&&(preparedAssignment==null||!object.ReferenceEquals(preparedAssignment,EntryAssignment)))return false;
             int accepted=recordingSetup.Current==ViveNamedRecordingSetup.Step.Task?0:
                 recordingSetup.Current==ViveNamedRecordingSetup.Step.Eye?1:recordingSetup.BothSelected?2:-1;
             if(accepted<0||recordingSetup.Revision!=arm.InitialRevision+accepted)return false;

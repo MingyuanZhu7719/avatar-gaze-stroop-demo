@@ -5,9 +5,8 @@ using AvatarStroop.Core;
 
 namespace AvatarStroop.Runtime
 {
-    // In-memory, explicitly configured VIVE DEVELOPMENT TASK. This policy does
-    // not connect an eye source, send network packets or persist task/eye data.
-    // The Experiment remains Simulation and the only avatar source is Automatic.
+    // In-memory Vive task state. The host owns device input and recording.
+    // Participant apparatus runs use the assigned Automatic A/B/C/D design.
     // Readiness is supplied by the host from current headset and device samples;
     // it is never a claim of physical calibration or apparatus validation.
     public sealed partial class ViveDevelopmentParticipant
@@ -83,7 +82,8 @@ namespace AvatarStroop.Runtime
         {
             if(!ownerExplicitlyConfigured)throw new InvalidOperationException("Explicit owner configuration is required");
             if(configuration==null)throw new ArgumentNullException("configuration");
-            if(configuration.RunKind!=RunKind.Simulation)throw new InvalidOperationException("Apparatus sessions remain unavailable");
+            if(configuration.RunKind!=RunKind.Simulation&&configuration.ParticipantAssignment==null)
+                throw new InvalidOperationException("An apparatus session requires a participant recording assignment.");
             rawContext=configuration.HasRawRecordingIntent?ViveRawSessionContext.FromConfiguration(configuration):null;
             if(rawContext!=null&&rawContext.IsLegacy)
             {
@@ -831,7 +831,7 @@ namespace AvatarStroop.Runtime
             bool withdraw=cause==NamedRawSafetyCause.Withdrawal;
             if(!Enum.IsDefined(typeof(NamedRawSafetyCause),cause))return NamedRawSafetyResult.NotApplied;
             if(System.Threading.Thread.CurrentThread.ManagedThreadId!=namedViewOwnerThread||observation!=null||
-                experiment.Configuration.RunKind!=RunKind.Simulation||!RawRecordingRequested)return NamedRawSafetyResult.NotApplied;
+                !RawRecordingRequested)return NamedRawSafetyResult.NotApplied;
             if(!System.Threading.Monitor.TryEnter(namedRecordingGate))return NamedRawSafetyResult.Pending;
             bool viewHeld=false;
             try
@@ -1109,8 +1109,8 @@ namespace AvatarStroop.Runtime
         public bool RecordsEyeSamples {get{return false;}}
         public bool RecordsTaskFiles {get{return false;}}
         public bool UsesNetwork {get{return false;}}
-        public bool IsResearchSession {get{return false;}}
-        public string ScopeLabel {get{return "SIMULATED DEVELOPMENT TASK - NO RESEARCH DATA OR LIVE WOZ";}}
+        public bool IsResearchSession {get{return experiment.Configuration.ParticipantAssignment!=null;}}
+        public string ScopeLabel {get{return IsResearchSession?"VIVE PARTICIPANT SESSION":"SIMULATED DEVELOPMENT TASK - NO RESEARCH DATA OR LIVE WOZ";}}
         public Phase Phase {get{return experiment.Phase;}}
         // UI-only first-cause diagnostics, not journal events or research data.
         // A repeated request while already paused never replaces the cause.
@@ -1233,7 +1233,7 @@ namespace AvatarStroop.Runtime
                 if(avatar==null||avatarBlock!=experiment.BlockIndex||avatarSegment!=experiment.Segment)
                 {
                     avatarBlock=experiment.BlockIndex;avatarSegment=experiment.Segment;
-                    avatar=new AvatarController(experiment.Configuration.SessionId,RunKind.Simulation,avatarBlock,avatarSegment,
+                    avatar=new AvatarController(experiment.Configuration.SessionId,experiment.Configuration.RunKind,avatarBlock,avatarSegment,
                         ControlSelection.Automatic,experiment.CurrentCondition.Value,experiment.Configuration.Allocation.BInitialTarget,geometry);
                 }
                 return avatar.Render(experiment.Phase,experiment.ActiveSeconds);

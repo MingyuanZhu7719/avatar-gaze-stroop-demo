@@ -1,7 +1,50 @@
 using System;
+using System.Globalization;
 
 namespace AvatarStroop.Core
 {
+    // The anonymous study code is an enrollment slot. Reusing it for another
+    // task or a repeat visit never depends on the number of previous files.
+    public sealed class ParticipantAssignment
+    {
+        public const string SchemeVersion = "participant-balance-v1";
+        public const uint StimulusSeed = 20261028;
+        public string ParticipantId { get; private set; }
+        public TaskKind TaskKind { get; private set; }
+        public ResponseRule ResponseRule { get; private set; }
+        public string TaskKey { get { return TaskKind == TaskKind.VisualSearch ? "VisualSearch" : ResponseRule.ToString(); } }
+        public Allocation Allocation { get; private set; }
+
+        private ParticipantAssignment() { }
+
+        public static bool TryCreate(string input, TaskKind taskKind, ResponseRule responseRule,
+            out ParticipantAssignment assignment)
+        {
+            assignment = null;
+            if (input == null || !Enum.IsDefined(typeof(TaskKind), taskKind) ||
+                !Enum.IsDefined(typeof(ResponseRule), responseRule)) return false;
+            string code = input.Trim();
+            if (code.Length != 4 || (code[0] != 'P' && code[0] != 'p')) return false;
+            int number = 0;
+            for (int i = 1; i < code.Length; i++)
+            {
+                if (code[i] < '0' || code[i] > '9') return false;
+                number = number * 10 + code[i] - '0';
+            }
+            if (number == 0) return false;
+
+            int task = taskKind == TaskKind.VisualSearch ? 2 : responseRule == ResponseRule.WordMeaning ? 1 : 0;
+            string canonical = "P" + number.ToString("D3", CultureInfo.InvariantCulture);
+            string allocationId = SchemeVersion + "-" + canonical + "-T" + (task + 1).ToString(CultureInfo.InvariantCulture);
+            assignment = new ParticipantAssignment {
+                ParticipantId = canonical, TaskKind = taskKind,
+                ResponseRule = taskKind == TaskKind.VisualSearch ? ResponseRule.InkColor : responseRule,
+                Allocation = TrialPlans.ParticipantAllocation(allocationId, number - 1, task)
+            };
+            return true;
+        }
+    }
+
     /// <summary>
     /// Reproducible planning for the accepted 24-trial, four-condition protocol.
     /// These schedules have no response, accuracy, or gaze inputs.
@@ -204,6 +247,28 @@ namespace AvatarStroop.Core
                     Williams[sequenceIndices[index % 4]], targets[index], listByBlock);
             }
             return result;
+        }
+
+        internal static Allocation ParticipantAllocation(string id, int slot, int task)
+        {
+            int cohort = slot / 4;
+            var rows = new[] { 0, 1, 2, 3 };
+            Shuffle(rows, new Random32(DeriveSeed(0x6D71053Bu, (uint)cohort)));
+            int row = rows[slot % 4];
+            Condition[] order = Williams[(row + task) % 4];
+            // Each four consecutive enrollment slots (P001–P004, P005–P008, ...)
+            // cover every order and every condition/list pairing. Rotating the
+            // mapping again by cohort crosses each order with all four list
+            // rotations (and balances list by position) over 16 slots per task.
+            int listRotation = (row + cohort + 2 * task) % 4;
+            var listByBlock = new int[4];
+            for (int block = 0; block < order.Length; block++)
+                listByBlock[block] = ((int)order[block] + listRotation) % 4;
+
+            // Each cohort has two starts per target; repeat the 16-slot
+            // order/list design with the complementary start at every cell.
+            bool participantFirst = (row + cohort + slot / 16 + task) % 2 == 0;
+            return new Allocation(id, order, participantFirst ? GazeTarget.Participant : GazeTarget.Task, listByBlock);
         }
 
         private static bool SameOrder(Stimulus[] left, Stimulus[] right)

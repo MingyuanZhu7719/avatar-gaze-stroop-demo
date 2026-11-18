@@ -2,6 +2,7 @@
 using System;
 using System.IO;
 using System.Threading;
+using AvatarStroop.Core;
 using AvatarStroop.Runtime;
 using UnityEngine;
 
@@ -32,6 +33,7 @@ namespace AvatarStroop.Unity
         }
         internal string RecordingSetupValidationReason()
         {
+            if(ParticipantBuild&&EntryAssignment==null)return "Enter the assigned anonymous participant ID (P001 to P999).";
             if(selectedDesign!=0&&selectedDesign!=3)return "Select Legacy A/B/C/D or Named multi-block for recording.";
             if(selectedDesign==3)
             {
@@ -63,10 +65,12 @@ namespace AvatarStroop.Unity
 
         // Offering a name performs no filesystem operation. Every new scene
         // instance gets its own proposal, never the previous session's folder.
+        string DefaultSessionDirectoryParent
+        {get{return Path.GetFullPath(Path.Combine(Application.dataPath,"..","..",ParticipantBuild?"LocalParticipantData":"LocalSelfTestData"));}}
         void EnsureDefaultSessionDirectoryOffer()
         {
             if(sessionDirectoryOffered||!String.IsNullOrEmpty(recordingDirectory)||configured)return;
-            OfferFreshSessionDirectory(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","LocalSelfTestData")));
+            OfferFreshSessionDirectory(DefaultSessionDirectoryParent);
         }
         internal bool OfferFreshSessionDirectory(string existingParent)
         {
@@ -88,6 +92,7 @@ namespace AvatarStroop.Unity
             internal readonly ViveLocalSessionDirectory Candidate;
             internal readonly string Directory,RawLimit,CsvLimit,CsvTimeout;
             internal readonly int Design,Mode,PlanCount;
+            internal readonly ParticipantAssignment Assignment;
             internal readonly int[] Options,Lists;
             internal readonly bool Woz;
             internal readonly System.Diagnostics.Stopwatch Elapsed=System.Diagnostics.Stopwatch.StartNew();
@@ -99,6 +104,7 @@ namespace AvatarStroop.Unity
                 Candidate=candidate;Directory=owner.recordingDirectory;RawLimit=owner.recordingBudgetMiB;
                 CsvLimit=owner.csvBudgetMiB;CsvTimeout=owner.csvCleanupSeconds;Design=owner.selectedDesign;
                 Mode=owner.ownerRunMode;PlanCount=owner.namedPlanCount;Woz=owner.legacyWozRecordingSelected;
+                Assignment=ParticipantBuild?owner.EntryAssignment:null;
                 Options=(int[])owner.namedPlanOptions.Clone();Lists=(int[])owner.namedPlanLists.Clone();
             }
             internal bool Matches(ViveStroopDevelopmentBootstrap owner)
@@ -108,6 +114,7 @@ namespace AvatarStroop.Unity
                     Directory==owner.recordingDirectory&&RawLimit==owner.recordingBudgetMiB&&
                     CsvLimit==owner.csvBudgetMiB&&CsvTimeout==owner.csvCleanupSeconds&&Design==owner.selectedDesign&&
                     Mode==owner.ownerRunMode&&PlanCount==owner.namedPlanCount&&Woz==owner.legacyWozRecordingSelected&&
+                    (!ParticipantBuild||object.ReferenceEquals(Assignment,owner.EntryAssignment))&&
                     SameAutoPlan(Options,owner.namedPlanOptions)&&SameAutoPlan(Lists,owner.namedPlanLists);
             }
             internal void Run()

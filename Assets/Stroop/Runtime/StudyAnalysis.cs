@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using AvatarStroop.Core;
 
 namespace AvatarStroop.Runtime
 {
@@ -126,7 +127,7 @@ namespace AvatarStroop.Runtime
 
     public sealed partial class StudyAnalysis
     {
-        public const string Version="1.2.1";
+        public const string Version="1.3.0";
         static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
         readonly Dictionary<string,StudyTrial> byId=new Dictionary<string,StudyTrial>(StringComparer.Ordinal);
         readonly Dictionary<string,StudyEyeGroup> eye=new Dictionary<string,StudyEyeGroup>(StringComparer.Ordinal);
@@ -137,10 +138,19 @@ namespace AvatarStroop.Runtime
         static readonly HashSet<string> RatingItems=new HashSet<string>(new[]{"focus","distraction","observed","evaluated","negative_evaluation_worry"},StringComparer.Ordinal);
         string currentPhase="Unknown";
         bool finalized;
+        int[] assignedLists;
         public string SessionId {get;private set;}
+        public string ParticipantId {get;private set;}
+        public string ParticipantTask {get;private set;}
+        public string AllocationScheme {get;private set;}
+        public string AllocationId {get;private set;}
+        public string ConditionOrder {get;private set;}
+        public string ListByBlock {get;private set;}
+        public string BInitialTarget {get;private set;}
         public string Design {get;private set;}
         public string Source {get;private set;}
         public string RunKind {get;private set;}
+        public string SoftwareVersion {get;private set;}
         public string SessionEndReason {get;private set;}
         public int? PlannedBlocks {get;private set;}
         public int TaskEvents {get;private set;}
@@ -160,6 +170,8 @@ namespace AvatarStroop.Runtime
                 string session=Get(f,"session_id");
                 if(SessionId!=null&&SessionId!=session)throw new InvalidDataException("Multiple sessions in one source.");
                 SessionId=session;Design=Get(f,"design_variant");Source=Get(f,"source");RunKind=Get(f,"run_kind");
+                SoftwareVersion=Get(f,"software_version");
+                ReadParticipantManifest(f);
                 int blocks;if(Int32.TryParse(Get(f,"block_count"),out blocks))
                 {
                     PlannedBlocks=blocks;
@@ -191,6 +203,34 @@ namespace AvatarStroop.Runtime
             }
         }
 
+        void ReadParticipantManifest(IDictionary<string,string> f)
+        {
+            if(Get(f,"schema")!="VRAW0006")
+            {
+                if(RunKind=="PARTICIPANT_APPARATUS"||f.ContainsKey("participant_id"))
+                    throw new InvalidDataException("Participant identity requires a VRAW0006 allocation manifest.");
+                return;
+            }
+            ParticipantAssignment assignment;
+            if(!ViveRawSessionJournalCodec.TryReadParticipantAssignment(Get(f,"participant_id"),Get(f,"participant_task"),out assignment)||
+                Get(f,"allocation_scheme")!=ParticipantAssignment.SchemeVersion||RunKind!="PARTICIPANT_APPARATUS"||
+                Get(f,"configuration_run_kind")!=((int)AvatarStroop.Core.RunKind.Apparatus).ToString(Inv)||
+                Get(f,"seed")!=ParticipantAssignment.StimulusSeed.ToString(Inv)||Int(f,"block_count",0)!=4)
+                throw new InvalidDataException("Unknown participant, task or allocation scheme.");
+            var allocation=assignment.Allocation;var order=allocation.Order;var lists=allocation.ListByBlock;assignedLists=lists;
+            for(int i=0;i<order.Length;i++)
+            {
+                string block="block_"+i.ToString(Inv)+"_";
+                if(Int(f,block+"index",-1)!=i||Int(f,block+"condition",-1)!=(int)order[i]||Int(f,block+"list_index",-1)!=lists[i])
+                    throw new InvalidDataException("Block condition or list differs from the participant allocation.");
+            }
+            ParticipantId=assignment.ParticipantId;ParticipantTask=assignment.TaskKey;AllocationScheme=ParticipantAssignment.SchemeVersion;
+            AllocationId=Get(f,"legacy_allocation_id");ConditionOrder=Get(f,"condition_order");ListByBlock=Get(f,"list_by_block");BInitialTarget=Get(f,"b_initial_target");
+            if(AllocationId!=allocation.AllocationId||BInitialTarget!=allocation.BInitialTarget.ToString()||
+                Int(f,"legacy_b_initial_target",-1)!=(int)allocation.BInitialTarget||ConditionOrder!=String.Concat(order)||ListByBlock!=String.Join(",",lists.Select(x=>x.ToString(Inv))))
+                throw new InvalidDataException("Recorded assignment summary differs from the participant allocation.");
+        }
+
         void Task(IDictionary<string,string> f)
         {
             TaskEvents++;string kind=Get(f,"event_kind")??"Unknown";StudyEyeGroup.Count(EventCounts,kind);
@@ -206,6 +246,13 @@ namespace AvatarStroop.Runtime
             {
                 string previous;if(rules.TryGetValue(block,out previous)&&previous!=rule)Warn("Response rule changed within block "+block+"; trials remain separated by rule.");
                 rules[block]=rule;
+            }
+            if(ParticipantId!=null)
+            {
+                if((taskKind=="VisualSearch"?"VisualSearch":rule)!=ParticipantTask||
+                    (block>=0&&(block>=ConditionOrder.Length||condition!=ConditionOrder[block].ToString()||
+                    Int(p,"legacy_list_index",-1)!=assignedLists[block])))
+                    throw new InvalidDataException("Task event differs from the recorded participant assignment.");
             }
             if(kind=="block_task_ended")endedBlocks.Add(block);
             if(kind=="session_ended")SessionEndReason=Get(p,"reason");

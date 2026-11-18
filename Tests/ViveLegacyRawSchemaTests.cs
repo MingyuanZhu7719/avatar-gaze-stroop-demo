@@ -42,6 +42,27 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("Participant manifest rejects a changed ID task condition or list and a legacy discriminator",()=>{
+                ParticipantAssignment assignment;
+                Check.True(ParticipantAssignment.TryCreate("P009",TaskKind.Stroop,ResponseRule.WordMeaning,out assignment));
+                var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,"test-design",assignment,"geometry","mapping");
+                var basis=new SessionConfiguration("test-attempt",ParticipantAssignment.StimulusSeed,assignment.Allocation,RunKind.Apparatus,"en",5,30,true,0,true,true,true,ResponseRule.WordMeaning);
+                var config=SessionConfiguration.ParticipantRecording(basis,design,ViveLegacyRecordingIntent.Select(Actor.Owner,"test-intent",true,true));
+                var manifest=new ViveNamedSessionFrameAdmission.Manifest(ViveRawSessionContext.FromConfiguration(config),"test-clock",true,1,2);
+                manifest.SealChoiceTime(2,0);
+                var payload=ViveRawSessionJournalCodec.CurrentManifestPayload(manifest);
+                byte[] digest;Func<byte[],ViveRawSessionReadStatus> status=bytes=>Read(ViveRawSessionJournalCodec.FrameV6(bytes,new byte[32],true,out digest)).Status;
+                Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,status(payload));
+                Check.Equal(ViveRawSessionReadStatus.Invalid,status(Replace(payload,"P009","P008")));
+                Check.Equal(ViveRawSessionReadStatus.Invalid,status(Replace(payload,"P009","p009")));
+                Check.Equal(ViveRawSessionReadStatus.Invalid,status(Replace(payload,"WordMeaning","UnknownTask")));
+                var changedList=(byte[])payload.Clone();changedList[changedList.Length-4]^=1;
+                var changedCondition=(byte[])payload.Clone();changedCondition[changedCondition.Length-8]^=1;
+                Check.Equal(ViveRawSessionReadStatus.Invalid,status(changedList));
+                Check.Equal(ViveRawSessionReadStatus.Invalid,status(changedCondition));
+                Check.Equal(ViveRawSessionReadStatus.Invalid,Read(Framed(payload)).Status);
+                Check.Throws<InvalidOperationException>(()=>ViveRawSessionJournalCodec.ManifestPayloadV4(manifest));
+            });
             suite.Run("legacy VRAW4 explicit allocation projects B C A D without named aliases",()=>{
                 Experiment e;var m=Manifest(out e);var result=Read(Framed(ViveRawSessionJournalCodec.ManifestPayloadV4(m)));
                 Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,result.Status);Check.Equal("LEGACY_ABCD",result.TrialProjection.DesignVariant);

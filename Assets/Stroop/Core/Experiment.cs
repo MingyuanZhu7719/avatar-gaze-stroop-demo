@@ -66,8 +66,8 @@ namespace AvatarStroop.Core
         public Experiment(SessionConfiguration configuration, IClock clock)
         {
             if(configuration == null || clock == null || String.IsNullOrWhiteSpace(clock.ClockId)) throw new ArgumentException("Configuration and named clock required");
-            if(configuration.RunKind != RunKind.Simulation)
-                throw new InvalidOperationException("Apparatus sessions are unavailable: real head/eye adapters, approved fault/recovery policy, calibration and timing validation are not complete.");
+            if(configuration.RunKind != RunKind.Simulation && configuration.ParticipantAssignment == null)
+                throw new InvalidOperationException("Apparatus sessions require a participant recording assignment.");
             Configuration=configuration; this.clock=clock; lastTime=clock.Now;
             if(Double.IsNaN(lastTime) || Double.IsInfinity(lastTime) || lastTime < 0) throw new ArgumentException("Invalid clock");
             for(int i=0;i<4;i++) lists[i]=configuration.TaskKind==TaskKind.VisualSearch?VisualSearchPlans.MainList(configuration.Seed,i):TrialPlans.MainList(configuration.Seed,i);
@@ -85,7 +85,7 @@ namespace AvatarStroop.Core
                         ViveNamedOptionProvenance.NoAvatarNotApplicable:"unvalidated",
                     "countdown_seconds",Number(configuration.CountdownSeconds),"questionnaire_language",configuration.QuestionnaireLanguage);
             else Log("session_created", "run_kind", configuration.RunKind.ToString(), "protocol", SessionConfiguration.ProtocolVersion,
-                "software", SessionConfiguration.SoftwareVersion, "allocation", configuration.Allocation.AllocationId,
+                "software", configuration.RecordedSoftwareVersion, "allocation", configuration.Allocation.AllocationId,
                 "order", String.Join("", Array.ConvertAll(configuration.Allocation.Order, x=>x.ToString())),
                 "b_initial_target", configuration.Allocation.BInitialTarget.ToString(), "seed", configuration.Seed.ToString(CultureInfo.InvariantCulture),
                 "list_by_block", String.Join(",", configuration.Allocation.ListByBlock),
@@ -95,8 +95,9 @@ namespace AvatarStroop.Core
                 "questionnaire_instruction_requires_acknowledgement",configuration.QuestionnaireInstructionRequiresAcknowledgement.ToString(),
                 "rest_policy",configuration.ParticipantPacedRest?"participant_continue_no_minimum_no_automatic_advance":"minimum_duration_then_explicit_continue",
                 "source_lock_policy",configuration.RetainControlAcrossBlocks?"explicit_once_after_practice_retained_for_session":"explicit_per_block",
-                "presentation_policy",configuration.QuestionnaireInstructionRequiresAcknowledgement||configuration.ParticipantPacedRest||configuration.RetainControlAcrossBlocks?
-                    "participant-paced-session-preview-v2":"configured-preview-flow-v1",
+                "presentation_policy",configuration.ParticipantAssignment!=null?"participant-paced-session-v1":
+                    configuration.QuestionnaireInstructionRequiresAcknowledgement||configuration.ParticipantPacedRest||configuration.RetainControlAcrossBlocks?
+                        "participant-paced-session-preview-v2":"configured-preview-flow-v1",
                 "questionnaire_duration_policy","phase_elapsed_including_instructions_excluding_explicit_pauses");
         }
 
@@ -285,6 +286,8 @@ namespace AvatarStroop.Core
         void LockBlockCore(Actor actor, ControlSelection selection, string ownerId)
         {
             RequireOwner(actor); Require(Phase.BlockPreparation);
+            if(Configuration.ParticipantAssignment!=null&&selection!=ControlSelection.Automatic)
+                throw new InvalidOperationException("Participant recording requires Automatic avatar control.");
             if(Configuration.TaskKind==TaskKind.VisualSearch&&selection!=ControlSelection.Automatic)
                 throw new InvalidOperationException("Visual search v1 requires Automatic avatar control");
             if(Configuration.NamedPlan!=null)throw new InvalidOperationException("Confirm the complete named plan instead of locking one source");
@@ -438,7 +441,7 @@ namespace AvatarStroop.Core
         // The public/Quest path continues to emit its original event fields.
         internal void MarkPresentedWithSoftwareProxy(string trialId,double unitySeconds,int frame,long revision)
         {
-            if(Configuration.RunKind!=RunKind.Simulation||!Configuration.HasRawRecordingIntent||
+            if(!Configuration.HasRawRecordingIntent||
                 !Configuration.RawTaskRequested||!Configuration.RawEyeRequested||
                 Double.IsNaN(unitySeconds)||Double.IsInfinity(unitySeconds)||unitySeconds<0||frame<0||revision<0||
                 mutationJournal!=null||incrementalMutationJournal!=null)
@@ -900,6 +903,11 @@ namespace AvatarStroop.Core
         void Log(string kind, params string[] fields)
         {
             var data=new Dictionary<string,string>(); for(int i=0;i<fields.Length;i+=2) data.Add(fields[i],fields[i+1]);
+            if(kind=="session_created"&&Configuration.ParticipantAssignment!=null)
+            {
+                data.Add("participant_id",Configuration.ParticipantAssignment.ParticipantId);
+                data.Add("assignment_scheme",ParticipantAssignment.SchemeVersion);
+            }
             if(Configuration.FormalEyeRecordingOnly)data.Add("eye_recording_policy",Configuration.EyeRecordingPolicy);
             if(UsesTutorial)
             {

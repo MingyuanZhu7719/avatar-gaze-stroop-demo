@@ -104,6 +104,7 @@ namespace AvatarStroop.Runtime
         internal readonly string DeclaredSessionId,DeclaredClockId,DeclaredPlanId,DeclaredLegacyDesignId;
         internal readonly string DesignVariant;
         internal readonly bool OperatorWozRecordingDeclared;
+        internal readonly ParticipantAssignment Assignment;
         internal readonly int UnassignedTrialEvents,UnsupportedPreparedPlanEvents;
         internal string Coverage {get{return "UNKNOWN";}}
         internal bool CompleteSessionProven {get{return false;}}
@@ -114,11 +115,11 @@ namespace AvatarStroop.Runtime
         internal bool SamplesJoinedToTrials {get{return false;}}
         internal string WriterConfirmation {get{return "UNKNOWN";}}
         internal ViveRawTrialProjection(List<ViveRawObservedTrial> t,List<ViveRawObservedRating> r,List<ViveRawObservedPlanBlock> b,List<ViveProEyeWorker.ObservedEyeStatus> s,List<ViveRawObservedSafetyEvent> e,List<ViveRawPreparedPlan> prepared,
-            string session,string clock,string plan,int unassigned,int unsupported,bool legacy=false,bool woz=false,List<ViveRawObservedEyeQuality> quality=null)
+            string session,string clock,string plan,int unassigned,int unsupported,bool legacy=false,bool woz=false,List<ViveRawObservedEyeQuality> quality=null,ParticipantAssignment assignment=null)
         {trials=new ReadOnlyCollection<ViveRawObservedTrial>(t);ratings=new ReadOnlyCollection<ViveRawObservedRating>(r);blocks=new ReadOnlyCollection<ViveRawObservedPlanBlock>(b);
             statuses=new ReadOnlyCollection<ViveProEyeWorker.ObservedEyeStatus>(s);safetyEvents=new ReadOnlyCollection<ViveRawObservedSafetyEvent>(e);preparedPlans=new ReadOnlyCollection<ViveRawPreparedPlan>(prepared);
             eyeQuality=new ReadOnlyCollection<ViveRawObservedEyeQuality>(quality??new List<ViveRawObservedEyeQuality>());
-            OperatorWozRecordingDeclared=woz;DesignVariant=legacy?"LEGACY_ABCD":"NAMED_OPTIONS";DeclaredSessionId=session;DeclaredClockId=clock;DeclaredPlanId=legacy?null:plan;DeclaredLegacyDesignId=legacy?plan:null;UnassignedTrialEvents=unassigned;UnsupportedPreparedPlanEvents=unsupported;}
+            Assignment=assignment;OperatorWozRecordingDeclared=woz;DesignVariant=legacy?"LEGACY_ABCD":"NAMED_OPTIONS";DeclaredSessionId=session;DeclaredClockId=clock;DeclaredPlanId=legacy?null:plan;DeclaredLegacyDesignId=legacy?plan:null;UnassignedTrialEvents=unassigned;UnsupportedPreparedPlanEvents=unsupported;}
     }
     // Internal reader-owned accumulator, never a caller callback. It retains at
     // most 512 trials, 128 ratings, 2,048 local statuses and 2,048 safety
@@ -149,6 +150,7 @@ namespace AvatarStroop.Runtime
         readonly List<ViveRawObservedSafetyEvent> safetyEvents=new List<ViveRawObservedSafetyEvent>();
         readonly List<ViveRawPreparedPlan> preparedPlans=new List<ViveRawPreparedPlan>();
         readonly List<ViveRawObservedEyeQuality> eyeQuality=new List<ViveRawObservedEyeQuality>();
+        ParticipantAssignment assignment;
         string session,clock,plan;int chars,unassigned,unsupportedPlans;bool legacy,woz;
         string Keep(string s)
         {if(s==null)return null;if(s.Length>MaxFieldChars||s.Length>MaxTotalChars-chars)throw new ProjectionLimit();chars+=s.Length;return s;}
@@ -168,10 +170,10 @@ namespace AvatarStroop.Runtime
             session=Keep(sessionValue);clock=Keep(clockValue);plan=Keep(planValue);
             for(int i=0;i<options.Length;i++)blocks.Add(new ViveRawObservedPlanBlock(i,lists[i],options[i]==0?"Automatic":"NoAvatar",Keep(schedules[i]),Keep(geometries[i])));
         }
-        internal void SetLegacyManifest(string sessionValue,string clockValue,string designValue,int[] conditions,int[] lists,string[] mappings,string[] geometries,bool operatorWoz=false)
+        internal void SetLegacyManifest(string sessionValue,string clockValue,string designValue,int[] conditions,int[] lists,string[] mappings,string[] geometries,bool operatorWoz=false,ParticipantAssignment participantAssignment=null)
         {
             if(session!=null||conditions==null||lists==null||mappings==null||geometries==null||conditions.Length!=4||lists.Length!=4||mappings.Length!=4||geometries.Length!=4)throw new ProjectionLimit();
-            session=Keep(sessionValue);clock=Keep(clockValue);plan=Keep(designValue);legacy=true;woz=operatorWoz;
+            session=Keep(sessionValue);clock=Keep(clockValue);plan=Keep(designValue);legacy=true;woz=operatorWoz;assignment=participantAssignment;
             for(int i=0;i<4;i++)blocks.Add(new ViveRawObservedPlanBlock(i,lists[i],((Condition)conditions[i]).ToString(),Keep(mappings[i]),Keep(geometries[i])));
         }
         static bool WrongOrder(long? earlier,long? later){return earlier.HasValue&&later.HasValue&&earlier.Value>=later.Value;}
@@ -307,6 +309,6 @@ namespace AvatarStroop.Runtime
         internal ViveRawTrialProjection Finish()
         {var observed=new List<ViveRawObservedTrial>(trials.Count);foreach(var t in trials)observed.Add(new ViveRawObservedTrial(t));
             return new ViveRawTrialProjection(observed,new List<ViveRawObservedRating>(ratings),new List<ViveRawObservedPlanBlock>(blocks),
-                new List<ViveProEyeWorker.ObservedEyeStatus>(statuses),new List<ViveRawObservedSafetyEvent>(safetyEvents),new List<ViveRawPreparedPlan>(preparedPlans),session,clock,plan,unassigned,unsupportedPlans,legacy,woz,new List<ViveRawObservedEyeQuality>(eyeQuality));}
+                new List<ViveProEyeWorker.ObservedEyeStatus>(statuses),new List<ViveRawObservedSafetyEvent>(safetyEvents),new List<ViveRawPreparedPlan>(preparedPlans),session,clock,plan,unassigned,unsupportedPlans,legacy,woz,new List<ViveRawObservedEyeQuality>(eyeQuality),assignment);}
     }
 }

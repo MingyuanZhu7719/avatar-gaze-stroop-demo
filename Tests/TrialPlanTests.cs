@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using AvatarStroop.Core;
 
 namespace AvatarStroop.Tests
@@ -15,6 +16,8 @@ namespace AvatarStroop.Tests
             t.Run("partial Williams sets stay even and B initial targets balance independently", PartialAndTargetBalance);
             t.Run("allocation uses every list and varies its condition mapping", ListAllocation);
             t.Run("allocation identity never changes factors across roster sizes", AllocationIdentity);
+            t.Run("participant IDs link tasks and bind only their assigned apparatus configuration", ParticipantIdentity);
+            t.Run("participant roster balances orders, lists and B starts separately for each task", ParticipantBalance);
             t.Run("planning rejects unsupported list and practice indices", InvalidInputs);
         }
 
@@ -177,6 +180,96 @@ namespace AvatarStroop.Tests
             Check.Throws<ArgumentOutOfRangeException>(() => TrialPlans.MainList(0, -1));
             Check.Throws<ArgumentOutOfRangeException>(() => TrialPlans.MainListId(0, 4));
             Check.Throws<ArgumentOutOfRangeException>(() => TrialPlans.Allocate(-1, 0));
+        }
+
+        static ParticipantAssignment Enroll(int number,int task)
+        {
+            ParticipantAssignment assignment;
+            string id="p"+number.ToString("D3",CultureInfo.InvariantCulture);
+            Check.True(ParticipantAssignment.TryCreate(id,task==2?TaskKind.VisualSearch:TaskKind.Stroop,
+                task==0?ResponseRule.InkColor:ResponseRule.WordMeaning,out assignment));
+            return assignment;
+        }
+
+        static void ParticipantIdentity()
+        {
+            foreach(string invalid in new[]{null,"","P000","P0","P1","P1.2","P0012","P+12","P١٢٣","Alice","P12A"})
+            {
+                ParticipantAssignment assignment;
+                Check.True(!ParticipantAssignment.TryCreate(invalid,TaskKind.Stroop,ResponseRule.InkColor,out assignment));
+                Check.True(assignment==null);
+            }
+            var differentOrders=new HashSet<string>();
+            for(int task=0;task<3;task++)
+            {
+                var a=Enroll(1,task);
+                Check.Equal("P001",a.ParticipantId);
+                Check.Equal(new[]{"InkColor","WordMeaning","VisualSearch"}[task],a.TaskKey);
+                Check.Equal("participant-balance-v1-P001-T"+(task+1),a.Allocation.AllocationId);
+                Check.True(differentOrders.Add(ConditionKey(a.Allocation.Order)));
+                Check.Equal(new[]{"CDBA","DACB","ABDC"}[task],ConditionKey(a.Allocation.Order));
+                Check.Equal(new[]{"0,1,3,2","3,0,2,1","2,3,1,0"}[task],String.Join(",",a.Allocation.ListByBlock));
+                var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,"design",a,"geometry","mapping");
+                var intent=ViveLegacyRecordingIntent.Select(Actor.Owner,"intent",true,true);
+                var config=new SessionConfiguration("run",ParticipantAssignment.StimulusSeed,a.Allocation,RunKind.Apparatus,"en",5,responseRule:a.ResponseRule);
+                config=SessionConfiguration.WithTaskKind(config,a.TaskKind);
+                Check.Throws<InvalidOperationException>(()=>new Experiment(config,new ManualClock()));
+                Check.Throws<ArgumentException>(()=>SessionConfiguration.LegacyRecordingDevelopment(config,design,intent));
+                var session=SessionConfiguration.ParticipantRecording(config,design,intent);
+                Check.Equal(a,session.ParticipantAssignment);
+                var e=new Experiment(session,new ManualClock());
+                Check.Equal(a.ParticipantId,e.Events[0].Fields["participant_id"]);
+                Check.Equal("Apparatus",e.Events[0].Fields["run_kind"]);
+                Check.Throws<InvalidOperationException>(()=>SessionConfiguration.WithTaskKind(session,
+                    session.TaskKind==TaskKind.Stroop?TaskKind.VisualSearch:TaskKind.Stroop));
+            }
+        }
+
+        static void ParticipantBalance()
+        {
+            for(int task=0;task<3;task++)
+            for(int set=0;set<30;set++)
+            {
+                var crossed=new HashSet<string>();
+                var orderAndLists=new HashSet<string>();
+                var listPositions=new int[4,4];
+                for(int cohort=0;cohort<8;cohort++)
+                {
+                    var orders=new HashSet<string>();
+                    int[,] conditionLists=new int[4,4];
+                    int participantStarts=0;
+                    for(int slot=0;slot<4;slot++)
+                    {
+                        int number=1+32*set+4*cohort+slot;
+                        var a=Enroll(number,task).Allocation;
+                        string order=ConditionKey(a.Order);
+                        string lists=String.Join(",",a.ListByBlock);
+                        Check.True(orders.Add(order));
+                        Check.True(orderAndLists.Add(order+"/"+lists));
+                        Check.True(crossed.Add(order+"/"+lists+"/"+a.BInitialTarget));
+                        if(a.BInitialTarget==GazeTarget.Participant)participantStarts++;
+                        for(int block=0;block<4;block++)
+                        {
+                            conditionLists[(int)a.Order[block],a.ListByBlock[block]]++;
+                            listPositions[block,a.ListByBlock[block]]++;
+                        }
+                        var repeated=Enroll(number,task).Allocation;
+                        Check.Equal(a.BInitialTarget,repeated.BInitialTarget);
+                        Check.Equal(order,ConditionKey(repeated.Order));
+                        Check.Equal(lists,String.Join(",",repeated.ListByBlock));
+                    }
+                    Check.Equal(2,participantStarts);
+                    foreach(int count in conditionLists)Check.Equal(1,count);
+                    if(cohort%4==3)
+                    {
+                        Check.Equal(16,orderAndLists.Count);
+                        foreach(int count in listPositions)Check.Equal(4,count);
+                        orderAndLists.Clear();
+                        Array.Clear(listPositions,0,listPositions.Length);
+                    }
+                }
+                Check.Equal(32,crossed.Count);
+            }
         }
 
         private static void AllocationIdentity()

@@ -577,7 +577,8 @@ namespace AvatarStroop.Unity
             viveUnconfiguredPreview=false;viveTaskPreview=true;
             EnsureViveControllerLegend(mapping);
             RefreshAvatarVisibility();
-            SetHeadsetPreviewCore("VIVE development simulation; eye data is not recorded.","Trackpad: select | Trigger: confirm / continue");
+            SetHeadsetPreviewCore(ViveStroopRecordingScopePresentation.ParticipantBuild?"Waiting for the tutorial to start.":
+                "VIVE development simulation; eye data is not recorded.","Trackpad: select | Trigger: confirm / continue");
             SetFaults(new string[0]);
         }
 
@@ -737,7 +738,8 @@ namespace AvatarStroop.Unity
                 PositionBacking(headerBacking,frustum,new Rect(),false);
                 PositionBacking(footerBacking,frustum,new Rect(),false);
                 PositionBacking(worldMenuBacking,frustum,new Rect(0,0,1,1),true);
-                FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,"VIVE CLASSROOM PREVIEW | NOT A STUDY RUN"),frustum,new Rect(.04f,.03f,.92f,.08f),.034f,2);
+                FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,ViveStroopRecordingScopePresentation.ParticipantBuild?
+                    "Participant session":"VIVE CLASSROOM PREVIEW | NOT A STUDY RUN"),frustum,new Rect(.04f,.03f,.92f,.08f),.034f,2);
                 bool recordingChoice=false;
 #if STROOP_XR_PREVIEW
                 recordingChoice=recordingChoiceRevision>=0&&recordingChoiceExpected!=null;
@@ -789,7 +791,7 @@ namespace AvatarStroop.Unity
                 LogHudProjection(frustum);
                 return;
             }
-            string heading=viveTaskPreview?(ViveRawAttached()?"VIVE DEVELOPMENT TASK | RECORDING STATUS UNVERIFIED\nSIMULATION | NOT A STUDY RUN":"VIVE DEVELOPMENT TASK | NO DATA SAVED\nSIMULATION | NOT A STUDY RUN"):headsetPreview?"QUEST LINK PREVIEW | SIMULATED GAZE\nHEAD VIEW ONLY | NO EYE TRACKING | NOT A STUDY RUN":"DESKTOP SIMULATION | HARDWARE UNVERIFIED";
+            string heading=viveTaskPreview?ViveTaskHeading:headsetPreview?"QUEST LINK PREVIEW | SIMULATED GAZE\nHEAD VIEW ONLY | NO EYE TRACKING | NOT A STUDY RUN":"DESKTOP SIMULATION | HARDWARE UNVERIFIED";
             FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,heading),frustum,new Rect(.02f,.02f,.96f,.09f),.034f,2);
             // Always format from original state, never re-wrap an already fitted
             // TextMesh string. Resizing must recover the complete source text.
@@ -802,7 +804,7 @@ namespace AvatarStroop.Unity
             FitHud(messageText,instructions,frustum,
                 role==Actor.Participant?new Rect(.06f,.21f,.88f,.40f):new Rect(.04f,.29f,.92f,.32f),
                 viveTaskPreview?.043f:.035f,100);
-            FitHud(avatarLabel,scope,frustum,new Rect(.02f,.62f,.96f,.065f),.026f,2);
+            FitHud(avatarLabel,viveTaskPreview&&ViveStroopRecordingScopePresentation.ParticipantBuild?"":scope,frustum,new Rect(.02f,.62f,.96f,.065f),.026f,2);
             if(headsetPreview)
             {
                 FitHud(faultText,faultCaption,frustum,new Rect(.02f,.70f,.96f,.085f),.028f,3);
@@ -911,6 +913,9 @@ namespace AvatarStroop.Unity
             var scale=label.transform.localScale.x;
             label.transform.localPosition=new Vector3(box.center.x-bounds.center.x*scale,box.center.y-bounds.center.y*scale,-.002f);
         }
+        string ViveTaskHeading
+        {get{return ViveStroopRecordingScopePresentation.ParticipantBuild?"Participant session":ViveRawAttached()?
+            "VIVE DEVELOPMENT TASK | RECORDING STATUS UNVERIFIED\nSIMULATION | NOT A STUDY RUN":"VIVE DEVELOPMENT TASK | NO DATA SAVED\nSIMULATION | NOT A STUDY RUN";}}
         void LayoutPhasePanel(Rect frustum)
         {
             Phase phase=currentView.Phase;bool questionnaire=phase==Phase.Questionnaire;
@@ -921,12 +926,12 @@ namespace AvatarStroop.Unity
                 if(label!=null){label.text="";label.GetComponent<MeshRenderer>().enabled=false;}
             PositionBacking(headerBacking,frustum,new Rect(),false);PositionBacking(footerBacking,frustum,new Rect(),false);
             PositionBacking(worldMenuBacking,frustum,new Rect(0,0,1,1),true);
-            FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,viveTaskPreview?(ViveRawAttached()?"VIVE DEVELOPMENT TASK | RECORDING STATUS UNVERIFIED | NOT A STUDY RUN":"VIVE DEVELOPMENT TASK | NO DATA SAVED | NOT A STUDY RUN"):"QUEST PREVIEW | SIMULATED GAZE | NOT A STUDY RUN"),frustum,new Rect(.04f,.025f,.92f,.04f),.026f,2);
+            FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,viveTaskPreview?ViveTaskHeading:"QUEST PREVIEW | SIMULATED GAZE | NOT A STUDY RUN"),frustum,new Rect(.04f,.025f,.92f,.04f),.026f,2);
             if(!String.IsNullOrWhiteSpace(faultCaption))
             {
                 // Essential faults take precedence over progress decorations.
                 // This presentation does not itself pause/resume the protocol.
-                FitCentered(phaseText,"Preview needs attention",frustum,new Rect(.04f,.08f,.92f,.08f),.050f);
+                FitCentered(phaseText,"Session needs attention",frustum,new Rect(.04f,.08f,.92f,.08f),.050f);
                 FitHud(messageText,"",frustum,new Rect(.04f,.18f,.92f,.1f),.04f,100);
                 FitHud(faultText,faultCaption,frustum,new Rect(.04f,.22f,.92f,.48f),.043f,100);
                 FitHud(previewInputText,ViveStroopRecordingScopePresentation.Controls(ShowViveLegacyPreviewNotice,"Please wait. Use the owner controls for recovery.\nThe session does not resume automatically."),frustum,new Rect(.04f,.79f,.92f,.15f),.035f,100);
@@ -1595,7 +1600,7 @@ namespace AvatarStroop.Unity
             avatarRoot.gameObject.SetActive(false); avatarLabel.gameObject.SetActive(false);
             warningRoot = Child("HeadsetVisibleDevelopmentWarning", presentationCamera.transform, new Vector3(0, .29f, 1.1f));
             var banner = Text("PermanentDevelopmentBanner", warningRoot, Vector3.zero, .019f, 48, new Color(1, .75f, .2f));
-            banner.text = "SIMULATION / NO HEADSET VALIDATION";
+            banner.text = ViveStroopRecordingScopePresentation.ParticipantBuild?"Participant session":"SIMULATION / NO HEADSET VALIDATION";
             faultText = Text("WorldSpaceFaultMessages", warningRoot, new Vector3(0, -.07f, 0), .013f, 48, Color.white);
             faultText.anchor = TextAnchor.UpperCenter;
             SetOverlay(banner); SetOverlay(faultText);
@@ -1797,7 +1802,7 @@ namespace AvatarStroop.Unity
                 if(view.Phase==Phase.Rest)return "Rest as long as you need.\nPress the trigger to continue.";
                 if(view.Phase==Phase.Paused)return "Paused.\n"+(String.IsNullOrEmpty(vivePauseDiagnostic)?"Cause unavailable; ask the operator.":vivePauseDiagnostic)+"\nRelease controls, then press Trigger to resume.";
                 if(view.Phase==Phase.NeedsProtocolDecision)return "A protocol decision is pending.\nAsk the owner; no automatic continuation.";
-                if(view.Phase==Phase.Ended&&!completed)return ViveRawAttached()?"Development task ended.\nAsk the owner to review recording status.\nThe remaining data may be unknown.":"Development task ended.\nNo task or eye session file was saved.\nYou may close the preview.";
+                if(view.Phase==Phase.Ended&&!completed)return ViveRawAttached()?"Session ended.\nAsk the researcher to review the recording.":"Session ended.\nNo task or eye session file was saved.";
             }
             if(view.Phase == Phase.Preparation || view.Phase == Phase.Familiarization)
                 return headsetPreview ? "Use the owner controls to begin practice\nonce the headset and both Touch controllers are ready.\nNo practice or source starts automatically." :

@@ -20,21 +20,31 @@ namespace AvatarStroop.Runtime
         {return ManifestPayloadFor(manifest,true,true);}
         internal static byte[] ManifestPayloadV5(ViveNamedSessionFrameAdmission.Manifest manifest)
         {return ManifestPayloadFor(manifest,true,true,true);}
+        internal static byte[] ManifestPayloadV6(ViveNamedSessionFrameAdmission.Manifest manifest)
+        {return ManifestPayloadFor(manifest,true,true,false,true);}
         internal static byte[] CurrentManifestPayload(ViveNamedSessionFrameAdmission.Manifest manifest)
-        {return manifest.Context!=null&&manifest.Context.IsLegacyWoz?ManifestPayloadV5(manifest):
+        {return manifest.Context!=null&&manifest.Context.IsParticipant?ManifestPayloadV6(manifest):
+            manifest.Context!=null&&manifest.Context.IsLegacyWoz?ManifestPayloadV5(manifest):
             manifest.Context!=null&&manifest.Context.IsLegacy?ManifestPayloadV4(manifest):ManifestPayloadV3(manifest);}
-        static byte[] ManifestPayloadFor(ViveNamedSessionFrameAdmission.Manifest manifest,bool version3,bool legacy=false,bool woz=false)
+        static byte[] ManifestPayloadFor(ViveNamedSessionFrameAdmission.Manifest manifest,bool version3,bool legacy=false,bool woz=false,bool participant=false)
         {
             if(manifest==null||manifest.ChoiceTime<0||!Finite(manifest.ChoiceTime)||manifest.SoftwareRunId==Guid.Empty)throw new InvalidOperationException("Manifest unavailable.");
             if(legacy!=(manifest.Context!=null&&manifest.Context.IsLegacy))throw new InvalidOperationException("Manifest design does not match format.");
             if(woz!=(manifest.Context!=null&&manifest.Context.IsLegacyWoz))throw new InvalidOperationException("WoZ recording mode requires its own manifest format.");
+            if(participant!=(manifest.Context!=null&&manifest.Context.IsParticipant))throw new InvalidOperationException("Participant recording requires its own manifest format.");
             return Build(w=>{
-                w.Write(0L);w.Write((byte)0);Text(w,woz?"VRAW0005":legacy?"VRAW0004":version3?"VRAW0003":"VRAW0002");Text(w,manifest.Synthetic?"SYNTHETIC_ONLY":"INSTALLED_SDK_CODE_PATH_ONLY");
-                Text(w,"SIMULATION_DEVELOPMENT_NOT_RESEARCH");Text(w,"NATIVE_TIME_OPAQUE");Text(w,"EYE_COVERAGE_UNKNOWN");
+                w.Write(0L);w.Write((byte)0);Text(w,participant?"VRAW0006":woz?"VRAW0005":legacy?"VRAW0004":version3?"VRAW0003":"VRAW0002");Text(w,manifest.Synthetic?"SYNTHETIC_ONLY":"INSTALLED_SDK_CODE_PATH_ONLY");
+                Text(w,participant?"PARTICIPANT_APPARATUS":"SIMULATION_DEVELOPMENT_NOT_RESEARCH");Text(w,"NATIVE_TIME_OPAQUE");Text(w,"EYE_COVERAGE_UNKNOWN");
                 Text(w,"INGEST_CONTEXT_NOT_SAMPLE_ALIGNMENT");Text(w,"SRANIPAL_SDK_VERSION_UNKNOWN");Text(w,"RAW_EYE_SPACE_UNVERIFIED");
                 Text(w,"MAPPING_NOT_APPLIED;REHEARSAL="+ViveProEyeRehearsalCoordinates.MappingVersion);
                 Text(w,"EYE_ORIGIN_MILLIMETERS");Text(w,"HEAD_TRACKING_LOCAL_ROTATION");Text(w,"DEVICE_IDENTITY_UNKNOWN");
                 Text(w,"PARTICIPANT_IDENTITY_NOT_AUTHENTICATED");RequiredText(w,manifest.Session);RequiredText(w,manifest.ClockId);
+                if(participant)
+                {
+                    var assignment=manifest.Context.Configuration.ParticipantAssignment;
+                    RequiredText(w,assignment.ParticipantId);Text(w,ParticipantAssignment.SchemeVersion);
+                    Text(w,assignment.TaskKey);
+                }
                 if(legacy){WriteLegacyManifest(w,manifest);if(woz){Text(w,"OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING");Text(w,"INDEPENDENT_CLOCKS_NOT_SYNCHRONIZED");Text(w,"REMOTE_KEY_POSSESSION_NOT_HARDWARE_IDENTITY");}return;}
                 Text(w,ViveNamedSimulationPlan.SchemaVersion);RequiredText(w,manifest.Plan.PlanId);Text(w,ViveNamedRecordingIntent.EventSchemaVersion);RequiredText(w,manifest.Intent.IntentId);
                 Bool(w,manifest.Intent.TaskRequested);Bool(w,manifest.Intent.EyeRequested);Bool(w,true);w.Write(manifest.ChoiceTime);w.Write(manifest.TaskBaseline);
@@ -42,6 +52,12 @@ namespace AvatarStroop.Runtime
                 foreach(var block in manifest.Plan.Blocks)
                 {w.Write(block.Index);w.Write((int)block.Selection.Option);w.Write(block.Selection.ListIndex);RequiredText(w,block.Selection.ScheduleVersion);RequiredText(w,block.Selection.GeometryVersion);}
             });
+        }
+        internal static bool TryReadParticipantAssignment(string id,string task,out ParticipantAssignment assignment)
+        {
+            var kind=task=="VisualSearch"?TaskKind.VisualSearch:TaskKind.Stroop;
+            var rule=task=="WordMeaning"?ResponseRule.WordMeaning:ResponseRule.InkColor;
+            return ParticipantAssignment.TryCreate(id,kind,rule,out assignment)&&assignment.ParticipantId==id&&assignment.TaskKey==task;
         }
         static void WriteLegacyManifest(BinaryWriter w,ViveNamedSessionFrameAdmission.Manifest m)
         {
@@ -55,10 +71,10 @@ namespace AvatarStroop.Runtime
             w.Write(m.TaskChoiceObserved);w.Write(m.EyeChoiceObserved);w.Write(c.Seed);w.Write((int)c.RunKind);
             RequiredText(w,c.QuestionnaireLanguage);w.Write(c.CountdownSeconds);w.Write(c.MinimumRestSeconds);Bool(w,c.SkipFinalRest);
             w.Write(c.QuestionnaireInstructionSeconds);Bool(w,c.QuestionnaireInstructionRequiresAcknowledgement);Bool(w,c.ParticipantPacedRest);Bool(w,c.RetainControlAcrossBlocks);
-            Text(w,SessionConfiguration.ProtocolVersion);Text(w,SessionConfiguration.SoftwareVersion);RequiredText(w,d.GeometryVersion);RequiredText(w,d.MappingVersion);
+            Text(w,SessionConfiguration.ProtocolVersion);Text(w,c.RecordedSoftwareVersion);RequiredText(w,d.GeometryVersion);RequiredText(w,d.MappingVersion);
             RequiredText(w,d.Allocation.AllocationId);w.Write((int)d.Allocation.BInitialTarget);var order=d.Allocation.Order;var lists=d.Allocation.ListByBlock;
-            if(String.Join("",Array.ConvertAll(order,x=>x.ToString()))!="BCAD"||d.Allocation.BInitialTarget!=GazeTarget.Participant)throw new InvalidOperationException("Legacy allocation unavailable.");
-            w.Write(order.Length);for(int i=0;i<order.Length;i++){if(lists[i]!=i)throw new InvalidOperationException("Legacy list unavailable.");w.Write(i);w.Write((int)order[i]);w.Write(lists[i]);}
+            if(!m.Context.IsParticipant&&(String.Join("",Array.ConvertAll(order,x=>x.ToString()))!="BCAD"||d.Allocation.BInitialTarget!=GazeTarget.Participant))throw new InvalidOperationException("Legacy allocation unavailable.");
+            w.Write(order.Length);for(int i=0;i<order.Length;i++){if(!m.Context.IsParticipant&&lists[i]!=i)throw new InvalidOperationException("Legacy list unavailable.");w.Write(i);w.Write((int)order[i]);w.Write(lists[i]);}
         }
         internal static byte[] RecordPayload(long ordinal,object value,ViveNamedSessionFrameAdmission.Manifest manifest)
         {
@@ -102,6 +118,8 @@ namespace AvatarStroop.Runtime
         {var result=FrameFor(payload,previous,magic,true,out digest);if(magic)Buffer.BlockCopy(Encoding.ASCII.GetBytes("VRAW0004"),0,result,0,8);return result;}
         internal static byte[] FrameV5(byte[] payload,byte[] previous,bool magic,out byte[] digest)
         {var result=FrameFor(payload,previous,magic,true,out digest);if(magic)Buffer.BlockCopy(Encoding.ASCII.GetBytes("VRAW0005"),0,result,0,8);return result;}
+        internal static byte[] FrameV6(byte[] payload,byte[] previous,bool magic,out byte[] digest)
+        {var result=FrameFor(payload,previous,magic,true,out digest);if(magic)Buffer.BlockCopy(Encoding.ASCII.GetBytes("VRAW0006"),0,result,0,8);return result;}
         static byte[] FrameFor(byte[] payload,byte[] previous,bool magic,bool version3,out byte[] digest)
         {
             if(payload==null||payload.Length==0||payload.Length>1048576||previous==null||previous.Length!=32)throw new InvalidOperationException("Frame limit.");

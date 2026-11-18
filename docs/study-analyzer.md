@@ -23,9 +23,11 @@ The report links to these tables:
 | `ratings.csv` | Individual questionnaire responses, language, version and duplicate/invalid-value flags. No composite is invented. |
 | `eye_quality.csv` | Native acquisition counts, observed callback receipt frequency, ray validity, SDK calibration/runtime states and separate geometry-observation/quality-marker counts. Rows describe actual observations; no empty training rows are invented. Recording policy/expectation fields flag unexpected preformal observations. |
 | `aoi_observations.csv` | Active-task valid geometry observation counts and proportions. These are not fixations or dwell duration. D/no-avatar eye/face measures are not applicable. |
-| `sources.csv` | Input SHA-256, session, source/run kind, recorded block completion, chain verification status and analyzer version. Includes eye policy, training eye expectation, unexpected preformal-eye flag and the declared formal eye-window opening time/count. |
+| `sources.csv` | Participant ID and task, allocation version and ID, condition order, lists by block, initial B gaze target, input SHA-256, session, source/run kind, recorded block completion, chain verification status and analyzer version. Includes eye policy, training eye expectation, unexpected preformal-eye flag and the declared formal eye-window opening time/count. |
 | `event_counts.csv` | Task event counts, including pauses and transitions. |
 | `methods.txt` | Exact default processing and interpretation rules. |
+
+Participant recordings use VRAW0006. Each analysis table contains `participant_id` (for example P001), `participant_task` (InkColor, WordMeaning or VisualSearch) and `session_id`. Use the same participant code to link tasks and the session ID to distinguish attempts. In `sources.csv`, `condition_order` and `list_by_block` are in execution order, with zero-based list numbers. The analyzer checks them against the allocation scheme, the four recorded block assignments and the initial B gaze target. Older files leave participant fields blank. The participant ID records the operator-entered study code.
 
 Empty statistics mean unavailable; they are not zero. Block indices are zero-based; conditions come from recorded allocation rather than assuming A/B/C/D order. Session IDs are software identities, not authenticated participant IDs. Batch analysis retains separate sessions and does not perform between-participant inference.
 

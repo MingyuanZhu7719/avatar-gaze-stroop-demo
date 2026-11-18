@@ -132,6 +132,7 @@ namespace AvatarStroop.Core
         public ViveNamedRecordingIntent NamedRecordingIntent {get;private set;}
         public ViveLegacyRecordingDesign LegacyRecordingDesign {get;private set;}
         public ViveLegacyRecordingIntent LegacyRecordingIntent {get;private set;}
+        public ParticipantAssignment ParticipantAssignment {get{return LegacyRecordingDesign==null?null:LegacyRecordingDesign.ParticipantAssignment;}}
         internal bool HasRawRecordingIntent {get{return NamedRecordingIntent!=null||LegacyRecordingIntent!=null;}}
         internal bool RawTaskRequested {get{return NamedRecordingIntent!=null?NamedRecordingIntent.TaskRequested:LegacyRecordingIntent!=null&&LegacyRecordingIntent.TaskRequested;}}
         internal bool RawEyeRequested {get{return NamedRecordingIntent!=null?NamedRecordingIntent.EyeRequested:LegacyRecordingIntent!=null&&LegacyRecordingIntent.EyeRequested;}}
@@ -156,6 +157,9 @@ namespace AvatarStroop.Core
         public bool RetainControlAcrossBlocks { get; private set; }
         public const string ProtocolVersion = "2026-10-28-prd-66dbdb5";
         public const string SoftwareVersion = "0.5.1-dev";
+        public const string ParticipantBuildVersion = "1.0.0";
+        public const string ParticipantSoftwareVersion = "vive-participant-" + ParticipantBuildVersion;
+        public string RecordedSoftwareVersion { get { return ParticipantAssignment==null?SoftwareVersion:ParticipantSoftwareVersion; } }
         // New sessions explicitly use the approved English wording. Historical
         // journal language fields are preserved by the separate evidence reader.
         public SessionConfiguration(string sessionId, uint seed, Allocation allocation, RunKind runKind,
@@ -187,6 +191,8 @@ namespace AvatarStroop.Core
         {
             if(configuration==null)throw new ArgumentNullException("configuration");
             if(!Enum.IsDefined(typeof(ResponseRule),responseRule))throw new ArgumentOutOfRangeException("responseRule");
+            if(configuration.ParticipantAssignment!=null&&configuration.ParticipantAssignment.ResponseRule!=responseRule)
+                throw new InvalidOperationException("The participant assignment fixes the response rule.");
             var copy=(SessionConfiguration)configuration.MemberwiseClone();
             copy.ResponseRule=responseRule;return copy;
         }
@@ -194,6 +200,8 @@ namespace AvatarStroop.Core
         {
             if(configuration==null)throw new ArgumentNullException("configuration");
             if(!Enum.IsDefined(typeof(TaskKind),taskKind))throw new ArgumentOutOfRangeException("taskKind");
+            if(configuration.ParticipantAssignment!=null&&configuration.ParticipantAssignment.TaskKind!=taskKind)
+                throw new InvalidOperationException("The participant assignment fixes the task.");
             if(taskKind==TaskKind.VisualSearch&&(configuration.IsNamedDesign||configuration.LegacyRecordingDesign!=null&&configuration.LegacyRecordingDesign.OperatorWozRequested))
                 throw new InvalidOperationException("Visual search v1 requires Legacy A/B/C/D with Automatic control");
             var copy=(SessionConfiguration)configuration.MemberwiseClone();copy.TaskKind=taskKind;return copy;
@@ -213,16 +221,29 @@ namespace AvatarStroop.Core
         public static SessionConfiguration LegacyRecordingDevelopment(SessionConfiguration legacyConfiguration,
             ViveLegacyRecordingDesign design,ViveLegacyRecordingIntent intent)
         {
-            if(legacyConfiguration==null||design==null||intent==null||legacyConfiguration.IsNamedDesign||
-                legacyConfiguration.HasRawRecordingIntent||legacyConfiguration.RunKind!=RunKind.Simulation||
-                !Object.ReferenceEquals(legacyConfiguration.Allocation,design.Allocation))
+            if(legacyConfiguration==null||legacyConfiguration.RunKind!=RunKind.Simulation||design==null||design.ParticipantAssignment!=null)
+                throw new ArgumentException("Development recording requires a simulation configuration and development design.");
+            return AttachRecordingDesign(legacyConfiguration,design,intent);
+        }
+
+        public static SessionConfiguration ParticipantRecording(SessionConfiguration configuration,
+            ViveLegacyRecordingDesign design,ViveLegacyRecordingIntent intent)
+        {
+            var assignment=design==null?null:design.ParticipantAssignment;
+            if(configuration==null||configuration.RunKind!=RunKind.Apparatus||assignment==null||
+                configuration.TaskKind!=assignment.TaskKind||configuration.ResponseRule!=assignment.ResponseRule||
+                configuration.Seed!=Core.ParticipantAssignment.StimulusSeed)
+                throw new ArgumentException("Participant recording requires a matching apparatus task, stimulus bank and enrollment assignment.");
+            return AttachRecordingDesign(configuration,design,intent);
+        }
+
+        static SessionConfiguration AttachRecordingDesign(SessionConfiguration configuration,ViveLegacyRecordingDesign design,ViveLegacyRecordingIntent intent)
+        {
+            if(intent==null||configuration.IsNamedDesign||configuration.HasRawRecordingIntent||
+                !Object.ReferenceEquals(configuration.Allocation,design.Allocation))
                 throw new ArgumentException("Exact legacy configuration, design and intent are required.");
-            var c=legacyConfiguration;
-            var result=new SessionConfiguration(c.SessionId,c.Seed,c.Allocation,c.RunKind,c.QuestionnaireLanguage,c.CountdownSeconds,
-                c.MinimumRestSeconds,c.SkipFinalRest,c.QuestionnaireInstructionSeconds,c.QuestionnaireInstructionRequiresAcknowledgement,
-                c.ParticipantPacedRest,c.RetainControlAcrossBlocks,c.ResponseRule);
-            if(c.TaskKind==TaskKind.VisualSearch&&design.OperatorWozRequested)throw new InvalidOperationException("Visual search v1 does not support WoZ");
-            result.TaskKind=c.TaskKind;result.TrainingProtocol=c.TrainingProtocol;result.FormalEyeRecordingOnly=c.FormalEyeRecordingOnly;
+            if(configuration.TaskKind==TaskKind.VisualSearch&&design.OperatorWozRequested)throw new InvalidOperationException("Visual search v1 does not support WoZ");
+            var result=(SessionConfiguration)configuration.MemberwiseClone();
             result.LegacyRecordingDesign=design;result.LegacyRecordingIntent=intent;return result;
         }
         // Single-block development preview only: it does not define a four-option

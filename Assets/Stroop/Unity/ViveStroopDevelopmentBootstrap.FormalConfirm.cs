@@ -59,7 +59,7 @@ namespace AvatarStroop.Unity
             if(participant.NamedPlan!=null)participant.OwnerConfirmNamedPlan(Actor.Owner,"local-development-owner");
             else if(participant.HasNamedOption&&participant.NamedOption.Option==ViveNamedOption.NoAvatar)
                 participant.OwnerConfirmNamedNoAvatar(Actor.Owner,"local-development-owner");
-            else participant.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,"local-development-owner");
+            else participant.OwnerLockSource(Actor.Owner,ControlSelection.Automatic,ParticipantBuild?"participant-session-operator":"local-development-owner");
         }
         bool FormalConfirmationStillCurrent(FormalConfirmationRequest request)
         {

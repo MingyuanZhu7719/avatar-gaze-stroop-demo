@@ -106,7 +106,7 @@ namespace AvatarStroop.Runtime
         }
         internal static bool TryCapture(ViveDevelopmentParticipant participant,MonotonicClock clock,out ViveTrialOpenRequest result)
         {
-            result=null;if(participant==null||clock==null||participant.IsResearchSession||!participant.RawRecordingRequested||participant.NamedRawRevocation.IsRevoked||
+            result=null;if(participant==null||clock==null||!participant.RawRecordingRequested||participant.NamedRawRevocation.IsRevoked||
                 !participant.UsesEventClock(clock))return false;
             try
             {

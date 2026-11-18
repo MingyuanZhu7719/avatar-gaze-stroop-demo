@@ -15,7 +15,9 @@ namespace AvatarStroop.Unity
     // by the bootstrap and consumes the same worker as the eye diagnostic.
     public sealed partial class ViveStroopPreviewRig : MonoBehaviour
     {
-        public static string ScopeNotice {get{return ViveStroopRecordingScopePresentation.BuildDesignScope(ViveControlledRecordingBuildPolicy.Available,ViveStroopDevelopmentBootstrap.LegacyRecordingAvailable);}}
+        public static string ScopeNotice {get{return ViveStroopDevelopmentBootstrap.ParticipantBuild?
+            "Participant recording. The operator assigns an anonymous participant ID and the participant confirms task and eye recording in the headset.":
+            ViveStroopRecordingScopePresentation.BuildDesignScope(ViveControlledRecordingBuildPolicy.Available,ViveStroopDevelopmentBootstrap.LegacyRecordingAvailable);}}
         const string StoppedNotice="View and eye client stopped. A configured task may remain paused. Stopping the view does not save or export task results.";
         [SerializeField] Camera previewCamera;
         [SerializeField] Transform trackingOrigin, cameraOffset;
@@ -874,7 +876,7 @@ namespace AvatarStroop.Unity
                         if(development.RecordingBlocked){development.ObservePracticeFrame(null);previewCamera.cullingMask=0;SetStatus(development.RecordingStatus);return;}
                         development.ObservePracticeFrame(currentPump.Poll());
                         if(recordedUsable)hasSeenUsableEye=true;
-                        SetStatus("Local development recording: "+development.RecordingStatus);return;
+                        SetStatus("Local recording: "+development.RecordingStatus);return;
                     }
                     HeadEyeSample sample;bool emitted=source.TryRead(out sample);
                     bool usable=emitted&&sample!=null&&sample.EyeValid&&source.LastObservation.EyeUsable&&headReady;

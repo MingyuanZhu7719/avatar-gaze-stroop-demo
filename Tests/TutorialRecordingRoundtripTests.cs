@@ -10,10 +10,22 @@ namespace AvatarStroop.Tests
 {
     public static class TutorialRecordingRoundtripTests
     {
-        static SessionConfiguration Configuration(bool legacy,int mode,bool formalOnly=false)
+        static SessionConfiguration Configuration(bool legacy,int mode,bool formalOnly=false,string participantId=null)
         {
             SessionConfiguration config;
-            if(legacy)
+            if(participantId!=null)
+            {
+                ParticipantAssignment assignment;
+                Check.True(ParticipantAssignment.TryCreate(participantId,mode==2?TaskKind.VisualSearch:TaskKind.Stroop,
+                    mode==1?ResponseRule.WordMeaning:ResponseRule.InkColor,out assignment));
+                var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,"fixture-design",assignment,"training-geometry",ViveFixedTrackpadMapping.Version);
+                var basis=new SessionConfiguration(Guid.NewGuid().ToString("N"),ParticipantAssignment.StimulusSeed,assignment.Allocation,RunKind.Apparatus,"en",5,30,true,0,true,true,true);
+                basis=SessionConfiguration.WithTaskKind(basis,assignment.TaskKind);
+                basis=SessionConfiguration.WithResponseRule(basis,assignment.ResponseRule);
+                basis=SessionConfiguration.WithFormalEyeRecordingOnly(basis);
+                config=SessionConfiguration.ParticipantRecording(basis,design,ViveLegacyRecordingIntent.Select(Actor.Owner,"fixture-intent",true,true));
+            }
+            else if(legacy)
             {
                 var allocation=new Allocation("training-allocation",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
                 var design=ViveLegacyRecordingDesign.Select(Actor.Owner,"training-design",allocation,"training-geometry",ViveFixedTrackpadMapping.Version);
@@ -41,9 +53,9 @@ namespace AvatarStroop.Tests
             else
             {var colour=correct?trial.ExpectedResponse:(Colour)(((int)trial.ExpectedResponse+1)%4);Check.True(e.ButtonChanged(colour,true));e.ButtonChanged(colour,false);}
         }
-        static byte[] Fixture(bool legacy,int mode,out Experiment experiment,bool formalOnly=false)
+        static byte[] Fixture(bool legacy,int mode,out Experiment experiment,bool formalOnly=false,string participantId=null)
         {
-            var config=Configuration(legacy,mode,formalOnly);var clock=new ManualClock();var e=new Experiment(config,clock);experiment=e;
+            var config=Configuration(legacy,mode,formalOnly,participantId);var clock=new ManualClock();var e=new Experiment(config,clock);experiment=e;
             e.RecordRawSoftwareChoices(clock.ClockId,0,0);
             Check.Throws<InvalidOperationException>(()=>e.PrepareRawRecordingBlockPlan(Actor.Owner,true));
             e.BeginFamiliarization(Actor.Owner);e.BeginTutorial(Actor.Owner);Answer(e,clock,false);e.ContinueTutorial();
@@ -86,9 +98,9 @@ namespace AvatarStroop.Tests
             {
                 byte[] previous=new byte[32];long ordinal=0,tasks=0;
                 Action<byte[],bool> append=(payload,magic)=>
-                {byte[] digest;byte[] framed=legacy?ViveRawSessionJournalCodec.FrameV4(payload,previous,magic,out digest):ViveRawSessionJournalCodec.FrameV3(payload,previous,magic,out digest);
+                {byte[] digest;byte[] framed=participantId!=null?ViveRawSessionJournalCodec.FrameV6(payload,previous,magic,out digest):legacy?ViveRawSessionJournalCodec.FrameV4(payload,previous,magic,out digest):ViveRawSessionJournalCodec.FrameV3(payload,previous,magic,out digest);
                     output.Write(framed,0,framed.Length);previous=digest;};
-                append(legacy?ViveRawSessionJournalCodec.ManifestPayloadV4(manifest):ViveRawSessionJournalCodec.ManifestPayloadV3(manifest),true);
+                append(ViveRawSessionJournalCodec.CurrentManifestPayload(manifest),true);
                 foreach(var item in e.Events.Skip(1))
                 {append(ViveRawSessionJournalCodec.RecordPayload(++ordinal,item,manifest),false);tasks++;}
                 append(ViveRawSessionJournalCodec.TerminalPayloadV3(ordinal+1,e.Events.Last().Sequence,tasks,0,0,tasks,clock.Now),false);
@@ -97,6 +109,39 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("Participant VRAW6 retains the same person across three tasks and independent attempts",()=>
+            {
+                var sessions=new System.Collections.Generic.HashSet<string>();
+                for(int mode=0;mode<3;mode++)
+                {
+                    Experiment e;byte[] bytes=Fixture(true,mode,out e,true,"P017");
+                    var assignment=e.Configuration.ParticipantAssignment;
+                    Check.True(sessions.Add(e.Configuration.SessionId));
+                    Check.Equal("VRAW0006",Encoding.ASCII.GetString(bytes,0,8));
+                    var analysis=new StudyAnalysis();
+                    using(var input=new MemoryStream(bytes,false))
+                        Check.Equal("Complete",StudyDataReader.Read(input,"vraw",analysis.Accept,CancellationToken.None).Status);
+                    analysis.Finish();Check.Equal("P017",analysis.ParticipantId);Check.Equal(assignment.TaskKey,analysis.ParticipantTask);
+                    Check.Equal(SessionConfiguration.ParticipantSoftwareVersion,analysis.SoftwareVersion);
+                    Check.Equal("PARTICIPANT_APPARATUS",analysis.RunKind);Check.Equal(String.Concat(assignment.Allocation.Order),analysis.ConditionOrder);
+                    Check.Equal(ParticipantAssignment.SchemeVersion,analysis.AllocationScheme);Check.Equal(assignment.Allocation.AllocationId,analysis.AllocationId);
+                    Check.Equal(96,analysis.Trials.Count(x=>x.Scope=="Formal"));Check.Equal(20,analysis.Ratings.Count);Check.Equal(4,analysis.EndedBlocks);
+                    Check.Equal("formal-session-v1",analysis.EyeRecordingPolicy);
+#if VIVE_RAW_SYNTHETIC_TEST
+                    using(var input=new MemoryStream(bytes,false))using(var csv=new MemoryStream())
+                    {
+                        Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,
+                            ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,csv,8388608,5000,134217728,CancellationToken.None));
+                        var fromCsv=new StudyAnalysis();
+                        using(var readOnly=new MemoryStream(csv.GetBuffer(),0,(int)csv.Length,false))
+                            Check.Equal("Complete",StudyDataReader.Read(readOnly,"csv",fromCsv.Accept,CancellationToken.None).Status);
+                        fromCsv.Finish();Check.Equal(analysis.SoftwareVersion,fromCsv.SoftwareVersion);Check.Equal(analysis.SessionId,fromCsv.SessionId);Check.Equal(analysis.ParticipantId,fromCsv.ParticipantId);
+                        Check.Equal(analysis.ParticipantTask,fromCsv.ParticipantTask);Check.Equal(analysis.ConditionOrder,fromCsv.ConditionOrder);
+                        Check.Equal(analysis.ListByBlock,fromCsv.ListByBlock);Check.Equal(analysis.BInitialTarget,fromCsv.BInitialTarget);
+                    }
+#endif
+                }
+            });
             suite.Run("Formal-only eye policy survives VRAW3 VRAW4 full training and formal roundtrip without invented eye rows",()=>{
                 foreach(bool legacy in new[]{false,true})for(int mode=0;mode<(legacy?3:2);mode++)
                 {

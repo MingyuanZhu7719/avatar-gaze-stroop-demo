@@ -256,7 +256,7 @@ namespace AvatarStroop.Unity.Editor
         }
         [Serializable] sealed class ControlledBuildIntent
         { public bool controlled_recording_development=false; public bool legacy_raw_recording_development=false;
-          public bool legacy_woz_recording_development=false; }
+            public bool legacy_woz_recording_development=false; public bool participant_recording=false; }
         static string[] ReadRecordingBuildDefines(string project)
         {
             var intent=JsonUtility.FromJson<ControlledBuildIntent>(File.ReadAllText(Path.Combine(project,"vive-classroom-isolated-intent.json")));
@@ -266,7 +266,8 @@ namespace AvatarStroop.Unity.Editor
                 Environment.GetEnvironmentVariable("STROOP_VIVE_LEGACY_RAW_RECORDING_DEVELOPMENT"),
                 intent.controlled_recording_development,intent.legacy_raw_recording_development,
                 PlayerSettings.GetScriptingDefineSymbols(UnityEditor.Build.NamedBuildTarget.Standalone),
-                Environment.GetEnvironmentVariable("STROOP_VIVE_LEGACY_WOZ_RECORDING_DEVELOPMENT"),intent.legacy_woz_recording_development);
+                Environment.GetEnvironmentVariable("STROOP_VIVE_LEGACY_WOZ_RECORDING_DEVELOPMENT"),intent.legacy_woz_recording_development,
+                Environment.GetEnvironmentVariable("STROOP_VIVE_PARTICIPANT_RECORDING"),intent.participant_recording);
         }
         public static void BuildWindowsPreview()
         {
@@ -275,6 +276,7 @@ namespace AvatarStroop.Unity.Editor
             bool controlled=recordingDefines.Contains("STROOP_CONTROLLED_RECORDING_DEVELOPMENT");
             bool legacy=recordingDefines.Contains("STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT");
             bool woz=recordingDefines.Contains("STROOP_LEGACY_WOZ_RECORDING_DEVELOPMENT");
+            bool participant=recordingDefines.Contains("STROOP_PARTICIPANT_RECORDING");
             string output=Output(project);
             Require(File.Exists(Path.Combine(project,"vive-classroom-configured.json")),"configure in a separate batch invocation first");
             var general=XRGeneralSettingsPerBuildTarget.XRGeneralSettingsForBuildTarget(BuildTargetGroup.Standalone);
@@ -285,14 +287,16 @@ namespace AvatarStroop.Unity.Editor
                 (settings.GetFeature<OculusTouchControllerProfile>()==null||!settings.GetFeature<OculusTouchControllerProfile>().enabled),"wrong isolated controller profile");
             ViveGazeValidationSceneBuild.Validate();
             var scene=EditorSceneManager.OpenScene(ScenePath,OpenSceneMode.Single);Validate(scene);
-            PlayerSettings.productName=woz?"Avatar Stroop - LEGACY WOZ PARTICIPANT-LOCAL RECORDING TEST":legacy?"Avatar Stroop - LEGACY + NAMED LOCAL RECORDING TEST":controlled?"Avatar Stroop - CONTROLLED LOCAL RECORDING TEST":"Avatar Stroop - VIVE CLASSROOM VIEW ONLY";
+            PlayerSettings.productName=participant?"Avatar Stroop - Participant Study":woz?"Avatar Stroop - LEGACY WOZ PARTICIPANT-LOCAL RECORDING TEST":legacy?"Avatar Stroop - LEGACY + NAMED LOCAL RECORDING TEST":controlled?"Avatar Stroop - CONTROLLED LOCAL RECORDING TEST":"Avatar Stroop - VIVE CLASSROOM VIEW ONLY";
+            if(participant)PlayerSettings.bundleVersion=SessionConfiguration.ParticipantBuildVersion;
             string executable=Path.Combine(output,"UnityPlayer/AvatarStroopViveEyePlayer.exe");Directory.CreateDirectory(Path.GetDirectoryName(executable));
             var result=BuildPipeline.BuildPlayer(new BuildPlayerOptions{scenes=controlled?new[]{ScenePath,ViveGazeValidationSceneBuild.ScenePath}:new[]{ScenePath},locationPathName=executable,
                 target=BuildTarget.StandaloneWindows64,options=controlled?BuildOptions.Development:BuildOptions.None,
                 extraScriptingDefines=recordingDefines});
             Require(result.summary.result==BuildResult.Succeeded&&File.Exists(executable),"player build failed");
-            File.WriteAllText(Path.Combine(output,"vive-classroom-scene-validation.json"),"{\"development_bootstrap\":true,\"automatic_task_start\":false,\"recording_default\":false,\"optional_local_recording\":"+(controlled?"true":"false")+",\"legacy_raw_recording_development\":"+(legacy?"true":"false")+",\"legacy_woz_recording_development\":"+(woz?"true":"false")+",\"participant_local_woz_recording_available\":"+(woz?"true":"false")+",\"named_explicit_recording_requested\":"+(controlled?"true":"false")+",\"preview_configuration_records\":false,\"separate_recording_choices_required\":true,\"network_default\":false,\"unrecorded_legacy_woz_available\":true,\"network_recording_available\":"+(woz?"true":"false")+",\"input_configured\":false,\"hardware_validated\":false}\n");
-            Debug.Log("VIVE_CLASSROOM_BUILD_COMPLETE: "+(woz?"participant-local Legacy WoZ plus legacy and named explicit local recording self-tests":legacy?"legacy and named explicit opt-in local recording self-tests":controlled?"named explicit opt-in local recording self-test; legacy preview is memory-only":"unconfigured memory-only development preview")+"; no automatic capture; not headset validated.");
+            bool named=controlled&&!participant, unrecordedWoz=!participant;
+            File.WriteAllText(Path.Combine(output,"vive-classroom-scene-validation.json"),"{\"development_bootstrap\":true,\"automatic_task_start\":false,\"recording_default\":false,\"participant_recording\":"+(participant?"true":"false")+",\"optional_local_recording\":"+(controlled?"true":"false")+",\"legacy_raw_recording_development\":"+(legacy?"true":"false")+",\"legacy_woz_recording_development\":"+(woz?"true":"false")+",\"participant_local_woz_recording_available\":"+(woz?"true":"false")+",\"named_explicit_recording_requested\":"+(named?"true":"false")+",\"preview_configuration_records\":false,\"separate_recording_choices_required\":true,\"network_default\":false,\"unrecorded_legacy_woz_available\":"+(unrecordedWoz?"true":"false")+",\"network_recording_available\":"+(woz?"true":"false")+",\"input_configured\":false,\"hardware_validated\":false}\n");
+            Debug.Log("VIVE_CLASSROOM_BUILD_COMPLETE: "+(participant?"Automatic participant study recording":woz?"participant-local Legacy WoZ plus legacy and named explicit local recording self-tests":legacy?"legacy and named explicit opt-in local recording self-tests":controlled?"named explicit opt-in local recording self-test; legacy preview is memory-only":"unconfigured memory-only development preview")+"; no automatic capture; not headset validated.");
         }
         public static void RenderFixture()
         {
@@ -529,22 +533,25 @@ namespace AvatarStroop.Unity.Editor
     internal static class ViveRecordingBuildRequest
     {
         internal static string[] Defines(string control,string legacy,bool intentControlled,bool intentLegacy,string persistedDefines,
-            string woz=null,bool intentWoz=false)
+            string woz=null,bool intentWoz=false,string participant=null,bool intentParticipant=false)
         {
             if(!(String.IsNullOrEmpty(control)||control=="1")||!(String.IsNullOrEmpty(legacy)||legacy=="1")||
-                !(String.IsNullOrEmpty(woz)||woz=="1"))
+                !(String.IsNullOrEmpty(woz)||woz=="1")||!(String.IsNullOrEmpty(participant)||participant=="1"))
                 throw new InvalidOperationException("VIVE classroom: invalid recording development build request");
             bool controlled=control=="1",legacyRequested=legacy=="1",wozRequested=woz=="1";
             if(wozRequested&&(!controlled||!legacyRequested))
                 throw new InvalidOperationException("VIVE classroom: Legacy WoZ recording requires controlled Development and legacy raw recording");
             if(legacyRequested&&!controlled)
                 throw new InvalidOperationException("VIVE classroom: legacy raw recording requires controlled Development");
-            if(controlled!=intentControlled||legacyRequested!=intentLegacy||wozRequested!=intentWoz)
+            if(participant=="1"&&(!legacyRequested||wozRequested))
+                throw new InvalidOperationException("Participant recording requires Automatic A/B/C/D.");
+            if(controlled!=intentControlled||legacyRequested!=intentLegacy||wozRequested!=intentWoz||(participant=="1")!=intentParticipant)
                 throw new InvalidOperationException("VIVE classroom: recording build requests must exactly match isolated intent");
             foreach(string define in (persistedDefines??"").Split(';'))
                 if(define.Trim()=="STROOP_CONTROLLED_RECORDING_DEVELOPMENT"||define.Trim()=="STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT"||
-                    define.Trim()=="STROOP_LEGACY_WOZ_RECORDING_DEVELOPMENT")
+                    define.Trim()=="STROOP_LEGACY_WOZ_RECORDING_DEVELOPMENT"||define.Trim()=="STROOP_PARTICIPANT_RECORDING")
                     throw new InvalidOperationException("VIVE classroom: recording defines must be explicit per-build options, not persisted project settings");
+            if(intentParticipant)return new[]{"STROOP_CONTROLLED_RECORDING_DEVELOPMENT","STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT","STROOP_PARTICIPANT_RECORDING"};
             return wozRequested?new[]{"STROOP_CONTROLLED_RECORDING_DEVELOPMENT","STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT","STROOP_LEGACY_WOZ_RECORDING_DEVELOPMENT"}:
                 legacyRequested?new[]{"STROOP_CONTROLLED_RECORDING_DEVELOPMENT","STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT"}:
                 controlled?new[]{"STROOP_CONTROLLED_RECORDING_DEVELOPMENT"}:new string[0];
