@@ -2,9 +2,9 @@
 
 保留完整的 Operator 文件夹，双击 **Start-WoZ-Operator.cmd** 启动。先打开 SteamVR，确认头显可用，再在程序中点击 **Start headset view**。眼动功能仍需要本机的 HTC/SRanipal 软件与校准。
 
-启动器仅为本次程序设置 SteamVR 的 `XR_RUNTIME_JSON`，不会修改系统默认 OpenXR runtime。每次启动会在程序旁创建 `WoZLogs/run-*`，保存 `Player.log` 和 `Launcher.txt`；关闭程序后会自动打开该文件夹。
+启动器读取 `%LOCALAPPDATA%\openvr\openvrpaths.vrpath` 中登记的 SteamVR 安装位置，支持 E 盘等自定义目录；仅为本次程序设置 `XR_RUNTIME_JSON` 和 `VR_OVERRIDE`，让 OpenXR 与 OpenVR 使用同一套安装，不会修改系统默认 OpenXR runtime。请保留同目录的 `WoZOperatorLauncher.exe`。每次启动会在程序旁创建 `WoZLogs/run-*`，保存 `Player.log` 和 `Launcher.txt`；后者记录选定的 manifest、OpenXR 和 OpenVR 库路径。关闭程序后会自动打开该文件夹。
 
-如果 SteamVR 安装在其他位置，找到其安装目录中的 `steamxr_win64.json`，将该文件拖到 **Start-WoZ-Operator.cmd** 上。看到“已有程序运行”的提示时，先关闭旧的实验者程序；无法写入日志时，将完整 Operator 文件夹复制到桌面后重试。
+如果找不到登记的安装位置，先启动一次 SteamVR。也可以找到实际安装目录中的 `steamxr_win64.json`，将该文件拖到 **Start-WoZ-Operator.cmd** 上明确选择该安装。看到“已有程序运行”的提示时，先关闭旧的实验者程序；无法写入日志时，将完整 Operator 文件夹复制到桌面后重试。
 
 双机连接使用[Photon 房间流程](woz-easy-pairing.md)：实验者点击 **Create room**，参与者输入房间码并 **Join room**；实验者核对后 **Accept this participant**，再确认转发权限并连接。两台电脑都需联网。
 

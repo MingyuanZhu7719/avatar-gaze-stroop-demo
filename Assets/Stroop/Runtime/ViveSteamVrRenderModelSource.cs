@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace AvatarStroop.Runtime
 {
@@ -49,6 +48,8 @@ namespace AvatarStroop.Runtime
             ref ControllerState state,ref Mode mode,ref Component result);
         [DllImport("kernel32",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr LoadLibraryEx(string path,IntPtr file,uint flags);
         [DllImport("kernel32",CharSet=CharSet.Ansi)] static extern IntPtr GetProcAddress(IntPtr library,string name);
+        [DllImport("kernel32",EntryPoint="GetModuleFileNameW",CharSet=CharSet.Unicode,SetLastError=true)]
+        static extern uint GetModuleFileName(IntPtr module,StringBuilder path,int capacity);
         [DllImport("kernel32")] [return:MarshalAs(UnmanagedType.Bool)] static extern bool FreeLibrary(IntPtr library);
         [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct ProcessEntry
         {
@@ -65,6 +66,9 @@ namespace AvatarStroop.Runtime
         Shutdown shutdown;Token token;uint ownedToken,contextToken;bool ownsSession,disposed;
         Model pending,loaded;int pendingTexture;
         internal string LastIssue {get;private set;}
+        internal string RuntimeLibraryPath {get;private set;}
+        internal string LoadedRuntimeLibraryPath {get;private set;}
+        internal string ContextInitializationMode {get;private set;}="not_initialized";
         internal uint ContextToken {get{return contextToken;}}
         internal bool Ready {get{return !disposed&&role!=null&&token!=null&&token()==contextToken;}}
         static bool RuntimeRunning()
@@ -86,20 +90,12 @@ namespace AvatarStroop.Runtime
         {return Function<T>(Marshal.ReadIntPtr(table,index*IntPtr.Size));}
         static string RuntimeLibrary()
         {
-            string registry=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"openvr","openvrpaths.vrpath");
-            if(File.Exists(registry))
-            {
-                var match=Regex.Match(File.ReadAllText(registry),"\"runtime\"\\s*:\\s*\\[\\s*\"((?:\\\\.|[^\"])*)\"");
-                if(match.Success)
-                {
-                    string root=match.Groups[1].Value.Replace("\\\\","\\").Replace("\\/","/");
-                    if(Path.IsPathRooted(root)){string file=Path.Combine(root,"bin","win64","openvr_api.dll");if(File.Exists(file))return file;}
-                }
-            }
-            string steam=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Steam");
-            if(!String.IsNullOrEmpty(steam))
-            {string file=Path.Combine(steam,"steamapps","common","SteamVR","bin","win64","openvr_api.dll");if(File.Exists(file))return file;}
-            return null;
+            // The launcher has selected the OpenXR runtime for this process.
+            // Resolve the optional OpenVR model client from that exact install,
+            // never from a second registry lookup or a standard-path fallback.
+            string manifest=Environment.GetEnvironmentVariable(VivePreviewLaunchPlan.RuntimeVariable);
+            if(String.IsNullOrWhiteSpace(manifest))throw new InvalidOperationException("selected_runtime_manifest_missing");
+            return VivePreviewLaunchPlan.GetOpenVrLibraryPath(manifest);
         }
         internal bool TryOpen()
         {
@@ -109,9 +105,17 @@ namespace AvatarStroop.Runtime
                 if(Environment.OSVersion.Platform!=PlatformID.Win32NT||IntPtr.Size!=8){LastIssue="unsupported_platform";return false;}
                 // Do not launch SteamVR/claim scene focus just to draw a hand.
                 if(role!=null)CloseNative();
+                RuntimeLibraryPath=null;LoadedRuntimeLibraryPath=null;ContextInitializationMode="not_initialized";
+                RuntimeLibraryPath=RuntimeLibrary();
                 if(!RuntimeRunning()){LastIssue="steamvr_not_running";return false;}
-                string path=RuntimeLibrary();if(path==null){LastIssue="runtime_library_unavailable";return false;}
-                library=LoadLibraryEx(path,IntPtr.Zero,0x1100);if(library==IntPtr.Zero){LastIssue="runtime_library_load_failed";return false;}
+                library=LoadLibraryEx(RuntimeLibraryPath,IntPtr.Zero,0x1100);if(library==IntPtr.Zero){LastIssue="runtime_library_load_failed";return false;}
+                var loadedPath=new StringBuilder(32768);
+                uint loadedLength=GetModuleFileName(library,loadedPath,loadedPath.Capacity);
+                if(loadedLength==0||loadedLength>=loadedPath.Capacity)
+                    throw new InvalidOperationException("runtime_library_loaded_path_unavailable");
+                LoadedRuntimeLibraryPath=Path.GetFullPath(loadedPath.ToString());
+                if(!String.Equals(Path.GetFullPath(RuntimeLibraryPath),LoadedRuntimeLibraryPath,StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("runtime_library_loaded_path_mismatch");
                 var get=Function<Interface>(GetProcAddress(library,"VR_GetGenericInterface"));
                 shutdown=Function<Shutdown>(GetProcAddress(library,"VR_ShutdownInternal"));token=Function<Token>(GetProcAddress(library,"VR_GetInitToken"));
                 int error=0;IntPtr system=get("FnTable:IVRSystem_022",ref error);
@@ -127,6 +131,7 @@ namespace AvatarStroop.Runtime
                 role=Slot<Role>(system,17);deviceClass=Slot<DeviceClass>(system,19);connected=Slot<Connected>(system,20);property=Slot<Property>(system,27);
                 loadModel=Slot<LoadModel>(models,0);freeModel=Slot<Free>(models,1);loadTexture=Slot<LoadTexture>(models,2);freeTexture=Slot<Free>(models,3);componentState=Slot<ComponentState>(models,14);
                 contextToken=token();
+                ContextInitializationMode=ownsSession?"background":"borrowed";
                 LastIssue=null;return true;
             }
             catch(Exception e) when(!(e is OutOfMemoryException||e is StackOverflowException||e is AccessViolationException))
@@ -192,6 +197,7 @@ namespace AvatarStroop.Runtime
             // or one replaced since this optional visual initialized its own.
             if(ownsSession&&shutdown!=null&&token!=null&&token()==ownedToken)shutdown();
             ownsSession=false;if(library!=IntPtr.Zero){FreeLibrary(library);library=IntPtr.Zero;}
+            ContextInitializationMode="not_initialized";
         }
         public void Dispose(){if(disposed)return;disposed=true;CloseNative();}
     }

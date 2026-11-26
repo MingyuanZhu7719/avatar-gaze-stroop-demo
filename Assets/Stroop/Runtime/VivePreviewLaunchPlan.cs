@@ -12,6 +12,7 @@ namespace AvatarStroop.Runtime
     public sealed class VivePreviewLaunchPlan
     {
         public const string RuntimeVariable="XR_RUNTIME_JSON";
+        public const string OpenVrRuntimeVariable="VR_OVERRIDE";
         public const string MarkerVariable="STROOP_VIVE_PREVIEW_RUNTIME";
         public const string MarkerValue="steamvr-child-process-v1";
         public const string PlayerName="AvatarStroopViveEyePlayer.exe";
@@ -23,16 +24,56 @@ namespace AvatarStroop.Runtime
         public string RuntimeLibraryPath {get;private set;}
         public static string InstalledSteamVrManifest
         {
-            get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                "Steam","steamapps","common","SteamVR","steamxr_win64.json");}
+            get{return ResolveRegisteredSteamVrManifest(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"openvr","openvrpaths.vrpath"));}
         }
 
-        public static VivePreviewLaunchPlan Create(string packageDirectory,string manifestPath)
+        // SteamVR's registration is the source of truth, including installations
+        // on another drive. Never silently fall back to an old default copy.
+        public static string ResolveRegisteredSteamVrManifest(string registrationPath)
         {
-            string package=Absolute(packageDirectory),manifest=Absolute(manifestPath);
+            string registration=Absolute(registrationPath);
+            if(!File.Exists(registration))throw new FileNotFoundException("SteamVR registration is missing. Start the installed SteamVR once, then reopen this launcher.",registration);
+            if(new FileInfo(registration).Length>65536)throw new InvalidDataException("SteamVR registration is unexpectedly large.");
+            RejectLinks(registration);
+            Dictionary<string,object> document;
+            try{document=ManifestReader.Parse(File.ReadAllText(registration,Encoding.UTF8));}
+            catch(InvalidDataException error){throw new InvalidDataException("SteamVR registration is malformed. Start SteamVR to refresh its registered installation.",error);}
+            object id,version,paths;
+            if(!document.TryGetValue("jsonid",out id)||!Object.Equals(id,"vrpathreg")||
+                !document.TryGetValue("version",out version)||!Object.Equals(version,1L)||
+                !document.TryGetValue("runtime",out paths)||!(paths is List<object>))
+                throw new InvalidDataException("SteamVR registration has an unsupported format.");
+            var runtimes=(List<object>)paths;
+            if(runtimes.Count==0||!(runtimes[0] is string))
+                throw new InvalidDataException("SteamVR registration has no primary runtime directory.");
+            string root;
+            try{root=Absolute((string)runtimes[0]);}
+            catch(ArgumentException error){throw new InvalidDataException("The registered SteamVR directory is not an absolute local path.",error);}
+            catch(NotSupportedException error){throw new InvalidDataException("The registered SteamVR directory is unsupported.",error);}
+            // OpenVR selects the first registered runtime; skipping a stale
+            // first entry could split OpenXR and OpenVR across installations.
+            string manifest=Path.Combine(root,"steamxr_win64.json");
+            ValidateRuntimeManifest(manifest);
+            return manifest;
+        }
+
+        public static string GetOpenVrLibraryPath(string manifestPath)
+        {
+            string manifest=Absolute(manifestPath);
+            ValidateRuntimeManifest(manifest);
+            string library=Path.Combine(Path.GetDirectoryName(manifest),"bin","win64","openvr_api.dll");
+            if(!File.Exists(library))throw new FileNotFoundException("The selected SteamVR installation is missing its Windows x64 controller-model library.",library);
+            RejectLinks(library);
+            return library;
+        }
+
+        public static string ValidateRuntimeManifest(string manifestPath)
+        {
+            string manifest=Absolute(manifestPath);
             if(!String.Equals(Path.GetFileName(manifest),"steamxr_win64.json",StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The VIVE preview requires SteamVR's installed Windows x64 runtime manifest.");
-            if(!File.Exists(manifest))throw new FileNotFoundException("Installed SteamVR runtime manifest is missing. This launcher expects the standard Program Files (x86)/Steam/steamapps/common/SteamVR installation. No player was launched.");
+            if(!File.Exists(manifest))throw new FileNotFoundException("The selected SteamVR installation is missing steamxr_win64.json. Start SteamVR and verify its installation. No other runtime is used.",manifest);
             if(new FileInfo(manifest).Length>65536)throw new InvalidDataException("SteamVR runtime manifest is unexpectedly large.");
             var document=ManifestReader.Parse(File.ReadAllText(manifest,Encoding.UTF8));
             object version,runtimeObject;
@@ -47,13 +88,21 @@ namespace AvatarStroop.Runtime
                 !String.Equals(((string)library).Replace('\\','/'),"bin/vrclient_x64.dll",StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Runtime manifest does not identify the installed SteamVR Windows x64 library. No fallback runtime is used.");
             string runtimeLibrary=Path.GetFullPath(Path.Combine(Path.GetDirectoryName(manifest),"bin","vrclient_x64.dll"));
-            if(!File.Exists(runtimeLibrary))throw new FileNotFoundException("Installed SteamVR Windows x64 runtime library is missing. No player was launched.");
+            if(!File.Exists(runtimeLibrary))throw new FileNotFoundException("Installed SteamVR Windows x64 runtime library is missing. No player was launched.",runtimeLibrary);
+            RejectLinks(manifest);RejectLinks(runtimeLibrary);
+            return runtimeLibrary;
+        }
+
+        public static VivePreviewLaunchPlan Create(string packageDirectory,string manifestPath)
+        {
+            string package=Absolute(packageDirectory),manifest=Absolute(manifestPath);
+            string runtimeLibrary=ValidateRuntimeManifest(manifest);
             string playerDirectory=Path.GetFullPath(Path.Combine(package,"UnityPlayer"));
             string player=Path.Combine(playerDirectory,PlayerName);
             string dataDirectory=Path.Combine(playerDirectory,"AvatarStroopViveEyePlayer_Data");
             if(!File.Exists(player)||!Directory.Exists(dataDirectory))
                 throw new FileNotFoundException("The VIVE Unity player or its data folder is missing. Keep the complete preview package together.");
-            RejectLinks(manifest);RejectLinks(runtimeLibrary);RejectLinks(player);RejectLinks(dataDirectory);
+            RejectLinks(player);RejectLinks(dataDirectory);
             return new VivePreviewLaunchPlan {PlayerPath=player,WorkingDirectory=playerDirectory,
                 RuntimeManifestPath=manifest,RuntimeLibraryPath=runtimeLibrary};
         }
@@ -65,6 +114,9 @@ namespace AvatarStroop.Runtime
             // The inherited dictionary belongs to this proposed CHILD process.
             // Deliberately do not call Environment.SetEnvironmentVariable.
             result.EnvironmentVariables[RuntimeVariable]=RuntimeManifestPath;
+            // OpenVR's native client also resolves its runtime internally.
+            // Pin that child-only lookup to the selected OpenXR installation.
+            result.EnvironmentVariables[OpenVrRuntimeVariable]=Path.GetDirectoryName(RuntimeManifestPath);
             result.EnvironmentVariables[MarkerVariable]=MarkerValue;
             return result;
         }
@@ -92,8 +144,8 @@ namespace AvatarStroop.Runtime
                     throw new InvalidDataException("Linked runtime/player paths are not used by this launcher.");
         }
 
-        // Bounded, strict parser for the installed manifest's object/string/bool
-        // schema; duplicate keys and unsupported value types fail closed.
+        // Bounded JSON parser shared by the runtime manifest and OpenVR's path
+        // registration. Duplicate keys and unsupported value types fail closed.
         sealed class ManifestReader
         {
             readonly string text;int offset;
@@ -109,15 +161,40 @@ namespace AvatarStroop.Runtime
                 if(Peek('}')){offset++;return result;}
                 while(true)
                 {
-                    Space();string key=StringValue();Space();Take(':');Space();object value;
-                    if(Peek('"'))value=StringValue();
-                    else if(Peek('{'))value=ObjectValue(depth+1);
-                    else if(Token("true"))value=true;
-                    else if(Token("false"))value=false;
-                    else throw Invalid();
+                    Space();string key=StringValue();Space();Take(':');object value=Value(depth+1);
                     if(result.ContainsKey(key))throw Invalid();result.Add(key,value);Space();
                     if(Peek('}')){offset++;return result;}Take(',');
                 }
+            }
+            object Value(int depth)
+            {
+                if(depth>8)throw Invalid();Space();
+                if(Peek('"'))return StringValue();
+                if(Peek('{'))return ObjectValue(depth);
+                if(Peek('['))
+                {
+                    offset++;Space();var values=new List<object>();
+                    if(Peek(']')){offset++;return values;}
+                    while(true)
+                    {
+                        values.Add(Value(depth+1));Space();
+                        if(Peek(']')){offset++;return values;}Take(',');
+                    }
+                }
+                if(Token("true"))return true;
+                if(Token("false"))return false;
+                if(Token("null"))return null;
+                int start=offset;if(Peek('-'))offset++;
+                if(Peek('0'))offset++;
+                else
+                {
+                    if(offset>=text.Length||text[offset]<'1'||text[offset]>'9')throw Invalid();
+                    while(offset<text.Length&&text[offset]>='0'&&text[offset]<='9')offset++;
+                }
+                long number;
+                if(!Int64.TryParse(text.Substring(start,offset-start),System.Globalization.NumberStyles.AllowLeadingSign,
+                    System.Globalization.CultureInfo.InvariantCulture,out number))throw Invalid();
+                return number;
             }
             string StringValue()
             {

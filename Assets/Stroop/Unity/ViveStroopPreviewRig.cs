@@ -491,6 +491,11 @@ namespace AvatarStroop.Unity
             lastViewFailure=null;
             try
             {
+                string manifest=Environment.GetEnvironmentVariable(VivePreviewLaunchPlan.RuntimeVariable);
+                string runtimeRoot=System.IO.Path.GetDirectoryName(manifest);
+                Debug.Log("VIVE_RUNTIME_SELECTION: manifest="+manifest+
+                    "; vrclient="+System.IO.Path.Combine(runtimeRoot,"bin","vrclient_x64.dll")+
+                    "; controller_model_library="+System.IO.Path.Combine(runtimeRoot,"bin","win64","openvr_api.dll"));
                 if(development!=null){development.BeforeViewStart();development.PrepareInputBeforeXr();}
             }
             catch(Exception error){RememberViewFailure("VIVE input setup failed: "+error.GetType().Name,error);SetStatus(lastViewFailure);return;}

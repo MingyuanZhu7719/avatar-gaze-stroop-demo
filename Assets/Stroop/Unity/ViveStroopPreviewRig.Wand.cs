@@ -136,6 +136,9 @@ namespace AvatarStroop.Unity
                     if(Time.realtimeSinceStartupAsDouble<nextModelAttempt){trackedWandVisual.Hide();return;}
                     nextModelAttempt=Time.realtimeSinceStartupAsDouble+2;
                     if(!wandModels.TryOpen()){NoteWandModelIssue(wandModels.LastIssue);trackedWandVisual.Hide();return;}
+                    Debug.Log("VIVE_CONTROLLER_NATIVE_CONTEXT: selected="+wandModels.RuntimeLibraryPath+
+                        "; loaded="+wandModels.LoadedRuntimeLibraryPath+"; mode="+wandModels.ContextInitializationMode+
+                        "; token="+wandModels.ContextToken);
                 }
                 // Model and grip calibration are static for this device/context;
                 // keep fresh pose reads every frame without querying/allocating

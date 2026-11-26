@@ -82,8 +82,16 @@ namespace AvatarStroop.Unity.Editor
             var visualType=typeof(ViveStartupView).Assembly.GetType("AvatarStroop.Unity.ViveTrackedWandVisual",true);
             IDisposable source=null;GameObject cameraObject=null,tracking=null;RenderTexture target=null;Texture2D pixels=null;
             var scene=default(Scene);var previous=RenderTexture.active;var report=new StringBuilder();
+            string previousRuntime=Environment.GetEnvironmentVariable(VivePreviewLaunchPlan.RuntimeVariable);
+            string previousOpenVrRuntime=Environment.GetEnvironmentVariable(VivePreviewLaunchPlan.OpenVrRuntimeVariable);
             try
             {
+                // This standalone installed-asset fixture has no XR launcher.
+                // Select explicitly for this process only and restore on exit.
+                string selectedRuntime=String.IsNullOrWhiteSpace(previousRuntime)?VivePreviewLaunchPlan.InstalledSteamVrManifest:previousRuntime;
+                Environment.SetEnvironmentVariable(VivePreviewLaunchPlan.RuntimeVariable,selectedRuntime,EnvironmentVariableTarget.Process);
+                Environment.SetEnvironmentVariable(VivePreviewLaunchPlan.OpenVrRuntimeVariable,Path.GetDirectoryName(selectedRuntime),EnvironmentVariableTarget.Process);
+                report.AppendLine("runtime_manifest="+selectedRuntime);
                 source=(IDisposable)Activator.CreateInstance(sourceType,true);
                 Require((bool)Call(source,"TryOpen"),"SteamVR must already be running: "+sourceType.GetProperty("LastIssue",Flags).GetValue(source,null));
                 object data=null;var deadline=DateTime.UtcNow.AddSeconds(15);
@@ -142,6 +150,8 @@ namespace AvatarStroop.Unity.Editor
             }
             finally
             {
+                Environment.SetEnvironmentVariable(VivePreviewLaunchPlan.RuntimeVariable,previousRuntime,EnvironmentVariableTarget.Process);
+                Environment.SetEnvironmentVariable(VivePreviewLaunchPlan.OpenVrRuntimeVariable,previousOpenVrRuntime,EnvironmentVariableTarget.Process);
                 RenderTexture.active=previous;
                 if(tracking!=null)UnityEngine.Object.DestroyImmediate(tracking);
                 if(cameraObject!=null)UnityEngine.Object.DestroyImmediate(cameraObject);

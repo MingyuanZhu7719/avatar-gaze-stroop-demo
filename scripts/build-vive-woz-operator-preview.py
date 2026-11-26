@@ -15,6 +15,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+from windows_framework import compiler_command
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("quest_prepare", ROOT / "scripts/prepare-quest-preview.py")
@@ -32,20 +34,22 @@ def start_here_text():
         "Keep this complete package together. Do not run it alongside another XR application on the same PC.\n"
         "Requires an installed SteamVR Windows x64 runtime, working VIVE Pro Eye tracking, SRanipal/SR_Runtime and user calibration. Vendor software is not bundled or installed.\n"
         "START THE OPERATOR\n"
-        "Double-click Start-WoZ-Operator.cmd. It selects SteamVR for this launch and saves Player.log and Launcher.txt in a fresh WoZLogs/run-* folder beside the program. After the operator closes, this folder opens automatically.\n"
-        "If SteamVR is installed elsewhere, drag its steamxr_win64.json file onto Start-WoZ-Operator.cmd. Keep the launcher with this complete package.\n"
+        "Double-click Start-WoZ-Operator.cmd. WoZOperatorLauncher.exe selects the SteamVR installation registered in %LOCALAPPDATA%/openvr/openvrpaths.vrpath, including custom drive locations. It saves Player.log and Launcher.txt in a fresh WoZLogs/run-* folder beside the program. After the operator closes, this folder opens automatically.\n"
+        "Launch SteamVR once if its installation is not registered. An explicit override is still available: drag its steamxr_win64.json onto Start-WoZ-Operator.cmd. The manifest, OpenXR runtime and OpenVR model library are checked in the same installation; their selected paths appear in Launcher.txt. Keep both launchers with the complete package.\n"
         + photon.room_guide() +
         "EXPORT AN ERROR REPORT\n"
         "After an error, click Export debug ZIP. The ZIP contains the current diagnostic summary, recorded events and available Player log. Use Copy error details for a short report, or Open logs folder to locate the files. Diagnostics may contain local file paths and system information.\n\n"
         "ALTERNATIVE PROCESS-LOCAL START (manual, not run by the build)\n"
         "In PowerShell opened in this package folder, verify the following path is your installed SteamVR manifest. If SteamVR is elsewhere, use its actual steamxr_win64.json path. Then run:\n"
-        "$runtime = Join-Path ${env:ProgramFiles(x86)} 'Steam/steamapps/common/SteamVR/steamxr_win64.json'\n"
+        "$registered = Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'openvr/openvrpaths.vrpath') -Raw | ConvertFrom-Json\n"
+        "$runtime = Join-Path $registered.runtime[0] 'steamxr_win64.json'\n"
         "if (!(Test-Path -LiteralPath $runtime -PathType Leaf)) { throw 'Installed SteamVR manifest missing' }\n"
         "$start = New-Object System.Diagnostics.ProcessStartInfo\n"
         "$start.FileName = Join-Path (Get-Location).Path 'AvatarStroopViveWozOperatorDevelopment.exe'\n"
         "$start.WorkingDirectory = (Get-Location).Path\n"
         "$start.UseShellExecute = $false\n"
         "$start.EnvironmentVariables['XR_RUNTIME_JSON'] = $runtime\n"
+        "$start.EnvironmentVariables['VR_OVERRIDE'] = Split-Path -Parent $runtime\n"
         "[System.Diagnostics.Process]::Start($start) | Out-Null\n"
         "This changes only the new player's environment, not PowerShell's environment, the registry or the system runtime. The source's VivePreviewLaunchPlan uses the same child-only mechanism. This manual route has not been hardware-tested; the rig rejects a non-SteamVR runtime.\n\n"
         "MANUAL PAIRING FALLBACK\n"
@@ -64,6 +68,29 @@ def resolve_without_links(path):
     for parent in (absolute,) + tuple(absolute.parents):
         prepare.reject_link(parent)
     return absolute.resolve()
+
+
+def compile_launcher(editor, source, output):
+    """Shared runtime selection plus a harmless actual Windows child smoke."""
+    data = editor.parent / "Data"
+    compiler = compiler_command(data / "MonoBleedingEdge/bin/mono.exe",
+                                data / "MonoBleedingEdge/lib/mono/4.5/csc.exe")
+    sources = [source / "Assets/Stroop/Runtime/VivePreviewLaunchPlan.cs",
+               source / "Apps/ViveWozOperatorLauncher.cs"]
+    fixture = source / "Tests/ViveWozOperatorLauncherSmoke.cs"
+    with tempfile.TemporaryDirectory(prefix="woz-launch-smoke-") as temporary:
+        directory = Path(temporary)
+        child, smoke = directory / "Child.exe", directory / "Smoke.exe"
+        for target, defines in ((child, ["-define:WOZ_OPERATOR_LAUNCH_SMOKE,WOZ_OPERATOR_LAUNCH_CHILD"]),
+                                (smoke, ["-define:WOZ_OPERATOR_LAUNCH_SMOKE"])):
+            subprocess.run(compiler + defines + ["-target:exe", "-main:AvatarStroop.Tests.ViveWozOperatorLauncherSmoke",
+                           "-out:" + str(target)] + [str(path) for path in sources + [fixture]], check=True, cwd=source)
+        subprocess.run([str(smoke), str(child)], check=True, cwd=source,
+                       env=dict(os.environ, TEMP=temporary, TMP=temporary))
+    launcher = output / "WoZOperatorLauncher.exe"
+    subprocess.run(compiler + ["-target:winexe", "-main:AvatarStroop.Apps.ViveWozOperatorLauncher", "-out:" + str(launcher)] +
+                   [str(path) for path in sources], check=True, cwd=source)
+    return launcher
 
 
 def new_separate_path(path, workspace, source, others):
@@ -146,6 +173,8 @@ def main():
         if args.photon_config: photon.validate_config(args.photon_config)
         launcher_source = source / "Apps/Start-WoZ-Operator.cmd"
         launcher_hash = prepare.digest(launcher_source)
+        launcher_code = source / "Apps/ViveWozOperatorLauncher.cs"
+        launcher_code_hash = prepare.digest(launcher_code)
         if args.check_only:
             print("Paths, editor, cached packages and current source inventory checked; no files created.")
             return 0
@@ -166,7 +195,7 @@ def main():
         prepare.verify_prepared(source, project)
         if frozen != prepare.source_inventory(source):
             raise ValueError("Source changed during build; preserve output for investigation and do not treat as verified.")
-        if launcher_hash != prepare.digest(launcher_source):
+        if launcher_hash != prepare.digest(launcher_source) or launcher_code_hash != prepare.digest(launcher_code):
             raise ValueError("Operator launcher changed during build; rebuild from a consistent source snapshot.")
         scene = validate_scene(project)
         player = output / "AvatarStroopViveWozOperatorDevelopment.exe"
@@ -177,6 +206,9 @@ def main():
         shutil.copy2(launcher_source, launcher)
         if prepare.digest(launcher) != launcher_hash:
             raise ValueError("Packaged operator launcher differs from the reviewed source.")
+        native_launcher = compile_launcher(editor, source, output)
+        if launcher_code_hash != prepare.digest(launcher_code):
+            raise ValueError("Operator launcher source changed during compilation.")
         photon_package = photon.package_files(source, player.parent, args.photon_config)
         prepare.verify_prepared(source, project)
         evidence = {"format": 1, "status": "built_static_checks_only", "source": str(source),
@@ -188,7 +220,9 @@ def main():
                     "network_default": False, "network_requires_explicit_pairing": True, "operator_recording_available": False,
                     "participant_recorded_mode_forwarding_available": True,
                     "launcher": launcher.name, "launcher_sha256": launcher_hash,
-                    "runtime_selection": "Start-WoZ-Operator.cmd selects child-only SteamVR XR_RUNTIME_JSON",
+                    "launcher_executable": native_launcher.name, "launcher_executable_sha256": prepare.digest(native_launcher),
+                    "launcher_source_sha256": launcher_code_hash,
+                    "runtime_selection": "Shared registered SteamVR resolver selects child-only XR_RUNTIME_JSON; optional explicit override",
                     "diagnostic_logs_available": True, "diagnostic_zip_export_available": True,
                     "photon_woz_available": True, "photon_sdk": photon_package,
                     "physical_network_tested": False, "player_launched": False, "system_runtime_changed": False}

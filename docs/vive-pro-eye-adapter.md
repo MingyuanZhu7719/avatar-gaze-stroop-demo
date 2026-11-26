@@ -14,6 +14,21 @@ for the recording schema and timestamp meanings.
 
 ## Native dependency and lifetime
 
+The participant launcher reads the first SteamVR runtime directory registered in
+`%LOCALAPPDATA%\openvr\openvrpaths.vrpath`. Custom drive locations, spaces and
+Unicode paths are supported. A missing or invalid registration produces a launch
+error; it does not silently select a different installation under Program Files.
+Start the intended SteamVR installation to refresh its registration.
+
+The selected `steamxr_win64.json` is passed only to the child player through
+`XR_RUNTIME_JSON`, with `VR_OVERRIDE` pinned to the same installation for OpenVR's
+internal runtime lookup. The optional controller model loader uses the same manifest's
+installation for `bin/win64/openvr_api.dll`, verifies the loaded DLL path and never
+rediscovers another runtime. The system OpenXR setting is unchanged. Player logs
+include `VIVE_RUNTIME_SELECTION`, `VIVE_CONTROLLER_NATIVE_CONTEXT` and XR device
+metadata transitions (`VIVE_XR_DEVICE_CHANGE`) to diagnose cross-machine input
+failures. A model-loading error does not change task input readiness.
+
 `SrAnipalViveProEyeProvider` loads the existing Windows x64 `SRanipal.dll` from
 HTC's installed eye-calibration Dashboard Plugins directory. The supported
 client file version is pinned to **1.3.5.1**. Runtime-service and client-library

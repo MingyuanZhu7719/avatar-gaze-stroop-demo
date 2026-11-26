@@ -226,6 +226,24 @@ namespace AvatarStroop.Unity
                 actions.Enable();
             }
             catch { actions.Dispose(); throw; }
+            InputSystem.onDeviceChange+=LogDeviceChange;
+        }
+
+        // Diagnostic only: observe metadata transitions without reading inputs,
+        // changing device ownership, or altering any readiness decision.
+        void LogDeviceChange(InputDevice device,InputDeviceChange change)
+        {
+            if(disposed||device==null)return;
+            try
+            {
+                string inputInterface=device.description.interfaceName??String.Empty;
+                if(!(device is UnityEngine.InputSystem.XR.XRController)&&!inputInterface.StartsWith("XRInput",StringComparison.Ordinal))return;
+                Debug.Log("VIVE_XR_DEVICE_CHANGE: event="+change+"; id="+device.deviceId+
+                    "; layout="+device.layout+"; interface="+inputInterface+"; product="+device.description.product+
+                    "; role="+ControllerRole(device)+"; added="+device.added+"; enabled="+device.enabled+
+                    "; frame="+Time.frameCount);
+            }
+            catch(Exception) { /* Diagnostics cannot change input processing. */ }
         }
 
         InputAction[] CreateActions(VivePreviewControllerHand hand)
@@ -580,7 +598,8 @@ namespace AvatarStroop.Unity
         public void Dispose()
         {
             if(disposed)return;
-            MainThread();ClearVisualPose();firstVisualPoseDevice=null;disposed=true;actions.Disable();actions.Dispose();
+            MainThread();InputSystem.onDeviceChange-=LogDeviceChange;
+            ClearVisualPose();firstVisualPoseDevice=null;disposed=true;actions.Disable();actions.Dispose();
         }
     }
 }
