@@ -94,6 +94,8 @@ namespace AvatarStroop.Unity.Editor
             Require(AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath)==null,"refusing to overwrite an existing operator scene");
             var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Single);
             ViveWozOperatorDiagnosticsFixture.Validate();
+            ViveWozOperatorViewFixture.Validate();
+            ViveWozOperatorHudFixture.Validate();
             CheckParticipantAvatarView();
             var root=new GameObject("ViveWozOperatorDevelopment");
             var bootstrap=root.AddComponent<ViveWozOperatorDevelopmentBootstrap>();
@@ -102,7 +104,7 @@ namespace AvatarStroop.Unity.Editor
             Require(EditorSceneManager.SaveScene(scene,ScenePath),"operator scene save failed");
             Directory.CreateDirectory(output);
             PlayerSettings.productName="Avatar Stroop - WoZ Operator";
-            PlayerSettings.bundleVersion="2026.11.26.2";
+            PlayerSettings.bundleVersion="2026.11.26.3";
             PlayerSettings.usePlayerLog=true;
             PlayerSettings.resizableWindow=true;
             PlayerSettings.defaultScreenWidth=1600;PlayerSettings.defaultScreenHeight=1050;

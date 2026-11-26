@@ -110,7 +110,10 @@ def run_editor(editor, project, logs, action, method, output=None):
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     log = logs / ("unity-operator-" + action + "-" + stamp + ".log")
     command = [str(editor), "-batchmode", "-quit", "-projectPath", str(project), "-buildTarget", "Win64",
-               "-executeMethod", method, "-logFile", str(log), "-nographics"]
+               "-executeMethod", method, "-logFile", str(log)]
+    # The build fixture verifies visible HUD glyphs using real offscreen renders.
+    # Configuration is headless; rendering requires a graphics device, not XR.
+    command += ["-force-d3d11"] if action == "build" else ["-nographics"]
     env = os.environ.copy()
     if output is not None:
         env["STROOP_VIVE_OPERATOR_OUTPUT"] = str(output)

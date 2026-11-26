@@ -22,6 +22,8 @@ namespace AvatarStroop.Unity
         ViveProEyeWorker worker;
         ViveWozOperatorDiagnostics diagnostics;
         bool starting,running,ownsLoader,stopping,cleanupUncertain,quitRequested,headReady,stopRequested;
+        bool stationPlaced,referenceChanged;
+        TrackingOriginModeFlags stationMode;
         long sequence;
         string status="XR and eye worker are off.";
         string failureMessage;
@@ -34,6 +36,7 @@ namespace AvatarStroop.Unity
         public IClock SharedClock {get{return clock;}}
         public ViveProEyeWorker Worker {get{return worker;}}
         internal Action BeforeStopping;
+        internal Action<Vector3> PlaceOperatorStation;
         public bool HeadReady {get{return running&&headReady;}}
         public bool ViewActive {get{return starting||running||stopping;}}
         internal void AttachDiagnostics(ViveWozOperatorDiagnostics value)
@@ -62,6 +65,7 @@ namespace AvatarStroop.Unity
         {
             if(cameraView==null||starting||running||stopping||cleanupUncertain||quitRequested||worker!=null)return;
             failureMessage=null;
+            stationPlaced=false;referenceChanged=false;
             loggedHeadState=null;loggedEyeState=null;
             headStateLoggedAt=double.NegativeInfinity;eyeStateLoggedAt=double.NegativeInfinity;
             Record("XR_START_REQUESTED","Starting the headset view.");
@@ -93,6 +97,7 @@ namespace AvatarStroop.Unity
                 input=manager.activeLoader.GetLoadedSubsystem<XRInputSubsystem>();
                 if(display==null){Fail("XR_DISPLAY_UNAVAILABLE","SteamVR initialized but its display subsystem is unavailable. Check SteamVR and reopen the operator program.");yield break;}
                 if(input==null){Fail("XR_INPUT_UNAVAILABLE","SteamVR initialized but its input subsystem is unavailable. Check SteamVR and reopen the operator program.");yield break;}
+                input.trackingOriginUpdated+=OnTrackingOriginUpdated;
                 manager.StartSubsystems();starting=false;running=true;headReady=false;
                 Record("XR_START_RETURNED","SteamVR subsystem start returned. Waiting for a running display and focused head tracking.");
                 status="Waiting for focused head tracking; eye worker is off. Operator scene alignment is unvalidated.";
@@ -129,6 +134,20 @@ namespace AvatarStroop.Unity
             bool focused=OpenXRUtility.IsSessionFocused;
             headReady=running&&display!=null&&display.running&&hmd.isValid&&tracked&&p&&r&&finite&&Mathf.Abs(norm-1)<.000001f&&supported&&
                 (flags&(InputTrackingState.Position|InputTrackingState.Rotation))==(InputTrackingState.Position|InputTrackingState.Rotation)&&focused;
+            if(stationPlaced&&mode!=stationMode)referenceChanged=true;
+            if(referenceChanged)
+            {
+                // A source already bound to this tracking frame cannot silently
+                // inherit a new origin. Before eye acquisition, placement may retry.
+                if(worker==null){stationPlaced=false;referenceChanged=false;}
+                else headReady=false;
+            }
+            if(headReady&&!stationPlaced)
+            {
+                if(PlaceOperatorStation==null)throw new InvalidOperationException("Operator station placement is missing.");
+                PlaceOperatorStation(position);stationPlaced=true;stationMode=mode;
+                Record("OPERATOR_STATION_PLACED","Evaluator station placed beside the whiteboard using "+mode+" tracking. Raw head rotation is unchanged.");
+            }
             string reason,message;
             if(!running||display==null||!display.running)
             {reason="HEAD_DISPLAY_STOPPED";message="The headset display is stopped.";}
@@ -142,6 +161,8 @@ namespace AvatarStroop.Unity
             {reason="HEAD_POSE_INVALID";message="SteamVR returned an invalid headset pose. Wait for stable tracking.";}
             else if(!supported)
             {reason="HEAD_ORIGIN_UNAVAILABLE";message="SteamVR tracking origin is unavailable: "+mode+".";}
+            else if(referenceChanged)
+            {reason="HEAD_REFERENCE_CHANGED";message="Tracking origin changed. Stop and reopen the headset view before reconnecting.";}
             else if(!focused)
             {reason="HEAD_FOCUS_UNAVAILABLE";message="The headset view has no input focus. Wear the headset and close the SteamVR dashboard.";}
             else
@@ -158,7 +179,7 @@ namespace AvatarStroop.Unity
         {
             if(running)
             {
-                try{ReadHead();UpdateEyeStatus();}
+                try{ReadHead();if(referenceChanged&&worker!=null){ReportFailure("HEAD_REFERENCE_CHANGED","SteamVR changed the tracking origin. Reopen the operator program before reconnecting.");StopView();}else UpdateEyeStatus();}
                 catch(Exception e){headReady=false;cameraView.cullingMask=0;ReportFailure("TRACKING_UPDATE_EXCEPTION","Tracking update failed. "+e.Message,e);StopView();}
             }
             if(stopping&&worker!=null&&worker.HasExited)
@@ -168,6 +189,8 @@ namespace AvatarStroop.Unity
             if(stopping&&worker==null)FinishStop();
             if(quitRequested&&!starting&&!running&&!stopping&&worker==null)Application.Quit();
         }
+        void OnTrackingOriginUpdated(XRInputSubsystem subsystem)
+        {if(stationPlaced)referenceChanged=true;}
         void UpdateEyeStatus()
         {
             if(worker==null||stopping)return;
@@ -213,6 +236,7 @@ namespace AvatarStroop.Unity
                 if(!worker.CanStart){cleanupUncertain=true;ReportFailure("EYE_CLEANUP_UNCERTAIN","Eye client cleanup is unconfirmed. Reopen the operator program before starting again. "+worker.Diagnostic);}
                 worker.Dispose();worker=null;
             }
+            if(input!=null)input.trackingOriginUpdated-=OnTrackingOriginUpdated;
             try{if(ownsLoader&&manager!=null){manager.StopSubsystems();manager.DeinitializeLoader();}}
             catch(Exception e){cleanupUncertain=true;ReportFailure("XR_CLEANUP_FAILED","OpenXR cleanup failed. Reopen the operator program before starting again. "+e.Message,e);}
             finally{ownsLoader=false;manager=null;display=null;input=null;stopping=false;}

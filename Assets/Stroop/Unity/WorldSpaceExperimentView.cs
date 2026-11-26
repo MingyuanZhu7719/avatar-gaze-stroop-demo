@@ -81,7 +81,7 @@ namespace AvatarStroop.Unity
         // would not help because the text fitter otherwise scales with the frustum.
         const float HeadsetHudDistance = 2f;
         const float HeadsetHudWidthDegrees = 50f, HeadsetHudHeightDegrees = 40f;
-        float HudDistance { get { return headsetPreview ? HeadsetHudDistance : 1.1f; } }
+        float HudDistance { get { return headsetPreview||wozOperatorHeadset ? HeadsetHudDistance : 1.1f; } }
         public static readonly Vector3 FixedMenuPosition = new Vector3(-.5f,1.55f,1.90f);
         public const float FixedMenuWidth=1.35f, FixedMenuHeight=1.05f;
         public bool HasWorldFixedMenu { get { return headsetPreview&&role==Actor.Participant; } }
@@ -719,7 +719,7 @@ namespace AvatarStroop.Unity
             // Inset the render bounds, then keep headset labels in a central
             // angular panel. Render bounds alone do not establish lens visibility.
             if(!HasWorldFixedMenu)frustum=new Rect(frustum.x+frustum.width*.06f,frustum.y+frustum.height*.04f,frustum.width*.88f,frustum.height*.92f);
-            if(headsetPreview&&!HasWorldFixedMenu)
+            if((headsetPreview||wozOperatorHeadset)&&!HasWorldFixedMenu)
             {
                 float halfWidth=HudDistance*Mathf.Tan(HeadsetHudWidthDegrees*.5f*Mathf.Deg2Rad);
                 float halfHeight=HudDistance*Mathf.Tan(HeadsetHudHeightDegrees*.5f*Mathf.Deg2Rad);
@@ -730,6 +730,11 @@ namespace AvatarStroop.Unity
             // Invalid/degenerate layouts above keep the previous conservative
             // gate; only a completed layout may clear an obscuring fault.
             faultCoversStimulus=false;
+            if(wozOperatorHeadset)
+            {
+                LayoutWozOperatorHud(frustum);
+                return;
+            }
             if(viveUnconfiguredPreview)
             {
                 // This stage provides a room view only. It cannot display task

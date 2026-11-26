@@ -46,7 +46,10 @@ namespace AvatarStroop.Unity
             camera.backgroundColor=new Color(.035f,.045f,.06f);camera.clearFlags=CameraClearFlags.SolidColor;
             camera.nearClipPlane=.05f;camera.farClipPlane=20;camera.fieldOfView=60;
             view=new GameObject("OperatorDevelopmentView").AddComponent<WorldSpaceExperimentView>();view.Initialize(camera,Actor.Operator);
+            view.ConfigureWozOperatorHeadsetPresentation();
+            view.PlaceWozOperatorView(camera.transform.position);
             ClearTask();rig=gameObject.AddComponent<ViveWozOperatorDevelopmentRig>();rig.AttachDiagnostics(diagnostics);rig.Configure(camera);rig.BeforeStopping=BeforeSourceStop;
+            rig.PlaceOperatorStation=view.PlaceWozOperatorView;
             diagnostics.Record("SCENE_READY","Build "+Application.version+" | "+Application.buildGUID);
         }
         string Input(string label,string value)
@@ -102,6 +105,7 @@ namespace AvatarStroop.Unity
         {
             PollDiagnosticExport();
             PollEasyPairing();
+            if(view!=null)view.SetWozOperatorHeadsetStatus(OperatorHeadsetInstruction());
             if(process==null||closed)return;
             try
             {
@@ -137,6 +141,17 @@ namespace AvatarStroop.Unity
                 else status="Source confirmed: "+process.SourceConfirmed+" | Fresh tracking: "+process.PhasePreflightCurrent;
             }
             catch(Exception e){status="Operator failure: "+e.GetType().Name;diagnostics.Fail("OPERATOR_FAILED",status+". Export diagnostics and reopen the app.",e);Close();}
+        }
+        string OperatorHeadsetInstruction()
+        {
+            if(closed||process!=null&&process.Terminal)return "Session stopped.\nCheck the operator computer.";
+            if(process!=null)return process.CurrentTask!=null&&process.CurrentTask.Phase==Phase.MainTask?
+                "Look naturally at the participant or whiteboard.":"Waiting for the participant.\nKeep the headset on.";
+            if(rig==null||!rig.ViewActive)return "Start the headset view on the computer.";
+            if(!rig.HeadReady)return "Keep the headset in view of the base stations.\nClose the SteamVR menu.";
+            if(rig.Worker==null)return "Classroom ready.\nStart eye tracking on the computer.";
+            if(!offerReviewed)return "Create a room on the computer.\nAsk the participant to join.";
+            return "Participant joined.\nReview and connect on the computer.";
         }
         void ClearTask(){if(view!=null){view.ClearWozParticipantPose();view.ApplyTaskView(ViveWozOperatorTaskView.FromFreshTask(null));view.ClearAvatarOutput();}}
         void BeforeSourceStop(){StopUnstartedEasyPairing();token="";ClearOfferReview();if(process!=null&&!process.Terminal)process.RequestSafetyStop();ClearTask();}
