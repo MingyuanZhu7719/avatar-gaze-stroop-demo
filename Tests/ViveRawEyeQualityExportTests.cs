@@ -68,7 +68,8 @@ namespace AvatarStroop.Tests
             suite.Run("eye quality readable CSV has filterable states exact cursor and no gaze fill",()=>{
                 var marks=new[]{Q(.6,ViveRawEyeObservation.Reason.Duplicate),Q(.7,ViveRawEyeObservation.Reason.FrozenOrStale),
                     Q(.8,ViveRawEyeObservation.Reason.InvalidQuality),Q(.9,ViveRawEyeObservation.Reason.NoEye),Q(1,ViveRawEyeObservation.Reason.OutOfOrder),
-                    Q(1.1,ViveRawEyeObservation.Reason.SnapshotBusy)};
+                    Q(1.1,ViveRawEyeObservation.Reason.SnapshotBusy),Q(1.2,ViveRawEyeObservation.Reason.ClientInitializationFailed),
+                    Q(1.3,ViveRawEyeObservation.Reason.ClientFaulted)};
                 using(var input=new MemoryStream(Fixture(marks),false))using(var output=new MemoryStream())
                 {
                     Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,4194304,10000,33554432,CancellationToken.None));
@@ -84,7 +85,7 @@ namespace AvatarStroop.Tests
                         for(int i=7;i<header.IndexOf("eye_observation");i++)Check.Equal(String.Empty,cells[i]);
                         Check.Equal("NO_GAZE_VALUES_NO_FILL",cells[6]);count++;
                     }
-                    Check.Equal(6,count);Check.True(csv.Contains("UNKNOWN_NOT_ZERO_MISSING_SAMPLES")&&csv.Contains("verified_owner_eye_quality_records,text,6")&&
+                    Check.Equal(8,count);Check.True(csv.Contains("UNKNOWN_NOT_ZERO_MISSING_SAMPLES")&&csv.Contains("verified_owner_eye_quality_records,text,8")&&
                         csv.Contains("OWNER_SNAPSHOT_CONTENTION_OR_COHERENCE_CHANGE_NOT_PHYSICAL_SENSOR_LOSS"));
                 }
             });
@@ -158,7 +159,7 @@ namespace AvatarStroop.Tests
                 ViveRawTrialReport report;Check.True(ViveRawTrialReport.TryBuild(read,true,out report));
                 Check.True(report.EyeQualityCsv.Contains("state:MISSING,state:SNAPSHOT_BUSY,state:unknown,bool:false"));
                 Check.Equal(ViveRawSessionReadStatus.Invalid,Scan(Fixture(new[]{mark},alter:p=>Buffer.BlockCopy(BitConverter.GetBytes(0),0,p,17,4))).Status);
-                Check.Equal(ViveRawSessionReadStatus.Invalid,Scan(Fixture(new[]{mark},alter:p=>Buffer.BlockCopy(BitConverter.GetBytes(6),0,p,21,4))).Status);
+                Check.Equal(ViveRawSessionReadStatus.Invalid,Scan(Fixture(new[]{mark},alter:p=>Buffer.BlockCopy(BitConverter.GetBytes(8),0,p,21,4))).Status);
             });
         }
     }

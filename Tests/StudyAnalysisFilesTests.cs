@@ -39,6 +39,24 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("study availability CSV exports client failures and software observation bounds without filled gaze",()=>{
+                using(var files=new Files())
+                {
+                    Directory.CreateDirectory(files.Output);var analysis=StudyAnalysisTests.Analysis();
+                    StudyAnalysisEyeAvailabilityTests.Missing(analysis,1,4,6);
+                    StudyAnalysisEyeAvailabilityTests.Missing(analysis,2,5,6);
+                    StudyAnalysisEyeAvailabilityTests.Sample(analysis,3,6);
+                    StudyAnalysisEyeAvailabilityTests.Missing(analysis,4,7,7);
+                    var source=new StudyAnalysisSource{Path=files.Raw,Analysis=analysis,Sha256="synthetic",Read=new StudyDataReadSummary{Format="synthetic",Status="Complete"}};
+                    StudyAnalysisFiles.Write(new[]{source},files.Output,CancellationToken.None);
+                    string csv=File.ReadAllText(Path.Combine(files.Output,"eye_availability.csv"));
+                    Check.Equal(4,File.ReadAllLines(Path.Combine(files.Output,"eye_availability.csv")).Length);
+                    Check.True(csv.Contains("CLIENT_INITIALIZATION_FAILED")&&csv.Contains("CLIENT_FAULTED")&&csv.Contains("DATA_RESUMED"));
+                    Check.True(csv.Contains("following_state_observation_local_seconds")&&!csv.Contains("direction_x"));
+                    Check.True(File.ReadAllText(Path.Combine(files.Output,"methods.txt")).Contains("not exact physical outage endpoints"));
+                    Check.True(File.ReadAllText(Path.Combine(files.Output,"report.html")).Contains("eye_availability.csv"));
+                }
+            });
             suite.Run("study training-only eye policy exports not-requested status without zero-quality eye rows",()=>{
                 using(var files=new Files())
                 {

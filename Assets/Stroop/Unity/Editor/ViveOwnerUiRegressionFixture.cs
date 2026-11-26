@@ -27,6 +27,7 @@ namespace AvatarStroop.Unity.Editor
             Run("automatic eye service lifecycle",ViveAutoEyeViewStartFixture.Validate);
             Run("consent-driven recording and first Practice",ViveConsentAutoStartFixture.Validate);
             Run("explicit formal plan confirmation",ViveFormalConfirmationFixture.Validate);
+            Run("published WoZ offer awaits operator review",ViveEasyWozOfferLifecycleFixture.Validate);
             Run("fresh session storage",ViveSessionStorageFixture.Validate);
             Run("actionable setup before session storage",ViveSessionSetupValidationFixture.Validate);
             Run("responsive desktop geometry",ViveResponsiveOwnerLayoutFixture.Validate);
@@ -55,7 +56,7 @@ namespace AvatarStroop.Unity.Editor
             Run("named automatic presentation",ViveNamedAutomaticPresentationFixture.Validate);
             Run("named no-avatar presentation",ViveNamedAutomaticPresentationFixture.ValidateNoAvatar);
             Run("named multi-block presentation",ViveNamedAutomaticPresentationFixture.ValidateMultiBlock);
-            Debug.Log("VIVE_OWNER_UI_REGRESSION_SYNTHETIC_FIXTURE_PASSED: 39 suites; no physical headset acceptance.");
+            Debug.Log("VIVE_OWNER_UI_REGRESSION_SYNTHETIC_FIXTURE_PASSED: 40 suites; no physical headset acceptance.");
         }
     }
 }

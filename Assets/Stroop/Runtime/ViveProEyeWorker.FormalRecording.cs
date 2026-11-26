@@ -31,9 +31,10 @@ namespace AvatarStroop.Runtime
             finally{Monitor.Exit(gate);}
         }
 
-        // Exact task boundary, shared clock, same authorized run and the full
-        // original eye-readiness streak are all required. No cached training
-        // sample or pre-boundary callback is eligible for persistence.
+        // The exact task boundary, shared clock and same authorized task run
+        // open the recording window even when eye tracking is unavailable.
+        // Missing data remains missing; no cached training sample or
+        // pre-boundary callback is eligible for persistence.
         internal RecordingStartReadinessState TryEnableFormalEyePersistence(object expectedRun,double boundary)
         {
             var expected=expectedRun as Run;
@@ -55,13 +56,13 @@ namespace AvatarStroop.Runtime
                     run.StopRequested||!GenerationLive(run)||!run.StatusEnabled||StatusAuthorityRevoked(run)||run.StatusFault||
                     run.StatusSealed||Volatile.Read(ref statusRevoked)!=0||clock==null||!clock.TryReadRecordingAdmissionTime(out now)||boundary>now)
                     return RecordingStartReadinessState.Unavailable;
-                var readiness=ReadRecordingStartReadiness();
-                if(!readiness.Ready)return readiness.State;
                 run.StatusEnabledAt=boundary;
                 if(run.CaptureAcquisitionRequested)
                 {run.AcquisitionEnabled=true;run.AcquisitionQueue=new ViveRawEyeAcquisition[AcquisitionCapacity];
                     run.AcquisitionSeen=new System.Collections.Generic.HashSet<ulong>();}
                 Volatile.Write(ref run.EyePersistenceEnabled,true);
+                if(run.ParticipantEyeFailure!=(int)EyeClientFailureKind.None)
+                    RecordStatusEvidence(run,null,true,now);
                 return RecordingStartReadinessState.Ready;
             }
             finally{Monitor.Exit(gate);}

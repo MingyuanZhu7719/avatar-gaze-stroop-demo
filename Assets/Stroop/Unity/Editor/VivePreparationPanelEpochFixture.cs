@@ -516,11 +516,9 @@ namespace AvatarStroop.Unity.Editor
             var eyePumpType=typeof(ViveStroopPreviewRig).Assembly.GetType("AvatarStroop.Unity.ViveStroopEyePump",true);
             Set(rig,"eyePump",Activator.CreateInstance(eyePumpType,Instance,null,new object[]{worker},null));
             int sample=2;
-            double deadline=clock.Now+3;
-            while(!(bool)Prop(owner,"FormalEyeReadyForFirstBlock")&&clock.Now<deadline)
-            {Thread.Sleep(20);Send(client,clock,sample++,3);}
+            Send(client,clock,sample++,0);
             Require((bool)Prop(owner,"FormalEyeReadyForFirstBlock")&&!(bool)Prop(worker,"FormalEyePersistenceEnabled"),
-                "eye warm-up failed to enable the formal start button");
+                "invalid eye data blocked the formal start button despite current task/head input");
             var gate=new ViveStroopNeutralGate();
             var neutral=ControllerFrame(gate,true,false,false,Colour.Red);
             using(var adapter=new ViveStroopDeviceInput(VivePreviewControllerHand.Automatic))
@@ -550,9 +548,15 @@ namespace AvatarStroop.Unity.Editor
                     Require(!stage()&&!owner.RecordingBlocked&&!(bool)Prop(worker,"FormalEyePersistenceEnabled")&&
                         (bool)Prop(task,"RawCountdownAwaitingSoftwareWitness"),"contended initial activation did not remain masked");
                 });
-                Send(client,clock,sample++,3);
+                Send(client,clock,sample++,0);
                 Require(Call(owner,"PrepareNamedRawStatus").ToString()=="Ready"&&(bool)Prop(worker,"FormalEyePersistenceEnabled"),
-                    "eye persistence never activated on the warm worker");
+                    "formal recording window did not open while eye data was unavailable");
+                Send(client,clock,sample++,0);Send(client,clock,sample++,0);
+                Require(Call(owner,"PrepareNamedRawStatus").ToString()=="Ready"&&stage(),"missing gaze prevented a formal head frame");
+                var missing=Get(pump,"stagedEpoch");
+                Require((bool)Prop(missing,"HeadOnly")&&Get(missing,"EyeUnavailable")!=null&&!owner.RecordingBlocked,
+                    "missing formal gaze was invented or stopped the task");
+                Require((bool)Call(owner,"DrainNamedRawTaskEvents"),"missing-eye formal frame failed to drain");
                 // The first completed poll was already waiting inside the native
                 // client before persistence opened. The following poll starts inside it.
                 Send(client,clock,sample++,3);

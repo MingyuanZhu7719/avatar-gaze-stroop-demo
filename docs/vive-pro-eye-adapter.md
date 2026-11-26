@@ -38,6 +38,14 @@ file and checks that do not initialize or capture eye data. The supported
 client file version is pinned to **1.3.5.1**. Runtime-service and client-library
 versions are distinct; an updated client requires an ABI review before use.
 The loader uses an absolute DLL path and restricted dependency search flags.
+Participant sessions keep their head/controller task input alive if native eye
+initialization or polling fails. The formal block may start with missing gaze;
+behavioral responses and questionnaires continue while the recording marks
+eye absence and its reason. An unavailable eye sample never reuses an earlier
+direction. Native failures do not silently restart the HTC client within the
+session. Explicit withdrawal, invalid task/head authority and recording I/O
+failures retain their existing stop handling. This policy does not replace the
+operator's live control source with an automatic avatar.
 Build scripts do not bundle vendor binaries, install a runtime, change the
 system OpenXR selection, accept eye-data agreements, or invoke calibration.
 

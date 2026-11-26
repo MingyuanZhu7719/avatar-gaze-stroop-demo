@@ -47,6 +47,7 @@ namespace AvatarStroop.Runtime
             internal bool DeferredEye,NativeStartRequested,EyePersistenceEnabled=true,CaptureAcquisitionRequested;
             internal TaskRunCapability TaskCapability;
             internal bool Starting=true,Ready,StopRequested,Completed;
+            internal int ParticipantEyeFailure;
             internal long StopGeneration;internal int PollFence;
             internal ViveProEyePoll Latest;
             internal readonly RecordingStartStreak StartStreak=new RecordingStartStreak();
@@ -505,6 +506,10 @@ namespace AvatarStroop.Runtime
         {get{lock(gate){Reap();string state=current==null?idleDiagnostic:current.Diagnostic;return headDiagnostic==null?state:headDiagnostic+" "+state;}}}
         public string InstallationDiagnostic
         {get{lock(gate){Reap();return current==null?completedInstallationDiagnostic:current.InstallationDiagnostic;}}}
+        internal enum EyeClientFailureKind { None, InitializationFailed, ClientFaulted }
+        internal EyeClientFailureKind ParticipantEyeFailure
+        {get{var run=Volatile.Read(ref current);return run==null||!run.DeferredEye?EyeClientFailureKind.None:(EyeClientFailureKind)Volatile.Read(ref run.ParticipantEyeFailure);}}
+        internal bool EyeClientFailed {get{return ParticipantEyeFailure!=EyeClientFailureKind.None;}}
         // All four values belong to one atomic snapshot. A new run starts at zero;
         // no completed run or gaze payload is retained by this diagnostic surface.
         public ViveWorkerCaptureDiagnostics CaptureDiagnostics
@@ -724,6 +729,10 @@ namespace AvatarStroop.Runtime
         }
         static ViveRawEyeObservation.Reason? ClassifyTaskEyeUnderLock(Run run,ViveProEyePoll frame,double now,double maximumAge)
         {
+            if(run.DeferredEye&&run.ParticipantEyeFailure==(int)EyeClientFailureKind.InitializationFailed)
+                return ViveRawEyeObservation.Reason.ClientInitializationFailed;
+            if(run.DeferredEye&&run.ParticipantEyeFailure==(int)EyeClientFailureKind.ClientFaulted)
+                return ViveRawEyeObservation.Reason.ClientFaulted;
             ViveRawEyeObservation.Reason? unavailable=null;
             var eye=frame.Eye;
             if(run.StatusNextSequence==0||run.LastStatus==null||eye==null||
@@ -960,13 +969,14 @@ namespace AvatarStroop.Runtime
         void RunClient(Run run)
         {
             IViveProEyeClient client=null;ViveNativePollDelay pollDelay=null;string failure=null,finalDiagnostic=null;
+            bool initialized=false;
             try
             {
                 if(run.DeferredEye&&WaitHandle.WaitAny(new WaitHandle[]{run.StopSignal,run.NativeStartSignal})!=1)return;
                 if(run.StopSignal.WaitOne(0))return;
                 client=factory();if(client==null)throw new InvalidOperationException("Client factory returned null");
                 if(run.StopSignal.WaitOne(0))return;
-                bool initialized=client.Start();string diagnostic=ReadDiagnostic(client);
+                initialized=client.Start();string diagnostic=ReadDiagnostic(client);
                 string installation=(client as SrAnipalViveProEyeProvider)?.InstallationDiagnostic??"";
                 lock(gate)
                 {
@@ -974,7 +984,8 @@ namespace AvatarStroop.Runtime
                     run.Starting=false;
                     if(!run.StopRequested){run.Ready=initialized;run.Diagnostic=diagnostic;run.AcquisitionSource=client as IViveProEyeAcquisitionSeal;}
                 }
-                if(!initialized){failure="Eye client initialization failed. "+diagnostic;return;}
+                if(!initialized)
+                {failure="Eye client initialization failed. "+diagnostic;MarkParticipantEyeFailure(run,EyeClientFailureKind.InitializationFailed,failure);return;}
                 pollDelay=new ViveNativePollDelay(run.StopSignal);
                 lock(gate){run.HighResolutionPollDelay=pollDelay.HighResolution;}
                 int acquisitionBurst=0;
@@ -1049,16 +1060,23 @@ namespace AvatarStroop.Runtime
                     lock(gate){run.HighResolutionPollDelay=pollDelay.HighResolution;}
                 }
             }
-            catch(Exception error)
+            catch(Exception error) when(!(error is OutOfMemoryException||error is StackOverflowException||error is AccessViolationException))
             {
-                Volatile.Write(ref run.TaskCapability,null);
                 failure="Eye worker failed: "+error.GetType().Name+".";
-                lock(gate){run.Latest=null;ClearStatusEvidence(run);run.Ready=false;run.Starting=false;run.Diagnostic=failure;}
+                if(run.DeferredEye)MarkParticipantEyeFailure(run,initialized?EyeClientFailureKind.ClientFaulted:EyeClientFailureKind.InitializationFailed,failure);
+                else
+                {
+                    Volatile.Write(ref run.TaskCapability,null);
+                    lock(gate){run.Latest=null;ClearStatusEvidence(run);run.Ready=false;run.Starting=false;run.Diagnostic=failure;}
+                }
             }
             finally
             {
                 if(pollDelay!=null)pollDelay.Dispose();
-                Volatile.Write(ref run.TaskCapability,null);
+                // Only a participant's task-only carrier survives a failed eye
+                // client. Operator control and ordinary native workers still end.
+                bool retainTask=run.DeferredEye&&failure!=null;
+                if(!retainTask)Volatile.Write(ref run.TaskCapability,null);
                 // No client call, including Diagnostic and Dispose, occurs under gate.
                 bool clientDisposed=false;
                 try
@@ -1091,6 +1109,21 @@ namespace AvatarStroop.Runtime
                     catch(Exception error)
                     {finalDiagnostic=(restartUnsafe?"Client cleanup is unsafe; restart is blocked. ":"Stopped; client cleanup completed. ")+"Diagnostic unavailable: "+error.GetType().Name+".";}
                 }
+                if(retainTask)
+                {
+                    bool wait;
+                    lock(gate)
+                    {
+                        // The SDK has finished its one cleanup attempt. Its
+                        // unobserved tail is unknown; worker-owned queued records
+                        // remain drainable and are never replaced with gaze.
+                        run.AcquisitionSource=null;
+                        run.Diagnostic=failure+" Eye data is unavailable; the task can continue. "+finalDiagnostic;
+                        wait=!disposed&&!run.StopRequested&&GenerationLive(run)&&Volatile.Read(ref statusRevoked)==0&&
+                            !run.StatusFault&&(!run.StatusEverEnabled||!StatusAuthorityRevoked(run));
+                    }
+                    if(wait)run.StopSignal.WaitOne();
+                }
                 lock(gate)
                 {
                     run.Latest=null;ClearStatusEvidence(run);run.Ready=false;run.Starting=false;run.Completed=true;
@@ -1098,6 +1131,23 @@ namespace AvatarStroop.Runtime
                     // Stop only signals an incomplete run under this same lock.
                     run.StopSignal.Dispose();run.NativeStartSignal.Dispose();
                 }
+            }
+        }
+
+        void MarkParticipantEyeFailure(Run run,EyeClientFailureKind kind,string failure)
+        {
+            if(!run.DeferredEye)return;
+            lock(gate)
+            {
+                run.Latest=null;run.Ready=false;run.Starting=false;
+                InvalidateTicket(run);
+                Volatile.Write(ref run.ParticipantEyeFailure,(int)kind);
+                run.Diagnostic=failure+" Eye data is unavailable; the task can continue.";
+                // This records absence of an SDK observation, not invented SDK
+                // runtime/calibration values. The owner row carries the cause.
+                double now=0;var clock=sharedClock as MonotonicClock;
+                bool valid=clock!=null&&clock.TryReadRecordingAdmissionTime(out now);
+                RecordStatusEvidence(run,null,valid,now);
             }
         }
 

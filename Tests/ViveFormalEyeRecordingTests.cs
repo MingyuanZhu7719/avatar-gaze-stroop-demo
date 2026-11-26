@@ -159,7 +159,7 @@ namespace AvatarStroop.Tests
                     Check.Equal(TrialPlans.MainListId(ParticipantAssignment.StimulusSeed,assignment.Allocation.ListByBlock[0]),plan.Fields["list"]);
                 }
             });
-            suite.Run("Task-only raw pump completes tutorial and ten-question exam then holds first formal countdown until eye readiness recovers",()=>{
+            suite.Run("Task-only raw pump completes tutorial and exam then continues first formal countdown despite unavailable eye quality",()=>{
                 using(var f=new PumpFixture())
                 {
                     Check.Equal(Phase.Tutorial,f.Task.Phase);f.Answer();f.Mutate(f.Task.RequestPracticeExam);f.BeginPlan(true);
@@ -176,13 +176,13 @@ namespace AvatarStroop.Tests
                         "same-frame training authority admitted the first formal countdown before eye persistence activation");
                     Check.True(f.Task.RawCountdownAwaitingSoftwareWitness&&!f.Admission.IoFence.IsRevoked);Check.Equal(0,f.Admission.State);
                     f.Native.Send(Eye(f.Clock.Now,frame++,false));
-                    Check.Equal(ViveNamedRawRecordingPump.Preparation.WaitingBaseline,f.Pump.PrepareStatus());
-                    Check.True(f.Pump.FormalEyeActivationPending&&!f.Pump.RawTaskEpochThisFrame);
+                    Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,f.Pump.PrepareStatus());
+                    Check.True(!f.Pump.FormalEyeActivationPending&&!f.Pump.RawTaskEpochThisFrame);
                     ViveProEyePoll poll;Check.True(f.Worker.TryPollTaskForRecording(out poll));bool waiting;
-                    Check.True(!f.Pump.StageRigFrame(poll,1,false,out waiting)&&waiting);
-                    Check.True(!f.Pump.RawTaskEpochThisFrame&&!f.Worker.FormalEyePersistenceEnabled);
+                    Check.True(f.Pump.StageRigFrame(poll,1,false,out waiting)&&!waiting);
+                    Check.True(f.Pump.RawTaskEpochThisFrame&&f.Worker.FormalEyePersistenceEnabled);
                     Check.Equal(Phase.Countdown,f.Task.Phase);Check.Equal(ViveNamedRawRecordingPump.Outcome.Running,f.Pump.State);
-                    f.Healthy(ref frame);Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,f.Pump.PrepareStatus());
+                    f.Native.Send(Eye(f.Clock.Now,frame++));Check.Equal(ViveNamedRawRecordingPump.Preparation.Ready,f.Pump.PrepareStatus());
                     Check.True(f.Worker.FormalEyePersistenceEnabled&&!f.Pump.FormalEyeActivationPending);f.Stage();
                     Check.True(f.Pump.DrainTaskEvents());
                     using(var held=new ViveTaskAuthorityContentionTests.GateHolder(f.Worker.RecordingTicketGate))
@@ -228,7 +228,7 @@ namespace AvatarStroop.Tests
                 }
                 finally{worker.Dispose();}
             });
-            suite.Run("Formal eye boundary requires healthy readiness and excludes all warmup status gaze and buffered old frames",()=>{
+            suite.Run("Formal eye boundary excludes all warmup status gaze and buffered old frames",()=>{
                 var clock=new MonotonicClock("formal-eye-window");var client=new Client();long head=0;int factories=0;
                 var worker=new ViveProEyeWorker(clock,()=>new ViveHeadFrame(++head,clock.Now,true,true,Rotation.Identity),()=>{factories++;return client;});
                 bool native=false;
@@ -238,7 +238,6 @@ namespace AvatarStroop.Tests
                     Check.True(worker.RequestFormalEyeStart());native=true;Check.True(client.Waiting.WaitOne(3000));Check.Equal(1,factories);
                     client.Send(Eye(clock.Now,1,false));
                     Check.True(!worker.ReadRecordingStartReadiness().Ready);
-                    Check.Equal(ViveProEyeWorker.RecordingStartReadinessState.Waiting,worker.TryEnableFormalEyePersistence(run,clock.Now));
                     int frame=2;double deadline=clock.Now+3;
                     while(!worker.ReadRecordingStartReadiness().Ready&&clock.Now<deadline)
                     {Thread.Sleep(20);client.Send(Eye(clock.Now,frame++));}

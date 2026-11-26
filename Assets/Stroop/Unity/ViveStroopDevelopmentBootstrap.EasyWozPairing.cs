@@ -49,7 +49,21 @@ namespace AvatarStroop.Unity
                 object.ReferenceEquals(easyWozParticipant,participant)&&object.ReferenceEquals(easyWozSession,AvatarChoiceSession)&&
                 avatarChoice.Answered(easyWozSession)&&avatarChoice.Granted(easyWozSession)==easyWozAvatarShared&&
                 RecordedLegacyWoz==easyWozRecorded&&participant!=null&&
-                (legacyWozStarted||participant.Phase==Phase.BlockPreparation);
+                EasyWozTaskPhaseCurrent();
+        }
+        bool EasyWozTaskPhaseCurrent()
+        {
+            if(participant==null)return false;
+            if(legacyWozStarted||participant.Phase==Phase.BlockPreparation)return true;
+            // Creating the accepted offer locks the real source and moves the
+            // task to BlockReady before the operator can review and connect.
+            // Keep only that exact published, still-owned choice alive while
+            // waiting; a different task, source or interrupted owner cannot
+            // inherit this exception to the pre-offer phase requirement.
+            return easyWozOfferPublished&&participant.Phase==Phase.BlockReady&&
+                participant.LockedControl==ControlSelection.LiveWoz&&legacyWozTaskOwner!=null&&!legacyWozTaskOwner.Terminal&&
+                object.ReferenceEquals(legacyWozTaskOwner.Participant,participant)&&legacyWozProcess!=null&&
+                object.ReferenceEquals(legacyWozProcess.ActualOwner,legacyWozTaskOwner)&&legacyWozProcess.LocalChoiceCurrent;
         }
         void BeginEasyWozPairing()
         {
@@ -118,6 +132,7 @@ namespace AvatarStroop.Unity
         }
         void FailEasyWozPairing(string detail)
         {
+            Debug.LogWarning("VIVE_WOZ_PAIRING_FAILED: "+detail+" | task phase: "+(participant==null?"none":participant.Phase.ToString()));
             bool sourceCreated=legacyWozClosed||legacyWozProcess!=null||legacyWozTaskOwner!=null;
             if(sourceCreated){CloseLegacyWozTaskBinding();legacyWozClosed=true;}
             else CloseEasyWozPairing();
@@ -159,6 +174,7 @@ namespace AvatarStroop.Unity
                             // The secret offer goes only to the accepted peer,
                             // never into room properties or this room-code UI.
                             lobby.PublishOffer(legacyWozOffer);legacyWozOffer="";easyWozOfferPublished=true;
+                            Debug.Log("VIVE_WOZ_OFFER_PUBLISHED: current LiveWoZ source is locked; waiting for operator review and connection.");
                             legacyWozStatus="Room paired. Waiting for the experimenter's forwarding permission.";
                         }
                         catch(Exception e){FailEasyWozPairing(e.Message);}

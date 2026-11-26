@@ -55,6 +55,7 @@ namespace AvatarStroop.Tests
         {
             StudyAnalysisTrainingTests.Register(suite);
             StudyAnalysisEyePolicyTests.Register(suite);
+            StudyAnalysisEyeAvailabilityTests.Register(suite);
             suite.Run("study visual search cue timing is separate from pointer observations and response timing",()=>{
                 var analysis=Analysis();SearchTrial(analysis,"cue",12);SearchCue(analysis,"cue");analysis.Finish();
                 var cue=analysis.SearchEvents.Single(x=>x.Action=="cue");Check.Near(10.25,cue.CueFirstRenderUnitySeconds.Value);Check.Near(1.51,cue.CueRenderedElapsedSeconds.Value);

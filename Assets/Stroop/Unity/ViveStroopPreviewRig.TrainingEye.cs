@@ -22,7 +22,7 @@ namespace AvatarStroop.Unity
             // This request does not enable either archival eye queue.
             if(!worker.RequestFormalEyeStart())return;
             formalEyeWarmupRequested=true;
-            SetStatus("Checking eye tracking before the formal experiment. Eye data is not being saved yet.");
+            SetStatus("Checking eye tracking. The experiment can continue without gaze; missing eye data will be marked.");
         }
     }
 
@@ -52,7 +52,7 @@ namespace AvatarStroop.Unity
             if(!sharedClock.TryReadRecordingAdmissionTime(out now)){firstBlockRequestNotice="Start unavailable. Review the session clock.";return;}
             firstBlockRequest=new FirstBlockRequest{Task=participant,Pump=namedRawPump,Clock=sharedClock,RequestedAt=now};
             firstBlockRequestNotice=null;
-            Debug.Log("VIVE_PARTICIPANT_FIRST_BLOCK_REQUESTED: operator click accepted; awaiting current eye, tracking and released controls.");
+            Debug.Log("VIVE_PARTICIPANT_FIRST_BLOCK_REQUESTED: operator click accepted; awaiting current head tracking and released controls. Eye availability is recorded separately.");
         }
         void CancelFirstBlockRequest(string notice)
         {
@@ -115,8 +115,10 @@ namespace AvatarStroop.Unity
             {
                 if(participant==null)return false;
                 if(!FormalEyeStartRequired(participant.RawRecordingRequested,participant.FormalEyeRecordingOnly,participant.BlockIndex))return true;
-                var ready=rig==null?(AvatarStroop.Runtime.ViveProEyeWorker.RecordingStartReadiness?)null:rig.RawStartReadiness;
-                return rig!=null&&rig.FormalEyeWarmupRequested&&rig.RecordingWorkerReady&&ready.HasValue&&ready.Value.Ready;
+                // The task carrier is shared with training and remains tied to
+                // this head/controller run. Native eye health is optional data,
+                // not permission to start or continue a behavioral block.
+                return rig!=null&&rig.FormalEyeWarmupRequested&&rig.TaskOnlyRecordingWorkerReady;
             }
         }
         string FormalEyeFirstBlockNotice
@@ -124,9 +126,8 @@ namespace AvatarStroop.Unity
             get
             {
                 if(FormalEyeReadyForFirstBlock)return null;
-                if(rig==null||!rig.FormalEyeWarmupRequested)return "Waiting to check eye tracking. No formal block or eye recording has started.";
-                return participant.IsResearchSession?"Task recording is active. Formal eye recording is waiting. "+ViveStroopPreviewRig.DescribeEyeReadinessReason(rig.RawStartReadiness):
-                    "Formal experiment is waiting for eye tracking. "+ViveStroopPreviewRig.DescribeRawStartReadiness(rig.RawStartReadiness);
+                if(rig==null||!rig.FormalEyeWarmupRequested)return "Preparing the formal task input service. Eye data is optional and missing samples will be marked.";
+                return "Waiting for current headset tracking and the task input service. Eye availability does not block the experiment.";
             }
         }
     }

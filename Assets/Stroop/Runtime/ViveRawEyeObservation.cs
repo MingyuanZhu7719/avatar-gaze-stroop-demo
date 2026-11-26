@@ -7,7 +7,8 @@ namespace AvatarStroop.Runtime
     internal sealed class ViveRawEyeObservation
     {
         internal enum Disposition { NoNewSample=0, Missing=1 }
-        internal enum Reason { Duplicate=0, FrozenOrStale=1, InvalidQuality=2, NoEye=3, OutOfOrder=4, SnapshotBusy=5 }
+        internal enum Reason { Duplicate=0, FrozenOrStale=1, InvalidQuality=2, NoEye=3, OutOfOrder=4, SnapshotBusy=5,
+            ClientInitializationFailed=6, ClientFaulted=7 }
         internal readonly double ObservedLocalSeconds;
         internal readonly Disposition State;
         internal readonly Reason Cause;
@@ -21,7 +22,7 @@ namespace AvatarStroop.Runtime
         internal static bool Valid(Disposition state,Reason cause,double seconds,long cursor)
         {
             return !Double.IsNaN(seconds)&&!Double.IsInfinity(seconds)&&seconds>=0&&cursor>=-1&&
-                (int)cause>=(int)Reason.Duplicate&&(int)cause<=(int)Reason.SnapshotBusy&&
+                (int)cause>=(int)Reason.Duplicate&&(int)cause<=(int)Reason.ClientFaulted&&
                 state==(cause==Reason.Duplicate?Disposition.NoNewSample:Disposition.Missing);
         }
     }

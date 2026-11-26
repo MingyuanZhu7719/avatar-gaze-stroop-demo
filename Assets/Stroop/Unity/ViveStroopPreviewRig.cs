@@ -456,7 +456,14 @@ namespace AvatarStroop.Unity
             GUILayout.Label(stopping?"Stopping headset view...":starting?"Starting headset view...":
                 !running?"Headset view is off.":!headReady?"Put on the headset and follow its prompt.":!XrFocused?"Physical head pose ready. XR focus unavailable; task interaction is held.":
                 worker==null?(AutoEyeStartPending?"Headset ready. Input starts automatically.":"Headset ready. Eye tracking is off."):
-                TrainingEyeSourceDormant?"Headset ready. Eye tracking is off during Tutorial and Exam.":worker.Starting?"Headset ready. Eye tracking client is starting.":"Headset ready. Eye tracking client is on.");
+                TrainingEyeSourceDormant?"Headset ready. Eye tracking is off during Tutorial and Exam.":worker.EyeClientFailed?
+                "Headset ready. Eye client unavailable; the task can continue and missing eye data is marked.":worker.Starting?
+                "Headset ready. Eye client is starting; the task does not wait for gaze.":"Headset ready. Eye tracking client is on.");
+            if(development!=null&&development.FormalEyeRecordingOnly&&!TrainingEyeSourceDormant&&worker!=null&&!worker.EyeClientFailed)
+            {
+                var eye=RawStartReadiness;
+                if(!eye.HasValue||!eye.Value.Ready)GUILayout.Label("Eye data quality: "+DescribeEyeReadinessReason(eye)+" Task may continue; unavailable gaze is marked in the data.",label);
+            }
             if(running&&(!headReady||!XrFocused))GUILayout.Label(CurrentHeadDiagnostic,label);
             if(!String.IsNullOrEmpty(lastEyeClientFailure))GUILayout.Label("Last eye-client failure: "+lastEyeClientFailure,label);
             bool previousEnabled=GUI.enabled;
@@ -683,7 +690,7 @@ namespace AvatarStroop.Unity
             if(development.WaitingForFormalEyeActivation)
             {
                 BlockTaskPresentation();
-                SetStatus("Waiting for eye tracking before the formal countdown. No trial input was processed.");
+                SetStatus("Opening the formal recording window. Eye availability is recorded separately.");
                 return true;
             }
             double now=Time.realtimeSinceStartupAsDouble;
@@ -816,7 +823,7 @@ namespace AvatarStroop.Unity
                     {
                         if(view!=null)view.SetPresentationAvailable(false);
                         SetStatus(development.WaitingForFormalEyeActivation?
-                            "Waiting for eye recording to become ready. The formal countdown has not started.":
+                            "Opening the formal recording window. The countdown has not started yet.":
                             "Waiting for initial recording status; no task input is processed.");
                     }
                     else

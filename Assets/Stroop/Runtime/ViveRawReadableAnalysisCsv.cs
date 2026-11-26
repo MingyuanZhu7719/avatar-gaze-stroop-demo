@@ -74,7 +74,8 @@ namespace AvatarStroop.Runtime
                 case 3:return "NO_EYE";case 4:return "OUT_OF_ORDER";
                 // The optional snapshot was busy or changed before coherence
                 // revalidation. Neither case asserts physical sensor loss.
-                case 5:return "SNAPSHOT_BUSY";default:throw new InvalidDataException("Unknown eye observation reason.");}
+                case 5:return "SNAPSHOT_BUSY";case 6:return "CLIENT_INITIALIZATION_FAILED";case 7:return "CLIENT_FAULTED";
+                default:throw new InvalidDataException("Unknown eye observation reason.");}
         }
         static readonly HashSet<string> WozBitFields=new HashSet<string>(new[]{
             "woz_task_issued_participant_time","woz_challenge_issued_participant_time","woz_receipt_participant_time",
@@ -243,6 +244,7 @@ namespace AvatarStroop.Runtime
                 append(Meta("eye_quality_fill","NONE_NO_FORWARD_FILL_OR_INTERPOLATION"));
                 append(Meta("eye_quality_reader_compatibility","NEW_READER_ACCEPTS_OLD_FILES_OLD_READERS_REJECT_UNKNOWN_KINDS_OR_REASONS"));
                 append(Meta("eye_snapshot_busy","OWNER_SNAPSHOT_CONTENTION_OR_COHERENCE_CHANGE_NOT_PHYSICAL_SENSOR_LOSS"));
+                append(Meta("eye_client_failure","OWNER_OBSERVED_CLIENT_FAILURE_TASK_CONTINUES_WITHOUT_FABRICATED_NATIVE_DATA"));
                 append(Meta("native_acquisition","ONE_UNIQUE_NATIVE_ID_PER_WORKER_ACQUISITION_INCLUDING_INVALID_QUALITY"));
                 append(Meta("native_sequence_gaps","COUNTER_DELTAS_NOT_PROVEN_PHYSICAL_SENSOR_LOSS"));
                 append(Meta("native_clock_alignment","OPAQUE_NATIVE_TIMESTAMP_WITH_SAME_PROCESS_API_CALL_BRACKETS_NO_PHOTON_ONSET"));

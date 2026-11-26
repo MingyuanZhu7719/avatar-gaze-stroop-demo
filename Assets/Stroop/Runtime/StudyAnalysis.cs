@@ -127,7 +127,7 @@ namespace AvatarStroop.Runtime
 
     public sealed partial class StudyAnalysis
     {
-        public const string Version="1.3.0";
+        public const string Version="1.3.1";
         static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
         readonly Dictionary<string,StudyTrial> byId=new Dictionary<string,StudyTrial>(StringComparer.Ordinal);
         readonly Dictionary<string,StudyEyeGroup> eye=new Dictionary<string,StudyEyeGroup>(StringComparer.Ordinal);
@@ -165,6 +165,7 @@ namespace AvatarStroop.Runtime
         {
             if(finalized)throw new InvalidOperationException("Analysis is already finalized.");
             var f=record.Fields;
+            ObserveEyeAvailability(record);
             if(record.Kind=="manifest")
             {
                 string session=Get(f,"session_id");

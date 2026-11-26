@@ -88,6 +88,7 @@ namespace AvatarStroop.Tests
             VisualSearchTests.Register(suite);
             TutorialTrainingTests.Register(suite);
             ViveFormalEyeRecordingTests.Register(suite);
+            ViveOptionalEyeClientTests.Register(suite);
             TutorialRecordingRoundtripTests.Register(suite);
             ViveTutorialRuntimeTests.Register(suite);
             ViveTaskTriggerGateTests.Register(suite);
