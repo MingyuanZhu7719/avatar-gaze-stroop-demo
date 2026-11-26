@@ -20,7 +20,17 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
-      - name: Verify externally provisioned Photon SDK
+      - name: Test encrypted SDK provisioning
+        shell: pwsh
+        env:
+          PHOTON_SDK_CI_KEY: ${{ secrets.PHOTON_SDK_CI_KEY }}
+        run: ./scripts/test-restore-photon-ci.ps1 -BundlePath .github/dependencies/photon-realtime-5.1.21.aesgcm
+      - name: Restore pinned Photon SDK
+        shell: pwsh
+        env:
+          PHOTON_SDK_CI_KEY: ${{ secrets.PHOTON_SDK_CI_KEY }}
+        run: ./scripts/restore-photon-ci.ps1 -BundlePath .github/dependencies/photon-realtime-5.1.21.aesgcm
+      - name: Verify provisioned Photon SDK
         run: python scripts/photon-sdk.py --verify
       - name: Run installed-compiler discovery regression
         run: python scripts/test_unity_tools.py
@@ -72,7 +82,12 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
-      - name: Verify externally provisioned Photon SDK
+      - name: Restore pinned Photon SDK
+        shell: pwsh
+        env:
+          PHOTON_SDK_CI_KEY: ${{ secrets.PHOTON_SDK_CI_KEY }}
+        run: ./scripts/restore-photon-ci.ps1 -BundlePath .github/dependencies/photon-realtime-5.1.21.aesgcm
+      - name: Verify provisioned Photon SDK
         run: python scripts/photon-sdk.py --verify
       - name: Compile and run isolated WoZ pairing UI fixture
         shell: pwsh

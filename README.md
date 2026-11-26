@@ -57,7 +57,7 @@ Before either C# test runner, import the pinned Photon Realtime SDK as described
 
 With an installed Unity Mono toolchain, `python scripts/test.py` is an alternative portable test runner. Set `STROOP_UNITY_CONTENTS` to the installation's `Editor/Data` directory on Windows/Linux or `Unity.app/Contents` on macOS when it is outside the discovery paths. Recording-specific suites and Unity verification commands are listed in the development guide.
 
-[GitHub Actions](.github/workflows/regression.yml) defines portable regression on Windows and Ubuntu, independent-process simulation, and Windows Framework launcher/pairing checks. These jobs require the pinned Photon SDK to be provisioned before verification. Photon currently requires a signed-in download, so a fresh hosted runner cannot acquire it through the public download URL; CI provisioning remains outstanding. The workflow fails explicitly at that prerequisite rather than skipping C# checks. Local SDK-backed regression and package builds can use the documented import procedure. Software tests do not substitute for headset or spatial-accuracy validation.
+[GitHub Actions](.github/workflows/regression.yml) runs portable regression on Windows and Ubuntu, independent-process simulation, and Windows Framework launcher/pairing checks. Clean runners restore the pinned Photon SDK from an encrypted dependency bundle using a repository Actions secret, then verify the official archive and imported-file hashes. See [CI dependency setup](docs/ci-photon-sdk.md) for maintenance and fork-PR limitations. No Photon app configuration or live cloud connection is needed for these tests. Software tests do not substitute for headset or spatial-accuracy validation.
 
 ## Repository layout
 
