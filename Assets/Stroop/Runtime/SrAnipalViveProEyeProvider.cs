@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using AvatarStroop.Core;
 
@@ -59,8 +60,17 @@ namespace AvatarStroop.Runtime
         public bool Quarantined {get{return quarantined;}}
         public bool RestartSafe {get{return !quarantined;}}
         public int? LastNativeResult {get;private set;}
-        public static string PluginDirectory {get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-            "VIVE","Updater","App","SRanipal","tools","eye_calibration_dashboard","EyeCalibrationDashboard_Data","Plugins");}}
+        public static string PluginDirectory {get{return Path.GetDirectoryName(SrAnipalInstalledClientLocation.Resolve().LibraryPath);}}
+        public string InstallationDiagnostic {get{return (client as InstalledClient)?.InstallationDiagnostic??"";}}
+
+        // Diagnostic-only: resolve/load/bind/release the installed library. This
+        // never calls Initial, reads eye data, starts calibration or changes consent.
+        public static string VerifyInstalledClientLoad()
+        {
+            ValidateAbi();var installed=new InstalledClient();
+            try{installed.Open();return installed.InstallationDiagnostic;}
+            finally{installed.Close();}
+        }
 
         public SrAnipalViveProEyeProvider(IClock clock,Func<ViveHeadFrame> headReader)
             :this(clock,headReader,new InstalledClient()){}
@@ -283,6 +293,7 @@ namespace AvatarStroop.Runtime
         }
         sealed class InstalledClient : ISrAnipalNativeClient, ISrAnipalCallbackNativeClient
         {
+            internal string InstallationDiagnostic="Installed HTC client has not been resolved.";
             IntPtr library;
             InitialDelegate initial;
             ReleaseDelegate release;
@@ -295,14 +306,18 @@ namespace AvatarStroop.Runtime
             {
                 if(Environment.OSVersion.Platform!=PlatformID.Win32NT||IntPtr.Size!=8)
                     throw new PlatformNotSupportedException("The installed SRanipal client requires 64-bit Windows.");
-                string path=Path.Combine(PluginDirectory,"SRanipal.dll");
-                if(!File.Exists(path))throw new FileNotFoundException("The installed HTC SRanipal client was not found. No download is attempted.");
-                var version=FileVersionInfo.GetVersionInfo(path);
-                if(version.FileMajorPart!=1||version.FileMinorPart!=3||version.FileBuildPart!=5||version.FilePrivatePart!=1)
-                    throw new InvalidOperationException("This adapter has verified native layout only for SRanipal.dll 1.3.5.1. Review an updated client before use.");
+                SrAnipalInstalledClientLocation location;
+                try{location=SrAnipalInstalledClientLocation.Resolve();}
+                catch(Exception error){InstallationDiagnostic="HTC client discovery failed: "+error.Message;throw;}
+                string path=location.LibraryPath;
+                InstallationDiagnostic=location.SearchDiagnostic;
                 // LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS.
                 library=LoadLibraryEx(path,IntPtr.Zero,0x1100);
-                if(library==IntPtr.Zero)throw new InvalidOperationException("Cannot load installed HTC client (Windows error "+Marshal.GetLastWin32Error()+").");
+                if(library==IntPtr.Zero)throw new InvalidOperationException("Cannot load installed HTC client at "+path+" (Windows error "+Marshal.GetLastWin32Error()+"). Check this HTC installation and its dependencies.");
+                var loaded=new StringBuilder(32768);uint length=GetModuleFileName(library,loaded,loaded.Capacity);
+                if(length==0||length>=loaded.Capacity||!String.Equals(Path.GetFullPath(path),Path.GetFullPath(loaded.ToString()),StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Loaded HTC library differs from the selected installation. Restart this application before retrying.");
+                InstallationDiagnostic+=" | Loaded: "+loaded;
                 initial=Bind<InitialDelegate>("Initial");release=Bind<ReleaseDelegate>("Release");
                 status=Bind<StatusDelegate>("GetStatus");read=Bind<EyeDelegate>("GetEyeData_v2");
                 calibration=Bind<CalibrationDelegate>("IsUserNeedCalibration");device=Bind<DeviceDelegate>("IsViveProEye");
@@ -345,6 +360,7 @@ namespace AvatarStroop.Runtime
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate int CalibrationDelegate([MarshalAs(UnmanagedType.I1)] ref bool needed);
         [UnmanagedFunctionPointer(CallingConvention.Winapi)] [return:MarshalAs(UnmanagedType.I1)] delegate bool DeviceDelegate();
         [DllImport("kernel32.dll",EntryPoint="LoadLibraryExW",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr LoadLibraryEx(string path,IntPtr reserved,uint flags);
+        [DllImport("kernel32.dll",EntryPoint="GetModuleFileNameW",CharSet=CharSet.Unicode,SetLastError=true)] static extern uint GetModuleFileName(IntPtr module,StringBuilder path,int capacity);
         [DllImport("kernel32.dll",CharSet=CharSet.Ansi,ExactSpelling=true)] static extern IntPtr GetProcAddress(IntPtr module,string name);
         [DllImport("kernel32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] static extern bool FreeLibrary(IntPtr module);
     }

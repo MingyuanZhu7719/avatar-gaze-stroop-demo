@@ -2,6 +2,12 @@
 
 保留完整的 Operator 文件夹，双击 **Start-WoZ-Operator.cmd** 启动。先打开 SteamVR，确认头显可用，再在程序中点击 **Start headset view**。眼动功能仍需要本机的 HTC/SRanipal 软件与校准。
 
+Participant 与 Operator 共用眼动安装查找：优先使用明确指定的 DLL，其次查找正在运行的 `sr_runtime.exe` 所在目录与 HTC `SOFTWARE\VIVE\SRWorks\SRanipal` 登记的安装位置，最后检查原默认目录。因此 E 盘等自定义安装不再需要修改代码。只使用已安装、版本为 **1.3.5.1 的 x64 SRanipal.dll**；HTC 运行时的版本号是另一回事。程序不下载或附带 HTC DLL。
+
+如果 HTC 登记信息缺失，可以在启动程序旁新建 `sranipal-client-path.txt`，只写一行实际 `SRanipal.dll` 的完整路径。Participant 可放在外层 `AvatarStroopViveEyePreview.exe` 旁，也可放在 `UnityPlayer` 内的实际程序旁；Operator 放在其 EXE 旁。环境变量 `STROOP_SRANIPAL_DLL` 优先于该文件。明确指定的坏路径会直接报错，不会静默改用旧副本。只指定安装目录中的原文件，不要把 DLL 单独复制进程序包。
+
+日志中的 `EYE_CLIENT_INSTALLATION`（Participant 为 `VIVE_EYE_CLIENT_INSTALLATION`）保存发现来源、选中路径和实际加载路径。诊断工具 `ViveEyeProbe.exe --check-installation` 仅检查位置、版本和架构；`--check-client-load` 额外检查 DLL 加载与入口函数，两者都不初始化眼动、不采集数据、不修改校准或同意设置。
+
 启动器读取 `%LOCALAPPDATA%\openvr\openvrpaths.vrpath` 中登记的 SteamVR 安装位置，支持 E 盘等自定义目录；仅为本次程序设置 `XR_RUNTIME_JSON` 和 `VR_OVERRIDE`，让 OpenXR 与 OpenVR 使用同一套安装，不会修改系统默认 OpenXR runtime。请保留同目录的 `WoZOperatorLauncher.exe`。每次启动会在程序旁创建 `WoZLogs/run-*`，保存 `Player.log` 和 `Launcher.txt`；后者记录选定的 manifest、OpenXR 和 OpenVR 库路径。关闭程序后会自动打开该文件夹。
 
 如果找不到登记的安装位置，先启动一次 SteamVR。也可以找到实际安装目录中的 `steamxr_win64.json`，将该文件拖到 **Start-WoZ-Operator.cmd** 上明确选择该安装。看到“已有程序运行”的提示时，先关闭旧的实验者程序；无法写入日志时，将完整 Operator 文件夹复制到桌面后重试。

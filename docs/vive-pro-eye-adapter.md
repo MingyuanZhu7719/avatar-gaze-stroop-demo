@@ -29,8 +29,12 @@ include `VIVE_RUNTIME_SELECTION`, `VIVE_CONTROLLER_NATIVE_CONTEXT` and XR device
 metadata transitions (`VIVE_XR_DEVICE_CHANGE`) to diagnose cross-machine input
 failures. A model-loading error does not change task input readiness.
 
-`SrAnipalViveProEyeProvider` loads the existing Windows x64 `SRanipal.dll` from
-HTC's installed eye-calibration Dashboard Plugins directory. The supported
+`SrAnipalViveProEyeProvider` locates the existing Windows x64 `SRanipal.dll`
+through an explicit path override, the running SR_Runtime location, HTC's
+registered installation, then the legacy default installation. Both known
+eye-calibration plugin layouts are supported, including custom drive locations.
+See [installation diagnostics](woz-operator-debugging.md) for the optional path
+file and checks that do not initialize or capture eye data. The supported
 client file version is pinned to **1.3.5.1**. Runtime-service and client-library
 versions are distinct; an updated client requires an ABI review before use.
 The loader uses an absolute DLL path and restricted dependency search flags.

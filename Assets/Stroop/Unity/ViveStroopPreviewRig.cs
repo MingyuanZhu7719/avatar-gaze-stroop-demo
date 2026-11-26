@@ -71,6 +71,7 @@ namespace AvatarStroop.Unity
         string lastViewFailure;
         internal string LastViewFailure {get{return lastViewFailure;}}
         string lastEyeClientFailure;
+        ViveProEyeWorker installationLoggedWorker;
         internal string LastEyeClientFailure {get{return lastEyeClientFailure;}}
         GUIStyle label,button,panel;
         GUISkin ownerSkin;
@@ -699,6 +700,12 @@ namespace AvatarStroop.Unity
         }
         void Update()
         {
+            if(worker!=null&&worker!=installationLoggedWorker)
+            {
+                string installation=worker.InstallationDiagnostic;
+                if(!String.IsNullOrEmpty(installation))
+                {installationLoggedWorker=worker;Debug.Log("VIVE_EYE_CLIENT_INSTALLATION: "+installation);}
+            }
             if(development!=null&&development.PollExplicitDesktopWithdrawal())
             {BlockTaskPresentation();SetStatus("Explicit withdrawal requested; recording and native cleanup may still be pending.");return;}
             var owner=development;bool busy;

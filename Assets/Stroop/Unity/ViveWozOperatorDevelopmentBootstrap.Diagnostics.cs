@@ -35,6 +35,7 @@ namespace AvatarStroop.Unity
             {
                 report.AppendLine("Headset: "+rig.HeadTrackingStatus);
                 report.AppendLine("Eye source: "+rig.EyeStatus);
+                report.AppendLine("Eye client installation: "+rig.EyeInstallationDiagnostic);
                 report.AppendLine("Rig: "+rig.Status);
                 if(rig.Worker!=null)report.AppendLine("Worker: "+rig.Worker.Diagnostic);
             }

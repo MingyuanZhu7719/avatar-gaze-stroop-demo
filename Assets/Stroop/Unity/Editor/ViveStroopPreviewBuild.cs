@@ -335,6 +335,7 @@ namespace AvatarStroop.Unity.Editor
             var scene=EditorSceneManager.OpenScene(ScenePath,OpenSceneMode.Single);Validate(scene);
             PlayerSettings.productName=participant?"Avatar Stroop - Participant Study":woz?"Avatar Stroop - LEGACY WOZ PARTICIPANT-LOCAL RECORDING TEST":legacy?"Avatar Stroop - LEGACY + NAMED LOCAL RECORDING TEST":controlled?"Avatar Stroop - CONTROLLED LOCAL RECORDING TEST":"Avatar Stroop - VIVE CLASSROOM VIEW ONLY";
             if(participant)PlayerSettings.bundleVersion=SessionConfiguration.ParticipantBuildVersion;
+            else if(woz)PlayerSettings.bundleVersion="2026.11.26.4";
             string executable=Path.Combine(output,"UnityPlayer/AvatarStroopViveEyePlayer.exe");Directory.CreateDirectory(Path.GetDirectoryName(executable));
             var result=BuildPipeline.BuildPlayer(new BuildPlayerOptions{scenes=controlled?new[]{ScenePath,ViveGazeValidationSceneBuild.ScenePath}:new[]{ScenePath},locationPathName=executable,
                 target=BuildTarget.StandaloneWindows64,options=controlled?BuildOptions.Development:BuildOptions.None,

@@ -14,6 +14,15 @@ namespace AvatarStroop.Apps
         {
             if(args.Length==1&&args[0]=="--self-check")
             {SrAnipalViveProEyeProvider.ValidateAbi();Console.WriteLine("PASS native ABI layout; no device was opened.");return 0;}
+            if(args.Length==1&&(args[0]=="--check-installation"||args[0]=="--check-client-load"))
+            {
+                try
+                {
+                    Console.WriteLine(args[0]=="--check-client-load"?SrAnipalViveProEyeProvider.VerifyInstalledClientLoad():SrAnipalInstalledClientLocation.Resolve().SearchDiagnostic);
+                    Console.WriteLine("PASS installed client check. No eye initialization, capture, calibration or consent change.");return 0;
+                }
+                catch(Exception error){Console.WriteLine("NOT READY: "+error.Message);return 3;}
+            }
             int seconds;
             if(args.Length!=3||args[0]!="--observe-live"||args[1]!="--seconds"||!Int32.TryParse(args[2],out seconds)||seconds<1||seconds>10)
             {Console.WriteLine("Opt-in: ViveEyeProbe.exe --observe-live --seconds 1..10. Seconds sets a soft observation deadline, not a native-call timeout. Requires existing HTC runtime and user consent. No calibration, session or file recording.");return 2;}
@@ -21,7 +30,8 @@ namespace AvatarStroop.Apps
             var clock=new MonotonicClock("vive-eye-health-local");
             using(var provider=new SrAnipalViveProEyeProvider(clock,()=>null))
             {
-                if(!provider.Start()){Console.WriteLine(provider.Diagnostic);return 3;}
+                if(!provider.Start()){Console.WriteLine(provider.InstallationDiagnostic);Console.WriteLine(provider.Diagnostic);return 3;}
+                Console.WriteLine(provider.InstallationDiagnostic);
                 int polls=0,readFrames=0,fresh=0,duplicates=0,unusable=0,noUser=0,ready=0,directions=0;
                 int? lastSequence=null,lastTimestamp=null;double start=clock.Now;
                 while(clock.Now-start<seconds)

@@ -29,6 +29,8 @@ namespace AvatarStroop.Unity
         string failureMessage;
         string headTrackingStatus="Headset view is off.",eyeStatus="Eye source is off.";
         string loggedHeadState,loggedEyeState;
+        string loggedEyeInstallation;
+        public string EyeInstallationDiagnostic {get{return loggedEyeInstallation??"";}}
         double headStateLoggedAt=double.NegativeInfinity,eyeStateLoggedAt=double.NegativeInfinity,eyeStartAt;
         public string Status {get{return failureMessage??status;}}
         public string HeadTrackingStatus {get{return headTrackingStatus;}}
@@ -111,6 +113,7 @@ namespace AvatarStroop.Unity
             try
             {
                 failureMessage=null;
+                loggedEyeInstallation=null;
                 eyeStartAt=Time.realtimeSinceStartupAsDouble;
                 eyeStatus="Starting the HTC eye client.";
                 Record("EYE_START_REQUESTED",eyeStatus);
@@ -194,6 +197,11 @@ namespace AvatarStroop.Unity
         void UpdateEyeStatus()
         {
             if(worker==null||stopping)return;
+            if(String.IsNullOrEmpty(loggedEyeInstallation))
+            {
+                string installation=worker.InstallationDiagnostic;
+                if(!String.IsNullOrEmpty(installation)){loggedEyeInstallation=installation;Record("EYE_CLIENT_INSTALLATION",installation);}
+            }
             double now=Time.realtimeSinceStartupAsDouble;
             string detail=worker.Diagnostic;
             string state;

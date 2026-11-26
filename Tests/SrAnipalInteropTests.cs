@@ -47,6 +47,7 @@ namespace AvatarStroop.Tests
         {return new SrAnipalViveProEyeProvider(new ManualClock(),()=>null,native);}
         public static void Register(TestSuite t)
         {
+            SrAnipalInstallationTests.Register(t);
             ViveNativeAcquisitionTests.Register(t);
             SrAnipalCallbackTests.Register(t);
             t.Run("SRanipal native C++ boolean outputs use the verified one-byte ABI",()=>{

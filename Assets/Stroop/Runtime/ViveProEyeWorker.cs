@@ -77,6 +77,7 @@ namespace AvatarStroop.Runtime
             internal StatusTicket StatusReserved;
             internal ObservedEyeStatus LastStatus;
             internal string Diagnostic="Starting eye client on its background thread.";
+            internal string InstallationDiagnostic="";
             internal long NativePolls,SuccessfulEyeReads,SequenceChanges,TimestampChanges;
             internal bool HasSuccessfulEyeRead;
             internal int LastEyeSequence,LastEyeTimestamp;
@@ -110,6 +111,7 @@ namespace AvatarStroop.Runtime
         ViveWorkerCaptureDiagnostics completedDiagnostics=NoCaptureDiagnostics;
         bool disposed,cleanupFailed;
         string idleDiagnostic="Stopped; explicit Start is required.",headDiagnostic;
+        string completedInstallationDiagnostic="";
         public string ClockId {get;private set;}
         // Equal labels cannot establish a shared observation time base.
         public bool UsesClock(IClock clock){return Object.ReferenceEquals(sharedClock,clock);}
@@ -501,6 +503,8 @@ namespace AvatarStroop.Runtime
         public bool HasExited {get{lock(gate){Reap();return current==null;}}}
         public string Diagnostic
         {get{lock(gate){Reap();string state=current==null?idleDiagnostic:current.Diagnostic;return headDiagnostic==null?state:headDiagnostic+" "+state;}}}
+        public string InstallationDiagnostic
+        {get{lock(gate){Reap();return current==null?completedInstallationDiagnostic:current.InstallationDiagnostic;}}}
         // All four values belong to one atomic snapshot. A new run starts at zero;
         // no completed run or gaze payload is retained by this diagnostic surface.
         public ViveWorkerCaptureDiagnostics CaptureDiagnostics
@@ -963,8 +967,10 @@ namespace AvatarStroop.Runtime
                 client=factory();if(client==null)throw new InvalidOperationException("Client factory returned null");
                 if(run.StopSignal.WaitOne(0))return;
                 bool initialized=client.Start();string diagnostic=ReadDiagnostic(client);
+                string installation=(client as SrAnipalViveProEyeProvider)?.InstallationDiagnostic??"";
                 lock(gate)
                 {
+                    run.InstallationDiagnostic=installation;
                     run.Starting=false;
                     if(!run.StopRequested){run.Ready=initialized;run.Diagnostic=diagnostic;run.AcquisitionSource=client as IViveProEyeAcquisitionSeal;}
                 }
@@ -1100,7 +1106,7 @@ namespace AvatarStroop.Runtime
         void Reap()
         {
             if(current!=null&&current.Completed&&!current.Thread.IsAlive)
-            {completedDiagnostics=Snapshot(current);idleDiagnostic=current.Diagnostic;current=null;}
+            {completedDiagnostics=Snapshot(current);idleDiagnostic=current.Diagnostic;completedInstallationDiagnostic=current.InstallationDiagnostic;current=null;}
         }
         static ViveWorkerCaptureDiagnostics Snapshot(Run run)
         {return new ViveWorkerCaptureDiagnostics(run.NativePolls,run.SuccessfulEyeReads,run.SequenceChanges,run.TimestampChanges);}
