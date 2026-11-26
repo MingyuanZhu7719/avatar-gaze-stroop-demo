@@ -104,7 +104,7 @@ namespace AvatarStroop.Unity.Editor
             Require(EditorSceneManager.SaveScene(scene,ScenePath),"operator scene save failed");
             Directory.CreateDirectory(output);
             PlayerSettings.productName="Avatar Stroop - WoZ Operator";
-            PlayerSettings.bundleVersion="2026.11.26.5";
+            PlayerSettings.bundleVersion="2026.11.26.6";
             PlayerSettings.usePlayerLog=true;
             PlayerSettings.resizableWindow=true;
             PlayerSettings.defaultScreenWidth=1600;PlayerSettings.defaultScreenHeight=1050;

@@ -12,7 +12,8 @@ namespace AvatarStroop.Runtime
         readonly Thread thread=Thread.CurrentThread;
         readonly MonotonicClock clock;
         readonly ViveProEyeWorker worker;
-        readonly object run;
+        object run;
+        readonly long runGeneration;
         readonly ViveExclusiveObservationProvider.Lease lease;
         readonly object claim=new object();
         readonly ViveWozOperatorSourceFactory factory;
@@ -26,7 +27,7 @@ namespace AvatarStroop.Runtime
         double headTime=-1,eyeTime=-1;
         bool seen,terminal,cleanupUncertain;
         internal bool Terminal {get{return terminal;}}
-        internal bool BindingCurrent {get{try{return Current();}catch{terminal=true;cleanupUncertain=true;LastIssue="source_close_uncertain";return false;}}}
+        internal bool BindingCurrent {get{try{return Current(true);}catch{terminal=true;cleanupUncertain=true;LastIssue="source_close_uncertain";return false;}}}
         internal string StreamId {get{return factory.StreamId;}}
         internal string Mapping {get{return ViveProEyeRehearsalCoordinates.MappingVersion;}}
         internal string DeviceId {get{return factory.DeviceId;}}
@@ -44,9 +45,9 @@ namespace AvatarStroop.Runtime
                 HeadObserved=observation.RawPoll.Head.ObservedLocalSeconds;EyeObserved=observation.RawPoll.Eye.ObservedLocalSeconds;}
         }
         ViveLegacyWozObservationOwner(string session,string epoch,MonotonicClock clock,IViveProEyeProvider provider,
-            ViveProEyeWorker worker,object run,double maximumAge)
+            ViveProEyeWorker worker,object run,double maximumAge,long runGeneration=0)
         {
-            this.clock=clock;this.worker=worker;this.run=run;maxAge=maximumAge;this.session=session;
+            this.clock=clock;this.worker=worker;this.run=run;this.runGeneration=runGeneration;maxAge=maximumAge;this.session=session;
             lease=new ViveExclusiveObservationProvider(provider,clock).Acquire();
             try{claimedProvider=lease.ClaimForPump(claim);factory=new ViveWozOperatorSourceFactory(session,epoch,clock,claimedProvider,new ViveProEyeRehearsalCoordinates(),maximumAge,true);}
             catch{lease.ReleaseClaim(claim);lease.Dispose();throw;}
@@ -55,18 +56,39 @@ namespace AvatarStroop.Runtime
         // binds only an already-running fixed installed worker and exact clock.
         // The current memory bridge never calls this factory.
         internal static ViveLegacyWozObservationOwner BindInstalled(string session,string epoch,MonotonicClock clock,ViveProEyeWorker worker,double maximumAge)
+        {return BindWorker(session,epoch,clock,worker,maximumAge,true);}
+        static ViveLegacyWozObservationOwner BindWorker(string session,string epoch,MonotonicClock clock,ViveProEyeWorker worker,double maximumAge,bool requireInstalled)
         {
-            object run;
-            if(clock==null||worker==null||!worker.UsesClock(clock)||!worker.UsesInstalledSdkPath||!worker.TryGetRecordingRunIdentity(out run))
+            if(clock==null||worker==null||!worker.UsesClock(clock)||worker.UsesInstalledSdkPath!=requireInstalled)
                 throw new InvalidOperationException("Exact running installed worker and sealed shared clock required.");
-            return new ViveLegacyWozObservationOwner(session,epoch,clock,worker,worker,run,maximumAge);
+            long generation=worker.RecordingStartGeneration;object run;
+            var read=worker.ReadRecordingRunIdentity(out run);
+            if(read==ViveProEyeWorker.RecordingRunRead.Unavailable||generation!=worker.RecordingStartGeneration)
+                throw new InvalidOperationException("Exact running installed worker and sealed shared clock required.");
+            // Busy is not a stopped run. Capture only the existing generation;
+            // a subsequent Ready read must acquire its exact identity before
+            // any observation can be emitted. Never wait on native acquisition.
+            return new ViveLegacyWozObservationOwner(session,epoch,clock,worker,worker,run,maximumAge,generation);
         }
-        bool Current()
+        bool Current(bool allowBusy=false)
         {
             if(terminal||!Object.ReferenceEquals(thread,Thread.CurrentThread))return false;
-            object current;
-            if(!lease.IsClaimedBy(claim)||(worker!=null&&(!worker.UsesClock(clock)||!worker.TryGetRecordingRunIdentity(out current)||!Object.ReferenceEquals(run,current))))
+            if(!lease.IsClaimedBy(claim)||(worker!=null&&(!worker.UsesClock(clock)||worker.RecordingStartGeneration!=runGeneration)))
             {Fail("provider_or_worker_run_lost");return false;}
+            if(worker!=null)
+            {
+                object current;var read=worker.ReadRecordingRunIdentity(out current);
+                // Stop publishes its generation even while the worker gate is
+                // held. Recheck after the read, including its Busy result.
+                if(worker.RecordingStartGeneration!=runGeneration||read==ViveProEyeWorker.RecordingRunRead.Unavailable||
+                    (read==ViveProEyeWorker.RecordingRunRead.Ready&&run!=null&&!Object.ReferenceEquals(run,current)))
+                {Fail("provider_or_worker_run_lost");return false;}
+                // Binding continuity keeps the protocol alive during a brief
+                // publication lock. Observation reads still yield no candidate,
+                // never cached gaze or refreshed timestamps, while it is busy.
+                if(read==ViveProEyeWorker.RecordingRunRead.Busy)return allowBusy;
+                if(run==null)run=current;
+            }
             return true;
         }
         internal bool TryRead(WozLanTaskContext task,double taskReceived,out Candidate candidate)
@@ -98,6 +120,9 @@ namespace AvatarStroop.Runtime
                 if(!source.TryRead(out original)||original==null||!original.HeadValid||!original.EyeValid)return false;
                 var observation=source.LastObservation;var head=observation.RawPoll.Head;var eye=observation.RawPoll.Eye;
                 double now=clock.Now;
+#if STROOP_TEST_BUILD
+                var beforeIdentity=BeforeCandidateIdentityCheckForTest;if(beforeIdentity!=null)beforeIdentity();
+#endif
                 if(!Current())return false;
                 if(head.ObservedLocalSeconds<=taskReceived||eye.ObservedLocalSeconds<=taskReceived||
                     now-head.ObservedLocalSeconds>maxAge||now-eye.ObservedLocalSeconds>maxAge)return false;
@@ -122,6 +147,10 @@ namespace AvatarStroop.Runtime
             try{lease.CloseClaim(claim);}catch{cleanupUncertain=true;LastIssue="source_close_uncertain";throw;}
         }
 #if STROOP_TEST_BUILD
+        internal Action BeforeCandidateIdentityCheckForTest;
+        internal static ViveLegacyWozObservationOwner BindSyntheticWorker(string session,string epoch,MonotonicClock clock,ViveProEyeWorker worker,double maximumAge)
+        {return BindWorker(session,epoch,clock,worker,maximumAge,false);}
+        internal void LoseLeaseForTest(){lease.CloseClaim(claim);}
         // A sealed fixture provider cannot be supplied to the installed factory.
         internal sealed class SyntheticObservations : IViveProEyeProvider
         {
