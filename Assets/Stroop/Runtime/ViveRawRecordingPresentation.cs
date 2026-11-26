@@ -4,7 +4,8 @@ namespace AvatarStroop.Runtime
     // recording, and it never treats software completion as data validity.
     internal static class ViveRawRecordingPresentation
     {
-        internal static string Describe(bool installFailed,bool withdrawn,bool safetyLatched,ViveNamedRawRecordingPump.Outcome state)
+        internal static string Describe(bool installFailed,bool withdrawn,bool safetyLatched,ViveNamedRawRecordingPump.Outcome state,
+            bool participantSession=false,bool formalEyeActive=false)
         {
             if(withdrawn)return "Withdrawal requested. Recording is stopped or stopping; unconfirmed data remains unknown.";
             if(installFailed)return "Recording could not start. The task is blocked; cleanup and any in-flight work remain unconfirmed.";
@@ -12,6 +13,8 @@ namespace AvatarStroop.Runtime
             switch(state)
             {
                 case ViveNamedRawRecordingPump.Outcome.Running:
+                    if(participantSession)return formalEyeActive?"Task and formal eye recording are active.":
+                        "Task recording is active. Formal eye recording has not started.";
                     return "Development recording is running. Coverage, validity and export are not confirmed.";
                 case ViveNamedRawRecordingPump.Outcome.Finishing:
                     return "Recording is finishing. The unconfirmed tail remains unknown.";

@@ -25,7 +25,7 @@ namespace AvatarStroop.Tests
         {
             var f=new Dictionary<string,string>(StringComparer.Ordinal)
             {
-                {"woz_schema",ViveLegacyWozRecordingSchema.SchemaVersion},{"woz_event",eventName},
+                {"woz_schema",ViveLegacyWozRecordingSchema.LegacySchemaVersion},{"woz_event",eventName},
                 {"woz_epoch","synthetic-epoch"},{"woz_source_binding","synthetic-source"},{"woz_mapping","synthetic-mapping"},
                 {"woz_participant_clock_id","test-monotonic"},{"woz_operator_clock_id","synthetic-operator-clock"},
                 {"woz_task_revision","5"},{"woz_task_packet_sequence","7"},{"woz_choice_generation","1"},
@@ -118,6 +118,30 @@ namespace AvatarStroop.Tests
 
         public static void Register(TestSuite suite)
         {
+            suite.Run("WoZ V2 timing evidence binds original participant roundtrip and actual transport budget",()=>{
+                foreach(string origin in new[]{"MEMORY","SOCKET","PHOTON_CLOUD"})
+                {
+                    var f=Fields();f["woz_schema"]=ViveLegacyWozRecordingSchema.SchemaVersion;f["woz_receipt_origin"]=origin;
+                    f["woz_network_visual_budget_seconds"]=Time(origin=="PHOTON_CLOUD"?.75:.15);
+                    f["woz_task_roundtrip_seconds"]=Time(2);Validate(f);
+                    // Historical accepted evidence can be too old to display;
+                    // serialization does not turn its observed duration into admission.
+                    f["woz_task_roundtrip_seconds"]=Time(.1);Check.Throws<InvalidOperationException>(()=>Validate(f));
+                    f["woz_task_roundtrip_seconds"]=Time(2);f["woz_network_visual_budget_seconds"]=Time(.7);
+                    Check.Throws<InvalidOperationException>(()=>Validate(f));
+                }
+                foreach(string kind in new[]{"LocalRevoke","LocalFailure","SafetyStopRequest"})
+                {
+                    var f=Fields(kind);f["woz_schema"]=ViveLegacyWozRecordingSchema.SchemaVersion;
+                    f["woz_network_visual_budget_seconds"]=Time(.15);f["woz_task_roundtrip_seconds"]=Missing;Validate(f);
+                    f["woz_task_roundtrip_seconds"]=Time(2);Check.Throws<InvalidOperationException>(()=>Validate(f));
+                }
+                var old=Fields();Validate(old);old["woz_network_visual_budget_seconds"]=Time(.15);
+                Check.Throws<InvalidOperationException>(()=>Validate(old));
+                var previousCloud=Fields();previousCloud["woz_schema"]=ViveLegacyWozRecordingSchema.SchemaVersion;
+                previousCloud["woz_receipt_origin"]="PHOTON_CLOUD";previousCloud["woz_network_visual_budget_seconds"]=Time(.5);
+                previousCloud["woz_task_roundtrip_seconds"]=Time(2);Validate(previousCloud);
+            });
             suite.Run("WoZ schema accepts all seven exact historical event forms",()=>{
                 foreach(string name in new[]{"TaskReceipt","Preflight","Pose","PoseUsed","SafetyStopRequest","LocalRevoke","LocalFailure"})
                 {var f=Fields(name);Check.Equal(33,f.Count);Validate(f);}
@@ -132,6 +156,14 @@ namespace AvatarStroop.Tests
                 f["woz_control_source"]="LiveOperator";f["woz_synthetic"]="FALSE";Validate(f);
                 Reject(x=>x["woz_control_source"]="LiveOperator");Reject(x=>x["woz_synthetic"]="FALSE");
                 Reject(x=>{x["woz_receipt_origin"]="SOCKET";x["woz_synthetic"]="FALSE";});
+            });
+            suite.Run("WoZ schema distinguishes Photon Cloud origin without granting source identity",()=>{
+                var f=Fields();f["woz_receipt_origin"]="PHOTON_CLOUD";Validate(f);
+                f["woz_control_source"]="LiveOperator";f["woz_synthetic"]="FALSE";Validate(f);
+                Reject(x=>{x["woz_receipt_origin"]="PHOTON_CLOUD";x["woz_synthetic"]="FALSE";});
+                Reject(x=>{x["woz_receipt_origin"]="PHOTON_CLOUD";x["woz_control_source"]="LiveOperator";});
+                Reject(x=>x["woz_receipt_origin"]="PHOTON");
+                Reject(x=>{x["woz_receipt_origin"]="PHOTON_CLOUD";x["woz_clock_relation"]="SYNCHRONIZED";});
             });
             suite.Run("WoZ schema rejects arbitrary payload key token and casing fields",()=>{
                 foreach(string key in new[]{"woz_key","woz_token","woz_packet_bytes","woz_unknown","WOZ_schema","packet","key","token","legacy_token"})

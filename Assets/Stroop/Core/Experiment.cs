@@ -900,9 +900,8 @@ namespace AvatarStroop.Core
             if(Double.IsNaN(now) || Double.IsInfinity(now) || now < lastTime) throw new InvalidOperationException("Named monotonic clock moved backward or became invalid");
             lastTime=now; return now;
         }
-        void Log(string kind, params string[] fields)
+        void AddTaskContext(string kind,Dictionary<string,string> data)
         {
-            var data=new Dictionary<string,string>(); for(int i=0;i<fields.Length;i+=2) data.Add(fields[i],fields[i+1]);
             if(kind=="session_created"&&Configuration.ParticipantAssignment!=null)
             {
                 data.Add("participant_id",Configuration.ParticipantAssignment.ParticipantId);
@@ -938,6 +937,13 @@ namespace AvatarStroop.Core
             else data.Add("response_rule",Configuration.ResponseRule.ToString());
             if(Configuration.TaskKind==TaskKind.Stroop&&current!=null&&(kind=="trial_planned"||kind=="stimulus_presented"||kind=="first_response"))
                 data.Add("expected_response",current.ExpectedResponse.ToString());
+        }
+        void Log(string kind, params string[] fields)
+        {
+            var data=new Dictionary<string,string>(); for(int i=0;i<fields.Length;i+=2) data.Add(fields[i],fields[i+1]);
+            // The typed network record has its own field schema. Trial and
+            // training context belongs on the ordinary participant events.
+            if(kind!=ViveLegacyWozRecordingSchema.EventKind)AddTaskContext(kind,data);
             double now=Time();
             if(Configuration.NamedPlan!=null)
             {

@@ -63,12 +63,27 @@ namespace AvatarStroop.Unity
                 {ClearRawPracticeRequest();message="Pending practice start canceled. No trial started.";}
             }
             DrawFormalConfirmationControls();
-            GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&FormalEyeReadyForFirstBlock&&
-                !FirstFormalControllerWaiting;
-            if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&GUILayout.Button("Begin first block"))
-            {if(namedRawPump!=null)RequestNamedBlockPlanStart(false);else Run(()=>participant.OwnerBeginBlock(Actor.Owner));}
+            if(ParticipantFirstBlockReady)
+            {
+                GUI.enabled=FirstBlockRequestAvailable&&firstBlockRequest==null;
+                if(GUILayout.Button("Begin first block"))RequestParticipantFirstBlock();
+                GUI.enabled=true;
+                if(firstBlockRequest!=null)
+                {
+                    GUILayout.Label("Start requested. "+FirstBlockWaitReason,recordingWrap);
+                    if(GUILayout.Button("Cancel first block start"))CancelFirstBlockRequest("Start cancelled. Select Begin first block when ready.");
+                }
+                else if(firstBlockRequestNotice!=null)GUILayout.Label(firstBlockRequestNotice,recordingWrap);
+            }
+            else
+            {
+                GUI.enabled=!RecordingBlocked&&!ObservationBlocked&&participant.InputReady&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&FormalEyeReadyForFirstBlock&&
+                    !FirstFormalControllerWaiting;
+                if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&participant.LockedControl!=ControlSelection.LiveWoz&&GUILayout.Button("Begin first block"))
+                {if(namedRawPump!=null)RequestNamedBlockPlanStart(false);else Run(()=>participant.OwnerBeginBlock(Actor.Owner));}
+            }
             GUI.enabled=true;
-            if(participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&!FormalEyeReadyForFirstBlock)
+            if(firstBlockRequest==null&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0&&!FormalEyeReadyForFirstBlock)
                 GUILayout.Label(FormalEyeFirstBlockNotice,recordingWrap);
         }
         // Kept outside the scrollable setup/status body by the desktop rig.
@@ -133,7 +148,8 @@ namespace AvatarStroop.Unity
                     "Practice in progress. Respond using the trackpad; trigger confirms instructions.";
                 case Phase.PracticeCorrection:return "Review the feedback, release the trigger, then pull it to continue.";
                 case Phase.BlockPreparation:return "Next: review and confirm the experiment plan below.";
-                case Phase.BlockReady:return "Next: begin the first block below.";
+                case Phase.BlockReady:return firstBlockRequest!=null?"Start requested. "+FirstBlockWaitReason:
+                    firstBlockRequestNotice??"Next: begin the first block below.";
                 case Phase.Countdown:case Phase.MainTask:return "Block running. The participant responds in the headset.";
                 case Phase.Questionnaire:return "In headset: trackpad up selects a lower rating; down selects a higher rating. Trigger confirms.";
                 case Phase.Rest:return "Rest. The participant presses the trigger when ready to continue.";
@@ -274,7 +290,7 @@ namespace AvatarStroop.Unity
                 }
                 GUILayout.Label("The offered folder is created only when you explicitly prepare. Custom paths must already exist. The writer checks access again after both choices.",recordingWrap);
                 GUILayout.Label("Task responses are saved during training and the experiment. Eye data begins with the first formal countdown. No upload. Eye data may identify you.",recordingWrap);
-                if(legacyWozRecordingSelected)GUILayout.Label("WoZ also saves mapped operator head/eye poses locally. Participant eyes, answers and ratings never go to the operator.",recordingWrap);
+                if(legacyWozRecordingSelected)GUILayout.Label("WoZ also saves mapped operator poses locally. The headset asks separately about sharing live head turns and gaze direction with the operator. Answers and ratings stay local.",recordingWrap);
                 GUILayout.Label(ParticipantBuild?"Withdrawal stops further recording and keeps the files already written. Study consent is handled separately.":
                     "Withdrawal stops further work, but does not delete existing files. Failures leave output unconfirmed. Not validated for study use.",recordingWrap);
                 controlledRecordingNoticeAccepted=GUILayout.Toggle(controlledRecordingNoticeAccepted,ParticipantBuild?

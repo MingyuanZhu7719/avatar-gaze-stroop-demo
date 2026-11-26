@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>Photon.Realtime</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>7.3</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="PhotonClient"><HintPath>Assets/Photon/PhotonLibs/PhotonClient.dll</HintPath></Reference>
+    <Compile Include="Assets/Photon/PhotonRealtime/Code/*.cs" />
+  </ItemGroup>
+  <Target Name="RequirePinnedPhotonSdk" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('Assets/Photon/sdk-manifest.json')" Text="Import the pinned Photon SDK using scripts/photon-sdk.py before compiling." />
+  </Target>
+</Project>

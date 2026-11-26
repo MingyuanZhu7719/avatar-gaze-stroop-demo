@@ -13,6 +13,7 @@
     <AppConfig>Apps/StudyAnalyzer.config</AppConfig>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="AvatarStroop.PhotonRealtime.csproj" />
     <Compile Include="Assets/Stroop/Core/**/*.cs" />
     <Compile Include="Assets/Stroop/Runtime/**/*.cs" />
     <Compile Include="Apps/StudyAnalyzer.cs" />

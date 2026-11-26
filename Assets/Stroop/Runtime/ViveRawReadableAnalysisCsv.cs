@@ -79,6 +79,7 @@ namespace AvatarStroop.Runtime
         static readonly HashSet<string> WozBitFields=new HashSet<string>(new[]{
             "woz_task_issued_participant_time","woz_challenge_issued_participant_time","woz_receipt_participant_time",
             "woz_send_operator_time","woz_head_operator_time","woz_eye_operator_time",
+            "woz_network_visual_budget_seconds","woz_task_roundtrip_seconds",
             "woz_head_qx","woz_head_qy","woz_head_qz","woz_head_qw","woz_eye_dx","woz_eye_dy","woz_eye_dz"},StringComparer.Ordinal);
         internal static Outcome Write(Stream input,Stream privateOutput,long maximumInputBytes,int maximumRecords,
             long maximumOutputBytes,CancellationToken cancellation)

@@ -92,6 +92,9 @@ namespace AvatarStroop.Tests
             ViveTutorialRuntimeTests.Register(suite);
             ViveTaskTriggerGateTests.Register(suite);
             ViveCsvPathPolicyTests.Register(suite);
+            ViveWozPhotonSessionTests.Register(suite);
+            ViveWozPhotonConfigurationTests.Register(suite);
+            ViveLegacyWozRawSchemaTests.Register(suite);
             StudyAnalysisTests.Register(suite);
             AppLanguageTests.Register(suite);
             GazeControlTests.Register(suite);

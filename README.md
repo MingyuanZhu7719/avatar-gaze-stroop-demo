@@ -18,7 +18,7 @@ Use the [local study analyzer](docs/study-analyzer.md) to read completed VRAW/CS
 | Eye acquisition | Installed SRanipal native callbacks, a bounded acquisition queue independent of Unity updates, channel-validity and calibration-query evidence, and graceful completion draining. |
 | Fixed-target eye validation | Separate opt-in recording in controlled VIVE builds; known classroom targets, steady-head and gentle head-turn passes, software timing and descriptive accuracy/AOI summaries. |
 | Gaze analysis records | Raw native frame identity and software timestamps; admitted observations add head pose, completed-render scene geometry and exclusive task/eyes/remaining-face AOI proxies. |
-| Live WoZ | Separate participant and operator applications, explicit pairing and pose forwarding, and an optional participant-local recording build. Physical two-PC acceptance remains separate. |
+| Live WoZ | Paired participant and operator apps. The operator drives the evaluator avatar. Participants can share live head orientation and gaze so the operator sees their avatar from the evaluator's seat. Participant-local recording is optional. Physical two-PC acceptance is pending. |
 | Other development tools | Quest PC Link preview, desktop preview, independent-process simulation, owner console, and read-only journal analysis. |
 
 The local VIVE Automatic recording flow has been exercised in development. Eye/face localization accuracy, calibration-state fluctuations, hardware exposure/display synchronization, and two-physical-PC WoZ still require dedicated validation. This is development software, not an accepted research apparatus.
@@ -53,9 +53,11 @@ dotnet run --project AvatarStroop.Regression.csproj --configuration Release
 python -B -m unittest discover -s scripts -p "test_*.py"
 ```
 
+Before either C# test runner, import the pinned Photon Realtime SDK as described in the [WoZ developer setup](docs/woz-easy-pairing.md#开发与打包). Vendor sources and private app configuration are not stored in Git.
+
 With an installed Unity Mono toolchain, `python scripts/test.py` is an alternative portable test runner. Set `STROOP_UNITY_CONTENTS` to the installation's `Editor/Data` directory on Windows/Linux or `Unity.app/Contents` on macOS when it is outside the discovery paths. Recording-specific suites and Unity verification commands are listed in the development guide.
 
-[GitHub Actions](.github/workflows/regression.yml) runs portable regression on Windows and Ubuntu, independent-process simulation, and Windows Framework launcher/pairing checks. Software tests do not substitute for headset or spatial-accuracy validation.
+[GitHub Actions](.github/workflows/regression.yml) defines portable regression on Windows and Ubuntu, independent-process simulation, and Windows Framework launcher/pairing checks. These jobs require the pinned Photon SDK to be provisioned before verification. Photon currently requires a signed-in download, so a fresh hosted runner cannot acquire it through the public download URL; CI provisioning remains outstanding. The workflow fails explicitly at that prerequisite rather than skipping C# checks. Local SDK-backed regression and package builds can use the documented import procedure. Software tests do not substitute for headset or spatial-accuracy validation.
 
 ## Repository layout
 

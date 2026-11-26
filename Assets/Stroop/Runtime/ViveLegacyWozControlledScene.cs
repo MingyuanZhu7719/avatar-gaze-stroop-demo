@@ -16,7 +16,7 @@ namespace AvatarStroop.Runtime
         internal readonly ViveLegacyWozTaskOwner Owner;
         readonly ViveLegacyWozParticipantProcess process;
         readonly IViveLegacyWozSceneSink sink;
-        readonly bool fixture;
+        readonly bool fixture,photonFixture;
         bool closed,clearUncertain;
         string presentedTrial;
         string preparedTrial;
@@ -26,10 +26,10 @@ namespace AvatarStroop.Runtime
         internal bool HardwareValidated {get{return false;}}
         internal ViveLegacyWozControlledScene(ViveLegacyWozParticipantProcess process,IViveLegacyWozSceneSink sink)
             :this(process,sink,false){}
-        ViveLegacyWozControlledScene(ViveLegacyWozParticipantProcess process,IViveLegacyWozSceneSink sink,bool fixture)
+        ViveLegacyWozControlledScene(ViveLegacyWozParticipantProcess process,IViveLegacyWozSceneSink sink,bool fixture,bool photonFixture=false)
         {
             if(process==null||sink==null||(!fixture&&!process.IsInstalledChannel))throw new InvalidOperationException("Owned installed-channel development scene required");
-            this.process=process;this.sink=sink;this.fixture=fixture;Owner=process.ActualOwner;
+            this.process=process;this.sink=sink;this.fixture=fixture;this.photonFixture=photonFixture;Owner=process.ActualOwner;
             Owner.RegisterControlledScene(this);process.AttachScene(this);
             if(!ClearForSafety()){Owner.MarkCleanupUncertain();process.Dispose();throw new InvalidOperationException("Scene clear uncertain");}
         }
@@ -37,14 +37,14 @@ namespace AvatarStroop.Runtime
         {return !closed&&!clearUncertain&&!process.Terminal&&Owner.ControlledSceneCurrent(this)&&sink.LocallyReady;}
         bool Guard(Func<bool> action)
         {try{return action();}catch{ClearForSafety();process.Dispose();closed=true;return false;}}
-        bool Proof()
-        {return fixture?process.ControlledEvidenceFresh(process.CurrentPreflight):process.ControlledPhaseProofCurrent;}
+        bool FixtureEvidence(ViveLegacyWozParticipantProcess.Evidence value)
+        {return value!=null&&value.SyntheticObservationsOnly&&(photonFixture?value is ViveLegacyWozParticipantProcess.PhotonEvidence:value is ViveLegacyWozParticipantProcess.MemoryEvidence);}
         bool DisplayProof()
         {var value=process.DisplayPreflight;return value!=null&&process.ControlledEvidenceFresh(value)&&
-            (fixture?value is ViveLegacyWozParticipantProcess.MemoryEvidence:value is ViveLegacyWozParticipantProcess.SocketEvidence&&!value.SyntheticObservationsOnly);}
+            (fixture?FixtureEvidence(value):ViveLegacyWozParticipantProcess.IsActualNetworkEvidence(value)&&!value.SyntheticObservationsOnly);}
         internal bool CanBeginCountdown
-        {get{return Guard(()=>Local()&&Owner.SceneTask.Phase==Phase.BlockReady&&process.CurrentTaskAcknowledged&&
-            (!ViveLegacyWozParticipantProcess.NeedsSource(Owner.SceneTask)||Proof()));}}
+        {get{return Guard(()=>Local()&&Owner.SceneTask.Phase==Phase.BlockReady&&process.DisplayTaskAcknowledged&&
+            (!ViveLegacyWozParticipantProcess.NeedsSource(Owner.SceneTask)||DisplayProof()));}}
         internal bool BeginCountdown()
         {
             if(!CanBeginCountdown)return false;
@@ -79,8 +79,8 @@ namespace AvatarStroop.Runtime
         }
         bool ValidPose(ViveLegacyWozParticipantProcess.Evidence evidence)
         {return evidence!=null&&process.ControlledEvidenceFresh(evidence)&&evidence.Pose!=null&&evidence.Pose.HeadValid&&evidence.Pose.EyeValid&&
-            (fixture?evidence is ViveLegacyWozParticipantProcess.MemoryEvidence:
-                evidence is ViveLegacyWozParticipantProcess.SocketEvidence&&!evidence.SyntheticObservationsOnly)&&
+            (fixture?FixtureEvidence(evidence):
+                ViveLegacyWozParticipantProcess.IsActualNetworkEvidence(evidence)&&!evidence.SyntheticObservationsOnly)&&
             evidence.Pose.RawHeadRotation.IsUnit&&evidence.Pose.RawEyeDirection.IsUnit;}
         internal bool MayShowTask
         {get{return Guard(()=>{if(!Local()||!process.DisplayTaskAcknowledged)return false;var task=Owner.SceneTask;
@@ -150,6 +150,12 @@ namespace AvatarStroop.Runtime
         }
         internal static ViveLegacyWozControlledScene CreateMemoryFixture(ViveLegacyWozParticipantProcess process,MemorySink sink)
         {return new ViveLegacyWozControlledScene(process,sink,true);}
+        internal static ViveLegacyWozControlledScene CreatePhotonFixture(ViveLegacyWozParticipantProcess process,MemorySink sink)
+        {
+            if(process==null||process.IsInstalledChannel||!process.UsesOwnedPhotonTransport)
+                throw new InvalidOperationException("Explicit synthetic Photon process required.");
+            return new ViveLegacyWozControlledScene(process,sink,true,true);
+        }
 #endif
     }
     public sealed partial class ViveLegacyWozTaskOwner

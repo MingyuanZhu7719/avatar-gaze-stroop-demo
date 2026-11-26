@@ -52,7 +52,8 @@ def source_inventory(source):
     for folder in SOURCE_FOLDERS:
         base = source / folder
         for path in sorted(base.rglob("*")):
-            if path.is_file() and path.suffix.lower() in (".cs", ".shader", ".asmdef", ".asmref", ".py"):
+            photon_input = (path.is_relative_to(source / "Assets/Photon") and path.name != "sdk-manifest.json.meta") or path == source / "scripts/photon-sdk-manifest.json"
+            if path.is_file() and (photon_input or path.suffix.lower() in (".cs", ".shader", ".asmdef", ".asmref", ".py")):
                 inventory[path.relative_to(source).as_posix()] = digest(path)
     return inventory
 

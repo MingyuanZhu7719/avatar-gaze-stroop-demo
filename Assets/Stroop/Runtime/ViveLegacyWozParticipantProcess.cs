@@ -35,6 +35,16 @@ namespace AvatarStroop.Runtime
         double challengeIssued,revokeIssued;
         Evidence preflight,pose;
         bool terminal,locallyPaused;
+        const double ParticipantAvatarSendInterval=1.0/30;
+        double lastParticipantAvatarSend=double.NegativeInfinity;
+        double lastParticipantAvatarObservation=-1;
+        bool participantAvatarVisible;
+        public bool ParticipantAvatarSharingDeclared {get;private set;}
+        public string TimingProfile {get{return transport.Timing.Name;}}
+        public double NetworkVisualBudgetSeconds {get{return transport.Timing.NetworkTaskLease;}}
+        public double LocalReceiptBudgetSeconds {get{return transport.Timing.ReceivedPoseAge;}}
+        public double LocalCaptureBudgetSeconds {get{return transport.Timing.LocalCaptureAge;}}
+        public double ControlProofBudgetSeconds {get{return transport.Timing.ControlProofLease;}}
         public bool Terminal {get{return terminal;}}
         public string LastIssue {get;private set;}
         public WozDiagnosticFailure LastTransportFailure {get{return transport.Failure;}}
@@ -47,12 +57,14 @@ namespace AvatarStroop.Runtime
         internal ViveLegacyWozTaskOwner ActualOwner {get{return owner;}}
         internal bool IsInstalledChannel {get{return transport.Context.Operator.Source==ControlSource.LiveOperator;}}
         internal bool UsesOwnedSystemSocket {get{return transport.UsesOwnedSystemSocket;}}
+        internal bool UsesOwnedNetworkTransport {get{return transport.UsesOwnedNetworkTransport;}}
+        internal bool UsesOwnedPhotonTransport {get{return transport.UsesOwnedPhotonTransport;}}
         internal string Mapping {get{return transport.Context.Mapping;}}
         internal bool CurrentTaskContext {get{return Guard(Current);}}
         internal bool CurrentTaskAcknowledged {get{return Guard(()=>Current()&&taskAcknowledged);}}
         bool RetainedCurrent
         {get{return maintained&&Guard(()=>Current()&&binding.WireRevision==retainedRevision&&retainedAcknowledged&&
-            transport.Now-retainedTaskIssued<=ControlledVisualAge&&(!retainedNeedsSource||ControlledEvidenceFresh(retainedPreflight)));}}
+            transport.Now-retainedTaskIssued<=transport.Timing.NetworkTaskLease&&(!retainedNeedsSource||ControlledEvidenceFresh(retainedPreflight)));}}
         internal bool DisplayTaskAcknowledged {get{return CurrentTaskAcknowledged||RetainedCurrent;}}
         internal Evidence DisplayPreflight {get{var current=CurrentPreflight;return ControlledEvidenceFresh(current)?current:RetainedCurrent?retainedPreflight:null;}}
         internal Evidence DisplayPose {get{var current=CurrentPose;return ControlledEvidenceFresh(current)?current:
@@ -60,17 +72,17 @@ namespace AvatarStroop.Runtime
         internal void AttachScene(ViveLegacyWozControlledScene value)
         {OwnerThread();if(scene!=null||value==null||!Object.ReferenceEquals(value.Owner,owner))throw new InvalidOperationException("One exact owned scene required");scene=value;}
         internal bool ControlledPhaseProofCurrent
-        {get{var proof=CurrentPreflight;return IsInstalledChannel&&proof is SocketEvidence&&!proof.SyntheticObservationsOnly&&ControlledEvidenceFresh(proof);}}
+        {get{var proof=CurrentPreflight;return IsInstalledChannel&&IsActualNetworkEvidence(proof)&&!proof.SyntheticObservationsOnly&&ControlledEvidenceFresh(proof);}}
+        internal static bool IsActualNetworkEvidence(Evidence value){return value is SocketEvidence||value is PhotonEvidence;}
         internal bool ControlledEvidenceFresh(Evidence value)
-        {return value!=null&&Guard(()=>transport.Now-value.OriginalTaskIssuedParticipantSeconds<=ControlledVisualAge&&
-            transport.Now-value.OriginalReceiptParticipantSeconds<=ControlledVisualAge&&
-            value.OriginalSendOperatorSeconds-value.OriginalHeadObservedOperatorSeconds<=ControlledObservationAge&&
-            value.OriginalSendOperatorSeconds-value.OriginalEyeObservedOperatorSeconds<=ControlledObservationAge);}
+        {return value!=null&&transport.Owns(value.OriginalReceipt)&&Guard(()=>transport.Timing.EvidenceFresh(value.Pose!=null,transport.Now,
+            value.OriginalTaskIssuedParticipantSeconds,value.OriginalReceiptParticipantSeconds,value.OriginalSendOperatorSeconds,
+            value.OriginalHeadObservedOperatorSeconds,value.OriginalEyeObservedOperatorSeconds));}
         public Evidence CurrentPreflight {get{if(!Guard(()=>Current()&&FreshPreflight()))preflight=null;return preflight;}}
         public Evidence CurrentPose {get{if(!Guard(()=>Current()&&FreshPreflight()&&task.Task.Phase==Phase.MainTask))pose=null;return pose;}}
 
-        // Immutable historical evidence. Socket and memory origins cannot be
-        // interchanged. No public timestamp/provider/bool constructor exists.
+        // Immutable historical evidence. Socket, Photon and memory origins
+        // cannot be interchanged. No public timestamp/provider/bool constructor.
         public abstract class Evidence
         {
             internal readonly ViveLegacyWozProcessTransport.Receipt OriginalReceipt;
@@ -89,22 +101,26 @@ namespace AvatarStroop.Runtime
             public double OriginalEyeObservedOperatorSeconds {get;private set;}
             public double OriginalSendOperatorSeconds {get;private set;}
             public HeadEyeSample Pose {get;private set;}
-            public bool PlaintextSharedKeyPossession {get{return true;}}
+            public bool SharedKeyPossession {get{return true;}}
+            public bool PlaintextSharedKeyPossession {get{return !(OriginalReceipt is ViveLegacyWozProcessTransport.PhotonReceipt);}}
+            public bool PhotonCloudEncryptedTransport {get{return OriginalReceipt is ViveLegacyWozProcessTransport.PhotonReceipt;}}
             public bool SyntheticObservationsOnly {get;private set;}
             public abstract bool ReceiptCapturedBySocket {get;}
             public bool InstalledSdkPathVerifiedAtParticipant {get{return false;}}
             public bool HardwareTrackingValidated {get{return false;}}
             public bool IsExperimentAdmission {get{return false;}}
-            internal Evidence(ViveLegacyWozParticipantProcess process,ViveLegacyWozProcessTransport.Receipt receipt)
+            internal Evidence(ViveLegacyWozParticipantProcess process,ViveLegacyWozProcessTransport.Receipt receipt,bool retained=false)
             {
-                if(!process.transport.Owns(receipt)||!process.Current())throw new InvalidOperationException("Owned current receipt required");
+                if(!process.transport.Owns(receipt)||!process.Current()||(retained&&!process.MatchesRetainedPose(receipt)))throw new InvalidOperationException("Owned current receipt and exact original task required");
                 OriginalReceipt=receipt;
+                var originalTask=retained?process.retiredTask:process.task;
                 var context=process.transport.Context;
                 Epoch=context.Epoch;ParticipantClockId=context.Participant.ClockId;OperatorClockId=context.Operator.ClockId;
                 SourceBinding=context.Operator.SourceId;SyntheticObservationsOnly=context.Operator.Source==ControlSource.Simulator;
-                TaskRevision=process.task.Revision;TaskPacketSequence=process.task.ParticipantSequence;ChoiceGeneration=process.choice.Generation;
-                Phase=process.task.Task.Phase;OriginalTaskIssuedParticipantSeconds=process.task.ParticipantSentSeconds;
-                OriginalChallengeIssuedParticipantSeconds=process.challengeIssued;OriginalReceiptParticipantSeconds=receipt.OriginalReceiptSeconds;
+                TaskRevision=originalTask.Revision;TaskPacketSequence=originalTask.ParticipantSequence;ChoiceGeneration=process.choice.Generation;
+                Phase=originalTask.Task.Phase;OriginalTaskIssuedParticipantSeconds=originalTask.ParticipantSentSeconds;
+                OriginalChallengeIssuedParticipantSeconds=retained?process.retainedPreflight.OriginalChallengeIssuedParticipantSeconds:process.challengeIssued;
+                OriginalReceiptParticipantSeconds=receipt.OriginalReceiptSeconds;
                 if(receipt.Control!=null)
                 {var m=receipt.Control.Message;OriginalSendOperatorSeconds=m.SentSeconds;OriginalHeadObservedOperatorSeconds=m.HeadObservedOperatorSeconds.Value;OriginalEyeObservedOperatorSeconds=m.EyeObservedOperatorSeconds.Value;}
                 else
@@ -115,19 +131,51 @@ namespace AvatarStroop.Runtime
         public sealed class SocketEvidence:Evidence
         {
             public override bool ReceiptCapturedBySocket {get{return true;}}
-            internal SocketEvidence(ViveLegacyWozParticipantProcess p,ViveLegacyWozProcessTransport.SocketReceipt r):base(p,r){}
+            internal SocketEvidence(ViveLegacyWozParticipantProcess p,ViveLegacyWozProcessTransport.SocketReceipt r,bool retained=false):base(p,r,retained){}
         }
         public sealed class MemoryEvidence:Evidence
         {
             public override bool ReceiptCapturedBySocket {get{return false;}}
-            internal MemoryEvidence(ViveLegacyWozParticipantProcess p,ViveLegacyWozProcessTransport.MemoryReceipt r):base(p,r){}
+            internal MemoryEvidence(ViveLegacyWozParticipantProcess p,ViveLegacyWozProcessTransport.MemoryReceipt r,bool retained=false):base(p,r,retained){}
         }
-        Evidence Issue(ViveLegacyWozProcessTransport.Receipt receipt)
-        {var socket=receipt as ViveLegacyWozProcessTransport.SocketReceipt;return socket!=null?(Evidence)new SocketEvidence(this,socket):new MemoryEvidence(this,(ViveLegacyWozProcessTransport.MemoryReceipt)receipt);}
+        public sealed class PhotonEvidence:Evidence
+        {
+            public override bool ReceiptCapturedBySocket {get{return false;}}
+            internal PhotonEvidence(ViveLegacyWozParticipantProcess p,ViveLegacyWozProcessTransport.PhotonReceipt r,bool retained=false):base(p,r,retained){}
+        }
+        Evidence Issue(ViveLegacyWozProcessTransport.Receipt receipt,bool retained=false)
+        {var photon=receipt as ViveLegacyWozProcessTransport.PhotonReceipt;if(photon!=null)return new PhotonEvidence(this,photon,retained);
+            var socket=receipt as ViveLegacyWozProcessTransport.SocketReceipt;return socket!=null?(Evidence)new SocketEvidence(this,socket,retained):new MemoryEvidence(this,(ViveLegacyWozProcessTransport.MemoryReceipt)receipt,retained);}
+
+        bool MatchesRetainedPose(ViveLegacyWozProcessTransport.Receipt receipt)
+        {
+            if(receipt==null||!transport.Owns(receipt)||receipt.Data==null||receipt.Data.Packet.Kind!=WireKind.HeadEye||
+                !RetainedCurrent||retainedPreflight==null||retiredTask==null||retiredGrant==null||
+                task.Task.Phase!=Phase.MainTask||retiredTask.Task.Phase!=Phase.MainTask||
+                retiredTask.Revision!=retainedRevision||task.Revision!=retainedRevision||
+                !Object.ReferenceEquals(retiredGrant.TaskContext,retiredTask)||
+                receipt.Data.TaskContext.ParticipantSequence!=retiredTask.ParticipantSequence||
+                retainedPreflight.TaskPacketSequence!=retiredTask.ParticipantSequence||
+                retainedPreflight.ChoiceGeneration!=choice.Generation)return false;
+            var observed=receipt.Data.PoseObservation;
+            return observed.HeadObservedOperatorSeconds>retainedPreflight.OriginalHeadObservedOperatorSeconds&&
+                observed.EyeObservedOperatorSeconds>retainedPreflight.OriginalEyeObservedOperatorSeconds;
+        }
+        void ReceiveRetainedPose(ViveLegacyWozProcessTransport.Receipt receipt)
+        {
+            // A renewed task does not erase legitimate in-flight samples from
+            // its immediately preceding grant. Keep their original lineage;
+            // they cannot acknowledge or prove the newer task.
+            if(!MatchesRetainedPose(receipt))return;
+            var accepted=Issue(receipt,true);if(!ControlledEvidenceFresh(accepted))return;
+            if(!RecordNetworkEvidence("Pose",receipt,accepted)){End("recording_evidence_failed");return;}
+            retainedPose=accepted;
+        }
 
         ViveLegacyWozParticipantProcess(ViveLegacyWozProcessPairing pairing,ViveLegacyWozTaskOwner owner,ViveLegacyWozProcessTransport transport,double age)
         {
             this.owner=owner;this.transport=transport;maxAge=age;
+            ParticipantAvatarSharingDeclared=pairing.ParticipantAvatarSharingDeclared;
             try{if(owner==null||!transport.UsesClock(owner.Clock))throw new InvalidOperationException("Exact actual owner clock required");choice=pairing.ClaimParticipant(owner);
                 if(owner.RecordingBinding!=null)owner.RecordingBinding.AttachProcess(this);}
             catch{transport.Dispose();if(choice!=null){if(!owner.PauseAuthoritativeTask())owner.MarkCleanupUncertain();owner.Dispose();}throw;}
@@ -136,6 +184,11 @@ namespace AvatarStroop.Runtime
         {
             if(owner==null)throw new ArgumentNullException("owner");
             return new ViveLegacyWozParticipantProcess(pairing,owner,new ViveLegacyWozProcessTransport(pairing,PeerRole.Participant,owner.Clock,local,remote,maximumAge),maximumAge);
+        }
+        public static ViveLegacyWozParticipantProcess CreatePhoton(ViveLegacyWozProcessPairing pairing,ViveLegacyWozTaskOwner owner,ViveWozPhotonSession session,double maximumAge)
+        {
+            if(owner==null)throw new ArgumentNullException("owner");
+            return new ViveLegacyWozParticipantProcess(pairing,owner,new ViveLegacyWozProcessTransport(pairing,PeerRole.Participant,owner.Clock,session,maximumAge),maximumAge);
         }
         void OwnerThread(){if(!owner.OnOwnerThread)throw new InvalidOperationException("Participant owner thread required");}
         bool Guard(Func<bool> action)
@@ -169,6 +222,52 @@ namespace AvatarStroop.Runtime
         }
         bool FreshPreflight()
         {return preflight!=null&&transport.Now-preflight.OriginalChallengeIssuedParticipantSeconds<=maxAge&&preflight.TaskPacketSequence==task.ParticipantSequence;}
+        // Optional rendering is a consumer of the current task grant. Leave
+        // rebinding, preflight state and task shutdown to the ordinary pump.
+        bool ParticipantAvatarTaskCurrent()
+        {
+            return ParticipantAvatarSharingDeclared&&!terminal&&!locallyPaused&&!focusForwardingSuspending&&!FocusForwardingSuspended&&
+                transport.Running&&task!=null&&task.Task.Phase==Phase.MainTask&&
+                (owner.RecordingBinding==null||owner.RecordingBinding.SceneAuthorityCurrent)&&
+                owner.IsSourceChoiceCurrent(choice)&&owner.IsCurrent(binding)&&
+                transport.Now-task.ParticipantSentSeconds<=Math.Min(maxAge,transport.Timing.NetworkTaskLease);
+        }
+        WozLanTaskContext ParticipantAvatarSendTask()
+        {
+            if(!ParticipantAvatarTaskCurrent())return null;
+            if(taskAcknowledged&&grant!=null&&Object.ReferenceEquals(grant.TaskContext,task))return task;
+            if(RetainedCurrent&&retiredTask!=null&&retiredGrant!=null&&retiredTask.Revision==task.Revision&&
+                retiredTask.Task.Phase==Phase.MainTask&&Object.ReferenceEquals(retiredGrant.TaskContext,retiredTask)&&
+                transport.Now-retiredTask.ParticipantSentSeconds<=transport.Timing.NetworkTaskLease)return retiredTask;
+            return null;
+        }
+        public bool TrySendParticipantAvatarPose(Rotation headRotation,Vec3 headLocalEyeDirection,double observedParticipantSeconds)
+        {
+            return Guard(()=>
+            {
+                var displayTask=ParticipantAvatarSendTask();if(displayTask==null)return false;
+                double now=transport.Now;
+                if(!headRotation.IsUnit||!headLocalEyeDirection.IsUnit||double.IsNaN(observedParticipantSeconds)||
+                    observedParticipantSeconds>now||now-observedParticipantSeconds>ControlledObservationAge)
+                {ClearParticipantAvatarCore();return false;}
+                if(observedParticipantSeconds<displayTask.ParticipantSentSeconds||observedParticipantSeconds<=lastParticipantAvatarObservation||
+                    now-lastParticipantAvatarSend<ParticipantAvatarSendInterval)return false;
+                var value=new ParticipantAvatarPose(headRotation,headLocalEyeDirection);
+                if(!transport.SendParticipantAvatar(displayTask,value,observedParticipantSeconds))return false;
+                participantAvatarVisible=true;
+                lastParticipantAvatarObservation=observedParticipantSeconds;
+                lastParticipantAvatarSend=now;
+                return true;
+            });
+        }
+        public void ClearParticipantAvatarPose(){Guard(ClearParticipantAvatarCore);}
+        bool ClearParticipantAvatarCore()
+        {
+            if(!participantAvatarVisible)return false;
+            participantAvatarVisible=false;
+            var displayTask=ParticipantAvatarSendTask();if(displayTask==null)return false;
+            return transport.SendParticipantAvatar(displayTask,null,transport.Now);
+        }
         static bool PhaseAllowed(Phase phase){return phase==Phase.BlockReady||phase==Phase.Countdown||phase==Phase.MainTask||phase==Phase.Questionnaire||phase==Phase.Rest;}
         internal static bool NeedsSource(TaskSnapshot value)
         {return value!=null&&value.Condition!=Condition.D&&(value.Phase==Phase.BlockReady||value.Phase==Phase.Countdown||value.Phase==Phase.MainTask);}
@@ -220,6 +319,9 @@ namespace AvatarStroop.Runtime
             {
                 ViveLegacyWozProcessTransport.Receipt receipt;
                 if(!transport.Receive(revoke!=null&&grant!=null?grant.TaskContext:task,grant,grant,out receipt,retiredTask,retiredGrant))break;if(receipt==null)continue;
+                if(revoke==null&&task!=null&&receipt.Data!=null&&receipt.Data.Packet.Kind==WireKind.HeadEye&&
+                    receipt.Data.TaskContext.ParticipantSequence!=task.ParticipantSequence)
+                {ReceiveRetainedPose(receipt);continue;}
                 if(revoke==null&&task!=null&&((receipt.Control!=null&&(receipt.Control.Message.Kind==WozControlKind.PreflightObservation||receipt.Control.Message.Kind==WozControlKind.TaskReceipt)&&
                     receipt.Control.Message.Binding.TaskContext.ParticipantSequence!=task.ParticipantSequence)||
                     (receipt.Data!=null&&receipt.Data.Packet.Kind==WireKind.HeadEye&&receipt.Data.TaskContext.ParticipantSequence!=task.ParticipantSequence)))continue;
@@ -322,15 +424,17 @@ namespace AvatarStroop.Runtime
                 "task_revision","task_packet_sequence","choice_generation","source_generation","remote_sequence","receipt_origin","control_source",
                 "authentication","hardware_identity","clock_relation","synthetic","task_issued_participant_time","challenge_issued_participant_time",
                 "receipt_participant_time","send_operator_time","head_operator_time","eye_operator_time","epoch_sample_sequence",
-                "head_qx","head_qy","head_qz","head_qw","eye_dx","eye_dy","eye_dz","failure_reason"})fields.Add("woz_"+name,missing);
-            fields["woz_schema"]="vive-woz-local-evidence-v1";fields["woz_event"]=kind;fields["woz_epoch"]=c.Epoch;
+                "head_qx","head_qy","head_qz","head_qw","eye_dx","eye_dy","eye_dz","failure_reason",
+                "network_visual_budget_seconds","task_roundtrip_seconds"})fields.Add("woz_"+name,missing);
+            fields["woz_schema"]=ViveLegacyWozRecordingSchema.SchemaVersion;fields["woz_event"]=kind;fields["woz_epoch"]=c.Epoch;
+            fields["woz_network_visual_budget_seconds"]=ViveLegacyWozRecordingSchema.EncodeTime(transport.Timing.NetworkTaskLease);
             fields["woz_source_binding"]=c.Operator.SourceId;fields["woz_mapping"]=c.Mapping;
             fields["woz_participant_clock_id"]=c.Participant.ClockId;fields["woz_operator_clock_id"]=c.Operator.ClockId;
             fields["woz_choice_generation"]=choice.Generation.ToString(CultureInfo.InvariantCulture);
             fields["woz_source_generation"]=choice.SourceGeneration.ToString(CultureInfo.InvariantCulture);
             fields["woz_control_source"]=c.Operator.Source.ToString();fields["woz_hardware_identity"]="NOT_VERIFIED";
             fields["woz_clock_relation"]="INDEPENDENT_NOT_SYNCHRONIZED";fields["woz_failure_reason"]=failure;
-            fields["woz_receipt_origin"]=receipt==null?"LOCAL_ONLY":receipt.SocketCaptured?"SOCKET":"MEMORY";
+            fields["woz_receipt_origin"]=receipt==null?"LOCAL_ONLY":receipt is ViveLegacyWozProcessTransport.PhotonReceipt?"PHOTON_CLOUD":receipt.SocketCaptured?"SOCKET":"MEMORY";
             fields["woz_authentication"]=receipt==null?"NONE":"HMAC_SHARED_KEY_POSSESSION";
             fields["woz_synthetic"]=receipt==null?"NOT_APPLICABLE":c.Operator.Source==ControlSource.Simulator?"TRUE":"FALSE";
             if(task!=null){fields["woz_task_revision"]=task.Revision.ToString(CultureInfo.InvariantCulture);
@@ -359,6 +463,11 @@ namespace AvatarStroop.Runtime
                     fields["woz_eye_dx"]=ViveLegacyWozRecordingSchema.EncodeNumber(p.RawEyeDirection.X);fields["woz_eye_dy"]=ViveLegacyWozRecordingSchema.EncodeNumber(p.RawEyeDirection.Y);
                     fields["woz_eye_dz"]=ViveLegacyWozRecordingSchema.EncodeNumber(p.RawEyeDirection.Z);}
             }
+            if(receipt!=null&&kind!="SafetyStopRequest")
+            {
+                double issued=value!=null?value.OriginalTaskIssuedParticipantSeconds:task.ParticipantSentSeconds;
+                fields["woz_task_roundtrip_seconds"]=ViveLegacyWozRecordingSchema.EncodeTime(receipt.OriginalReceiptSeconds-issued);
+            }
             return fields;
         }
         // Explicitly called by the scene after its local start action. No
@@ -374,7 +483,14 @@ namespace AvatarStroop.Runtime
             double now=transport.Now;
             if(maintained&&pendingCycle&&now>cycleDeadline){End("unanswered_preflight_cycle_timeout");return false;}
             bool changed=task==null||!RebindSameWireContext();
-            bool renew=!pendingCycle&&task!=null&&now-task.ParticipantSentSeconds>=Math.Min(maxAge/3,ControlledRenewalInterval);
+            // A proof can arrive a frame before its first pose. Renewing at
+            // that instant would replace the retained pose with null. Wait for
+            // the current cycle's pose before ordinary MainTask renewal.
+            // An already expired task may still request a fresh cycle while
+            // masked; this never makes its expired proof/pose displayable.
+            bool awaitingPose=task!=null&&task.Task.Phase==Phase.MainTask&&NeedsSource(task.Task)&&
+                !ControlledEvidenceFresh(pose)&&now-task.ParticipantSentSeconds<transport.Timing.NetworkTaskLease;
+            bool renew=!pendingCycle&&task!=null&&!awaitingPose&&now-task.ParticipantSentSeconds>=Math.Min(maxAge/3,ControlledRenewalInterval);
             if(!maintained||changed||renew)
             {
                 if(!pendingCycle){cycleDeadline=now+maxAge;pendingCycle=true;}

@@ -19,6 +19,7 @@ def load(name, file):
 
 prepare = load("quest_prepare", "prepare-quest-preview.py")
 rehearsal = load("vive_rehearsal_build", "build-vive-eye-preview.py")
+photon = load("vive_woz_photon_sdk", "photon-sdk.py")
 
 def validate_recording_options(controlled, legacy, woz=False, participant=False):
     if participant and (not controlled or not legacy or woz):
@@ -98,9 +99,9 @@ def start_here_text(controlled=False, legacy=False, guide="", woz=False, partici
         woz_notice = ("OPTIONAL PARTICIPANT-LOCAL LEGACY WOZ RECORDING\n"
                       "This separately opted-in development package adds recorded Legacy WoZ; network and recording remain OFF by default.\n"
                       "Choose Record locally, Legacy A/B/C/D, and Use a second-PC WoZ operator. Local storage, both headset choices and explicit recording start remain required.\n"
-                      "Use the matching operator package on a second prepared PC. At block preparation, exchange the existing operator clock ID and exact private-LAN endpoints; accept plaintext messaging and create the recorded offer.\n"
-                      "The operator must review and explicitly allow forwarding plus participant-local storage before connecting. Start the operator first, then connect the participant. Never use Automatic for the declared recorded WoZ session.\n"
-                      "Participant files may include mapped operator head/eye poses plus source, time and status. Participant raw eyes, answers, timings and ratings never go to the operator. Messages are authenticated, not encrypted.\n"
+                      + photon.room_guide() +
+                      "The operator explicitly allows forwarding plus participant-local storage before starting. Never use Automatic for a declared recorded WoZ session.\n"
+                      "Participant files may include mapped operator head/eye poses plus source, time and status. Participant raw eyes, answers, timings and ratings never go to the operator. Photon uses WSS; advanced manual LAN messages are authenticated, not encrypted.\n"
                       "Desktop focus changes do not stop a running participant writer. XR focus gaps hold task input/presentation while healthy raw acquisition continues and focus state is recorded. After recording starts, eye-only stale, repeated or invalid samples do not stop the task; CSV marks NO_NEW_SAMPLE/MISSING without fabricated gaze. Actual head/controller integrity, writer faults, source revocation or withdrawal remain separate safety boundaries; incomplete/UNKNOWN output is not a completed recording.\n"
                       "SHORT CHECK: after one or two main trials, revoke the source and check pause plus cleared avatar. This stops with a raw prefix, not a completed session or completed-session CSV. Do not run four blocks just for this check.\n"
                       "Completed-session CSV requires a later full, normally completed session and successful local close/verification; it is not expected after the short stop check.\n"
@@ -117,10 +118,10 @@ def start_here_text(controlled=False, legacy=False, guide="", woz=False, partici
         "SteamVR is selected for this process only. The system runtime and existing Quest build are not changed.\n"
         "This package has not been validated in a headset and does not establish eye accuracy or complete-session coverage.\n\n"
         "OPTIONAL UNRECORDED LEGACY WOZ\n"
+        "For two-way viewing, choose live avatar sharing in the participant headset after alignment. The matching operator app can then show the participant's head and gaze during active WoZ trials.\n"
         "Use the matching operator package on a second prepared PC. Its START-HERE explains process-local SteamVR startup; do not change the system runtime.\n"
         "Choose Preview (no files), Legacy A/B/C/D, and Use a second-PC WoZ operator (unrecorded). Complete practice.\n"
-        "Copy the operator's existing clock ID into the participant WoZ panel. Enter exact private-LAN IPv4 endpoints (participant 45171, operator 45172), accept plaintext messaging and create an offer.\n"
-        "Transfer the temporary offer privately. Start the operator with explicit head/eye forwarding first, then connect the participant and begin the current block when ready.\n"
+        + photon.room_guide() +
         "For a short check, answer one or two main trials, then use Stop WoZ source and task. Confirm the task pauses and avatar clears; no automatic resume.\n"
         "WoZ recording/export is unavailable. Existing separate local-recording packages are unchanged. No data submission is needed.\n")
 
@@ -151,6 +152,7 @@ def main():
     parser.add_argument("--legacy-woz-recording-development", action="store_true", help="Also opt into participant-local Legacy WoZ recording; requires both existing recording flags. No network or recording starts automatically.")
     parser.add_argument("--participant-recording", action="store_true", help="Build the Automatic A/B/C/D participant package with pseudonymous IDs and assigned stimulus lists.")
     parser.add_argument("--render-fixture", action="store_true", help="Render a synthetic Editor image; no XR or eye capture.")
+    parser.add_argument("--photon-config", type=Path, help="Private Photon config to copy beside the inner player; never printed or committed.")
     args = parser.parse_args()
     try:
         if args.participant_recording:
@@ -162,6 +164,8 @@ def main():
         prepare.verify_workspace_project(source, project)
         prepare.check_editor(editor)
         record = prepare.verify_prepared(source, project)
+        photon.verify(source)
+        if args.photon_config: photon.validate_config(args.photon_config)
         # A distinct new output only: never reuse or overwrite the rehearsal.
         if (not output.is_relative_to(source.parent) or output == source.parent or output == source or
             output.is_relative_to(source) or source.is_relative_to(output) or output == project or
@@ -191,6 +195,7 @@ def main():
         run_editor(editor, project, output, "BuildWindowsPreview", args.controlled_recording_development, args.legacy_raw_recording_development, **mode_options);prepare.verify_prepared(source, project)
         player = output / "UnityPlayer/AvatarStroopViveEyePlayer.exe"
         launcher = rehearsal.compile_launcher(editor, source, output)
+        photon_package = photon.package_files(source, player.parent, args.photon_config)
         prepare.verify_prepared(source, project)
         if args.render_fixture:
             run_editor(editor, project, output, "RenderFixture", args.controlled_recording_development, args.legacy_raw_recording_development, **mode_options);prepare.verify_prepared(source, project)
@@ -206,6 +211,7 @@ def main():
         (output / "START-HERE.txt").write_text(start_here_text(args.controlled_recording_development, args.legacy_raw_recording_development, guide, **mode_options), encoding="utf-8")
         provenance.update(status="built", executable=launcher.name, executable_sha256=prepare.digest(launcher),
                           player=player.relative_to(output).as_posix(), player_sha256=prepare.digest(player),
+                          photon_woz_available=not args.participant_recording, photon_sdk=photon_package,
                           scene_checks=prepare.read_json(output / "vive-classroom-scene-validation.json"))
         prepare.write_json(marker, provenance)
         print("Built VIVE development preview: " + str(launcher) + "; not headset validated.")

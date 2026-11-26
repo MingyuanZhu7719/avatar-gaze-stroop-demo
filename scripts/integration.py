@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 import time
-from test import ROOT, unity_tools
+from test import ROOT, unity_tools, photon_references
 from journal_integration import verify_recording, run_killed_recording
 
 STARTUP_TIMEOUT_SECONDS = 15
@@ -328,7 +328,7 @@ def main():
         _, mono, csc = installed
         binary = build / "AvatarStroop.Simulator.exe"
         # Keep the compiler command below the Windows command-line limit in deep checkouts.
-        subprocess.run([str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-target:exe", "-main:AvatarStroop.Apps.SimulatorHost", "-out:"+str(binary)] + [str(p.relative_to(ROOT)) for p in sources], cwd=str(ROOT), check=True)
+        subprocess.run([str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-target:exe", "-main:AvatarStroop.Apps.SimulatorHost", "-out:"+str(binary)] + photon_references(ROOT,build,mono,csc) + [str(p.relative_to(ROOT)) for p in sources], cwd=str(ROOT), check=True)
         launch = [str(mono), str(binary)]
     subprocess.run(list(launch) + ["completion-self-test"], check=True, timeout=20)
     run_scenario(launch, evidence, "fault-script", source_digest)

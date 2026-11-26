@@ -15,6 +15,74 @@ namespace AvatarStroop.Unity
         bool legacyWozStarted,legacyWozScope,legacyWozPlaintext,legacyWozClosed;
         bool legacyWozMaskLatched;
         Action pendingLegacyWozOffer;
+        readonly ViveWozWearerAvatarChoice avatarChoice=new ViveWozWearerAvatarChoice();
+        object AvatarChoiceSession
+        {
+            get
+            {
+                if(recordingSetup!=null&&recordingSetupDesign==0&&legacyWozRecordingSelected&&
+                    recordingSetup.Current!=ViveNamedRecordingSetup.Step.Cancelled&&recordingSetup.Current!=ViveNamedRecordingSetup.Step.Declined)
+                    return recordingSetup;
+                return configured&&ownerPreviewWoz&&participant!=null&&!participant.RawRecordingRequested&&!participant.HasNamedOption?participant:null;
+            }
+        }
+        internal bool ShowWozAvatarChoice(ViveStartupView prompt,bool trackedAndFocused)
+        {
+            var session=AvatarChoiceSession;
+            if(session==null||legacyWozClosed||legacyWozProcess!=null||namedRawPump!=null||!avatarChoice.Pending(session))return false;
+            int frame=Time.frameCount;
+            bool witnessed=prompt.WasRenderedBefore(frame);
+            const string question="Share your avatar with the experimenter?\nDuring trials they can see your head turns and gaze.\nThe selected connection may use Photon cloud relay.\nTrigger: share   |   Trackpad click: keep private\nRelease all controls before choosing.";
+            prompt.Show(trackedAndFocused,question);
+            var input=ReadStartupAlignmentInput(trackedAndFocused);
+            avatarChoice.Observe(frame,witnessed,trackedAndFocused&&input!=null&&input.DeviceReady&&!input.DeviceChanged,
+                input!=null&&input.TriggerHeld,input!=null&&input.Trackpad.Pressed,input!=null&&input.MenuHeld);
+            return true;
+        }
+        internal bool LiveParticipantAvatarEnabled {get{return legacyWozStarted&&legacyWozProcess!=null&&!legacyWozProcess.Terminal&&
+            legacyWozProcess.ParticipantAvatarSharingDeclared&&avatarChoice.Granted(AvatarChoiceSession);}}
+        internal bool UnrecordedWozEyeWarmup {get{return LiveParticipantAvatarEnabled&&!RecordedLegacyWoz&&participant!=null&&
+            (participant.Phase==Phase.BlockPreparation||participant.Phase==Phase.BlockReady||participant.Phase==Phase.Countdown||participant.Phase==Phase.MainTask);}}
+        internal void UpdateParticipantAvatar(ViveProEyeObservation observation,Quaternion trackingToClassroom,MonotonicClock viewClock,bool trackingCurrent)
+        {
+            if(!LiveParticipantAvatarEnabled)return;
+            if(trackingCurrent&&object.ReferenceEquals(viewClock,sharedClock)&&!PresentationBlocked&&!FocusHeldLiveWoz&&
+                !focusRecoveryPending&&participant!=null&&participant.Phase==Phase.MainTask&&observation!=null)
+            {
+                Rotation head;Vec3 eyes;
+                if(TryMapParticipantAvatar(observation,trackingToClassroom,out head,out eyes))
+                {
+                    legacyWozProcess.TrySendParticipantAvatarPose(head,eyes,observation.Sample.CaptureLocalSeconds);
+                    return;
+                }
+                // A faster display may see the same still-valid native eye frame twice.
+                // Keep its original network expiry; never resend it with a new time.
+                var raw=observation.RawPoll;
+                if(observation.HeadUsable&&observation.EyeDisposition==ViveFrameDisposition.Duplicate&&raw!=null&&
+                    raw.Runtime==ViveEyeRuntimeState.Working&&raw.Calibration==ViveEyeCalibrationState.ReportedReady&&
+                    raw.EyeDeviceConnected&&raw.Eye!=null&&!raw.Eye.NoUser&&raw.Eye.Combined!=null&&
+                    raw.Eye.Combined.DirectionReportedValid&&(raw.Eye.Combined.ValidityMask&2UL)!=0&&
+                    (!raw.NativeResultCode.HasValue||raw.NativeResultCode.Value==0))return;
+            }
+            legacyWozProcess.ClearParticipantAvatarPose();
+        }
+        internal static bool TryMapParticipantAvatar(ViveProEyeObservation observation,Quaternion trackingToClassroom,out Rotation head,out Vec3 eyes)
+        {
+            head=default(Rotation);eyes=default(Vec3);
+            if(observation==null||!observation.HeadUsable||!observation.EyeUsable||
+                observation.MappingVersion!=ViveProEyeRehearsalCoordinates.MappingVersion||
+                observation.Sample==null||!observation.Sample.HeadValid||!observation.Sample.EyeValid)return false;
+            var sample=observation.Sample;
+            var rotation=sample.RawHeadRotation;
+            var trackingHead=new Quaternion((float)rotation.X,(float)rotation.Y,(float)rotation.Z,(float)rotation.W);
+            var classroomHead=trackingToClassroom*trackingHead;
+            var mapped=sample.RawEyeDirection;
+            // The shared Vive mapper has already reflected SDK X and applied the physical head rotation.
+            var headLocal=Quaternion.Inverse(trackingHead)*new Vector3((float)mapped.X,(float)mapped.Y,(float)mapped.Z);
+            head=new Rotation(classroomHead.x,classroomHead.y,classroomHead.z,classroomHead.w);
+            eyes=new Vec3(headLocal.x,headLocal.y,headLocal.z);
+            return head.IsUnit&&eyes.IsUnit;
+        }
         bool RecordedLegacyWoz {get{return participant!=null&&participant.LegacyWozRecordingDeclared;}}
         bool RecordedLegacyWozReady {get{return RecordedLegacyWoz&&ViveLegacyWozRecordingBuildPolicy.Available&&
             namedRawPump!=null&&legacyWozInstalledAdmission!=null&&legacyWozInstalledWorker!=null&&
@@ -70,26 +138,32 @@ namespace AvatarStroop.Unity
         {GUILayout.BeginHorizontal();GUILayout.Label(label,GUILayout.Width(250));value=GUILayout.TextField(value);GUILayout.EndHorizontal();return value;}
         void CreateLegacyWozOffer()
         {
-            if(legacyWozClosed||legacyWozProcess!=null||!legacyWozScope||!legacyWozPlaintext||participant==null||participant.HasNamedOption||
+            if(legacyWozClosed||legacyWozProcess!=null||!legacyWozScope||!legacyWozPlaintext||!avatarChoice.Answered(AvatarChoiceSession)||participant==null||participant.HasNamedOption||
                 (participant.RawRecordingRequested?!RecordedLegacyWozReady:namedRawPump!=null)||recording!=null||!participant.InputReady||rig==null||!rig.HeadReady)
                 throw new InvalidOperationException("Current exact Legacy mode and explicit local development choice required");
-            var local=new IPEndPoint(IPAddress.Parse(legacyWozLocalIp),Int32.Parse(legacyWozLocalPort,CultureInfo.InvariantCulture));
-            var remote=new IPEndPoint(IPAddress.Parse(legacyWozRemoteIp),Int32.Parse(legacyWozRemotePort,CultureInfo.InvariantCulture));
+            IPEndPoint local=null,remote=null;
+            if(easyWozLobby==null)
+            {
+                local=new IPEndPoint(IPAddress.Parse(legacyWozLocalIp),Int32.Parse(legacyWozLocalPort,CultureInfo.InvariantCulture));
+                remote=new IPEndPoint(IPAddress.Parse(legacyWozRemoteIp),Int32.Parse(legacyWozRemotePort,CultureInfo.InvariantCulture));
+            }
             double age=Double.Parse(legacyWozMaximumAge,CultureInfo.InvariantCulture);
             var owner=CreateLegacyWozTaskBinding();
             try
             {
                 if(RecordedLegacyWoz)ViveLegacyWozRecordingBinding.CreateInstalled(owner,legacyWozInstalledAdmission,legacyWozInstalledWorker,namedRawPump);
-                using(var offer=ViveLegacyWozProcessPairing.CreateFreshParticipantOffer(owner,Actor.Owner,"local-participant-owner",legacyWozOperatorClock))
+                using(var offer=ViveLegacyWozProcessPairing.CreateFreshParticipantOffer(owner,Actor.Owner,"local-participant-owner",legacyWozOperatorClock,avatarChoice.Granted(AvatarChoiceSession)))
                 {
-                    legacyWozProcess=ViveLegacyWozParticipantProcess.Create(offer,owner,local,remote,age);
+                    legacyWozProcess=easyWozLobby!=null?
+                        ViveLegacyWozParticipantProcess.CreatePhoton(offer,owner,easyWozLobby,age):
+                        ViveLegacyWozParticipantProcess.Create(offer,owner,local,remote,age);
                     legacyWozScene=new ViveLegacyWozControlledScene(legacyWozProcess,new OwnedLegacySink(this));
                     Camera.onPreCull+=GuardLegacyWozCamera;Camera.onPostRender+=GuardLegacyWozCamera;
                     char[] secret=offer.RevealToken();try{legacyWozOffer=new string(secret);}finally{Array.Clear(secret,0,secret.Length);}
                 }
                 legacyWozStatus="Start operator with this offer first, then start participant here.";
             }
-            catch{CloseLegacyWozTaskBinding();throw;}
+            catch{CloseLegacyWozTaskBinding();legacyWozClosed=true;throw;}
         }
         void StartLegacyWoz()
         {
@@ -105,14 +179,18 @@ namespace AvatarStroop.Unity
             if(RecordedLegacyWoz&&participant.Completed){legacyWozScene.AfterTaskMutation();return true;}
             bool ready=legacyWozScene.PumpBeforeTask();
             if(legacyWozProcess.Terminal)
+            {
+                DrainStoppedEasyWozPairing();
                 legacyWozStatus=legacyWozProcess.SourceRevokeAcknowledged?"Paused; operator stop acknowledged.":
                     "Stopped: "+legacyWozProcess.LastIssue+". No automatic resume.";
+            }
             else legacyWozStatus=ready?"Connected; current task ready.":"Waiting for current operator data; task hidden.";
             return ready;
         }
         bool MaintainLegacyWozDuringFocusGap()
         {
             if(!legacyWozStarted||legacyWozProcess==null)return true;
+            legacyWozProcess.ClearParticipantAvatarPose();
             if(FocusHeldLiveWoz||participant!=null&&participant.IsXrFocusInteractionHeld||
                 legacyWozProcess.FocusSuspendStarted||legacyWozProcess.FocusForwardingSuspending||legacyWozProcess.FocusForwardingSuspended)
             {
@@ -134,7 +212,7 @@ namespace AvatarStroop.Unity
                 legacyWozScene.AfterTaskMutation();
             }
             if(legacyWozProcess.Terminal)
-            {legacyWozStatus="Stopped: "+legacyWozProcess.LastIssue+". No automatic resume.";return false;}
+            {DrainStoppedEasyWozPairing();legacyWozStatus="Stopped: "+legacyWozProcess.LastIssue+". No automatic resume.";return false;}
             legacyWozStatus="XR focus unavailable; protocol maintenance continues and task presentation is held.";
             return true;
         }
@@ -149,9 +227,13 @@ namespace AvatarStroop.Unity
             pendingLegacyWozOffer=null;
             legacyWozOffer="";
             Camera.onPreCull-=GuardLegacyWozCamera;Camera.onPostRender-=GuardLegacyWozCamera;
-            if(legacyWozProcess==null&&legacyWozScene==null)return;
-            legacyWozClosed=true;
-            if(legacyWozScene!=null)legacyWozScene.Dispose();else if(legacyWozProcess!=null)legacyWozProcess.Dispose();
+            try
+            {
+                if(legacyWozProcess==null&&legacyWozScene==null)return;
+                legacyWozClosed=true;
+                if(legacyWozScene!=null)legacyWozScene.Dispose();else if(legacyWozProcess!=null)legacyWozProcess.Dispose();
+            }
+            finally{CloseEasyWozPairing();}
         }
         void GuardLegacyWozCamera(Camera camera)
         {
@@ -164,10 +246,17 @@ namespace AvatarStroop.Unity
         {
             if(participant==null||participant.HasNamedOption||(participant.RawRecordingRequested?!RecordedLegacyWozReady:namedRawPump!=null)||recording!=null)return;
             GUILayout.Space(8);GUILayout.Label(RecordedLegacyWoz?"Legacy WoZ development | Participant-local recording | Hardware/alignment unvalidated":"Legacy WoZ development | Recording off | Hardware/alignment unvalidated");
-            GUILayout.Label("Authenticated messages, not encrypted. Answers, ratings and raw eyes stay local.",recordingWrap);
+            GUILayout.Label(manualWozPairing?"Manual LAN: authenticated messages, not encrypted. Answers, ratings and raw eyes stay local.":
+                "Photon cloud relay: encrypted internet transport. Answers, ratings and raw eye files stay local.",recordingWrap);
+            GUILayout.Label(avatarChoice.Answered(AvatarChoiceSession)?(avatarChoice.Granted(AvatarChoiceSession)?
+                "Headset choice: share live head turns and gaze direction during trials.":"Headset choice: keep participant avatar private."):
+                "Waiting for the participant's live avatar sharing choice in the headset.",recordingWrap);
             if(RecordedLegacyWoz)GUILayout.Label("Local files also include mapped operator head/eye poses and source times. Operator must accept this mode.",recordingWrap);
             GUILayout.Label(legacyWozStatus,recordingWrap);
-            if(legacyWozProcess==null&&!legacyWozClosed&&pendingLegacyWozOffer==null&&participant.Phase==Phase.BlockPreparation)
+            if(ownerDiagnostics&&!String.IsNullOrEmpty(easyWozTiming))
+                GUILayout.Label((easyWozLobby!=null?"Current cloud timing\n":"Last cloud timing snapshot\n")+easyWozTiming,recordingWrap);
+            DrawEasyWozPairingControls();
+            if(manualWozPairing&&legacyWozProcess==null&&!legacyWozClosed&&pendingLegacyWozOffer==null&&participant.Phase==Phase.BlockPreparation)
             {
                 legacyWozOperatorClock=WozInput("Existing operator clock ID",legacyWozOperatorClock);
                 legacyWozLocalIp=WozInput("Participant local IPv4",legacyWozLocalIp);legacyWozLocalPort=WozInput("Participant local port",legacyWozLocalPort);
@@ -175,7 +264,7 @@ namespace AvatarStroop.Unity
                 legacyWozMaximumAge=WozInput("Connection timeout (seconds)",legacyWozMaximumAge);
                 legacyWozScope=GUILayout.Toggle(legacyWozScope,RecordedLegacyWoz?"Use LiveWoZ for all four recorded blocks.":"Use LiveWoz for all four blocks; no recording.");
                 legacyWozPlaintext=GUILayout.Toggle(legacyWozPlaintext,"Allow plaintext messages on this isolated laboratory LAN.");
-                GUI.enabled=legacyWozScope&&legacyWozPlaintext&&participant.InputReady&&rig.HeadReady;
+                GUI.enabled=legacyWozScope&&legacyWozPlaintext&&avatarChoice.Answered(AvatarChoiceSession)&&participant.InputReady&&rig.HeadReady;
                 if(GUILayout.Button("Select LiveWoz and create offer"))
                 {
                     if(RecordedLegacyWoz)
@@ -191,16 +280,50 @@ namespace AvatarStroop.Unity
                 }
                 GUI.enabled=true;
             }
-            if(!String.IsNullOrEmpty(legacyWozOffer))
+            if(manualWozPairing&&!String.IsNullOrEmpty(legacyWozOffer))
             {GUILayout.Label("Private temporary offer: copy to operator, then start operator first.",recordingWrap);GUILayout.TextField(legacyWozOffer);}
-            if(RecordedLegacyWoz)GUILayout.Label("Transfer the offer to the separate operator PC. Focus changes are recorded; healthy raw capture continues while an unfocused task is held.",recordingWrap);
-            GUI.enabled=legacyWozProcess!=null&&!legacyWozClosed&&!legacyWozStarted;
-            if(GUILayout.Button("Operator started: connect participant"))StartLegacyWoz();
+            if(manualWozPairing)
+            {
+                if(RecordedLegacyWoz)GUILayout.Label("Transfer the offer to the separate operator PC. Focus changes are recorded; healthy raw capture continues while an unfocused task is held.",recordingWrap);
+                GUI.enabled=legacyWozProcess!=null&&!legacyWozClosed&&!legacyWozStarted;
+                if(GUILayout.Button("Operator started: connect participant"))StartLegacyWoz();
+            }
             GUI.enabled=legacyWozStarted&&legacyWozScene!=null&&legacyWozScene.CanBeginCountdown;
             if(GUILayout.Button("Begin current block")){if(RecordedLegacyWoz)RequestNamedBlockPlanStart(false);else legacyWozScene.BeginCountdown();Render();}
             GUI.enabled=legacyWozProcess!=null&&!legacyWozProcess.Terminal;
             if(GUILayout.Button("Stop WoZ source and task"))RevokeLegacyWoz();
             GUI.enabled=true;
+        }
+    }
+
+    internal sealed class ViveWozWearerAvatarChoice
+    {
+        object owner;
+        bool? answer,pendingPress;
+        bool armed;
+        int lastFrame=-1;
+        internal bool Answered(object session){return session!=null&&object.ReferenceEquals(owner,session)&&answer.HasValue;}
+        internal bool Granted(object session){return Answered(session)&&answer==true;}
+        internal void Reset(){owner=null;answer=null;pendingPress=null;armed=false;lastFrame=-1;}
+        internal bool Pending(object session)
+        {
+            if(session==null)return false;
+            if(!object.ReferenceEquals(owner,session)){owner=session;answer=null;pendingPress=null;armed=false;lastFrame=-1;}
+            return !answer.HasValue;
+        }
+        internal void Observe(int frame,bool witnessed,bool ready,bool trigger,bool pad,bool menu)
+        {
+            if(owner==null||answer.HasValue||frame==lastFrame)return;
+            bool continuous=lastFrame==frame-1;
+            lastFrame=frame;
+            if(!continuous||!ready||!witnessed||menu||trigger&&pad){armed=false;pendingPress=null;return;}
+            if(!trigger&&!pad)
+            {
+                if(pendingPress.HasValue)answer=pendingPress;
+                pendingPress=null;armed=true;return;
+            }
+            if(armed){pendingPress=trigger;armed=false;}
+            else if(pendingPress.HasValue&&pendingPress.Value!=trigger)pendingPress=null;
         }
     }
 }

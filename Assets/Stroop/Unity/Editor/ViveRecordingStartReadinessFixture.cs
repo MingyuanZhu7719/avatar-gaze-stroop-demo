@@ -79,6 +79,11 @@ namespace AvatarStroop.Unity.Editor
         {return Call(claim,"TryExecute",context,inputs,action).ToString();}
         public static void ValidateTaskOnly()
         {
+            ValidateTaskOnlyMode(false);
+            ValidateTaskOnlyMode(true);
+        }
+        static void ValidateTaskOnlyMode(bool participantMode)
+        {
             assertions=0;ViveSyntheticFixtureIsolation.OpenKnownSavedAnchor();
             var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Additive);
             var rigObject=new GameObject("TaskOnlyTrainingRig");var ownerObject=new GameObject("TaskOnlyTrainingOwner");
@@ -122,16 +127,27 @@ namespace AvatarStroop.Unity.Editor
                 var plan=ViveNamedSimulationPlan.Select(Actor.Owner,"task-only-ui-plan",choice);
                 var rawConfig=SessionConfiguration.WithFormalEyeRecordingOnly(SessionConfiguration.WithTrainingProtocol(
                     SessionConfiguration.NamedRecordingDevelopment("task-only-ui-record",51,plan,ViveNamedRecordingIntent.Select(Actor.Owner,"task-only-ui-intent",true,true)),TrainingProtocol.TutorialExamV1));
+                if(participantMode)
+                {
+                    ParticipantAssignment assignment;
+                    Require(ParticipantAssignment.TryCreate("P005",TaskKind.Stroop,ResponseRule.InkColor,out assignment),"participant ID fixture");
+                    var sceneConfig=typeof(ViveStroopDevelopmentBootstrap).Assembly.GetType("AvatarStroop.Unity.ViveLegacySceneConfiguration",true);
+                    rawConfig=SessionConfiguration.WithFormalEyeRecordingOnly(SessionConfiguration.WithTrainingProtocol(
+                        (SessionConfiguration)Factory(sceneConfig,"CreateParticipantRecording","participant-ui-fixture",assignment,geometry.Version,
+                        ViveFixedTrackpadMapping.Version,"test-design","test-intent"),TrainingProtocol.TutorialExamV1));
+                }
                 var recorded=new ViveDevelopmentParticipant(rawConfig,clock,geometry,ViveFixedTrackpadMapping.Create(),ViveFixedTrackpadMapping.SectorThreshold,true);
                 var runtime=typeof(ViveDevelopmentParticipant).Assembly;
                 var admissionType=runtime.GetType("AvatarStroop.Runtime.ViveNamedSessionFrameAdmission",true);
-                var admission=Factory(admissionType,"CreateSyntheticForTest",recorded,worker,clock,64);
+                var admission=participantMode?Factory(admissionType,"CreateLegacySyntheticForTest",recorded,worker,clock,64,0d,0d):
+                    Factory(admissionType,"CreateSyntheticForTest",recorded,worker,clock,64);
                 Require((bool)Call(admission,"ConfirmTask")&&(bool)Call(admission,"ConfirmEye"),"task-only pump choices failed");
                 var budgetType=runtime.GetType("AvatarStroop.Runtime.ViveRawByteBudget",true);
                 Require((bool)Call(admission,"TryBindQueueBudget",Factory(budgetType,"SelectExplicit",33554432L)),"task-only queue budget bind failed");
                 var rawPumpType=runtime.GetType("AvatarStroop.Runtime.ViveNamedRawRecordingPump",true);
                 var writer=Activator.CreateInstance(rawPumpType.GetNestedType("SyntheticWriter",BindingFlags.NonPublic),Instance,null,new[]{admission},null);
-                rawPump=Factory(rawPumpType,"StartSyntheticWithStatusForTest",recorded,worker,clock,admission,writer,false);
+                rawPump=participantMode?Factory(rawPumpType,"StartLegacySyntheticWithStatusForTest",recorded,worker,clock,admission,writer):
+                    Factory(rawPumpType,"StartSyntheticWithStatusForTest",recorded,worker,clock,admission,writer,false);
                 Require(Call(rawPump,"PrepareStatus").ToString()=="Ready","task-only status preparation was unavailable");
                 object[] headFrame={null};
                 Require((bool)Call(worker,"TryPollTaskForRecording",headFrame),"task-only head poll failed");
@@ -145,6 +161,23 @@ namespace AvatarStroop.Unity.Editor
                 Require(!(bool)Property(owner,"FormalEyeReadyForFirstBlock"),"recorded formal block accepted a dormant eye source");
                 Require(((string)Property(owner,"FormalEyeFirstBlockNotice")).Contains("No formal block"),"missing eye readiness has no actionable notice");
                 Set(owner,"namedRawPump",rawPump);
+                if(participantMode)
+                {
+                    experiment.GetType().GetProperty("LockedControl",Instance).SetValue(experiment,ControlSelection.Automatic,null);
+                    Require(Get(owner,"firstBlockRequest")==null&&!(bool)Call(owner,"ObserveFirstBlockRequest"),"formal plan must wait for a click");
+                    Call(owner,"RequestParticipantFirstBlock");
+                    var request=Get(owner,"firstBlockRequest");
+                    Require(request!=null&&(bool)Call(owner,"ObserveFirstBlockRequest"),"click during eye warm-up was lost");
+                    Call(owner,"RequestNamedBlockPlanStart",false);Call(owner,"RequestParticipantFirstBlock");
+                    Require((int)Get(owner,"rawPlanStartRequested")==0&&object.ReferenceEquals(request,Get(owner,"firstBlockRequest")),
+                        "dormant eye started the plan or duplicate click reset the request");
+                    Set(request,"RequestedAt",-1d);
+                    Require(!(bool)Call(owner,"ObserveFirstBlockRequest")&&Get(owner,"firstBlockRequest")==null,"expired intent survived");
+                    Call(owner,"RequestParticipantFirstBlock");Set(owner,"sharedClock",new MonotonicClock("replacement-clock"));
+                    Require(!(bool)Call(owner,"ObserveFirstBlockRequest")&&Get(owner,"firstBlockRequest")==null,"intent survived replaced session clock");
+                    Set(owner,"sharedClock",clock);Call(owner,"RequestParticipantFirstBlock");Call(owner,"CancelFirstBlockRequest","operator cancelled");
+                    Require(!(bool)Call(owner,"ObserveFirstBlockRequest")&&Get(owner,"firstBlockRequest")==null,"cancelled intent survived");
+                }
                 // Fixture-only setup creates the declared formal boundary. It
                 // is not a native block-plan receipt or a hardware readiness
                 // claim. The actual pump/rig hold must still refuse to expose

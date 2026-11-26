@@ -11,6 +11,8 @@ Use the operating guides for a current package, the development guide for source
 | [Fixed-target eye validation](vive-gaze-validation.md) | Separate recorded accuracy check, target sequence, gaze/AOI summaries and limitations. |
 | [Local recording self-test](controlled-recording-self-test-guide.txt) | Recording choices, short withdrawal checks, complete-session output and storage limits. |
 | [WoZ participant-local recording](woz-participant-local-recording.md) | Separate participant/operator workflow and recording scope. |
+| [WoZ easy pairing / 双机简易连接](woz-easy-pairing.md) | Create a Photon room and join by code; no IP, port, clock ID or copied offer. |
+| [WoZ operator troubleshooting / 实验者程序排错](woz-operator-debugging.md) | SteamVR launcher, error details and one-click diagnostic ZIP export. |
 | [Development](development.md) | Current architecture, isolated builds, toolchains and validation commands. |
 | [XR prerequisites](xr-preview-prerequisites.md) | Installed packages and runtime requirements for headset builds. |
 | [Quest preview](quest-preview.md) | Quest PC Link development preview and Touch input. |

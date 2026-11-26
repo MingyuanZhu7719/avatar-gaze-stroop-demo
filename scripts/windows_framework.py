@@ -7,6 +7,7 @@ standard references are disabled. No SDK, runtime or package is installed.
 Running this script performs only the headless Framework compatibility tests.
 """
 import argparse
+import importlib.util
 import os
 from pathlib import Path
 import subprocess
@@ -31,9 +32,15 @@ def framework_references():
     raise ValueError("The installed Windows .NET Framework reference assemblies are unavailable; refusing Unity Mono references.")
 
 
-def compiler_command(mono, csc):
-    return [str(mono), str(csc), "-noconfig", "-nostdlib+", "-nologo", "-langversion:7.3", "-warnaserror"] + [
-        "-r:" + str(path) for path in framework_references()]
+def compiler_command(mono, csc, source=None, output=None):
+    references = framework_references()
+    command = [str(mono), str(csc), "-noconfig", "-nostdlib+", "-nologo", "-langversion:7.3", "-warnaserror"] + [
+        "-r:" + str(path) for path in references]
+    if source is not None:
+        spec = importlib.util.spec_from_file_location("framework_photon_sdk", source / "scripts/photon-sdk.py")
+        sdk = importlib.util.module_from_spec(spec); spec.loader.exec_module(sdk)
+        command += sdk.compile_references(source, output, mono, csc, references)
+    return command
 
 
 def runtime_sources(source):
@@ -46,7 +53,7 @@ def verify_preview_runtime(mono, csc, source, work_directory):
     with tempfile.TemporaryDirectory(prefix="framework-check-", dir=work_directory) as temporary:
         binary = Path(temporary) / "AvatarStroop.FrameworkPreviewSmoke.exe"
         sources = runtime_sources(source) + regression_test_sources(source)
-        command = compiler_command(mono, csc) + ["-define:STROOP_TEST_BUILD", "-target:exe", "-main:AvatarStroop.Tests.FrameworkPreviewSmoke", "-out:" + str(binary)]
+        command = compiler_command(mono, csc, source, Path(temporary)) + ["-define:STROOP_TEST_BUILD", "-target:exe", "-main:AvatarStroop.Tests.FrameworkPreviewSmoke", "-out:" + str(binary)]
         # Resolve source files from cwd to stay below Windows' command-line limit.
         subprocess.run(command + [str(path.relative_to(source)) for path in sources], check=True, cwd=source)
         # Do not prefix this with Mono: that would hide the deployment incompatibility.
@@ -55,7 +62,7 @@ def verify_preview_runtime(mono, csc, source, work_directory):
 
 
 def compile_preview_launcher(mono, csc, source, launcher, quest=False):
-    command = compiler_command(mono, csc) + ["-target:winexe", "-main:AvatarStroop.Apps.DesktopPreviewLauncher", "-out:" + str(launcher)]
+    command = compiler_command(mono, csc, source, launcher.parent) + ["-target:winexe", "-main:AvatarStroop.Apps.DesktopPreviewLauncher", "-out:" + str(launcher)]
     if quest:
         command.append("-define:QUEST_PREVIEW_LAUNCHER")
     sources = runtime_sources(source) + [source / "Apps/DesktopPreviewLauncher.cs"]

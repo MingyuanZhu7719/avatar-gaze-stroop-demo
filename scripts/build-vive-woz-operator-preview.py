@@ -12,6 +12,7 @@ import importlib.util
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -19,16 +20,24 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("quest_prepare", ROOT / "scripts/prepare-quest-preview.py")
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
+photon_spec = importlib.util.spec_from_file_location("woz_photon_sdk", ROOT / "scripts/photon-sdk.py")
+photon = importlib.util.module_from_spec(photon_spec)
+photon_spec.loader.exec_module(photon)
 
 
 def start_here_text():
     return (
         "LEGACY WOZ OPERATOR / DEVELOPMENT\n"
-        "Hardware/alignment/LAN acceptance is pending. Messages are authenticated but not encrypted. This operator does not record files; it can explicitly forward to a participant-local recording session.\n"
+        "Hardware/alignment/two-PC acceptance is pending. Photon room traffic uses encrypted WSS; advanced manual LAN messages are authenticated but not encrypted. This operator writes diagnostic logs and can explicitly forward to a participant-local experiment recording session. Task and raw eye recording is handled by the participant app.\n"
         "Keep this complete package together. Do not run it alongside another XR application on the same PC.\n"
         "Requires an installed SteamVR Windows x64 runtime, working VIVE Pro Eye tracking, SRanipal/SR_Runtime and user calibration. Vendor software is not bundled or installed.\n"
-        "This package has no outer SteamVR launcher. Do not change global OpenXR settings just to launch it.\n\n"
-        "PROCESS-LOCAL START (manual, not run by the build)\n"
+        "START THE OPERATOR\n"
+        "Double-click Start-WoZ-Operator.cmd. It selects SteamVR for this launch and saves Player.log and Launcher.txt in a fresh WoZLogs/run-* folder beside the program. After the operator closes, this folder opens automatically.\n"
+        "If SteamVR is installed elsewhere, drag its steamxr_win64.json file onto Start-WoZ-Operator.cmd. Keep the launcher with this complete package.\n"
+        + photon.room_guide() +
+        "EXPORT AN ERROR REPORT\n"
+        "After an error, click Export debug ZIP. The ZIP contains the current diagnostic summary, recorded events and available Player log. Use Copy error details for a short report, or Open logs folder to locate the files. Diagnostics may contain local file paths and system information.\n\n"
+        "ALTERNATIVE PROCESS-LOCAL START (manual, not run by the build)\n"
         "In PowerShell opened in this package folder, verify the following path is your installed SteamVR manifest. If SteamVR is elsewhere, use its actual steamxr_win64.json path. Then run:\n"
         "$runtime = Join-Path ${env:ProgramFiles(x86)} 'Steam/steamapps/common/SteamVR/steamxr_win64.json'\n"
         "if (!(Test-Path -LiteralPath $runtime -PathType Leaf)) { throw 'Installed SteamVR manifest missing' }\n"
@@ -39,12 +48,13 @@ def start_here_text():
         "$start.EnvironmentVariables['XR_RUNTIME_JSON'] = $runtime\n"
         "[System.Diagnostics.Process]::Start($start) | Out-Null\n"
         "This changes only the new player's environment, not PowerShell's environment, the registry or the system runtime. The source's VivePreviewLaunchPlan uses the same child-only mechanism. This manual route has not been hardware-tested; the rig rejects a non-SteamVR runtime.\n\n"
-        "PAIR AND CHECK\n"
-        "1. In Headset and eye tracking, click Start headset view, then Start eye tracking. In Pair with the participant, copy the clock ID to the participant owner. Initialization alone is not valid tracking; inspect fresh tracking and diagnostics.\n"
-        "2. On the participant PC, choose Preview (no files), Legacy A/B/C/D and Use a second-PC WoZ operator (unrecorded). Configure the preview and finish practice. A separately enabled recording package instead requires Record locally, the local output setup, both headset recording choices and an explicit recording start. Keep exactly one participant VIVE wand connected; no left/right selection is needed.\n"
-        "3. At participant block preparation, create the WoZ offer using the operator clock ID and exact private-LAN endpoints. Paste the private temporary offer into Participant pairing offer on this operator PC. Enter both IPv4 addresses; ports 45172 (operator) and 45171 (participant) are under Advanced network settings. Review and confirm the three permissions, including unencrypted LAN messages and head/eye forwarding. For a recorded offer, explicitly accept participant-local storage of mapped poses and source times. Click Connect to participant first, then Operator started: connect participant on the participant PC.\n"
-        "4. Begin the participant block when ready. After one or two main trials, click Stop forwarding and pause participant, or Stop WoZ source and task on the participant PC. Verify actual pause and cleared avatar. No automatic resume. Stop headset and eye source also ends source acquisition; a stopped session requires a fresh pairing.\n"
-        "Use an isolated laboratory LAN. Both prepared PCs need their respective tracked headsets; the operator requires fresh valid eye data. Firewall permission is not configured by this package. If blocked, stop and review the setup rather than changing ports or settings automatically.\n"
+        "MANUAL PAIRING FALLBACK\n"
+        "Open Advanced: manual LAN connection on both computers only when using the older manual workflow. Copy the current operator clock ID to participant block preparation, enter both IPv4 addresses (operator port 45172, participant port 45171), and create an offer. Paste the private temporary offer into Participant pairing offer here. Review and confirm the three permissions. For a recorded offer, explicitly accept participant-local storage. Click Connect to participant first, then Operator started: connect participant on the participant PC. Do not mix this workflow with an active Photon room.\n"
+        "CHECK THE SESSION\n"
+        "On the participant PC, Preview (no files), Legacy A/B/C/D and Use a second-PC WoZ operator (unrecorded) run without task files. A separately enabled recording package instead requires Record locally, local output setup, both headset recording choices and an explicit recording start. Keep exactly one participant VIVE wand connected; no left/right selection is needed. Initialization alone is not valid tracking; inspect fresh tracking and diagnostics.\n"
+        "For a two-way view, the participant chooses live avatar sharing in the headset after alignment. Check that the offer shows a two-way view before connecting. In a formal WoZ trial, ask the participant to glance between the board and evaluator, then repeat with a head turn. When tracking expires the participant avatar disappears.\n"
+        "Begin the participant block when ready. After one or two main trials, click Stop forwarding and pause participant, or Stop WoZ source and task on the participant PC. Verify actual pause and cleared avatar. No automatic resume. Stop headset and eye source also ends source acquisition; a stopped session requires a fresh pairing.\n"
+        "Photon requires internet; advanced manual mode requires an isolated laboratory LAN. Both prepared PCs need their respective tracked headsets; the operator requires fresh valid eye data. Firewall permission is not configured by this package. If blocked, stop and review the setup rather than changing ports or settings automatically.\n"
         "For recorded mode, a one- or two-trial stop leaves a raw prefix, not a completed session or completed-session CSV. Full-session CSV requires later normal completion and successful local verification; do not run four blocks for this short check.\n"
         "No participant answers, RT, ratings, raw eyes or files are sent to the operator. Participant recording is default-off and requires its separate controlled build and local choices. No data submission is needed.\n")
 
@@ -113,6 +123,7 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--logs", required=True, type=Path)
     parser.add_argument("--check-only", action="store_true")
+    parser.add_argument("--photon-config", type=Path, help="Private Photon config copied beside the player; values are never printed.")
     args = parser.parse_args()
     try:
         if sys.platform != "win32":
@@ -131,6 +142,10 @@ def main():
         if (source / "Assets/csc.rsp").exists():
             raise ValueError("Source compiler options require review before preparing a preview.")
         frozen = prepare.source_inventory(source)
+        photon.verify(source)
+        if args.photon_config: photon.validate_config(args.photon_config)
+        launcher_source = source / "Apps/Start-WoZ-Operator.cmd"
+        launcher_hash = prepare.digest(launcher_source)
         if args.check_only:
             print("Paths, editor, cached packages and current source inventory checked; no files created.")
             return 0
@@ -151,20 +166,31 @@ def main():
         prepare.verify_prepared(source, project)
         if frozen != prepare.source_inventory(source):
             raise ValueError("Source changed during build; preserve output for investigation and do not treat as verified.")
+        if launcher_hash != prepare.digest(launcher_source):
+            raise ValueError("Operator launcher changed during build; rebuild from a consistent source snapshot.")
         scene = validate_scene(project)
         player = output / "AvatarStroopViveWozOperatorDevelopment.exe"
         if not player.is_file() or list(output.rglob("SRanipal.dll")):
             raise ValueError("Expected operator player missing or unexpected vendor DLL bundled.")
         (output / "START-HERE.txt").write_text(start_here_text(), encoding="utf-8")
+        launcher = output / launcher_source.name
+        shutil.copy2(launcher_source, launcher)
+        if prepare.digest(launcher) != launcher_hash:
+            raise ValueError("Packaged operator launcher differs from the reviewed source.")
+        photon_package = photon.package_files(source, player.parent, args.photon_config)
+        prepare.verify_prepared(source, project)
         evidence = {"format": 1, "status": "built_static_checks_only", "source": str(source),
                     "project": str(project), "editor": str(editor), "packages": prepare.PACKAGES,
                     "source_files": frozen, "player": str(player), "player_sha256": prepare.digest(player),
                     "scene": scene, "configure_log": configure_log, "build_log": build_log,
                     "task_view_freshness": "requires live transport; not hardware validated",
-                    "operator_avatar": "hidden; response-free task mirror only", "preflight_gate": "requires explicit installed-source start, local forwarding choice and authenticated current challenge",
+                    "operator_avatar": "participant head and combined gaze during active WoZ trials when participant sharing is declared", "preflight_gate": "requires explicit installed-source start, local forwarding choice and authenticated current challenge",
                     "network_default": False, "network_requires_explicit_pairing": True, "operator_recording_available": False,
                     "participant_recorded_mode_forwarding_available": True,
-                    "runtime_selection": "manual child-only XR_RUNTIME_JSON; no outer launcher; not hardware tested",
+                    "launcher": launcher.name, "launcher_sha256": launcher_hash,
+                    "runtime_selection": "Start-WoZ-Operator.cmd selects child-only SteamVR XR_RUNTIME_JSON",
+                    "diagnostic_logs_available": True, "diagnostic_zip_export_available": True,
+                    "photon_woz_available": True, "photon_sdk": photon_package,
                     "physical_network_tested": False, "player_launched": False, "system_runtime_changed": False}
         prepare.write_json(logs / "operator-build-evidence.json", evidence)
         print("Built isolated operator candidate; static checks only: " + str(player))

@@ -40,7 +40,7 @@ def main():
     sources.append(Path("Assets/Stroop/Unity/ViveLegacyWozRawSceneAcquisition.cs"))
     binary = job / "FormalRecordingFixture.exe"
     shutil.copyfile(ROOT / "Apps/StudyAnalyzer.config", str(binary) + ".config")
-    args = compiler_command(mono, csc) + [
+    args = compiler_command(mono, csc, ROOT, binary.parent) + [
         "-target:exe", "-main:AvatarStroop.Tests.ViveFormalEyeRecordingTests", "-nowarn:0649",
         "-define:STROOP_TEST_BUILD,VIVE_RAW_SYNTHETIC_TEST,VIVE_SYNTHETIC_BATCH_FIXTURE", "-out:" + str(binary)]
     subprocess.run(args + [str(path) for path in sources], check=True, cwd=ROOT)

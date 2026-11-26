@@ -42,6 +42,7 @@ namespace AvatarStroop.Unity
         internal void LatchRawInstallFailure(){rawInstallFailureLatched=true;}
         ViveStartupAlignmentGate startupGate;
         ViveStartupView startupView;
+        int wozSharingPromptFrame=-1,participantAvatarFrame=-1;
         ViveRawHoldView rawHoldView;
         bool rawHoldViewUnavailable;
         bool practiceCountdownRenderPending;
@@ -114,22 +115,28 @@ namespace AvatarStroop.Unity
         {get{var active=CurrentRawStartWorker;return active==null?(ViveProEyeWorker.RecordingStartReadiness?)null:active.ReadRecordingStartReadiness();}}
         internal static string DescribeRawStartReadiness(ViveProEyeWorker.RecordingStartReadiness? value)
         {
+            string reason=DescribeEyeReadinessReason(value);
+            return value.HasValue&&value.Value.Reason!=ViveProEyeWorker.RecordingStartReadinessReason.None?
+                reason+" Recording has not started.":reason;
+        }
+        internal static string DescribeEyeReadinessReason(ViveProEyeWorker.RecordingStartReadiness? value)
+        {
             if(value==null)return "Enable eye tracking and wait for the client.";
             switch(value.Value.Reason)
             {
                 case ViveProEyeWorker.RecordingStartReadinessReason.None:return "Eye status is stable; current head and controller checks are still required.";
-                case ViveProEyeWorker.RecordingStartReadinessReason.CalibrationRequired:return "HTC reports calibration required. Complete eye calibration in the official HTC interface; recording has not started.";
-                case ViveProEyeWorker.RecordingStartReadinessReason.CalibrationUnavailable:return "HTC calibration status is unavailable. Recording has not started.";
-                case ViveProEyeWorker.RecordingStartReadinessReason.DirectionUnavailable:return "Eye direction is invalid. Check headset fit and eye visibility, then wait for stable tracking; recording has not started.";
-                case ViveProEyeWorker.RecordingStartReadinessReason.Stabilizing:return "Waiting for 0.5 seconds of continuous valid eye status and fresh distinct eye frames. Recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.CalibrationRequired:return "HTC reports calibration required. Complete eye calibration in the official HTC interface.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.CalibrationUnavailable:return "HTC calibration status is unavailable.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.DirectionUnavailable:return "Eye direction is invalid. Check headset fit and eye visibility, then wait for stable tracking.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.Stabilizing:return "Waiting for 0.5 seconds of continuous valid eye status and fresh distinct eye frames.";
                 case ViveProEyeWorker.RecordingStartReadinessReason.Stale:
-                case ViveProEyeWorker.RecordingStartReadinessReason.FrameDiscontinuity:return "Eye frames are stale or discontinuous. Waiting for fresh, advancing samples; recording has not started.";
-                case ViveProEyeWorker.RecordingStartReadinessReason.LockBusy:return "Waiting for the current eye-client check. Recording has not started.";
-                case ViveProEyeWorker.RecordingStartReadinessReason.AwaitingObservation:return "Waiting for the first eye observation. Recording has not started.";
-                case ViveProEyeWorker.RecordingStartReadinessReason.EyeDataUnavailable:return "HTC eye data is unavailable. Check headset fit and eye visibility; recording has not started.";
-                case ViveProEyeWorker.RecordingStartReadinessReason.InvalidTime:return "Eye observation timing is invalid. Recording has not started; review diagnostics.";
-                case ViveProEyeWorker.RecordingStartReadinessReason.NativeStatusInvalid:return "HTC eye runtime or read status is not ready. Recording has not started; review diagnostics.";
-                default:return "Eye client is unavailable. Recording has not started.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.FrameDiscontinuity:return "Eye frames are stale or discontinuous. Waiting for fresh, advancing samples.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.LockBusy:return "Waiting for the current eye-client check.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.AwaitingObservation:return "Waiting for the first eye observation.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.EyeDataUnavailable:return "HTC eye data is unavailable. Check headset fit and eye visibility.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.InvalidTime:return "Eye observation timing is invalid. Review diagnostics.";
+                case ViveProEyeWorker.RecordingStartReadinessReason.NativeStatusInvalid:return "HTC eye runtime or read status is not ready. Review diagnostics.";
+                default:return "Eye client is unavailable.";
             }
         }
         // This supplies only this rig's installed worker to the scene-owned
@@ -627,7 +634,9 @@ namespace AvatarStroop.Unity
             headDiagnosticFrame=Time.frameCount;
             if(startupView!=null)
             {
-                if(alignment.Applied)startupView.Hide();
+                if(alignment.Applied&&development!=null&&development.ShowWozAvatarChoice(startupView,headReady&&focused))
+                    wozSharingPromptFrame=Time.frameCount;
+                else if(alignment.Applied)startupView.Hide();
                 else
                 {
                     string prompt=startupGate.KnownAbsent?"Put on the headset.":
@@ -699,6 +708,8 @@ namespace AvatarStroop.Unity
                 // not ownership of the eye publication lock. Optional eye lock
                 // contention is recorded separately and never pauses a trial.
                 UpdateRecordingFrame();
+                if(owner!=null&&participantAvatarFrame!=Time.frameCount&&owner.LiveParticipantAvatarEnabled)
+                    owner.UpdateParticipantAvatar(null,Quaternion.identity,clock,false);
             }
             finally
             {
@@ -820,6 +831,7 @@ namespace AvatarStroop.Unity
                 if(worker==null)
                 {
                     ReadHead();
+                    if(wozSharingPromptFrame==Time.frameCount)return;
                     bool attemptedAutomaticEye=TryStartAutomaticEyeDiagnostic();
                     if(development!=null){development.Poll(headReady);development.ObservePracticeFrame(null);}
                     if(!attemptedAutomaticEye)SetStatus(headStatus);
@@ -836,9 +848,14 @@ namespace AvatarStroop.Unity
                     if(!currentPump.TryBeginRecordingFrame(worker))
                     {previewCamera.cullingMask=0;development.NoteRawFirstFault("rig_eye_snapshot_unavailable");development.FailNamedRawBeforeFrame();SetStatus("Eye snapshot unavailable; task safety is stopped or pending.");return;}
                 }
-                else currentPump.BeginFrame();
+                else
+                {
+                    if(development!=null&&development.UnrecordedWozEyeWarmup)ServiceFormalEyeWarmup();
+                    currentPump.BeginFrame();
+                }
                 try
                 {
+                    if(wozSharingPromptFrame==Time.frameCount)return;
                     // Worker.Poll catches head-reader exceptions. Never leave
                     // a previous frame's ready flag or camera mask in place.
                     if(!currentPump.HeadReady)
@@ -942,6 +959,7 @@ namespace AvatarStroop.Unity
                         // allowed before this frame's render callback.
                         if(!development.PrepareRawScenePresentation())
                         {previewCamera.cullingMask=0;development.FailNamedRawAfterTask();SetStatus("Raw trial presentation was not safely prepared; interval is unknown.");}
+                        else ShareParticipantAvatarFrame();
                         return;
                     }
                     if(development!=null&&development.NamedRawPumpAttached)
@@ -961,6 +979,7 @@ namespace AvatarStroop.Unity
                         else if(!development.NamedRawPanelPending)CompletePreparationPanel();
                         return;
                     }
+                    ShareParticipantAvatarFrame();
                     if(development!=null)development.ObservePracticeFrame(currentPump.Poll());
                     if(usable)hasSeenUsableEye=true;
                     SetStatus(!headReady?"Head tracking unavailable; recording is off.":TrainingEyeSourceDormant?
@@ -971,6 +990,14 @@ namespace AvatarStroop.Unity
                 finally{currentPump.EndFrame();}
             }
             catch(Exception e){Fail("View error: "+e.GetType().Name,e);}
+        }
+        void ShareParticipantAvatarFrame()
+        {
+            if(development==null||!development.LiveParticipantAvatarEnabled)return;
+            participantAvatarFrame=Time.frameCount;
+            bool current=headReady&&headReadyFrame==Time.frameCount&&XrFocused&&!referenceChanged&&worker!=null&&
+                worker.UsesInstalledSdkPath&&cameraOffset!=null&&source!=null;
+            development.UpdateParticipantAvatar(current?source.LastObservation:null,current?cameraOffset.rotation:Quaternion.identity,clock,current);
         }
         void RetainEyeClientFailure(string diagnostic)
         {
@@ -1146,7 +1173,7 @@ namespace AvatarStroop.Unity
         {
             Vec3? point=null;Vector3 projected;
             if(usable&&gazeMarker!=null&&previewCamera!=null&&cameraOffset!=null&&
-                (development==null||(!development.NamedRawPumpAttached&&!development.RecordingEnabled))&&
+                (development==null||(!development.NamedRawPumpAttached&&!development.RecordingEnabled&&!development.LiveParticipantAvatarEnabled))&&
                 TryProjectGazeDirection(previewCamera.transform.position,cameraOffset.rotation,sample.RawEyeDirection,previewCamera.transform.forward,out projected))
                 point=new Vec3(projected.x,projected.y,projected.z);
             var state=gazeContinuity.Update(observation,clock.Now,headReady,point);

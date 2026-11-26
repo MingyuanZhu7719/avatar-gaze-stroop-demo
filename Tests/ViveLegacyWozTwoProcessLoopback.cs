@@ -116,7 +116,7 @@ namespace AvatarStroop.Tests
                 using(var reader=new BinaryReader(input,Encoding.UTF8,true))using(var writer=new BinaryWriter(output,Encoding.UTF8,true))
                 {
                     string operatorClock=reader.ReadString();
-                    using(var offer=ViveLegacyWozProcessPairing.CreateSyntheticOffer(owner,"local-owner",operatorClock))
+                    using(var offer=ViveLegacyWozProcessPairing.CreateSyntheticOffer(owner,"local-owner",operatorClock,true))
                     using(var process=ViveLegacyWozParticipantProcess.Create(offer,owner,ParticipantEndpoint(),OperatorEndpoint(),5))
                     {
                         char[] token=offer.RevealToken();try{writer.Write(token.Length);writer.Write(token);writer.Flush();}finally{Array.Clear(token,0,token.Length);}
@@ -127,11 +127,13 @@ namespace AvatarStroop.Tests
                         Require(process.BeginCountdownForTest(task),"fixture_countdown");SendPhase(process);
                         PumpUntil(process,()=>process.CurrentPreflight!=null,deadline);Require(process.CurrentPreflight.Phase==Phase.Countdown,"Countdown");
                         Thread.Sleep(3010);task.Tick();Require(task.Phase==Phase.MainTask,"MainTask");SendPhase(process);
+                        PumpUntil(process,()=>process.CurrentPreflight!=null,deadline);
+                        Require(process.TrySendParticipantAvatarPose(new Rotation(0,.6,0,.8),new Vec3(-.6,0,.8),clock.Now),"participant_avatar_send");
                         PumpUntil(process,()=>process.CurrentPose!=null,deadline);
                         Require(process.CurrentPose.ReceiptCapturedBySocket&&process.CurrentPose.SyntheticObservationsOnly&&!process.CurrentPose.IsExperimentAdmission,"pose_origin");
                         Require(process.RevokeSource(),"revoke");Require(task.Phase==Phase.Paused&&process.CurrentPose==null,"actual_pause");
                         PumpUntil(process,()=>process.SourceRevokeAcknowledged,deadline);
-                        Console.WriteLine("PASS socket participant phases=3 pose=1 actual_pause=1 correlated_revoke_ack=1 socket_receipt=1 synthetic=1");return 0;
+                        Console.WriteLine("PASS socket participant phases=3 pose=1 participant_avatar_sent=1 actual_pause=1 correlated_revoke_ack=1 socket_receipt=1 synthetic=1");return 0;
                     }
                 }
         }
@@ -147,6 +149,7 @@ namespace AvatarStroop.Tests
                     using(pairing)using(var process=ViveLegacyWozOperatorProcess.Synthetic(pairing,clock,observations,OperatorEndpoint(),ParticipantEndpoint(),5,null))
                     {
                         Require(process.ConfirmLocalOperatorSource()&&process.Start(),"operator_start");writer.Write((byte)1);writer.Flush();
+                        bool sawParticipantAvatar=false;
                         while(deadline.Elapsed.TotalSeconds<12)
                         {
                             process.Tick();if(process.Terminal)break;
@@ -154,10 +157,16 @@ namespace AvatarStroop.Tests
                             if(process.PollPhasePreflight())proofs++;
                             // A distinct native fixture observation follows proof.
                             sequence++;observations.Fresh(sequence,checked((int)sequence),checked((int)sequence));
-                            if(process.PollObservation())poses++;Thread.Sleep(10);
+                            Rotation participantHead;Vec3 participantEye;
+                            if(process.TryGetParticipantAvatarPose(out participantHead,out participantEye))
+                            {
+                                Require(participantHead.Y==.6&&participantHead.W==.8&&participantEye.X==-.6&&participantEye.Z==.8,"received_participant_pose");
+                                sawParticipantAvatar=true;
+                            }
+                            if(sawParticipantAvatar&&process.PollObservation())poses++;Thread.Sleep(10);
                         }
-                        Require(process.Terminal&&process.SourceRevokeAcknowledged&&!process.CleanupUncertain&&proofs==3&&poses>=1,"operator_completion");
-                        Console.WriteLine("PASS socket operator phases="+proofs+" poses="+poses+" source_closed_ack_sent=1 installed=0 synthetic=1");return 0;
+                        Require(process.Terminal&&process.SourceRevokeAcknowledged&&!process.CleanupUncertain&&proofs==3&&poses>=1&&sawParticipantAvatar,"operator_completion");
+                        Console.WriteLine("PASS socket operator phases="+proofs+" poses="+poses+" participant_avatar_received=1 source_closed_ack_sent=1 installed=0 synthetic=1");return 0;
                     }
                 }
         }

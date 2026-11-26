@@ -68,6 +68,7 @@ namespace AvatarStroop.Tests
             Test("same-context renewal retains original proof until replacement without clearing",()=>{
                 using(var f=new Fixture()){f.Cycle();var old=f.P.DisplayPreflight;int clears=f.Sink.Clears;Thread.Sleep(60);
                     Assert(f.Scene.PumpBeforeTask(),"old original-fresh proof retained during renewal");Eq(clears,f.Sink.Clears,"no renewal masking");Eq(old,f.P.DisplayPreflight,"same original evidence");
+                    Assert(!f.P.CurrentTaskAcknowledged&&f.Scene.CanBeginCountdown,"retained exact proof keeps Begin available while renewal is pending");
                     f.Deliver();Assert(f.Scene.MayShowTask,"replacement current");Assert(!Object.ReferenceEquals(old,f.P.DisplayPreflight),"replacement accepted");
                     Assert(f.P.DisplayPreflight.OriginalTaskIssuedParticipantSeconds>old.OriginalTaskIssuedParticipantSeconds,"replacement has distinct actual task issue");}
             });

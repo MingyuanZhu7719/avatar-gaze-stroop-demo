@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "Assets/Stroop/Unity/ViveWozOperatorDevelopmentBootstrap.cs").read_text(
     encoding="utf-8-sig"
 )
+ROOM = (ROOT / "Assets/Stroop/Unity/ViveWozOperatorDevelopmentBootstrap.EasyPairing.cs").read_text(encoding="utf-8-sig")
 
 
 def section(start, end):
@@ -18,7 +19,8 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
     def test_review_uses_canonical_pairing_mode_without_starting_anything(self):
         review = section("void ReviewOfferMode()", "void OpenFromOwnerForm()")
         self.assertIn("ViveLegacyWozProcessPairing.Parse(secret)", review)
-        self.assertIn("participantLocalRecording=pairing.ParticipantLocalRecordingDeclared;offerReviewed=true;", review)
+        for declaration in ("participantLocalRecording=pairing.ParticipantLocalRecordingDeclared;", "participantAvatarSharing=pairing.ParticipantAvatarSharingDeclared;"):
+            self.assertLess(review.index(declaration), review.index("offerReviewed=true;"))
         self.assertIn("catch(ArgumentException){}", review)
         self.assertIn("finally{Array.Clear(secret,0,secret.Length);}", review)
         self.assertNotIn("StartsWith", review)
@@ -50,9 +52,11 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
         for text in (
             "DEVELOPMENT | Recording off | Alignment unvalidated",
             'participantLocalRecording?"Participant-local storage requested":"Recording off"',
-            "Hardware and alignment require validation. Authentication does not encrypt LAN messages.",
+            "Hardware and alignment require validation. Photon uses encrypted internet transport; manual LAN messages are unencrypted.",
             'scope=GUILayout.Toggle(scope,participantLocalRecording?"Run a participant-local recording development test.":"Run an unrecorded development test.",toggleStyle);',
-            'networkNotice=GUILayout.Toggle(networkNotice,"Allow authenticated, unencrypted messages on this isolated laboratory LAN.",toggleStyle);',
+            'networkNotice=GUILayout.Toggle(networkNotice,showManualPairing?',
+            '"Allow authenticated, unencrypted messages on this isolated laboratory LAN."',
+            '"Allow Photon cloud relay for task state and permitted live head/gaze over an encrypted internet connection."',
             'else forwarding=GUILayout.Toggle(forwarding,"Forward my head/eye control for this session.",toggleStyle);',
         ):
             self.assertIn(text, SOURCE)
@@ -74,7 +78,8 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
     def test_connect_reparses_and_matches_the_reviewed_mode_before_binding(self):
         opening = section("void OpenFromOwnerForm()", "void Update()")
         parse = opening.index("ViveLegacyWozProcessPairing.Parse(secret)")
-        match = opening.index("if(pairing.ParticipantLocalRecordingDeclared!=participantLocalRecording)")
+        match = opening.index("if(pairing.ParticipantLocalRecordingDeclared!=participantLocalRecording")
+        self.assertIn("pairing.ParticipantAvatarSharingDeclared!=participantAvatarSharing", opening[match:])
         bind = opening.index("ViveLegacyWozOperatorProcess.BindInstalled")
         self.assertLess(parse, match)
         self.assertLess(match, bind)
@@ -124,7 +129,7 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
         self.assertIn('if(OwnerButton("Stop headset and eye source",rig!=null&&rig.ViewActive)){BeforeSourceStop();rig.StopView();}', SOURCE)
         gui = section("void OnGUI()", "void Close()")
         self.assertLess(gui.index("GUILayout.EndScrollView()"), gui.index('OwnerButton("Stop forwarding and pause participant"'))
-        self.assertIn("void OnApplicationFocus(bool focused){if(!focused)BeforeSourceStop();}", SOURCE)
+        self.assertIn("void OnApplicationFocus(bool focused){if(!focused&&process!=null)BeforeSourceStop();}", SOURCE)
         self.assertIn("void OnDisable(){Close();}", SOURCE)
 
     def test_public_surface_and_local_clock_binding_are_unchanged(self):
@@ -137,6 +142,61 @@ class WozRecordingOperatorNoticeTests(unittest.TestCase):
         self.assertIn("var clock=rig.SharedClock as MonotonicClock;", SOURCE)
         self.assertIn("BindInstalled(pairing,clock,rig.Worker,local,remote,age)", SOURCE)
         self.assertIn("finally{Array.Clear(secret,0,secret.Length);}", section("void OpenFromOwnerForm()", "void Update()"))
+
+    def test_cloud_room_and_peer_acceptance_do_not_grant_source_consent(self):
+        self.assertIn('OwnerButton("Create room"', ROOM)
+        self.assertIn('OwnerButton("Accept this participant"', ROOM)
+        self.assertIn('easyPairing.ConfirmPeer();easyPeerConfirmed=true;', ROOM)
+        self.assertIn('if(!easyPairing.PeerConfirmed||!easyPeerConfirmed||easyOfferReceived)', ROOM)
+        for forbidden in ('BindInstalled(', 'BindInstalledPhoton(', 'process.Start()', 'ConfirmLocalOperatorSource', 'ConfirmForwardingAndParticipantLocalStorage'):
+            self.assertNotIn(forbidden, ROOM)
+        for name in ("scope", "networkNotice", "forwarding", "forwardingAndStorage"):
+            self.assertNotRegex(ROOM, r"\b" + name + r"\s*=\s*true\b")
+
+    def test_cloud_room_lifetime_covers_live_protocol_and_shutdown(self):
+        update = section('void Update()', 'void ClearTask()')
+        self.assertLess(update.index('PollEasyPairing();'), update.index('if(process==null||closed)return;'))
+        poll = ROOM[ROOM.index('void PollEasyPairing()'):ROOM.index('void DrawEasyPairingForm()')]
+        self.assertIn('easyPairing.Service();', poll)
+        self.assertNotIn('Completed', poll)
+        stop = section('void BeforeSourceStop()', 'public void RequestPause()')
+        self.assertNotIn('StopEasyPairing()', stop)
+        close = section('void Close()', 'void OnApplicationFocus')
+        self.assertLess(close.index('process.Dispose()'), close.index('StopEasyPairing()'))
+        self.assertIn('BindInstalledPhoton(pairing,clock,rig.Worker,easyPairing,age)', SOURCE)
+
+    def test_terminal_room_gets_bounded_ack_drain_without_new_offers(self):
+        drain = ROOM[ROOM.index('void DrainStoppedEasyPairing()'):ROOM.index('void StopUnstartedEasyPairing()')]
+        self.assertIn('easyPairingDrainUntil<0', drain)
+        self.assertIn('Time.realtimeSinceStartupAsDouble+1.0', drain)
+        for forbidden in ('BindInstalled', 'ConfirmPeer', 'MarkOperatorStarted', 'TakeOffer'):
+            self.assertNotIn(forbidden, drain)
+        poll = ROOM[ROOM.index('void PollEasyPairing()'):ROOM.index('void DrawEasyPairingForm()')]
+        self.assertLess(poll.index('if(easyPairingDrainUntil>=0)'), poll.index('easyPairing.TakeOffer()'))
+        self.assertIn('Time.realtimeSinceStartupAsDouble>=easyPairingDrainUntil)StopEasyPairing();', poll)
+        self.assertIn('if(process.Terminal)\n                {\n                    DrainStoppedEasyPairing();', SOURCE)
+
+    def test_source_stop_during_setup_cannot_strand_a_consumed_offer(self):
+        setup = ROOM[ROOM.index('void StopUnstartedEasyPairing()'):ROOM.index('void CancelEasyPairing()')]
+        self.assertIn('if(process!=null||easyPairing==null)return;', setup)
+        self.assertIn('bool selected=easyOfferReceived;', setup)
+        self.assertIn('StopEasyPairing();', setup)
+        self.assertIn('if(selected){closed=true;', setup)
+        self.assertIn('StopUnstartedEasyPairing();token="";ClearOfferReview();', section('void BeforeSourceStop()', 'public void RequestPause()'))
+
+    def test_cloud_timing_diagnostics_report_real_profile_without_secret_ids(self):
+        timing = ROOM[ROOM.index('void CaptureEasyPairingTiming('):ROOM.index('void DrainStoppedEasyPairing()')]
+        for field in ('room.Region', 'room.RoundTripMilliseconds', 'room.TimingProfile', 'room.NetworkVisualBudgetSeconds',
+                      'room.ControlProofBudgetSeconds', 'room.LocalReceiptBudgetSeconds', 'room.LocalCaptureBudgetSeconds'):
+            self.assertIn(field, timing)
+        self.assertIn('Received pose age limit:', timing)
+        self.assertIn('RTT is not headset display latency.', timing)
+        for forbidden in ('RoomCode', 'appId', 'token'):
+            self.assertNotIn(forbidden, timing)
+        diagnostics = (ROOT / 'Assets/Stroop/Unity/ViveWozOperatorDevelopmentBootstrap.Diagnostics.cs').read_text(encoding='utf-8-sig')
+        self.assertIn('report.AppendLine(easyPairingTiming);', diagnostics)
+        self.assertLess(timing.index('if(!force&&now<nextEasyPairingTiming)return;'), timing.index('easyPairingTiming="Photon region:'))
+        self.assertIn('CaptureEasyPairingTiming(true);', ROOM[ROOM.index('void StopEasyPairing()'):ROOM.index('void CaptureEasyPairingTiming(')])
 
 
 if __name__ == "__main__":

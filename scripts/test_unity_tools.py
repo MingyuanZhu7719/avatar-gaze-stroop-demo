@@ -130,7 +130,7 @@ class TestSourcePartitionTests(unittest.TestCase):
 
     def test_installed_portable_runner_uses_the_partition(self):
         toolset = (Path("compiler"), Path("mono"), Path("csc"))
-        with patch.object(compiler, "ROOT", self.root), patch.object(compiler, "unity_tools", return_value=toolset), patch.object(compiler.subprocess, "run") as build, patch.object(compiler.subprocess, "call", return_value=0), contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(compiler, "photon_references", return_value=[]), patch.object(compiler, "ROOT", self.root), patch.object(compiler, "unity_tools", return_value=toolset), patch.object(compiler.subprocess, "run") as build, patch.object(compiler.subprocess, "call", return_value=0), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(0, compiler.main())
         actual = [value.replace("\\", "/") for value in build.call_args.args[0] if value.endswith(".cs")]
         self.assertEqual([str(path.relative_to(self.root)).replace("\\", "/") for path in compiler.regression_test_sources(self.root)], actual)

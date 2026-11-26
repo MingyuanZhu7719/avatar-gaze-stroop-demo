@@ -27,7 +27,7 @@ namespace AvatarStroop.Runtime
             var pose=process.DisplayPose;bool absent=owner.SceneTask.Condition==Condition.D;
             LastPresentationIssue="fresh_owned_pose";
             if(!absent&&(pose==null||!process.ControlledEvidenceFresh(pose)||pose.Pose==null||!pose.Pose.HeadValid||!pose.Pose.EyeValid||
-                (synthetic?!(pose is ViveLegacyWozParticipantProcess.MemoryEvidence):!(pose is ViveLegacyWozParticipantProcess.SocketEvidence)||pose.SyntheticObservationsOnly)))return false;
+                (synthetic?!(pose is ViveLegacyWozParticipantProcess.MemoryEvidence):!ViveLegacyWozParticipantProcess.IsActualNetworkEvidence(pose)||pose.SyntheticObservationsOnly)))return false;
             LastPresentationIssue="owner_capture";ViveLegacyWozTaskOwner.Binding task;if(!owner.TryCapture(out task))return false;
             LastPresentationIssue="pose_lineage";var fields=absent?null:process.CapturePresentationFields(pose);if(!absent&&fields==null)return false;
             result=new PresentationEvidence(this,absent?null:pose,task.Task.TrialId,task.WireRevision,fields);pendingPresentation=result;LastPresentationIssue=null;return true;

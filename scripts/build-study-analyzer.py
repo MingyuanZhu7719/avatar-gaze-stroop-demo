@@ -25,7 +25,7 @@ def main():
     # Both entry points contain identical analysis logic; the CLI additionally
     # provides visible stdout/stderr for scripted batch use.
     for name, target in (("AvatarStroopAnalyzer.exe", "winexe"), ("AvatarStroopAnalyzer.Cli.exe", "exe")):
-        command = compiler_command(mono, csc) + ["-target:" + target, "-main:AvatarStroop.Apps.StudyAnalyzer", "-out:" + str(output / name)]
+        command = compiler_command(mono, csc, ROOT, output) + ["-target:" + target, "-main:AvatarStroop.Apps.StudyAnalyzer", "-out:" + str(output / name)]
         subprocess.run(command + [str(p.relative_to(ROOT)) for p in sources], cwd=ROOT, check=True)
         # The installed compiler does not generate an SDK target-framework
         # configuration. Both entry points need modern Framework path handling

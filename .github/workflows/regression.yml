@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
+      - name: Verify externally provisioned Photon SDK
+        run: python scripts/photon-sdk.py --verify
       - name: Run installed-compiler discovery regression
         run: python scripts/test_unity_tools.py
       - name: Compile and run portable regression
@@ -70,6 +72,8 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
+      - name: Verify externally provisioned Photon SDK
+        run: python scripts/photon-sdk.py --verify
       - name: Compile and run isolated WoZ pairing UI fixture
         shell: pwsh
         run: |

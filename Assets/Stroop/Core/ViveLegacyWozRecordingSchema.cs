@@ -10,10 +10,12 @@ namespace AvatarStroop.Core
     internal static class ViveLegacyWozRecordingSchema
     {
         internal const string EventKind="woz_network_evidence";
-        internal const string SchemaVersion="vive-woz-local-evidence-v1";
+        internal const string LegacySchemaVersion="vive-woz-local-evidence-v1";
+        internal const string SchemaVersion="vive-woz-local-evidence-v2";
         internal const string NotObserved="NOT_OBSERVED";
         internal const string NotApplicable="NOT_APPLICABLE";
-        internal const int EvidenceFieldCount=33;
+        internal const int EvidenceFieldCount=35;
+        const int LegacyEvidenceFieldCount=33;
         const double UnitTolerance=.00001;
 
         static readonly HashSet<string> EvidenceFields=new HashSet<string>(StringComparer.Ordinal)
@@ -25,7 +27,7 @@ namespace AvatarStroop.Core
             "woz_task_issued_participant_time","woz_challenge_issued_participant_time","woz_receipt_participant_time",
             "woz_send_operator_time","woz_head_operator_time","woz_eye_operator_time","woz_epoch_sample_sequence",
             "woz_head_qx","woz_head_qy","woz_head_qz","woz_head_qw","woz_eye_dx","woz_eye_dy","woz_eye_dz",
-            "woz_failure_reason"
+            "woz_failure_reason","woz_network_visual_budget_seconds","woz_task_roundtrip_seconds"
         };
         // Experiment.Log adds exactly these context keys. Their required
         // values and manifest binding remain the codec/reader's responsibility.
@@ -60,7 +62,7 @@ namespace AvatarStroop.Core
         {
             if(fields==null)throw Invalid("Missing event fields.");
             bool evidence=String.Equals(kind,EventKind,StringComparison.Ordinal);
-            if(fields.Count>128||(evidence&&(fields.Count<EvidenceFieldCount||fields.Count>EvidenceFieldCount+LegacyContextFields.Count)))
+            if(fields.Count>128||(evidence&&(fields.Count<LegacyEvidenceFieldCount||fields.Count>EvidenceFieldCount+LegacyContextFields.Count)))
                 throw Invalid("Evidence field count.");
             foreach(var pair in fields)
             {
@@ -75,8 +77,14 @@ namespace AvatarStroop.Core
             foreach(var pair in fields)
                 if((!EvidenceFields.Contains(pair.Key)&&!LegacyContextFields.Contains(pair.Key))||pair.Value==null)
                     throw Invalid("Unexpected evidence field.");
-            foreach(string key in EvidenceFields)if(!fields.ContainsKey(key))throw Invalid("Incomplete evidence fields.");
-            Exact(fields,"woz_schema",SchemaVersion);
+            string schema;bool current=fields.TryGetValue("woz_schema",out schema)&&schema==SchemaVersion;
+            if(!current&&schema!=LegacySchemaVersion)throw Invalid("Unknown evidence version.");
+            foreach(string key in EvidenceFields)
+            {
+                bool added=key=="woz_network_visual_budget_seconds"||key=="woz_task_roundtrip_seconds";
+                if(!current&&added){if(fields.ContainsKey(key))throw Invalid("V2 timing fields require V2 evidence.");continue;}
+                if(!fields.ContainsKey(key))throw Invalid("Incomplete evidence fields.");
+            }
             Exact(fields,"woz_hardware_identity","NOT_VERIFIED");
             Exact(fields,"woz_clock_relation","INDEPENDENT_NOT_SYNCHRONIZED");
             Identity(participantClockId);
@@ -94,6 +102,23 @@ namespace AvatarStroop.Core
             // these values. It does not assert photon onset or user perception.
             bool pose=eventName=="Pose"||eventName=="PoseUsed";
             if(!local&&!stop&&!receipt&&!preflight&&!pose)throw Invalid("Unknown evidence event.");
+            if(current)
+            {
+                double budget=Number(fields["woz_network_visual_budget_seconds"]);
+                // Retain readability of early V2 cloud500ms records. Current
+                // transport selects750ms; the recorded value is never rewritten.
+                if(local){if(budget!=.15&&budget!=.5&&budget!=.75)throw Invalid("Unknown local network timing profile.");}
+                else if(fields["woz_receipt_origin"]=="PHOTON_CLOUD"?(budget!=.5&&budget!=.75):budget!=.15)
+                    throw Invalid("Network timing profile differs from receipt origin.");
+                if(local||stop)Exact(fields,"woz_task_roundtrip_seconds",NotObserved);
+                else
+                {
+                    double issued=Time(fields,"woz_task_issued_participant_time",true).Value;
+                    double received=Time(fields,"woz_receipt_participant_time",true).Value;
+                    double roundtrip=Number(fields["woz_task_roundtrip_seconds"]);
+                    if(roundtrip<0||roundtrip!=received-issued)throw Invalid("Original participant task roundtrip differs.");
+                }
+            }
             string source=fields["woz_control_source"];
             if(source!="LiveOperator"&&source!="Simulator")throw Invalid("Unknown control source.");
             if(local)
@@ -104,7 +129,7 @@ namespace AvatarStroop.Core
             else
             {
                 string origin=fields["woz_receipt_origin"];
-                if(origin!="SOCKET"&&origin!="MEMORY")throw Invalid("Unknown network receipt origin.");
+                if(origin!="SOCKET"&&origin!="PHOTON_CLOUD"&&origin!="MEMORY")throw Invalid("Unknown network receipt origin.");
                 if(origin=="MEMORY"&&source!="Simulator")throw Invalid("Memory evidence must remain synthetic.");
                 Exact(fields,"woz_synthetic",source=="Simulator"?"TRUE":"FALSE");
                 Exact(fields,"woz_authentication","HMAC_SHARED_KEY_POSSESSION");

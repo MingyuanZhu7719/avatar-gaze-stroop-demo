@@ -40,7 +40,7 @@ namespace AvatarStroop.Tests
             internal ViveLegacyWozObservationOwner.SyntheticObservations Remote;
             internal readonly ViveLegacyWozProcessTransport.MemorySocket PS=new ViveLegacyWozProcessTransport.MemorySocket(),OS=new ViveLegacyWozProcessTransport.MemorySocket();
             long headSequence;int frame;long remoteSequence;
-            internal Fixture(bool downgrade=false,ViveRawSessionJournalSink.IntegrationFixtureScenario? nativeScenario=null)
+            internal Fixture(bool downgrade=false,ViveRawSessionJournalSink.IntegrationFixtureScenario? nativeScenario=null,bool shareParticipantAvatar=false)
             {
                 InitializationStage=1;
                 var geometry=new AutomaticGazeGeometry(Rotation.Identity,new Vec3(0,0,1),new Rotation(0,Math.Sqrt(.5),0,Math.Sqrt(.5)),new Vec3(1,0,0),"woz-raw-geometry");
@@ -75,7 +75,7 @@ namespace AvatarStroop.Tests
                 InitializationStage=8;
                 Owner=Task.CreateLegacyWozTaskOwner(Clock);Recording=ViveLegacyWozRecordingBinding.CreateMemoryFixture(Owner,Admission,Worker,Pump);
                 Remote=new ViveLegacyWozObservationOwner.SyntheticObservations(RemoteClock);PS.Other=OS;OS.Other=PS;
-                Stage();using(var offer=ViveLegacyWozProcessPairing.CreateSyntheticOffer(Owner,"woz-local-owner",RemoteClock.ClockId))
+                Stage();using(var offer=ViveLegacyWozProcessPairing.CreateSyntheticOffer(Owner,"woz-local-owner",RemoteClock.ClockId,shareParticipantAvatar))
                 {
                     char[] token=offer.RevealToken();
                     if(downgrade)
@@ -291,6 +291,28 @@ namespace AvatarStroop.Tests
         public static void Register(TestSuite suite)
         {
             RegisterFocusHoldTests(suite);
+            suite.Run("WoZ recorded duplex renders participant gaze without a reverse journal event",()=>{
+                using(var f=new Fixture(shareParticipantAvatar:true))
+                {
+                    Check.True(f.O.ParticipantLocalRecordingDeclared&&f.O.ParticipantAvatarSharingDeclared);
+                    f.BeginMain();f.Grant();f.Preflight();f.Pose();
+                    var forward=f.P.CurrentPose;
+                    Check.True(forward!=null&&f.Pump.DrainTaskEvents());
+                    f.Drain();int eventCount=f.Task.LegacyWozEventCursor;
+                    byte[] journal=f.Writer.Snapshot();
+                    var head=new Rotation(0,.6,0,.8);var eye=new Vec3(0,-.6,.8);
+                    Check.True(f.P.TrySendParticipantAvatarPose(head,eye,f.Clock.Now),"recorded participant pose sent");
+                    f.O.Tick();Rotation receivedHead;Vec3 receivedEye;
+                    Check.True(f.O.TryGetParticipantAvatarPose(out receivedHead,out receivedEye));
+                    Check.Equal(head,receivedHead);Check.Equal(eye,receivedEye);
+                    f.P.ClearParticipantAvatarPose();f.O.Tick();
+                    Check.True(!f.O.TryGetParticipantAvatarPose(out receivedHead,out receivedEye));
+                    Check.True(Object.ReferenceEquals(forward,f.P.CurrentPose)&&f.Recording.Current);
+                    Check.True(f.Pump.DrainTaskEvents());f.Drain();
+                    Check.Equal(eventCount,f.Task.LegacyWozEventCursor);
+                    Check.True(journal.SequenceEqual(f.Writer.Snapshot()),"display and clear leave journal bytes unchanged");
+                }
+            });
             suite.Run("WoZ raw callback without owned apply cannot create onset or PoseUsed",()=>{
                 using(var f=new Fixture()){var token=f.ReserveFirstMain();Check.True(!token.WozEvidence.Applied&&!f.Commit(token));
                     Check.True(!token.Trial.Onset.HasValue);f.Scene.RecheckPresentation();Check.Equal(Phase.Paused,f.Task.Phase);Check.Equal(0,f.Writer.CompleteCalls);}

@@ -271,7 +271,8 @@ namespace AvatarStroop.Unity
         public bool PresentationBlocked {get{return faultLatched||RecordingBlocked||ObservationBlocked||legacyWozMaskLatched;}}
         public bool RecordingUsable {get{return recording!=null&&recording.LastEyeUsable;}}
         public string RecordingStatus
-        {get{var pump=namedRawPump;return pump!=null?ViveRawRecordingPresentation.Describe(rawInstallFailed,pump.WithdrawalRequested,rawSafetyLatched,pump.State):
+        {get{var pump=namedRawPump;return pump!=null?ViveRawRecordingPresentation.Describe(rawInstallFailed,pump.WithdrawalRequested,rawSafetyLatched,pump.State,
+            participant!=null&&participant.IsResearchSession,rig!=null&&rig.CurrentRawStartWorker!=null&&rig.CurrentRawStartWorker.FormalEyePersistenceEnabled):
             rawInstallFailed?ViveRawRecordingPresentation.Describe(true,rawWithdrawalRequested||
                 participant!=null&&participant.NamedRawRevocation.ParticipantWithdrawalRequested,rawSafetyLatched,ViveNamedRawRecordingPump.Outcome.Faulted):
             recording==null?"Recording is off.":recording.Status;}}
@@ -726,7 +727,7 @@ namespace AvatarStroop.Unity
             ObserveDesktopFocus(focused);
             if(!focused)ClearSensitiveEvidence();
         }
-        void OnDisable(){CancelPreviewPracticeRequest("Practice request canceled because the interface closed.");CancelFormalConfirmation("Formal confirmation canceled because the interface closed.");CancelSessionDirectoryPreparation("Folder preparation canceled because the interface closed. No recording was armed; an empty folder may remain.");CloseLegacyWozTaskBinding();if(namedRawPump!=null)AbortRawScenePresentation();ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)CancelRecordingChoices(ViveNamedRecordingSetup.CancellationCause.ComponentDisabled);}
+        void OnDisable(){CancelFirstBlockRequest(null);CancelPreviewPracticeRequest("Practice request canceled because the interface closed.");CancelFormalConfirmation("Formal confirmation canceled because the interface closed.");CancelSessionDirectoryPreparation("Folder preparation canceled because the interface closed. No recording was armed; an empty folder may remain.");CloseLegacyWozTaskBinding();if(namedRawPump!=null)AbortRawScenePresentation();ClearSensitiveEvidence();ClearNamedRawLocalCandidate();StopPracticeObservation();if(preSessionChoice!=null)preSessionChoice.Cancel();if(recordingSetup!=null)CancelRecordingChoices(ViveNamedRecordingSetup.CancellationCause.ComponentDisabled);}
         void DrawRecordingControls()
         {
             if(recordingWrap==null)recordingWrap=new GUIStyle(GUI.skin.label){wordWrap=true};
@@ -1253,6 +1254,7 @@ namespace AvatarStroop.Unity
             PublishRecordingChoiceCancellation();
             if(PollExplicitDesktopWithdrawal())return;
             ExpireRawOwnerIntents();
+            ObserveFirstBlockRequest();
             if(preSessionChoice!=null){PollPreSessionChoice(headReady);return;}
             if(recordingSetup!=null&&namedRawPump==null&&
                 recordingSetup.Current!=ViveNamedRecordingSetup.Step.Cancelled&&recordingSetup.Current!=ViveNamedRecordingSetup.Step.Declined&&
@@ -1291,6 +1293,7 @@ namespace AvatarStroop.Unity
                     if(!recordedWozFrame.DeviceReady||!recordedWozFrame.Trackpad.Usable||recordedWozFrame.DeviceChanged)
                     {questionnaireGate.Reset();FailNamedRawBeforeFrame();return;}
                 }
+                if(PollEasyWozPairing()){suppressInputUntilReleased=true;Render();return;}
                 if(pendingLegacyWozOffer!=null){var create=pendingLegacyWozOffer;pendingLegacyWozOffer=null;create();suppressInputUntilReleased=true;Render();return;}
                 if(RecordedLegacyWoz&&legacyWozScene!=null&&!legacyWozStarted)
                 {suppressInputUntilReleased=true;Render();return;}
@@ -1320,6 +1323,10 @@ namespace AvatarStroop.Unity
                 // task it never pauses, consumes a response, or skips input-loss checks.
                 if(device!=null&&device.ReadSafetyMenu(headReady)&&HandleParticipantMenu())
                 {questionnaireGate.Reset();return;}
+                if(firstBlockRequest!=null&&rawPlanStartRequested==0&&rawPendingBlockPlan==null&&recordedWozFrame!=null&&headReady&&
+                    rig.RawSceneTrackingCurrent()&&participant.InputReady&&recordedWozFrame.InputReady&&
+                    !MustWaitForRawPlanNeutral(recordedWozFrame.NeutralPending,recordedWozFrame.TriggerHeld,recordedWozFrame.MenuHeld,recordedWozFrame.Trackpad.Pressed))
+                    RequestNamedBlockPlanStart(false);
                 if(namedRawPump!=null&&(rawPlanStartRequested!=0||rawPendingBlockPlan!=null))
                 {ProcessNamedBlockPlanStart(headReady,recordedWozFrame);return;}
                 if(recording!=null&&(recording.WaitingForFreshEye||recording.RecoveryPending))
@@ -1496,6 +1503,7 @@ namespace AvatarStroop.Unity
         void RequestNamedBlockPlanStart(bool practice)
         {
             if(namedRawPump==null||participant==null||RecordingBlocked||rawSelectionProvenancePending||rawPlanStartRequested!=0||rawPendingBlockPlan!=null)return;
+            if(!practice&&ParticipantFirstBlockReady&&!ObserveFirstBlockRequest())return;
             if(!practice&&FirstFormalControllerWaiting)
             {message=FormalControllerWaitNotice;return;}
             if(!practice&&!FormalEyeReadyForFirstBlock){message=FormalEyeFirstBlockNotice;return;}
@@ -1569,6 +1577,12 @@ namespace AvatarStroop.Unity
             ObserveFocusControllerRecovery(input);
             if(!input.DeviceReady||!input.Trackpad.Usable||input.DeviceChanged)
             {FailNamedRawBeforeFrame();message+=" Input device readiness or identity changed while preparing the block plan.";return;}
+            if(ParticipantFirstBlockReady&&!ObserveFirstBlockRequest())
+            {
+                // Keep observing any existing write; a later explicit click
+                // may use only this same live plan, session and receipt.
+                MaintainPendingRawPlanReceiptDuringFocus();return;
+            }
             if(rawPendingBlockPlan==null)
             {
                 JournalEvent plan=null;
@@ -1607,6 +1621,8 @@ namespace AvatarStroop.Unity
                 MustWaitForRawPlanNeutral(input.NeutralPending,input.TriggerHeld,input.MenuHeld,input.Trackpad.Pressed))
             {message="Release the controller controls before starting the prepared block.";return;}
             bool practice=rawPlanStartRequested==1;
+            if(!practice&&ParticipantFirstBlockReady&&(!ObserveFirstBlockRequest()||!input.InputReady||!participant.InputReady||
+                FirstFormalControllerWaiting||rig==null||!rig.RawSceneTrackingCurrent()))return;
             if(!practice&&!FormalEyeReadyForFirstBlock){message=FormalEyeFirstBlockNotice;return;}
             // The owner might have been descheduled while polling the receipt.
             // This is still not a physical hard-real-time guarantee.
@@ -1627,6 +1643,8 @@ namespace AvatarStroop.Unity
                     participant.TryBeginNamedRecordingWithPlan(Actor.Owner,rawPendingBlockPlan,receipt,practice))||!started)
             {FailNamedRawAfterTask();message+=" Block start or recording confirmation is unavailable or unknown.";return;}
             rawPendingBlockPlan=null;rawPlanStartRequested=0;rawPlanDeadline=-1;ClearRawPlanReadyObservation();suppressInputUntilReleased=true;
+            if(firstBlockRequest!=null)
+            {CancelFirstBlockRequest(null);Debug.Log("VIVE_PARTICIPANT_FIRST_BLOCK_STARTED: operator request and block plan consumed.");}
             ResetPracticeCountdown();
             if(practice)UnityEngine.Debug.Log("VIVE_RAW_PRACTICE_STARTED: plan receipt consumed; presentation remains pending.");
             message="Block plan recorded. Release the controller controls to continue.";
@@ -2074,6 +2092,7 @@ namespace AvatarStroop.Unity
         void RequestNamedRawWithdrawal()
         {
             if(namedRawPump==null)return;
+            CancelFirstBlockRequest(null);
             ClearNamedRawLocalCandidate();
             rawSafetyLatched=true;
             // Withdrawal detaches uncommitted queue payloads; a previously
@@ -2281,6 +2300,7 @@ namespace AvatarStroop.Unity
         }
         public void BeforeXrStop()
         {
+            avatarChoice.Reset();
             CancelPreviewPracticeRequest("Practice request canceled because the headset view is stopping.");
             CancelFormalConfirmation("Formal confirmation canceled because the classroom view is stopping.");
             CloseLegacyWozScene();
@@ -2393,6 +2413,7 @@ namespace AvatarStroop.Unity
 #endif
         void WithdrawTask()
         {
+            CancelFirstBlockRequest(null);
             CancelPreviewPracticeRequest("Practice request canceled by withdrawal.");
             if(namedRawPump!=null){try{RequestNamedRawWithdrawal();}finally{ClearNamedTaskView();}return;}
             ClearNamedTaskView();

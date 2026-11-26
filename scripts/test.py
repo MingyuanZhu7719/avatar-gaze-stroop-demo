@@ -3,6 +3,7 @@
 No package installation or Unity Editor/license startup is required.
 """
 import glob
+import importlib.util
 import os
 from pathlib import Path
 import shutil
@@ -41,6 +42,11 @@ def unity_tools():
                          ". Set it to an existing Editor/Data (Windows/Linux) or Unity.app/Contents (macOS).")
     return None
 
+def photon_references(source, output, mono, csc):
+    sdk_spec = importlib.util.spec_from_file_location("photon_sdk", source / "scripts/photon-sdk.py")
+    sdk = importlib.util.module_from_spec(sdk_spec); sdk_spec.loader.exec_module(sdk)
+    return sdk.compile_references(source, output, mono, csc)
+
 def main():
     try:
         tools = unity_tools()
@@ -57,8 +63,9 @@ def main():
     output = ROOT / "build"
     output.mkdir(exist_ok=True)
     sources = sorted((ROOT / "Assets/Stroop/Core").rglob("*.cs")) + sorted((ROOT / "Assets/Stroop/Runtime").rglob("*.cs")) + regression_test_sources(ROOT)
+    sdk_refs = photon_references(ROOT, output, mono, csc)
     binary = output / "AvatarStroop.Regression.exe"
-    command = [str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-define:STROOP_TEST_BUILD", "-target:exe", "-main:AvatarStroop.Tests.Program", "-out:" + str(binary)]
+    command = [str(mono), str(csc), "-nologo", "-langversion:7.3", "-warnaserror", "-define:STROOP_TEST_BUILD", "-target:exe", "-main:AvatarStroop.Tests.Program", "-out:" + str(binary)] + sdk_refs
     print("Compiler: " + str(csc), flush=True)
     # The source tree grows over time; absolute names can exceed the Windows
     # command-line limit. All inputs are rooted in ROOT and cwd is fixed here.

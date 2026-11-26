@@ -8,14 +8,15 @@ using AvatarStroop.Core;
 namespace AvatarStroop.Runtime
 {
     // Role-local owned boundary. No diagnostic receipt/provider/clock is adapted.
-    // Public controllers select only the private OS implementation; the sealed
-    // memory implementation exists solely in the explicit fixture build.
+    // Public controllers select the private OS socket or an exact owned Photon
+    // room; the sealed memory implementation exists only in fixture builds.
     internal sealed class ViveLegacyWozProcessTransport : IDisposable
     {
         internal const int MaximumDatagramBytes=4096,MaximumDrain=16;
         internal interface ISocket:IDisposable
         {void Start(IPEndPoint local);bool Poll();int Receive(byte[] buffer,out IPEndPoint sender);int Send(byte[] bytes,IPEndPoint remote);}
         readonly ISocket socket;
+        readonly ViveWozPhotonSession.Channel photon;
         readonly Thread thread=Thread.CurrentThread;
         readonly object receiptToken=new object();
         readonly MonotonicClock clock;
@@ -23,49 +24,77 @@ namespace AvatarStroop.Runtime
         readonly WozLanContext context;
         readonly WozAuthenticatedLanEndpoint lane;
         readonly WozAuthenticatedControlEndpoint control;
+        readonly ParticipantAvatarDisplayLane participantDisplay;
         readonly byte[] buffer=new byte[MaximumDatagramBytes+1];
         long laneSequence,controlSequence;
         double lastTime=-1;
         bool running,terminal,closeAttempted;
-        internal bool Running {get{return running&&!terminal;}}
-        internal bool Terminal {get{return terminal;}}
+        internal bool Running {get{return running&&!terminal&&(photon==null||photon.Current);}}
+        internal bool Terminal {get{return terminal||(photon!=null&&!photon.Current);}}
         internal bool CleanupUncertain {get;private set;}
-        internal string LastIssue {get;private set;}
+        string lastIssue;
+        internal string LastIssue {get{return lastIssue??(photon==null?null:photon.Failure);}private set{lastIssue=value;}}
         internal WozDiagnosticFailure Failure {get;private set;}
         internal bool UsesClock(MonotonicClock value){return Object.ReferenceEquals(clock,value);}
         internal WozLanContext Context {get{return context;}}
         internal bool UsesOwnedSystemSocket {get{return socket is SystemSocket;}}
+        internal bool UsesOwnedNetworkTransport {get{return socket is SystemSocket||photon!=null;}}
+        internal bool UsesOwnedPhotonTransport {get{return photon!=null;}}
+        internal ViveWozTimingPolicy Timing {get{return photon==null?ViveWozTimingPolicy.Lan:ViveWozTimingPolicy.Photon;}}
 
         // Historical transport evidence, not capture/identity or live admission.
-        // Memory and actual process-socket receipts are distinct sealed types.
+        // Memory, process-socket and Photon receipts are distinct sealed types.
         internal abstract class Receipt
         {
             internal readonly ViveLegacyWozProcessTransport Owner;
             internal readonly object Token;
             internal readonly WozAuthenticatedLanEndpoint.VerifiedMessage Data;
             internal readonly WozAuthenticatedControlEndpoint.VerifiedControl Control;
+            readonly ParticipantAvatarDisplayLane.Update avatar;
+            internal bool HasParticipantAvatar {get{return avatar!=null;}}
+            internal ParticipantAvatarPose? ParticipantAvatar {get{return avatar?.Pose;}}
+            internal WozLanTaskContext ParticipantAvatarTask {get{return avatar?.Task;}}
+            internal double ParticipantAvatarObservedSeconds {get{return avatar.Observed;}}
+            internal double ParticipantAvatarSentSeconds {get{return avatar.Sent;}}
             internal readonly double OriginalReceiptSeconds;
             internal abstract bool SocketCaptured {get;}
-            internal Receipt(ViveLegacyWozProcessTransport owner,object token,double received,WozAuthenticatedLanEndpoint.VerifiedMessage data,WozAuthenticatedControlEndpoint.VerifiedControl control)
+            internal Receipt(ViveLegacyWozProcessTransport owner,object token,double received,WozAuthenticatedLanEndpoint.VerifiedMessage data,WozAuthenticatedControlEndpoint.VerifiedControl control,ParticipantAvatarDisplayLane.Update avatar)
             {if(owner==null||!Object.ReferenceEquals(token,owner.receiptToken))throw new InvalidOperationException("Owned transport receipt required");
-                Owner=owner;Token=token;OriginalReceiptSeconds=received;Data=data;Control=control;}
+                Owner=owner;Token=token;OriginalReceiptSeconds=received;Data=data;Control=control;this.avatar=avatar;}
         }
         internal sealed class SocketReceipt:Receipt
         {
             internal override bool SocketCaptured {get{return true;}}
-            internal SocketReceipt(ViveLegacyWozProcessTransport owner,object token,double at,WozAuthenticatedLanEndpoint.VerifiedMessage data,WozAuthenticatedControlEndpoint.VerifiedControl control)
-                :base(owner,token,at,data,control){if(!(owner.socket is SystemSocket))throw new InvalidOperationException("Actual socket required");}
+            internal SocketReceipt(ViveLegacyWozProcessTransport owner,object token,double at,WozAuthenticatedLanEndpoint.VerifiedMessage data,WozAuthenticatedControlEndpoint.VerifiedControl control,ParticipantAvatarDisplayLane.Update avatar=null)
+                :base(owner,token,at,data,control,avatar){if(!(owner.socket is SystemSocket))throw new InvalidOperationException("Actual socket required");}
         }
         internal sealed class MemoryReceipt:Receipt
         {
             internal override bool SocketCaptured {get{return false;}}
-            internal MemoryReceipt(ViveLegacyWozProcessTransport owner,object token,double at,WozAuthenticatedLanEndpoint.VerifiedMessage data,WozAuthenticatedControlEndpoint.VerifiedControl control)
-                :base(owner,token,at,data,control){if(owner.socket is SystemSocket)throw new InvalidOperationException("Memory receipt cannot label a socket");}
+            internal MemoryReceipt(ViveLegacyWozProcessTransport owner,object token,double at,WozAuthenticatedLanEndpoint.VerifiedMessage data,WozAuthenticatedControlEndpoint.VerifiedControl control,ParticipantAvatarDisplayLane.Update avatar=null)
+                :base(owner,token,at,data,control,avatar){if(owner.socket is SystemSocket||owner.photon!=null)throw new InvalidOperationException("Memory receipt cannot label an actual network");}
+        }
+        internal sealed class PhotonReceipt:Receipt
+        {
+            internal override bool SocketCaptured {get{return false;}}
+            internal PhotonReceipt(ViveLegacyWozProcessTransport owner,object token,double at,WozAuthenticatedLanEndpoint.VerifiedMessage data,WozAuthenticatedControlEndpoint.VerifiedControl control,ParticipantAvatarDisplayLane.Update avatar=null)
+                :base(owner,token,at,data,control,avatar){if(owner.photon==null||!owner.photon.Current)throw new InvalidOperationException("Actual owned Photon channel required");}
         }
         internal bool Owns(Receipt receipt)
         {return receipt!=null&&Object.ReferenceEquals(receipt.Owner,this)&&Object.ReferenceEquals(receipt.Token,receiptToken);}
         internal ViveLegacyWozProcessTransport(ViveLegacyWozProcessPairing pairing,PeerRole role,MonotonicClock clock,IPEndPoint local,IPEndPoint remote,double age)
             :this(pairing,role,clock,local,remote,age,new SystemSocket()){}
+        internal ViveLegacyWozProcessTransport(ViveLegacyWozProcessPairing pairing,PeerRole role,MonotonicClock clock,ViveWozPhotonSession session,double age)
+        {
+            if(pairing==null||clock==null||session==null||!Enum.IsDefined(typeof(PeerRole),role)||!WireCodec.Finite(age)||age<=0||age>10)
+                throw new ArgumentException("Explicit role, owned Photon room, clock and bounded age required");
+            context=pairing.Context;this.clock=clock;
+            if(context.Peer(role).ClockId!=clock.ClockId)throw new ArgumentException("Existing local clock differs from paired identity");
+            photon=session.Claim(pairing,role,clock);
+            byte[] key=pairing.CopyKey();try{lane=new WozAuthenticatedLanEndpoint(context,role,key,age);control=new WozAuthenticatedControlEndpoint(context,role,key,age);
+                if(pairing.ParticipantAvatarSharingDeclared)participantDisplay=new ParticipantAvatarDisplayLane(context,role,key);}
+            catch{photon.Dispose();throw;}finally{Array.Clear(key,0,key.Length);}
+        }
         ViveLegacyWozProcessTransport(ViveLegacyWozProcessPairing pairing,PeerRole role,MonotonicClock clock,IPEndPoint local,IPEndPoint remote,double age,ISocket socket)
         {
             if(pairing==null||clock==null||socket==null||!Enum.IsDefined(typeof(PeerRole),role)||!WireCodec.Finite(age)||age<=0||age>10)
@@ -74,7 +103,8 @@ namespace AvatarStroop.Runtime
             if(context.Peer(role).ClockId!=clock.ClockId)throw new ArgumentException("Existing local clock differs from paired identity");
             this.local=Endpoint(local);this.remote=Endpoint(remote);if(this.local.Equals(this.remote))throw new ArgumentException("Distinct endpoints required");
             if(IPAddress.IsLoopback(this.local.Address)!=IPAddress.IsLoopback(this.remote.Address))throw new ArgumentException("Do not mix loopback and LAN endpoints");
-            byte[] key=pairing.CopyKey();try{lane=new WozAuthenticatedLanEndpoint(context,role,key,age);control=new WozAuthenticatedControlEndpoint(context,role,key,age);}
+            byte[] key=pairing.CopyKey();try{lane=new WozAuthenticatedLanEndpoint(context,role,key,age);control=new WozAuthenticatedControlEndpoint(context,role,key,age);
+                if(pairing.ParticipantAvatarSharingDeclared)participantDisplay=new ParticipantAvatarDisplayLane(context,role,key);}
             finally{Array.Clear(key,0,key.Length);}
         }
         static IPEndPoint Endpoint(IPEndPoint endpoint)
@@ -90,13 +120,13 @@ namespace AvatarStroop.Runtime
             get{Owner();double now;if(!clock.TryReadRecordingAdmissionTime(out now)||now<lastTime){Fail("local_clock_failed");throw new InvalidOperationException("Owned clock failed");}lastTime=now;return now;}
         }
         internal bool Start()
-        {Owner();if(terminal||running)return false;try{double now=Now;socket.Start(local);running=true;return true;}catch(Exception e){FailException("start",e);return false;}}
+        {Owner();if(Terminal||running)return false;try{double now=Now;if(photon!=null)photon.Start();else socket.Start(local);running=true;return true;}catch(Exception e){FailException("start",e);return false;}}
         bool Next(bool controlLane,out long next)
         {next=controlLane?controlSequence:laneSequence;if(next==Int64.MaxValue){Fail("sequence_exhausted");return false;}if(controlLane)controlSequence++;else laneSequence++;return true;}
         bool Send(byte[] bytes)
         {
             if(!Running)return false;if(bytes==null||bytes.Length>MaximumDatagramBytes){Fail("datagram_size");return false;}
-            try{if(socket.Send(bytes,remote)!=bytes.Length){Fail("partial_send");return false;}return true;}
+            try{if(photon!=null?!photon.Send(bytes):socket.Send(bytes,remote)!=bytes.Length){Fail("partial_send");return false;}return true;}
             catch(Exception e){FailException("send",e);return false;}
         }
         internal bool SendTask(ViveLegacyWozTaskOwner.Binding binding,out WozLanTaskContext task)
@@ -126,25 +156,48 @@ namespace AvatarStroop.Runtime
             byte[] bytes;string error;var observation=new WozLanPoseObservation(taskReceived,candidate.HeadObserved,candidate.EyeObserved);
             if(!lane.TryProtect(WirePacket.Tracking(context.Operator,sequence,sample),task,observation,out bytes,out error)){Fail(error);return false;}return Send(bytes);
         }
+        internal bool SendParticipantAvatar(WozLanTaskContext task,ParticipantAvatarPose? pose,double observedParticipantSeconds)
+        {
+            Owner();if(!Running||participantDisplay==null)return false;
+            byte[] bytes=participantDisplay.Protect(task,pose,observedParticipantSeconds,Now);
+            if(bytes==null)return false;
+            // A congested socket may drop a cosmetic update without altering
+            // control-lane sequence numbers or the existing safety-stop path.
+            try{return photon!=null?photon.Send(bytes):socket.Send(bytes,remote)==bytes.Length;}
+            catch(SocketException e) when(e.SocketErrorCode==SocketError.WouldBlock||e.SocketErrorCode==SocketError.NoBufferSpaceAvailable){return false;}
+            catch(Exception e){FailException("send_participant_avatar",e);return false;}
+        }
         // Return false for no datagram OR terminal rejection; caller must check
         // Terminal. Expected bindings are owned locally, never remote callbacks.
         internal bool Receive(WozLanTaskContext poseTask,WozControlBinding positive,WozControlBinding negative,out Receipt receipt,
-            WozLanTaskContext retiredTask=null,WozControlBinding retiredControl=null)
+            WozLanTaskContext retiredTask=null,WozControlBinding retiredControl=null,WozLanTaskContext displayTask=null,WozLanTaskContext retiredDisplayTask=null)
         {
             Owner();receipt=null;if(!Running)return false;
             try
             {
-                if(!socket.Poll())return false;
-                IPEndPoint sender;int count=socket.Receive(buffer,out sender);double original=Now;
+                if(photon!=null?!photon.Poll():!socket.Poll())return false;
+                IPEndPoint sender=null;double original;int count;
+                if(photon!=null)count=photon.Receive(buffer,out original);
+                else{count=socket.Receive(buffer,out sender);original=Now;}
                 // A foreign datagram is not a peer instruction or peer failure.
                 // Consume one drain slot without issuing any receipt/effect.
-                if(!remote.Equals(sender))return true;
+                if(photon==null&&!remote.Equals(sender))return true;
                 if(count<8||count>MaximumDatagramBytes){Fail("configured_peer_datagram_size");return false;}
                 byte[] bytes=new byte[count];Buffer.BlockCopy(buffer,0,bytes,0,count);
                 WozAuthenticatedLanEndpoint.VerifiedMessage data=null;WozAuthenticatedControlEndpoint.VerifiedControl message=null;string error;
+                ParticipantAvatarDisplayLane.Update avatar=null;
                 // Untrusted type only selects the expected negative binding.
                 // No action occurs until full domain/role/context/MAC verification.
-                if(bytes[0]=='W'&&bytes[1]=='O'&&bytes[2]=='Z'&&bytes[3]=='C')
+                if(ParticipantAvatarDisplayLane.IsDisplayMessage(bytes))
+                {
+                    // Reject stale, reordered or invalid display packets without
+                    // advancing either authoritative lane or changing the task.
+                    if(participantDisplay==null)return true;
+                    avatar=participantDisplay.Receive(bytes,displayTask);
+                    if(avatar==null&&retiredDisplayTask!=null)avatar=participantDisplay.Receive(bytes,retiredDisplayTask);
+                    if(avatar==null)return true;
+                }
+                else if(bytes[0]=='W'&&bytes[1]=='O'&&bytes[2]=='Z'&&bytes[3]=='C')
                 {
                     bool revoke=count>42&&(bytes[42]==(byte)WozControlKind.SourceRevoke||bytes[42]==(byte)WozControlKind.SourceRevokeAck);
                     if(!control.TryReceive(bytes,original,Now,revoke?negative:positive,out message,out error))
@@ -162,7 +215,8 @@ namespace AvatarStroop.Runtime
                     if(error!="unexpected_pose_task"||retiredTask==null||!lane.TryReceive(bytes,original,Now,retiredTask,out data,out error))
                     {Fail("data_rejected:"+error);return false;}
                 }
-                receipt=socket is SystemSocket?(Receipt)new SocketReceipt(this,receiptToken,original,data,message):new MemoryReceipt(this,receiptToken,original,data,message);
+                receipt=photon!=null?(Receipt)new PhotonReceipt(this,receiptToken,original,data,message,avatar):
+                    socket is SystemSocket?(Receipt)new SocketReceipt(this,receiptToken,original,data,message,avatar):new MemoryReceipt(this,receiptToken,original,data,message,avatar);
                 return true;
             }
             catch(SocketException e) when(e.SocketErrorCode==SocketError.WouldBlock){return false;}
@@ -173,7 +227,7 @@ namespace AvatarStroop.Runtime
             (error is SocketException?":socket="+(int)((SocketException)error).SocketErrorCode+":native="+((SocketException)error).NativeErrorCode:""));}
         void Fail(string issue){LastIssue=issue;Dispose();}
         public void Dispose()
-        {Owner();running=false;terminal=true;lane.Dispose();control.Dispose();if(closeAttempted)return;closeAttempted=true;try{socket.Dispose();}catch(Exception e){CleanupUncertain=true;Failure=new WozDiagnosticFailure("close",e);LastIssue="socket_close_uncertain:"+e.GetType().Name+":hresult="+e.HResult;}}
+        {Owner();running=false;terminal=true;lane.Dispose();control.Dispose();if(participantDisplay!=null)participantDisplay.Dispose();if(closeAttempted)return;closeAttempted=true;try{if(photon!=null)photon.Dispose();else socket.Dispose();}catch(Exception e){CleanupUncertain=true;Failure=new WozDiagnosticFailure("close",e);LastIssue="network_close_uncertain:"+e.GetType().Name+":hresult="+e.HResult;}}
         sealed class SystemSocket:ISocket
         {
             Socket value;

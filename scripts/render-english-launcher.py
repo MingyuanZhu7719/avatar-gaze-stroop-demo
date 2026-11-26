@@ -38,7 +38,7 @@ def main():
     for quest in (False, True):
         flavour = "quest" if quest else "desktop"
         binary = output / ("EnglishLauncherFixture-" + flavour + ".exe")
-        command = compiler_command(mono, csc) + ["-target:exe", "-main:AvatarStroop.Fixtures.EnglishLauncherPresentation", "-out:" + str(binary)]
+        command = compiler_command(mono, csc, ROOT, binary.parent) + ["-target:exe", "-main:AvatarStroop.Fixtures.EnglishLauncherPresentation", "-out:" + str(binary)]
         if quest:
             command.append("-define:QUEST_PREVIEW_LAUNCHER")
         subprocess.run(command + [str(path) for path in sources], check=True, cwd=ROOT)

@@ -70,6 +70,10 @@ def main():
         refs = args.framework_references or (Path(os.environ["SystemRoot"]) / "Microsoft.NET/Framework64/v4.0.30319" if os.name == "nt" else unity / "MonoBleedingEdge/lib/mono/4.8-api")
         if not all((refs / name).is_file() for name in ("mscorlib.dll", "System.dll", "System.Core.dll")):
             raise RuntimeError("Existing .NET Framework 4.8-compatible reference assemblies are required; use --framework-references.")
+        sdk_spec = importlib.util.spec_from_file_location("public_photon_sdk", ROOT / "scripts/photon-sdk.py")
+        sdk = importlib.util.module_from_spec(sdk_spec); sdk_spec.loader.exec_module(sdk)
+        sdk_refs = sdk.compile_references(ROOT, out, mono, csc,
+            [refs / name for name in ("mscorlib.dll", "System.dll", "System.Core.dll")] if os.name == "nt" else ())
         support = (ROOT / "Tests/TestRunner.cs").read_text(encoding="utf-8-sig")
         support = support[:support.index("    public static class Program")] + "}"
         (out / "FocusedTestSupport.cs").write_text(support, encoding="utf-8")
@@ -89,6 +93,7 @@ def main():
             # A focused suite may leave a hook used by another suite unassigned.
             # Keep those warnings visible and verify every declaration in both modes.
             options.append("-warnaserror-:0649")
+            options.extend(sdk_refs)
             rsp = out / (name + ".rsp")
             rsp.write_text("\n".join('"' + x + '"' for x in options + [str(x.relative_to(ROOT)) for x in sources]), encoding="utf-8")
             log = run([str(mono), str(csc), "-noconfig", "@" + str(rsp)], out / (name + "-compile.log"), 120)

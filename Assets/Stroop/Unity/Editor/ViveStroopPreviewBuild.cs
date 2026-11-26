@@ -107,6 +107,7 @@ namespace AvatarStroop.Unity.Editor
         {
             ValidateInputGate();
             ValidateGazeDirection();
+            ValidateWozParticipantAvatar();
             ValidateStartAlignment();
             Require(ViveVerifiedPresenceFeature.HasExpectedWindowsX64Layout(),"presence interop layout mismatch");
             Require(!scene.GetRootGameObjects().SelectMany(x=>x.GetComponentsInChildren<Transform>(true)).Any(x=>x.gameObject.layer==ViveStartupView.Layer),"startup instruction layer must be reserved");
@@ -234,6 +235,51 @@ namespace AvatarStroop.Unity.Editor
                 new Vec3(0,0,-1),Vector3.forward,out point),"backward gaze marker must be hidden");
             Require(!ViveStroopPreviewRig.TryProjectGazeDirection(Vector3.zero,Quaternion.identity,
                 new Vec3(Double.NaN,0,1),Vector3.forward,out point),"invalid gaze direction must be hidden");
+        }
+        sealed class WozTestTracker:IClock,IViveProEyeProvider
+        {
+            public string ClockId {get{return "woz-participant-geometry-test";}}
+            public double Now {get{return 1;}}
+            public ViveProEyePoll Frame;
+            public ViveProEyePoll Poll(){return Frame;}
+        }
+        static void ValidateWozParticipantAvatar()
+        {
+            var flags=System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance;
+            var type=typeof(ViveStroopPreviewRig).Assembly.GetType("AvatarStroop.Unity.ViveWozWearerAvatarChoice",true);
+            var choice=Activator.CreateInstance(type,true);var session=new object();
+            Func<string,object,bool> selected=(method,target)=>(bool)type.GetMethod(method,flags).Invoke(choice,new[]{target});
+            var observe=type.GetMethod("Observe",flags);
+            Action<int,bool,bool,bool,bool> press=(frame,witnessed,tracked,trigger,pad)=>
+                observe.Invoke(choice,new object[]{frame,witnessed,tracked,trigger,pad,false});
+            Require(selected("Pending",session),"new WoZ session must ask the wearer");
+            press(1,false,true,true,false);press(2,true,true,true,false);press(3,true,true,false,false);
+            Require(!selected("Answered",session),"button held from previous screen answered the sharing prompt");
+            press(4,true,true,true,false);press(5,true,false,false,false);press(6,true,true,false,false);
+            Require(!selected("Answered",session),"loss of tracking completed a sharing choice");
+            press(7,true,true,true,false);press(8,true,true,false,false);
+            Require(selected("Granted",session)&&!selected("Granted",new object()),"sharing must be explicit and session-bound");
+            var privateSession=new object();Require(selected("Pending",privateSession),"new owner inherited a decision");
+            press(9,false,true,false,false);press(10,true,true,false,false);press(11,true,true,false,true);press(12,true,true,false,false);
+            Require(selected("Answered",privateSession)&&!selected("Granted",privateSession),"wearer could not continue privately");
+
+            var tracker=new WozTestTracker();
+            var physical=Quaternion.Euler(12,64,14);var room=Quaternion.Euler(0,-37,0);
+            var headset=new ViveHeadFrame(1,1,true,true,new Rotation(physical.x,physical.y,physical.z,physical.w));
+            var ray=new ViveEyeRay(2,false,true,default(Vec3),new Vec3(-.6,0,.8));
+            var eyes=new ViveEyeFrame(3,5,.99,false,null,null,ray);
+            tracker.Frame=new ViveProEyePoll(headset,eyes,ViveEyeRuntimeState.Working,ViveEyeCalibrationState.ReportedReady,true,0);
+            var source=new ViveProEyeHeadEyeSource("test",0,0,"vive-pro-eye/operator/test",tracker,tracker,new ViveProEyeRehearsalCoordinates());
+            HeadEyeSample sample;Require(source.TryRead(out sample),"test tracker should have a sample");
+            var map=typeof(ViveStroopDevelopmentBootstrap).GetMethod("TryMapParticipantAvatar",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static);
+            object[] args={source.LastObservation,room,null,null};
+            Require((bool)map.Invoke(null,args),"current tracked pose did not map");
+            var h=(Rotation)args[2];var e=(Vec3)args[3];
+            Require(Quaternion.Angle(new Quaternion((float)h.X,(float)h.Y,(float)h.Z,(float)h.W),room*physical)<.1f&&
+                Vector3.Distance(new Vector3((float)e.X,(float)e.Y,(float)e.Z),new Vector3(.6f,0,.8f))<.00001f,
+                "head alignment, SDK X reflection or head-local gaze was applied incorrectly");
+            source.TryRead(out sample);args[0]=source.LastObservation;
+            Require(!(bool)map.Invoke(null,args),"duplicate native sample was mapped a second time");
         }
         static void ValidateInputGate()
         {

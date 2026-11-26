@@ -200,6 +200,8 @@ class WozRecordingBuildOptionsTests(unittest.TestCase):
                     stack.enter_context(patch.object(build.prepare, "digest", return_value="SYNTHETIC-NOT-A-FILE"))
                     editor = stack.enter_context(patch.object(build, "run_editor"))
                     launcher = stack.enter_context(patch.object(build.rehearsal, "compile_launcher", return_value=output / "launcher"))
+                    stack.enter_context(patch.object(build.photon, "verify", return_value={}))
+                    photon_package = stack.enter_context(patch.object(build.photon, "package_files", return_value={"runtime_sha256": "SYNTHETIC-HASH"}))
                     process = stack.enter_context(patch.object(build.subprocess, "run", side_effect=AssertionError("No process allowed")))
                     stack.enter_context(patch.object(Path, "resolve", autospec=True, side_effect=lambda path: path))
                     stack.enter_context(patch.object(Path, "exists", return_value=False))
@@ -215,11 +217,13 @@ class WozRecordingBuildOptionsTests(unittest.TestCase):
                     if check_only:
                         editor.assert_not_called()
                         launcher.assert_not_called()
+                        photon_package.assert_not_called()
                         mkdir.assert_not_called()
                         text_write.assert_not_called()
                         self.assertEqual([], written)
                         continue
                     self.assertEqual(["Configure", "BuildWindowsPreview", "RenderFixture"], [call.args[3] for call in editor.call_args_list])
+                    photon_package.assert_called_once_with(source, output / "UnityPlayer", None)
                     for call in editor.call_args_list:
                         self.assertEqual(mode[:2], call.args[4:])
                         self.assertEqual(mode[2], call.kwargs.get("woz", False))
@@ -233,6 +237,8 @@ class WozRecordingBuildOptionsTests(unittest.TestCase):
                     self.assertFalse(final["network_default"])
                     self.assertFalse(final["recording_default"])
                     self.assertEqual("built", final["status"])
+                    self.assertTrue(final["photon_woz_available"])
+                    self.assertEqual("SYNTHETIC-HASH", final["photon_sdk"]["runtime_sha256"])
                     text_write.assert_called_once()
                     self.assertEqual(output / "START-HERE.txt", text_write.call_args.args[0])
                     self.assertEqual(build.start_here_text(mode[0], mode[1], "SYNTHETIC GUIDE" if mode[0] else "", mode[2]), text_write.call_args.args[1])

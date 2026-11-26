@@ -791,14 +791,14 @@ namespace AvatarStroop.Unity
                 LogHudProjection(frustum);
                 return;
             }
-            string heading=viveTaskPreview?ViveTaskHeading:headsetPreview?"QUEST LINK PREVIEW | SIMULATED GAZE\nHEAD VIEW ONLY | NO EYE TRACKING | NOT A STUDY RUN":"DESKTOP SIMULATION | HARDWARE UNVERIFIED";
+            string heading=wozParticipantAvatarView?"WOZ OPERATOR | LIVE PARTICIPANT VIEW":viveTaskPreview?ViveTaskHeading:headsetPreview?"QUEST LINK PREVIEW | SIMULATED GAZE\nHEAD VIEW ONLY | NO EYE TRACKING | NOT A STUDY RUN":"DESKTOP SIMULATION | HARDWARE UNVERIFIED";
             FitHud(developmentBanner,ViveStroopRecordingScopePresentation.Banner(ShowViveLegacyPreviewNotice,heading),frustum,new Rect(.02f,.02f,.96f,.09f),.034f,2);
             // Always format from original state, never re-wrap an already fitted
             // TextMesh string. Resizing must recover the complete source text.
             string phase=(role==Actor.Participant?"PARTICIPANT":"OPERATOR")+" | "+(currentView==null?"Initializing":currentView.Phase.ToString());
             string provisional=OperatorViewProvisional?"PROVISIONAL OPERATOR VIEW\nD / non-main display policy awaits review":"";
             string instructions=currentView==null||role==Actor.Operator||trial?"":ParticipantMessage(currentView);
-            string scope=role==Actor.Operator?"PARTICIPANT AVATAR PLACEHOLDER\nStatic; no reverse head / eye tracking":"PROVISIONAL AVATAR GEOMETRY\nFixed body; shared head / eye renderer";
+            string scope=wozParticipantAvatarView?"PARTICIPANT | Live head and gaze":role==Actor.Operator?"PARTICIPANT AVATAR PLACEHOLDER\nStatic; no reverse head / eye tracking":"PROVISIONAL AVATAR GEOMETRY\nFixed body; shared head / eye renderer";
             FitHud(phaseText,phase,frustum,new Rect(.02f,.13f,.96f,.045f),.034f,1);
             FitHud(provisionalText,provisional,frustum,new Rect(.04f,.20f,.92f,.075f),.031f,2);
             FitHud(messageText,instructions,frustum,
@@ -1351,7 +1351,7 @@ namespace AvatarStroop.Unity
         void RefreshAvatarVisibility()
         {
             bool visible = currentView != null && (role == Actor.Operator
-                ? currentView.ParticipantAvatarVisible
+                ? currentView.ParticipantAvatarVisible && (!wozParticipantAvatarView || wozParticipantPoseVisible)
                 : currentView.OperatorAvatarVisible && currentOutput != null && currentOutput.AvatarVisible);
             if(avatarRoot.gameObject.activeSelf != visible) avatarRevision++;
             avatarRoot.gameObject.SetActive(visible);

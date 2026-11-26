@@ -11,6 +11,7 @@
     <StartupObject>AvatarStroop.Apps.DesktopPreviewLauncher</StartupObject>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="AvatarStroop.PhotonRealtime.csproj" />
     <Compile Include="Assets/Stroop/Core/**/*.cs" />
     <Compile Include="Assets/Stroop/Runtime/**/*.cs" />
     <Compile Include="Apps/DesktopPreviewLauncher.cs" />

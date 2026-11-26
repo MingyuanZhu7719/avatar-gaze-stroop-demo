@@ -26,10 +26,10 @@ namespace AvatarStroop.Runtime
         internal bool MayAppendInsideReservation {get{return SourcesCurrent&&insideReservedMutation&&admission.State==1;}}
         internal bool CompletedTaskObserved {get;private set;}
         internal bool BlockProofCurrent
-        {get{if(!SourcesCurrent||process==null||participant.Phase!=Phase.BlockReady||!process.CurrentTaskAcknowledged)return false;
+        {get{if(!SourcesCurrent||process==null||participant.Phase!=Phase.BlockReady||!process.DisplayTaskAcknowledged)return false;
             if(!ViveLegacyWozParticipantProcess.NeedsSource(owner.SceneTask))return true;
-            var proof=process.CurrentPreflight;return proof!=null&&process.ControlledEvidenceFresh(proof)&&
-                (synthetic?proof is ViveLegacyWozParticipantProcess.MemoryEvidence:proof is ViveLegacyWozParticipantProcess.SocketEvidence&&!proof.SyntheticObservationsOnly);}}
+            var proof=process.DisplayPreflight;return proof!=null&&process.ControlledEvidenceFresh(proof)&&
+                (synthetic?proof is ViveLegacyWozParticipantProcess.MemoryEvidence:ViveLegacyWozParticipantProcess.IsActualNetworkEvidence(proof)&&!proof.SyntheticObservationsOnly);}}
         internal bool MayBeginInsidePlanMutation {get{return SourcesCurrent&&admission.State==1&&participant.LockedControl==ControlSelection.LiveWoz;}}
         internal void ObserveActualTaskCompletion()
         {if(!CompletedTaskObserved&&SourcesCurrent&&process!=null&&participant.Completed)CompletedTaskObserved=true;}
@@ -61,8 +61,8 @@ namespace AvatarStroop.Runtime
         internal void AttachProcess(ViveLegacyWozParticipantProcess candidate)
         {
             if(!Current||process!=null||candidate==null||!Object.ReferenceEquals(candidate.ActualOwner,owner)||
-                (synthetic?(candidate.IsInstalledChannel||candidate.UsesOwnedSystemSocket):
-                    (!candidate.IsInstalledChannel||!candidate.UsesOwnedSystemSocket)))
+                (synthetic?(candidate.IsInstalledChannel||candidate.UsesOwnedNetworkTransport):
+                    (!candidate.IsInstalledChannel||!candidate.UsesOwnedNetworkTransport)))
                 throw new InvalidOperationException("One matching recording process required.");
             process=candidate;
         }

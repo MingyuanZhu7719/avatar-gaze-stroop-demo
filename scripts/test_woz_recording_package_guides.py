@@ -25,18 +25,34 @@ class PackageGuides(unittest.TestCase):
 
     def test_operator_discloses_mode_before_storage_acceptance(self):
         text=operator.start_here_text()
-        self.assertIn('This operator does not record files',text)
-        offer='Paste the private temporary offer into Participant pairing offer'
+        self.assertIn('This operator writes diagnostic logs',text)
+        self.assertIn('Task and raw eye recording is handled by the participant app',text)
+        self.assertIn('Double-click Start-WoZ-Operator.cmd',text)
+        self.assertIn('Export debug ZIP',text)
+        verification='Check the intended participant PC shows the same room code'
         review='Review and confirm the three permissions'
         storage='For a recorded offer, explicitly accept participant-local storage'
-        connect='Click Connect to participant first'
-        for instruction in (offer,review,storage,connect):
+        connect='Click Connect to participant.'
+        for instruction in (verification,review,storage,connect):
             self.assertIn(instruction,text)
-        self.assertLess(text.index(offer),text.index(review))
+        self.assertLess(text.index(verification),text.index(review))
         self.assertLess(text.index(review),text.index(storage))
         self.assertLess(text.index(storage),text.index(connect))
         self.assertNotIn('Network WoZ recording/export is unavailable',text)
         self.assertIn('No participant answers, RT, ratings, raw eyes or files are sent',text)
+
+    def test_photon_room_is_default_and_manual_offer_is_a_separate_fallback(self):
+        for text in (participant.start_here_text(), participant.start_here_text(True,True,'SYNTHETIC GUIDE',True), operator.start_here_text()):
+            for phrase in ('Create room', 'Join room', 'Accept this participant', 'WSS',
+                           'Advanced: manual LAN connection', 'automatically'):
+                self.assertIn(phrase,text)
+            self.assertIn('authenticated, not encrypted',text)
+            self.assertNotIn('WozPairingCertificate.exe',text)
+        text=operator.start_here_text()
+        self.assertLess(text.index('PHOTON ROOM CONNECTION'),text.index('MANUAL PAIRING FALLBACK'))
+        easy=text.split('PHOTON ROOM CONNECTION',1)[1].split('EXPORT AN ERROR REPORT',1)[0]
+        self.assertNotIn('Paste the private temporary offer',easy)
+        self.assertIn('Begin current block remains a separate participant action',easy)
 
     def test_operator_short_check_and_local_runtime_are_explicit(self):
         text=operator.start_here_text()

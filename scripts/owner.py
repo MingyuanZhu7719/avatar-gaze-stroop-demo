@@ -4,7 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from test import ROOT, unity_tools
+from test import ROOT, unity_tools, photon_references
 
 def main():
     args=sys.argv[1:]
@@ -21,7 +21,7 @@ def main():
         output.mkdir(exist_ok=True)
         binary=output/"AvatarStroop.OwnerConsole.exe"
         sources=sorted((ROOT/"Assets/Stroop/Core").rglob("*.cs"))+sorted((ROOT/"Assets/Stroop/Runtime").rglob("*.cs"))+[ROOT/"Apps/OwnerConsole.cs"]
-        subprocess.run([str(mono),str(csc),"-nologo","-langversion:7.3","-warnaserror","-target:exe","-main:AvatarStroop.Apps.OwnerConsole","-out:"+str(binary)]+[str(p) for p in sources],check=True,cwd=str(ROOT))
+        subprocess.run([str(mono),str(csc),"-nologo","-langversion:7.3","-warnaserror","-target:exe","-main:AvatarStroop.Apps.OwnerConsole","-out:"+str(binary)]+photon_references(ROOT,output,mono,csc)+[str(p) for p in sources],check=True,cwd=str(ROOT))
         launch=[str(mono),str(binary)]
     else:
         dotnet=shutil.which("dotnet")

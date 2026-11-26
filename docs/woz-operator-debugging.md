@@ -1,0 +1,30 @@
+# WoZ 实验者程序：启动与导出报错
+
+保留完整的 Operator 文件夹，双击 **Start-WoZ-Operator.cmd** 启动。先打开 SteamVR，确认头显可用，再在程序中点击 **Start headset view**。眼动功能仍需要本机的 HTC/SRanipal 软件与校准。
+
+启动器仅为本次程序设置 SteamVR 的 `XR_RUNTIME_JSON`，不会修改系统默认 OpenXR runtime。每次启动会在程序旁创建 `WoZLogs/run-*`，保存 `Player.log` 和 `Launcher.txt`；关闭程序后会自动打开该文件夹。
+
+如果 SteamVR 安装在其他位置，找到其安装目录中的 `steamxr_win64.json`，将该文件拖到 **Start-WoZ-Operator.cmd** 上。看到“已有程序运行”的提示时，先关闭旧的实验者程序；无法写入日志时，将完整 Operator 文件夹复制到桌面后重试。
+
+双机连接使用[Photon 房间流程](woz-easy-pairing.md)：实验者点击 **Create room**，参与者输入房间码并 **Join room**；实验者核对后 **Accept this participant**，再确认转发权限并连接。两台电脑都需联网。
+
+## 出现问题后
+
+1. 点击 **Export debug ZIP**。等待出现 **Saved in logs folder: …zip** 后再关闭程序；显示 `Exporting diagnostics...` 时文件尚未完成。
+2. 点击 **Open logs folder** 找到生成的 `WoZ-debug-*.zip`。正在向参与者转发数据时，此按钮禁用；导出 ZIP 仍可用。需要打开文件夹时，先停止转发。
+3. 把 ZIP 发到此聊天，并说明刚才点击了哪个按钮、头显里看到什么。另一台电脑也采用相同步骤，无需寻找系统里的 `Player.log`。
+
+**Copy error details** 可复制当前状态和错误摘要，适合先粘贴文字求助；**Show diagnostics** 显示完整错误、眼动状态及实际日志位置。导出失败时，先使用复制功能。
+
+如果程序连界面都打不开，启动器关闭后打开的 `WoZLogs/run-*` 中仍可能有 `Launcher.txt` 和 `Player.log`；将本次文件夹压缩后发送即可。缺少 `Player.log` 也请保留 `Launcher.txt`。
+
+## ZIP 内容
+
+| 文件 | 内容 |
+| --- | --- |
+| `Summary.txt` | 程序版本、系统与显卡、OpenXR runtime、头显/眼动/连接状态和当前错误。 |
+| `events.log` | 近期启动、追踪、连接及错误事件。 |
+| `Player.log` | 当前 Unity 日志的近期内容；无法读取时记录原因。 |
+| `Launcher.txt` | 启动器信息；使用启动器且文件可用时包含。 |
+
+这些是实验者程序的诊断记录，不是参与者实验数据，也不替代参与者端的 raw/CSV。报告可能含本机路径、系统信息和局域网地址。日志是有长度限制的快照，建议问题发生后立即导出。该调试功能不代表双电脑、双头显 WoZ 已完成实机验收。

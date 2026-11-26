@@ -13,3 +13,8 @@ __pycache__/
 *.pyc
 bin/
 obj/
+
+# Photon SDK is acquired from the vendor and imported with its pinned manifest.
+Assets/Photon/
+Assets/Photon.meta
+photon-woz.local.json

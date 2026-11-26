@@ -10,9 +10,13 @@
     <DefineConstants>$(DefineConstants);STROOP_TEST_BUILD</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="AvatarStroop.PhotonRealtime.csproj" />
     <Compile Include="Assets/Stroop/Core/**/*.cs" />
     <Compile Include="Assets/Stroop/Runtime/**/*.cs" />
     <!-- WinForms/CLR4 coverage has its own AvatarStroop.WozLanPairingUiTests project. -->
     <Compile Include="Tests/**/*.cs" Exclude="Tests/WozLanPairingUiTests.cs" />
   </ItemGroup>
+  <Target Name="RequirePinnedPhotonSdk" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('Assets/Photon/sdk-manifest.json')" Text="Import the pinned Photon SDK using scripts/photon-sdk.py before compiling." />
+  </Target>
 </Project>

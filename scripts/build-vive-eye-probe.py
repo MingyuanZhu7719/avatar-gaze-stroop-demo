@@ -16,7 +16,7 @@ def main():
     output = ROOT / "build/vive-eye-probe"
     output.mkdir(parents=True, exist_ok=True)
     binary = output / "ViveEyeProbe.exe"
-    command = compiler_command(mono, csc) + ["-target:exe", "-platform:x64", "-main:AvatarStroop.Apps.ViveEyeProbe", "-out:" + str(binary)]
+    command = compiler_command(mono, csc, ROOT, binary.parent) + ["-target:exe", "-platform:x64", "-main:AvatarStroop.Apps.ViveEyeProbe", "-out:" + str(binary)]
     subprocess.run(command + [str(p) for p in runtime_sources(ROOT)] + [str(ROOT / "Apps/ViveEyeProbe.cs")], check=True, cwd=ROOT)
     subprocess.run([str(binary), "--self-check"], check=True, cwd=ROOT)
     print("Built opt-in probe: " + str(binary) + "; no hardware acquisition started.")
