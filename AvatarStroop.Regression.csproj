@@ -11,6 +11,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="AvatarStroop.PhotonRealtime.csproj" />
+    <Reference Include="PhotonClient"><HintPath>Assets/Photon/PhotonLibs/PhotonClient.dll</HintPath></Reference>
     <Compile Include="Assets/Stroop/Core/**/*.cs" />
     <Compile Include="Assets/Stroop/Runtime/**/*.cs" />
     <!-- WinForms/CLR4 coverage has its own AvatarStroop.WozLanPairingUiTests project. -->

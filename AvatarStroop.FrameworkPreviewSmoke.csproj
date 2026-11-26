@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="AvatarStroop.PhotonRealtime.csproj" />
+    <Reference Include="PhotonClient"><HintPath>Assets/Photon/PhotonLibs/PhotonClient.dll</HintPath></Reference>
     <Compile Include="Assets/Stroop/Core/**/*.cs" />
     <Compile Include="Assets/Stroop/Runtime/**/*.cs" />
     <!-- The WoZ launcher fixture runs in AvatarStroop.WozLanPairingUiTests instead. -->
