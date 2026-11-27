@@ -14,9 +14,12 @@ namespace AvatarStroop.Runtime
         // One outstanding challenge cycle requires the old grant to survive
         // its own roundtrip plus the replacement roundtrip. The cloud profile
         // allows two nominal300ms cycles and150ms scheduling/jitter margin.
-        internal string Name {get{return cloud?"photon-cloud-750ms":"lan-150ms";}}
+        internal string Name {get{return cloud?"photon-cloud-task750ms-pose300ms-hold150ms":"lan-150ms";}}
         internal double NetworkTaskLease {get{return cloud?.75:.15;}}
-        internal double ReceivedPoseAge {get{return .15;}}
+        // Only the operator pose displayed by the participant can be held.
+        // Reverse participant-avatar display remains cosmetic and expires150ms.
+        internal double ReceivedPoseAge {get{return cloud?.30:.15;}}
+        internal double PoseHoldThreshold {get{return .15;}}
         internal double ControlProofLease {get{return cloud?.75:.15;}}
         internal double OperatorProofLease {get{return cloud?.75:.10;}}
         internal double LocalCaptureAge {get{return .10;}}
@@ -27,8 +30,10 @@ namespace AvatarStroop.Runtime
         }
         internal bool OperatorProofFresh(double now,double taskReceived,double head,double eye)
         {return (!cloud||Age(now,taskReceived,NetworkTaskLease))&&Age(now,head,OperatorProofLease)&&Age(now,eye,OperatorProofLease);}
+        internal bool PoseHeld(double now,double receipt)
+        {return cloud&&Age(now,receipt,ReceivedPoseAge)&&now-receipt>PoseHoldThreshold;}
         internal double AvatarExpiry(double taskReceived,double receipt,double captureAge)
-        {return Math.Min(taskReceived+NetworkTaskLease,receipt+ReceivedPoseAge-captureAge);}
+        {return Math.Min(taskReceived+NetworkTaskLease,receipt+.15-captureAge);}
         static bool Age(double now,double then,double limit)
         {return WireCodec.Finite(now)&&WireCodec.Finite(then)&&then>=0&&now>=then&&now-then<=limit;}
     }

@@ -95,6 +95,7 @@ namespace AvatarStroop.Tests
             ViveTaskTriggerGateTests.Register(suite);
             ViveCsvPathPolicyTests.Register(suite);
             ViveWozPhotonSessionTests.Register(suite);
+            suite.Run("Photon held-pose paired-process lifecycle",()=>Check.Equal(0,ViveLegacyWozProcessMemoryTests.Main(new[]{"Photon hold"})));
             ViveWozPhotonConfigurationTests.Register(suite);
             ViveLegacyWozRawSchemaTests.Register(suite);
             StudyAnalysisTests.Register(suite);

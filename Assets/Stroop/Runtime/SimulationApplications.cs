@@ -276,6 +276,25 @@ namespace AvatarStroop.Runtime
         }
     }
 
+    // Headless integration only: each deliberately injected condition remains
+    // active until the other process acknowledges its real receiver evidence.
+    // This coordinator never alters a receiver's faults, clocks or recovery latch.
+    internal sealed class AcknowledgedSimulationFaultScript
+    {
+        internal int Stage {get;private set;}
+        internal bool EyeValid {get{return Stage!=1;}}
+        internal bool HeadValid {get{return Stage!=2;}}
+        internal bool SuppressOutgoing {get{return Stage==3;}}
+        internal bool Completed {get{return Stage==4;}}
+        internal void Advance(bool baselineObserved,Func<string,bool> observed)
+        {
+            if(Stage==0&&baselineObserved)Stage=1;
+            else if(Stage==1&&observed("EyeInvalid"))Stage=2;
+            else if(Stage==2&&observed("HeadInvalid"))Stage=3;
+            else if(Stage==3&&observed("ConnectionStale")&&observed("RecoveryDecisionRequired"))Stage=4;
+        }
+    }
+
     public sealed class OperatorSimulationApplication : SimulationPeer
     {
         DeterministicSimulatorSource source;
@@ -287,6 +306,8 @@ namespace AvatarStroop.Runtime
         double nextStopRetry;
         bool scriptedStopSent;
         string recordedTaskKey;
+        internal AcknowledgedSimulationFaultScript AcknowledgedFaultScript {get;private set;}
+        internal event Action<TaskSnapshot> AcceptedTaskObserved;
         public SafetyStopRequestState StopDelivery {get;private set;}=new SafetyStopRequestState();
         readonly Dictionary<string,string> observedTrials=new Dictionary<string,string>();
         readonly List<HeadEyeSample> acquired=new List<HeadEyeSample>();
@@ -302,10 +323,26 @@ namespace AvatarStroop.Runtime
             :base(session,PeerRole.Operator,localPort,remotePort,transport){this.injectFaults=injectFaults;this.scriptedStop=scriptedStop;}
         protected override void ConnectionFaulted(){CurrentTask=null;RecordCurrentTask();}
         public void RequestSafetyStop(){StopDelivery.Request();nextStopRetry=0;}
+        internal void EnableAcknowledgedFaultScript()
+        {
+            if(!injectFaults||AcknowledgedFaultScript!=null)throw new InvalidOperationException("Acknowledged faults require one explicit fault-script integration configuration");
+            AcknowledgedFaultScript=new AcknowledgedSimulationFaultScript();
+        }
         protected override void AcceptedPacket(WirePacket packet,double received)
-        {if(packet.Kind==WireKind.SafetyStopAck)StopDelivery.Acknowledge(packet.StopRequestId);}
+        {
+            if(packet.Kind==WireKind.SafetyStopAck)StopDelivery.Acknowledge(packet.StopRequestId);
+            if(packet.Kind!=WireKind.Task)return;
+            var task=packet.Snapshot;
+            // Accepted audit correspondence must include every packet in a drained
+            // batch, even when a later packet replaces CurrentTask. It supplies no
+            // source/render readiness and cannot clear a recovery latch.
+            if(task.TrialId!=null&&task.Word.HasValue&&task.Ink.HasValue)
+                observedTrials[task.TrialId]=task.Word+"/"+task.Ink;
+            if(AcceptedTaskObserved!=null)AcceptedTaskObserved(task);
+        }
         protected override bool SuppressOutgoing
-        {get{return injectFaults && mainStarted.HasValue && Clock.Now-mainStarted.Value>=.9 && Clock.Now-mainStarted.Value<1.35;}}
+        {get{return AcknowledgedFaultScript!=null?AcknowledgedFaultScript.SuppressOutgoing:
+            injectFaults && mainStarted.HasValue && Clock.Now-mainStarted.Value>=.9 && Clock.Now-mainStarted.Value<1.35;}}
         public void Tick()
         {try{TickCore();}finally{CaptureRecording();}}
         void TickCore()
@@ -318,8 +355,6 @@ namespace AvatarStroop.Runtime
             {Send(WirePacket.SafetyStopRequest(Identity,NextPacketSequence(),Clock.Now,StopDelivery.RequestId));nextStopRetry=Clock.Now+.05;}
             if(CurrentTask==null)return;
             if(CurrentTask.Phase==Phase.MainTask && !mainStarted.HasValue)mainStarted=Clock.Now;
-            if(CurrentTask.TrialId!=null && CurrentTask.Word.HasValue)
-                observedTrials[CurrentTask.TrialId]=CurrentTask.Word+"/"+CurrentTask.Ink;
             if(CurrentTask.BlockIndex<0 || Clock.Now<nextSample || SuppressOutgoing)return;
             if(source==null || sourceBlock!=CurrentTask.BlockIndex || sourceSegment!=CurrentTask.Segment)
             {
@@ -327,7 +362,8 @@ namespace AvatarStroop.Runtime
                 source=new DeterministicSimulatorSource(Identity.SessionId,RunKind.Simulation,sourceBlock,sourceSegment,Identity.SourceId,Clock);
             }
             HeadEyeSample raw;source.TryRead(out raw);double elapsed=mainStarted.HasValue?Clock.Now-mainStarted.Value:-1;
-            bool eye=!(injectFaults && elapsed>=.3 && elapsed<.45),head=!(injectFaults && elapsed>=.6 && elapsed<.75);
+            bool eye=AcknowledgedFaultScript!=null?AcknowledgedFaultScript.EyeValid:!(injectFaults && elapsed>=.3 && elapsed<.45);
+            bool head=AcknowledgedFaultScript!=null?AcknowledgedFaultScript.HeadValid:!(injectFaults && elapsed>=.6 && elapsed<.75);
             var sample=new HeadEyeSample(raw.SessionId,raw.StreamId,raw.DeviceId,raw.ClockId,raw.BlockIndex,raw.Segment,raw.Sequence,
                 raw.CaptureLocalSeconds,Clock.Now,raw.Source,raw.Role,raw.RawHeadRotation,raw.RawEyeDirection,head,eye);
             acquired.Add(sample);

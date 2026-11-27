@@ -11,10 +11,11 @@ namespace AvatarStroop.Core
     {
         internal const string EventKind="woz_network_evidence";
         internal const string LegacySchemaVersion="vive-woz-local-evidence-v1";
-        internal const string SchemaVersion="vive-woz-local-evidence-v2";
+        internal const string PreviousSchemaVersion="vive-woz-local-evidence-v2";
+        internal const string SchemaVersion="vive-woz-local-evidence-v3";
         internal const string NotObserved="NOT_OBSERVED";
         internal const string NotApplicable="NOT_APPLICABLE";
-        internal const int EvidenceFieldCount=35;
+        internal const int EvidenceFieldCount=41;
         const int LegacyEvidenceFieldCount=33;
         const double UnitTolerance=.00001;
 
@@ -27,7 +28,9 @@ namespace AvatarStroop.Core
             "woz_task_issued_participant_time","woz_challenge_issued_participant_time","woz_receipt_participant_time",
             "woz_send_operator_time","woz_head_operator_time","woz_eye_operator_time","woz_epoch_sample_sequence",
             "woz_head_qx","woz_head_qy","woz_head_qz","woz_head_qw","woz_eye_dx","woz_eye_dy","woz_eye_dz",
-            "woz_failure_reason","woz_network_visual_budget_seconds","woz_task_roundtrip_seconds"
+            "woz_failure_reason","woz_network_visual_budget_seconds","woz_task_roundtrip_seconds",
+            "woz_display_observed_participant_time","woz_pose_receipt_age_seconds","woz_pose_hold_threshold_seconds",
+            "woz_pose_receipt_budget_seconds","woz_pose_hold_state","woz_display_timing_basis"
         };
         // Experiment.Log adds exactly these context keys. Their required
         // values and manifest binding remain the codec/reader's responsibility.
@@ -77,10 +80,13 @@ namespace AvatarStroop.Core
             foreach(var pair in fields)
                 if((!EvidenceFields.Contains(pair.Key)&&!LegacyContextFields.Contains(pair.Key))||pair.Value==null)
                     throw Invalid("Unexpected evidence field.");
-            string schema;bool current=fields.TryGetValue("woz_schema",out schema)&&schema==SchemaVersion;
+            string schema;bool display=fields.TryGetValue("woz_schema",out schema)&&schema==SchemaVersion;
+            bool current=display||schema==PreviousSchemaVersion;
             if(!current&&schema!=LegacySchemaVersion)throw Invalid("Unknown evidence version.");
             foreach(string key in EvidenceFields)
             {
+                bool displayField=key=="woz_display_observed_participant_time"||key.StartsWith("woz_pose_",StringComparison.Ordinal)||key=="woz_display_timing_basis";
+                if(!display&&displayField){if(fields.ContainsKey(key))throw Invalid("Display timing fields require V3 evidence.");continue;}
                 bool added=key=="woz_network_visual_budget_seconds"||key=="woz_task_roundtrip_seconds";
                 if(!current&&added){if(fields.ContainsKey(key))throw Invalid("V2 timing fields require V2 evidence.");continue;}
                 if(!fields.ContainsKey(key))throw Invalid("Incomplete evidence fields.");
@@ -100,15 +106,31 @@ namespace AvatarStroop.Core
             bool preflight=eventName=="Preflight";
             // PoseUsed means an owned software presentation operation used
             // these values. It does not assert photon onset or user perception.
-            bool pose=eventName=="Pose"||eventName=="PoseUsed";
+            bool pose=eventName=="Pose"||eventName=="PoseUsed"||eventName=="PoseDisplay"||eventName=="PoseDisplayCleared";
+            if((eventName=="PoseDisplay"||eventName=="PoseDisplayCleared")&&!display)throw Invalid("Display events require V3 evidence.");
             if(!local&&!stop&&!receipt&&!preflight&&!pose)throw Invalid("Unknown evidence event.");
+            if(display)
+            {
+                if(!pose||eventName=="Pose")throw Invalid("Display timing requires an applied or cleared pose observation.");
+                Exact(fields,"woz_display_timing_basis","OWNED_SCENE_SOFTWARE_OBSERVATION_NOT_OPTICAL_OR_CONTINUOUS");
+                double observed=Number(fields["woz_display_observed_participant_time"]),age=Number(fields["woz_pose_receipt_age_seconds"]);
+                double threshold=Number(fields["woz_pose_hold_threshold_seconds"]),cap=Number(fields["woz_pose_receipt_budget_seconds"]);
+                double received=Time(fields,"woz_receipt_participant_time",true).Value;
+                if(observed<received||observed>appendTime||age!=observed-received||threshold!=.15||
+                    (cap!=.15&&cap!=.3)||(cap==.3&&fields["woz_receipt_origin"]!="PHOTON_CLOUD"&&
+                    !(fields["woz_receipt_origin"]=="MEMORY"&&fields["woz_synthetic"]=="TRUE")))throw Invalid("Invalid original receipt timing observation.");
+                string state=fields["woz_pose_hold_state"];
+                if(eventName=="PoseDisplayCleared")Exact(fields,"woz_pose_hold_state","CLEARED");
+                else if(age>cap||state!=(age>threshold?"HELD":"FRESH"))throw Invalid("Display hold state differs from original receipt age.");
+            }
             if(current)
             {
                 double budget=Number(fields["woz_network_visual_budget_seconds"]);
                 // Retain readability of early V2 cloud500ms records. Current
                 // transport selects750ms; the recorded value is never rewritten.
                 if(local){if(budget!=.15&&budget!=.5&&budget!=.75)throw Invalid("Unknown local network timing profile.");}
-                else if(fields["woz_receipt_origin"]=="PHOTON_CLOUD"?(budget!=.5&&budget!=.75):budget!=.15)
+                else if(fields["woz_receipt_origin"]=="PHOTON_CLOUD"?(budget!=.5&&budget!=.75):
+                    fields["woz_receipt_origin"]=="MEMORY"&&fields["woz_synthetic"]=="TRUE"?(budget!=.15&&budget!=.75):budget!=.15)
                     throw Invalid("Network timing profile differs from receipt origin.");
                 if(local||stop)Exact(fields,"woz_task_roundtrip_seconds",NotObserved);
                 else

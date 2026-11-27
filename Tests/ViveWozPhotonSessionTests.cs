@@ -9,12 +9,19 @@ namespace AvatarStroop.Tests
     {
         public static void Register(TestSuite suite)
         {
-            suite.Run("Photon timing separates roundtrip proof lease from received pose age",()=>{
+            suite.Run("Photon timing permits an explicit150to300ms forward hold without extending task or capture leases",()=>{
                 var policy=ViveWozTimingPolicy.Photon;
-                Check.Equal(.75,policy.NetworkTaskLease);Check.Equal(.75,policy.ControlProofLease);
+                Check.Equal(.75,policy.NetworkTaskLease);Check.Equal(.75,policy.ControlProofLease);Check.Equal(.30,policy.ReceivedPoseAge);
+                Check.Equal(.15,policy.PoseHoldThreshold);
                 Check.True(policy.EvidenceFresh(false,.49,0,.24,10.04,10,10));
-                Check.True(!policy.EvidenceFresh(true,.49,0,.24,10.04,10,10),"old received pose must expire at150ms");
+                Check.True(policy.EvidenceFresh(true,.49,0,.24,10.04,10,10)&&policy.PoseHeld(.49,.24));
                 Check.True(policy.EvidenceFresh(true,.49,0,.40,10.04,10,10));
+                Check.True(!policy.PoseHeld(.49,.40),"new receipt ends hold");
+                foreach(double at in new[]{.149999,.15,.150001,.299999,.30,.300001})
+                {Check.Equal(at<=.30,policy.EvidenceFresh(true,at,0,0,10.04,10,10));
+                    Check.Equal(at>.15&&at<=.30,policy.PoseHeld(at,0));}
+                foreach(double at in new[]{-1,Double.NaN,Double.PositiveInfinity})Check.True(!policy.PoseHeld(at,0));
+                Check.True(!policy.PoseHeld(.2,.3),"future receipt cannot become a hold");
                 Check.True(policy.EvidenceFresh(false,.70,0,.24,10.04,10,10));
                 Check.True(!policy.EvidenceFresh(false,.751,0,.74,10.04,10,10),"original task must expire at750ms");
                 Check.True(!policy.EvidenceFresh(true,.751,0,.74,10.04,10,10));
@@ -24,12 +31,15 @@ namespace AvatarStroop.Tests
                 Check.True(!policy.OperatorProofFresh(.751,0,.74,.74),"operator cannot extend original task lease with a new sample");
                 Check.Near(.45,policy.AvatarExpiry(0,.30,0));
                 Check.Near(.75,policy.AvatarExpiry(0,.74,0));
+                Check.Near(.41,policy.AvatarExpiry(0,.30,.04));
             });
             suite.Run("LAN retains original150ms display and100ms operator proof limits",()=>{
                 var policy=ViveWozTimingPolicy.Lan;
                 Check.Equal(.15,policy.NetworkTaskLease);Check.Equal(.15,policy.ReceivedPoseAge);Check.Equal(.10,policy.LocalCaptureAge);
                 Check.True(policy.EvidenceFresh(false,.149,0,.14,10.04,10,10));
                 Check.True(!policy.EvidenceFresh(false,.151,0,.15,10.04,10,10));
+                Check.True(!policy.EvidenceFresh(true,.151,0,0,10.04,10,10));
+                Check.True(!policy.PoseHeld(.15,0)&&!policy.PoseHeld(.20,0),"LAN has no hold mode");
                 Check.True(!policy.OperatorProofFresh(.101,0,0,0));
                 Check.Near(.15,policy.AvatarExpiry(0,.14,0));
                 Check.Equal(0,typeof(ViveWozTimingPolicy).GetConstructors().Length);
@@ -37,9 +47,18 @@ namespace AvatarStroop.Tests
             suite.Run("Photon forces WSS and suppresses vendor payload logging",()=>{
                 var settings=ViveWozPhotonSession.Settings("00000000-0000-0000-0000-000000000001","asia");
                 Check.Equal(Photon.Client.ConnectionProtocol.WebSocketSecure,settings.Protocol);
+                Check.Equal("avatar-woz-photon-3",settings.AppVersion);
                 Check.True(!settings.EnableProtocolFallback);
                 Check.Equal(Photon.Client.LogLevel.Off,settings.ClientLogging);
                 Check.Equal(Photon.Client.LogLevel.Off,settings.NetworkLogging);
+            });
+            suite.Run("Photon hold policy requires matchedv3 peer hello and rejects old or missing declarations",()=>{
+                var hello=new[]{"avatar-woz-photon-3","operator","00000000000000000000000000000001","peer-clock"};
+                Check.True(ViveWozPhotonSession.ValidPeerHello(hello,true));
+                Check.True(!ViveWozPhotonSession.ValidPeerHello(hello,false));
+                hello[0]="avatar-woz-photon-2";Check.True(!ViveWozPhotonSession.ValidPeerHello(hello,true));
+                hello[0]="avatar-woz-photon-3";hello[2]="";Check.True(!ViveWozPhotonSession.ValidPeerHello(hello,true));
+                Check.True(!ViveWozPhotonSession.ValidPeerHello(null,true)&&!ViveWozPhotonSession.ValidPeerHello(new string[3],true));
             });
             suite.Run("Photon inbox pins one actor and refuses replacements",()=>{
                 var inbox=new ViveWozPhotonInbox();inbox.Pin(17);inbox.Pin(17);

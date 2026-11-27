@@ -164,8 +164,8 @@ def verify_export(report, source_digest):
     interrupted = [r for r in csv_rows(directory / "trials.csv") if r["outcome"] == "Interrupted"]
     assert all(r["correct"] == r["reaction_seconds"] == "" for r in interrupted)
 
-def run_scenario(launch, build, scenario, source_digest):
-    output = build / ("integration-" + scenario + "-" + str(time.time_ns()))
+def run_scenario(launch, build, scenario, source_digest, delayed_observations=False):
+    output = build / ("integration-" + scenario + ("-delayed-observations" if delayed_observations else "") + "-" + str(time.time_ns()))
     output.mkdir()
     print("Evidence: " + str(output), flush=True)
     barrier = output / "startup"
@@ -182,8 +182,9 @@ def run_scenario(launch, build, scenario, source_digest):
     try:
         def launch_role(role):
             local, remote = endpoints[role]
+            observation_options = ["--delay-observation-publication"] if delayed_observations else []
             processes[role] = subprocess.Popen(launch + [role, session, str(local), str(remote), str(output), scenario,
-                                                       "--startup-barrier", str(barrier), "--scenario-completion", "--journal"], env=environment)
+                                                       "--startup-barrier", str(barrier), "--scenario-completion", "--journal"] + observation_options, env=environment)
         launch_role(first)
         wait_for_ready(output, barrier, processes, endpoints, session, deadline)
         # Exercise both startup orders across the scenarios. The first bound peer
@@ -240,6 +241,18 @@ def verify_completion(output, barrier, session, scenario):
     assert goal[0] == "PARTICIPANT_GOAL\t1\t" + session + "\t" + scenario, goal
     participant, trials, _ = read_report(output / "participant-report.tsv")
     operator, _, _ = read_report(output / "operator-report.tsv")
+    # These are observer acknowledgments, not injected task/fault data. The
+    # reports/journal are still checked independently against real UDP acceptance.
+    observed_trial_files = list(barrier.glob("observed-trial-*.tsv"))
+    assert len(observed_trial_files) == len(trials), observed_trial_files
+    for identity, stimulus in trials.items():
+        token = hashlib.sha256(identity.encode("utf-8")).hexdigest().upper()
+        expected = "OBSERVED_TRIAL\t1\t" + session + "\t" + scenario + "\t" + identity + "\t" + stimulus + "\n"
+        assert (barrier / ("observed-trial-" + token + ".tsv")).read_text(encoding="utf-8-sig") == expected
+    if scenario == "fault-script":
+        for fault in ("EyeInvalid", "HeadInvalid", "ConnectionStale", "RecoveryDecisionRequired"):
+            assert (barrier / ("observed-" + fault + ".tsv")).read_text(encoding="utf-8-sig") == "OBSERVED_" + fault + "\t1\t" + session + "\t" + scenario + "\n"
+        assert (barrier / "fault-script-observed.tsv").read_text(encoding="utf-8-sig") == "FAULT_SCRIPT_OBSERVED\t1\t" + session + "\t" + scenario + "\n"
     assert len(goal) == len(trials) + 1, goal
     assert set(goal[1:]) == {"trial\t" + identity + "\t" + stimulus for identity, stimulus in trials.items()}, goal
     for report in (participant, operator):
@@ -332,6 +345,10 @@ def main():
         launch = [str(mono), str(binary)]
     subprocess.run(list(launch) + ["completion-self-test"], check=True, timeout=20)
     run_scenario(launch, evidence, "fault-script", source_digest)
+    # Deliberately defer actual observer publications by 350 ms (longer than the
+    # former 150 ms fault window), while both UDP pumps keep their normal clocks.
+    # No freshness threshold or recovery decision is relaxed for this fixture.
+    run_scenario(launch, evidence, "fault-script", source_digest, delayed_observations=True)
     run_scenario(launch, evidence, "safety-stop", source_digest)
     run_killed_recording(launch, evidence, source_digest, release_startup)
     print("SIMULATION ONLY: one host, no headset; partial software sessions, no study completion or actual camera rendering claimed.")

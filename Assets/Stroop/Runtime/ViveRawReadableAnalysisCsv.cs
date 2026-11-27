@@ -81,6 +81,7 @@ namespace AvatarStroop.Runtime
             "woz_task_issued_participant_time","woz_challenge_issued_participant_time","woz_receipt_participant_time",
             "woz_send_operator_time","woz_head_operator_time","woz_eye_operator_time",
             "woz_network_visual_budget_seconds","woz_task_roundtrip_seconds",
+            "woz_display_observed_participant_time","woz_pose_receipt_age_seconds","woz_pose_hold_threshold_seconds","woz_pose_receipt_budget_seconds",
             "woz_head_qx","woz_head_qy","woz_head_qz","woz_head_qw","woz_eye_dx","woz_eye_dy","woz_eye_dz"},StringComparer.Ordinal);
         internal static Outcome Write(Stream input,Stream privateOutput,long maximumInputBytes,int maximumRecords,
             long maximumOutputBytes,CancellationToken cancellation)

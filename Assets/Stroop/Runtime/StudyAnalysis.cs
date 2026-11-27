@@ -127,7 +127,7 @@ namespace AvatarStroop.Runtime
 
     public sealed partial class StudyAnalysis
     {
-        public const string Version="1.4.0";
+        public const string Version="1.4.1";
         static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
         readonly Dictionary<string,StudyTrial> byId=new Dictionary<string,StudyTrial>(StringComparer.Ordinal);
         readonly Dictionary<string,StudyEyeGroup> eye=new Dictionary<string,StudyEyeGroup>(StringComparer.Ordinal);
@@ -275,6 +275,7 @@ namespace AvatarStroop.Runtime
                     throw new InvalidDataException("Task event differs from the recorded participant assignment.");
             }
             if(kind=="block_task_ended")endedBlocks.Add(block);
+            ObserveWozDisplay(kind,p,block,segment,Get(f,"trial_id"),Number(f,"event_local_time"));
             if(kind=="session_ended")SessionEndReason=Get(p,"reason");
             ReadEyeRecordingPolicy(kind,p,Number(f,"event_local_time"));
             ReadTrainingEvent(kind,p,rule,taskKind,Number(f,"event_local_time"));

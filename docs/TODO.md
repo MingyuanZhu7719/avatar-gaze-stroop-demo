@@ -2,7 +2,7 @@
 
 ## Before full cloud WoZ acceptance
 
-- [ ] Resolve or explicitly define an acceptable response to received-pose gaps under Photon WSS. The 2026-11-27 synthetic cloud probe stopped at a 152 ms pose receipt age against the current 150 ms limit, while the task lease remained valid (508/750 ms). Servicing messages first did not avoid the gap. Do not equate ordinary 200–300 ms round trips with continuous pose availability or silently extend the research timing contract. See [cloud evidence](woz-easy-pairing.md#当前云端验收缺口2026-11-27).
+- [ ] Verify the explicitly approved 300 ms Photon forward-pose retention policy on the physical setup, including recorded observations beyond 150 ms and a stop beyond 300 ms. The 2026-11-27 user decision followed the old policy stopping at a 152 ms pose receipt age while its task lease was valid (508/750 ms). Ordinary round trips do not establish continuous pose availability. See [timing policy and evidence](woz-easy-pairing.md#云端时序变更依据2026-11-27).
 - [ ] Run all three assigned tasks end to end on two physical PCs/Vive headsets using matching packages, then compare participant ID, allocation, control mode, layouts, answers and eye missingness in the saved files. Software fixtures are not this acceptance test.
 
 ## Deferred: eye-tracking spatial accuracy

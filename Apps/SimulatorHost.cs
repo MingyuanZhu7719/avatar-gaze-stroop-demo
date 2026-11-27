@@ -13,6 +13,69 @@ namespace AvatarStroop.Apps
     {
         static readonly SimulationLifecycleFiles lifecycleFiles=new SimulationLifecycleFiles();
         static readonly System.Collections.Generic.Dictionary<string,FaultEvent> firstScenarioFaults=new System.Collections.Generic.Dictionary<string,FaultEvent>();
+        // Local test orchestration only. UDP remains the sole path for task and
+        // tracking payloads; these files acknowledge evidence after acceptance.
+        // A delayed observer cannot skip a trial or a short fault injection window.
+        sealed class IntegrationRendezvous
+        {
+            readonly SimulationPeer app;readonly string scenario,directory;readonly double publicationDelay;
+            readonly System.Collections.Generic.Dictionary<string,Tuple<double,string>> pending=new System.Collections.Generic.Dictionary<string,Tuple<double,string>>();
+            readonly System.Collections.Generic.HashSet<string> queued=new System.Collections.Generic.HashSet<string>();
+            internal IntegrationRendezvous(SimulationPeer app,string scenario,string directory,bool delayed)
+            {
+                this.app=app;this.scenario=scenario;this.directory=directory;publicationDelay=delayed?.35:0;
+                var op=app as OperatorSimulationApplication;
+                if(op!=null)
+                {
+                    if(scenario=="fault-script")op.EnableAcknowledgedFaultScript();
+                    op.AcceptedTaskObserved+=task=>{
+                        if(task.Phase==Phase.MainTask&&task.TrialId!=null&&task.Word.HasValue&&task.Ink.HasValue)
+                            Queue(TrialFile(task.TrialId),TrialSignal(task.TrialId,task.Word+"/"+task.Ink));
+                    };
+                }
+                else app.Monitor.FaultRecorded+=fault=>{
+                    if(fault.Kind=="fault_started"&&new[]{"EyeInvalid","HeadInvalid","ConnectionStale","RecoveryDecisionRequired"}.Contains(fault.Detail))
+                        Queue("observed-"+fault.Detail+".tsv",Signal("OBSERVED_"+fault.Detail,app,scenario));
+                };
+            }
+            static string TrialFile(string id)
+            {
+                // Received identities are never interpreted as filesystem paths.
+                using(var hash=System.Security.Cryptography.SHA256.Create())
+                    return "observed-trial-"+BitConverter.ToString(hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(id))).Replace("-","")+".tsv";
+            }
+            string TrialSignal(string id,string stimulus)
+            {return Signal("OBSERVED_TRIAL",app,scenario).TrimEnd('\n')+"\t"+id+"\t"+stimulus+"\n";}
+            void Queue(string name,string content)
+            {if(queued.Add(name))pending.Add(name,Tuple.Create(app.Clock.Now+publicationDelay,content));}
+            bool Observed(string fault)
+            {return HasSignal(directory,"observed-"+fault+".tsv",Signal("OBSERVED_"+fault,app,scenario));}
+            internal void Update()
+            {
+                var participant=app as ParticipantSimulationApplication;
+                if(participant!=null&&participant.Experiment.Phase==Phase.MainTask&&participant.AcceptedHeadEyePackets>20&&participant.ValidSimulatorPresentations>0)
+                    Queue("observed-baseline.tsv",Signal("OBSERVED_BASELINE",app,scenario));
+                foreach(var item in pending.Where(x=>app.Clock.Now>=x.Value.Item1).ToArray())
+                {WriteStartupRecord(Path.Combine(directory,item.Key),item.Value.Item2.TrimEnd('\n'));pending.Remove(item.Key);}
+                var op=app as OperatorSimulationApplication;
+                if(op!=null&&op.AcknowledgedFaultScript!=null)
+                {
+                    op.AcknowledgedFaultScript.Advance(HasSignal(directory,"observed-baseline.tsv",Signal("OBSERVED_BASELINE",app,scenario)),Observed);
+                    if(op.AcknowledgedFaultScript.Completed)Queue("fault-script-observed.tsv",Signal("FAULT_SCRIPT_OBSERVED",app,scenario));
+                }
+            }
+            internal bool CanDrive(ParticipantSimulationApplication participant)
+            {
+                if(participant.Experiment.Phase!=Phase.MainTask)return true;
+                var trial=participant.Experiment.CurrentTrial;
+                if(!HasSignal(directory,TrialFile(trial.TrialId),TrialSignal(trial.TrialId,trial.Stimulus.Key)))return false;
+                // Exercise a real remote interruption of the already-observed
+                // trial. Do not race a synthetic answer creating another trial
+                // against receipt of the operator's UDP safety-stop request.
+                if(scenario=="safety-stop")return !trial.Onset.HasValue;
+                return scenario!="fault-script"||HasSignal(directory,"fault-script-observed.tsv",Signal("FAULT_SCRIPT_OBSERVED",app,scenario));
+            }
+        }
         sealed class CompletionEvidence
         {
             internal readonly string Source,Session;
@@ -45,17 +108,19 @@ namespace AvatarStroop.Apps
                 }
                 if(args.Length<6)throw new ArgumentException("Usage: operator|participant SESSION LOCAL_PORT REMOTE_PORT OUTPUT_DIRECTORY fault-script|safety-stop|normal [--journal] [--startup-barrier DIRECTORY] [--scenario-completion|--journal-kill-fixture]; or journal-extract JOURNAL_PATH OUTPUT_PARENT");
                 string role=args[0],session=args[1],output=Path.GetFullPath(args[4]);
-                bool recording=false,completion=false,killFixture=false;string barrier=null;long lastAcknowledged=-1;
+                bool recording=false,completion=false,killFixture=false,delayedObservations=false;string barrier=null;long lastAcknowledged=-1;
                 for(int i=6;i<args.Length;i++)
                 {
                     if(args[i]=="--journal"&&!recording)recording=true;
                     else if(args[i]=="--scenario-completion"&&!completion)completion=true;
                     else if(args[i]=="--journal-kill-fixture"&&!killFixture)killFixture=true;
+                    else if(args[i]=="--delay-observation-publication"&&!delayedObservations)delayedObservations=true;
                     else if(args[i]=="--startup-barrier"&&barrier==null&&i+1<args.Length)barrier=Path.GetFullPath(args[++i]);
                     else throw new ArgumentException("Unknown, duplicate or incomplete simulation option: "+args[i]);
                 }
                 if(barrier!=null&&!Directory.Exists(barrier))throw new ArgumentException("Startup barrier directory must already exist");
                 if(completion&&(barrier==null||(args[5]!="fault-script"&&args[5]!="safety-stop")))throw new ArgumentException("Scenario completion requires its startup barrier and a recognized integration fixture");
+                if(delayedObservations&&(!completion||args[5]!="fault-script"))throw new ArgumentException("Delayed observation publication requires the explicit fault-script completion fixture");
                 if(killFixture&&(!recording||barrier==null||completion||args[5]!="normal"))throw new ArgumentException("Journal kill fixture requires --journal, its startup barrier, normal scenario and no completion claim");
                 var provenance=new ExportProvenance("independent-process-headless-simulator","headless software acknowledgement; not a rendered display",
                     "synthetic timed first press edge",Environment.GetEnvironmentVariable("STROOP_BUILD_SOURCE_DIGEST"));
@@ -67,9 +132,10 @@ namespace AvatarStroop.Apps
                     using(var app=new OperatorSimulationApplication(session,local,remote,args[5]=="fault-script",args[5]=="safety-stop"))
                     {
                         if(completion)ObserveScenarioFaults(app);
+                        var rendezvous=completion?new IntegrationRendezvous(app,args[5],barrier,delayedObservations):null;
                         if(recording)app.EnableRecording(Path.Combine(output,"operator-journal.asj"),provenance,.1);
                         double activeStart=WaitForStartup(app,role,local,remote,barrier);
-                        Action tick=()=>{app.Tick();CheckRecording(app);AcknowledgeRecording(app,role,app.CurrentTask==null?"None":app.CurrentTask.Phase.ToString(),app.AcquiredSamples.Count,ref lastAcknowledged);};
+                        Action tick=()=>{app.Tick();if(rendezvous!=null)rendezvous.Update();CheckRecording(app);AcknowledgeRecording(app,role,app.CurrentTask==null?"None":app.CurrentTask.Phase.ToString(),app.AcquiredSamples.Count,ref lastAcknowledged);};
                         int postExitTicks=0;CompletionEvidence completionEvidence=null;
                         if(killFixture)RunJournalKillFixture(app,activeStart,tick);
                         else if(completion)RunOperatorScenario(app,args[5],barrier,output,activeStart,tick,out postExitTicks,out completionEvidence);
@@ -103,9 +169,10 @@ namespace AvatarStroop.Apps
                     using(var app=new ParticipantSimulationApplication(session,local,remote))
                     {
                         if(completion)ObserveScenarioFaults(app);
+                        var rendezvous=completion?new IntegrationRendezvous(app,args[5],barrier,delayedObservations):null;
                         if(recording)app.EnableRecording(Path.Combine(output,"participant-journal.asj"),provenance,.1);
                         double activeStart=WaitForStartup(app,role,local,remote,barrier);
-                        Action tick=()=>{app.Tick();app.RecordControllerEvaluation();app.DriveHeadlessSimulation();CheckRecording(app);AcknowledgeRecording(app,role,app.Experiment.Phase.ToString(),0,ref lastAcknowledged);};
+                        Action tick=()=>{app.Tick();app.RecordControllerEvaluation();if(rendezvous!=null)rendezvous.Update();if(rendezvous==null||rendezvous.CanDrive(app))app.DriveHeadlessSimulation();CheckRecording(app);AcknowledgeRecording(app,role,app.Experiment.Phase.ToString(),0,ref lastAcknowledged);};
                         CompletionEvidence completionEvidence=null;
                         if(killFixture)RunJournalKillFixture(app,activeStart,tick);
                         else if(completion)RunParticipantScenario(app,args[5],barrier,output,activeStart,tick,out completionEvidence);
@@ -276,7 +343,13 @@ namespace AvatarStroop.Apps
             {
                 app.Monitor.RecordConnectionFault("synthetic_completion_gap",app.Clock.Now);
                 socket.Incoming.Enqueue(WireCodec.Encode(WirePacket.Hello(peer,0,0,SessionConfiguration.ProtocolVersion)));
-                socket.Incoming.Enqueue(WireCodec.Encode(WirePacket.Task(peer,1,0,terminal)));app.Tick();
+                socket.Incoming.Enqueue(WireCodec.Encode(WirePacket.Task(peer,1,0,new TaskSnapshot(session,0,0,session+"/b0/t0",Colour.Red,Colour.Green,Phase.MainTask,Condition.B))));
+                socket.Incoming.Enqueue(WireCodec.Encode(WirePacket.Task(peer,2,0,new TaskSnapshot(session,0,0,session+"/b0/t1",Colour.Blue,Colour.Yellow,Phase.MainTask,Condition.B))));
+                // A rejected duplicate must never replace the accepted evidence.
+                socket.Incoming.Enqueue(WireCodec.Encode(WirePacket.Task(peer,2,0,new TaskSnapshot(session,0,0,session+"/b0/t1",Colour.Red,Colour.Red,Phase.MainTask,Condition.B))));
+                socket.Incoming.Enqueue(WireCodec.Encode(WirePacket.Task(peer,3,0,terminal)));app.Tick();
+                require(app.ObservedTrials.Count==2&&app.ObservedTrials[session+"/b0/t0"]=="Red/Green"&&app.ObservedTrials[session+"/b0/t1"]=="Blue/Yellow",
+                    "every accepted trial in one drained batch must survive terminal replacement; rejected duplicate must not overwrite");
                 require(select("fault-script",app.CurrentTask,app.Monitor.LastTask,true,true,3,expected,observed,false,false)=="historical_accepted_terminal_task","accepted operator audit task missing");
                 app.Tick();require(app.CurrentTask==null&&app.AcquiredSamples.Count==0&&socket.TrackingSent==0&&
                     app.Monitor.Snapshot(app.Clock.Now,app.Synchronizer).RecoveryDecisionRequired,"historical completion must not acquire or transmit a source sample");

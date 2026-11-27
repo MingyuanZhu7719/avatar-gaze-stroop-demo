@@ -40,7 +40,11 @@ namespace AvatarStroop.Runtime
         internal bool UsesOwnedSystemSocket {get{return socket is SystemSocket;}}
         internal bool UsesOwnedNetworkTransport {get{return socket is SystemSocket||photon!=null;}}
         internal bool UsesOwnedPhotonTransport {get{return photon!=null;}}
-        internal ViveWozTimingPolicy Timing {get{return photon==null?ViveWozTimingPolicy.Lan:ViveWozTimingPolicy.Photon;}}
+        internal ViveWozTimingPolicy Timing {get{
+#if STROOP_TEST_BUILD
+            if(syntheticPhotonTiming)return ViveWozTimingPolicy.Photon;
+#endif
+            return photon==null?ViveWozTimingPolicy.Lan:ViveWozTimingPolicy.Photon;}}
 
         // Historical transport evidence, not capture/identity or live admission.
         // Memory, process-socket and Photon receipts are distinct sealed types.
@@ -240,6 +244,7 @@ namespace AvatarStroop.Runtime
             public void Dispose(){if(value!=null){value.Dispose();value=null;}}
         }
 #if STROOP_TEST_BUILD
+        bool syntheticPhotonTiming;
         internal sealed class MemorySocket:ISocket
         {
             internal readonly Queue<Tuple<byte[],IPEndPoint>> Queue=new Queue<Tuple<byte[],IPEndPoint>>();
@@ -252,8 +257,8 @@ namespace AvatarStroop.Runtime
             {var hook=DuringSend;DuringSend=null;if(hook!=null)hook();if(FailSend||closed||Other==null||!endpoint.Equals(Other.bound))throw new InvalidOperationException();LastSent=(byte[])bytes.Clone();Other.Queue.Enqueue(Tuple.Create((byte[])bytes.Clone(),bound));return bytes.Length;}
             public void Dispose(){closed=true;if(FailClose)throw new InvalidOperationException();}
         }
-        internal static ViveLegacyWozProcessTransport Memory(ViveLegacyWozProcessPairing pairing,PeerRole role,MonotonicClock clock,IPEndPoint local,IPEndPoint remote,double age,MemorySocket socket)
-        {return new ViveLegacyWozProcessTransport(pairing,role,clock,local,remote,age,socket);}
+        internal static ViveLegacyWozProcessTransport Memory(ViveLegacyWozProcessPairing pairing,PeerRole role,MonotonicClock clock,IPEndPoint local,IPEndPoint remote,double age,MemorySocket socket,bool photonTiming=false)
+        {return new ViveLegacyWozProcessTransport(pairing,role,clock,local,remote,age,socket){syntheticPhotonTiming=photonTiming};}
 #endif
     }
 }

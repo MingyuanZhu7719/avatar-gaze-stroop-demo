@@ -55,6 +55,50 @@ namespace AvatarStroop.Tests
         }
         static void Validate(IReadOnlyDictionary<string,string> fields,double append=13,string clock="test-monotonic",bool mode=true,string kind=ViveLegacyWozRecordingSchema.EventKind)
         {ViveLegacyWozRecordingSchema.Validate(kind,fields,clock,append,mode);}
+        internal static Dictionary<string,string> DisplayFields(double receipt,double observed,string state,string origin="PHOTON_CLOUD")
+        {
+            var f=Fields(participant:receipt-2);f["woz_schema"]=ViveLegacyWozRecordingSchema.SchemaVersion;
+            f["woz_event"]=state=="CLEARED"?"PoseDisplayCleared":"PoseDisplay";f["woz_receipt_origin"]=origin;
+            f["woz_network_visual_budget_seconds"]=Time(origin=="PHOTON_CLOUD"?.75:.15);f["woz_task_roundtrip_seconds"]=Time(2);
+            f["woz_display_observed_participant_time"]=Time(observed);f["woz_pose_receipt_age_seconds"]=Time(observed-receipt);
+            f["woz_pose_hold_threshold_seconds"]=Time(.15);f["woz_pose_receipt_budget_seconds"]=Time(origin=="PHOTON_CLOUD"?.3:.15);
+            f["woz_pose_hold_state"]=state;f["woz_display_timing_basis"]="OWNED_SCENE_SOFTWARE_OBSERVATION_NOT_OPTICAL_OR_CONTINUOUS";return f;
+        }
+        internal static byte[] DisplayJournal(bool clear,bool terminal=true)
+        {
+            var clock=new ManualClock();Experiment e;var manifest=Legacy(out e,true,clock);
+            clock.Now=3;e.RecordRawSoftwareChoices(clock.ClockId,1,2);e.BeginFamiliarization(Actor.Owner);
+            e.PrepareRawRecordingBlockPlan(Actor.Owner,true);e.BeginPractice(Actor.Owner);
+            Action answer=()=>{e.MarkPresented(e.CurrentTrial.TrialId);clock.Advance(.2);var c=e.CurrentTrial.ExpectedResponse;e.ButtonChanged(c,true);e.ButtonChanged(c,false);};
+            for(int i=0;i<8;i++)answer();e.LockBlock(Actor.Owner,ControlSelection.LiveWoz,"synthetic-owner");
+            for(int block=0;block<4;block++)
+            {
+                e.PrepareRawRecordingBlockPlan(Actor.Owner,false);
+                if(block==0)e.BeginCountdown(Actor.Owner,true);else Check.True(e.TryBeginRetainedBlockCountdown(true));
+                clock.Advance(3);e.Tick();
+                if(block==0)
+                {
+                    double receipt=clock.Now;
+                    foreach(double age in new[]{.05,.2,.26})
+                    {clock.Now=receipt+age;e.RecordLegacyWozEvidence(DisplayFields(receipt,clock.Now,age>.15?"HELD":"FRESH"));}
+                    if(!terminal)break;
+                    clock.Now=receipt+(clear?.31:.3);
+                    e.RecordLegacyWozEvidence(DisplayFields(clear?receipt:receipt+.28,clock.Now,clear?"CLEARED":"FRESH"));
+                }
+                for(int i=0;i<24;i++)answer();Check.True(e.AcknowledgeQuestionnaireInstruction());
+                for(int i=0;i<Questionnaire.Count;i++)e.Rate(3);
+                if(block<3)Check.True(e.Ready());
+            }
+            using(var output=new MemoryStream())
+            {
+                byte[] prior=new byte[32];long ordinal=0;
+                Action<byte[]> append=payload=>{byte[] digest;var frame=ViveRawSessionJournalCodec.FrameV5(payload,prior,ordinal++==0,out digest);output.Write(frame,0,frame.Length);prior=digest;};
+                append(ViveRawSessionJournalCodec.ManifestPayloadV5(manifest));
+                foreach(var item in e.Events)append(ViveRawSessionJournalCodec.RecordPayload(ordinal,item,manifest));
+                if(terminal)append(ViveRawSessionJournalCodec.TerminalPayloadV3(ordinal,e.Events.Count-1,e.Events.Count,0,0,e.Events.Count,clock.Now));
+                return output.ToArray();
+            }
+        }
         static void Reject(Action<Dictionary<string,string>> mutate,string eventName="Pose")
         {var f=Fields(eventName);mutate(f);Check.Throws<InvalidOperationException>(()=>Validate(f));}
         static void SameBytes(byte[] expected,byte[] actual)
@@ -75,14 +119,14 @@ namespace AvatarStroop.Tests
                 foreach(string key in keys){Text(w,key);Text(w,e.Fields[key]);}w.Flush();return m.ToArray();
             }
         }
-        static ViveNamedSessionFrameAdmission.Manifest Legacy(out Experiment e,bool woz=true)
+        static ViveNamedSessionFrameAdmission.Manifest Legacy(out Experiment e,bool woz=true,ManualClock clock=null)
         {
             var allocation=new Allocation("synthetic-allocation",new[]{Condition.B,Condition.C,Condition.A,Condition.D},GazeTarget.Participant,new[]{0,1,2,3});
             var design=woz?ViveLegacyRecordingDesign.SelectOperatorWoz(Actor.Owner,"synthetic-design",allocation,"synthetic-geometry","synthetic-mapping"):
                 ViveLegacyRecordingDesign.Select(Actor.Owner,"synthetic-design",allocation,"synthetic-geometry","synthetic-mapping");
             var intent=ViveLegacyRecordingIntent.Select(Actor.Owner,"synthetic-intent",true,true);
             var config=SessionConfiguration.LegacyRecordingDevelopment(new SessionConfiguration("synthetic-session",42,allocation,RunKind.Simulation,"en",3,30,true,0,true,true,true),design,intent);
-            e=new Experiment(config,new ManualClock());
+            e=new Experiment(config,clock??new ManualClock());
             var m=new ViveNamedSessionFrameAdmission.Manifest(ViveRawSessionContext.FromConfiguration(config),"test-monotonic",true,1,2);
             m.SealChoiceTime(3,-1);return m;
         }
@@ -118,10 +162,38 @@ namespace AvatarStroop.Tests
 
         public static void Register(TestSuite suite)
         {
+            suite.Run("WoZ display timing preserves original receipt age and rejects illegal holds or fabricated freshness",()=>{
+                var held=DisplayFields(12,12.2,"HELD");Validate(held);
+                held["woz_pose_hold_state"]="FRESH";Check.Throws<InvalidOperationException>(()=>Validate(held));
+                held=DisplayFields(12,12.31,"HELD");Check.Throws<InvalidOperationException>(()=>Validate(held));
+                Validate(DisplayFields(12,12.31,"CLEARED"));
+                Check.Throws<InvalidOperationException>(()=>Validate(DisplayFields(12,12.2,"HELD","SOCKET")));
+                held=DisplayFields(12,12.2,"HELD");held["woz_pose_receipt_age_seconds"]=Time(.05);Check.Throws<InvalidOperationException>(()=>Validate(held));
+                held=DisplayFields(12,12.2,"HELD");held["woz_schema"]=ViveLegacyWozRecordingSchema.PreviousSchemaVersion;Check.Throws<InvalidOperationException>(()=>Validate(held));
+            });
+            suite.Run("WoZ raw hold observations distinguish fresh recovery clear expiry and unobserved endpoints",()=>{
+                foreach(int scenario in new[]{0,1,2})
+                {
+                    byte[] bytes=DisplayJournal(scenario==1,scenario!=2);var a=new StudyAnalysis();
+                    using(var input=new MemoryStream(bytes,false))Check.Equal(scenario==2?"Incomplete":"Complete",StudyDataReader.Read(input,"vraw",a.Accept,CancellationToken.None).Status);
+                    a.Finish();Check.Equal(1,a.WozPoseHolds.Count);var hold=a.WozPoseHolds[0];
+                    Check.Equal(2L,hold.ObservationCount);Check.Near(.2,hold.FirstReceiptAge);Check.Near(.26,hold.LastReceiptAge);
+                    Check.Equal(scenario==0?"FRESH_POSE_OBSERVED":scenario==1?"DISPLAY_CLEARED_OBSERVED":"OPEN_NO_FOLLOWING_OBSERVATION",hold.EndObservation);
+                    Check.Equal(scenario!=2,hold.FollowingObservedTime.HasValue);Check.Equal(0L,Read(bytes).VerifiedObservationRecords);
+#if VIVE_RAW_SYNTHETIC_TEST
+                    if(scenario!=2)using(var input=new MemoryStream(bytes,false))using(var csv=new MemoryStream())
+                    {
+                        Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,csv,8388608,5000,134217728,CancellationToken.None));
+                        var b=new StudyAnalysis();using(var source=new MemoryStream(csv.ToArray(),false))Check.Equal("Complete",StudyDataReader.Read(source,"csv",b.Accept,CancellationToken.None).Status);
+                        b.Finish();Check.Equal(hold.EndObservation,b.WozPoseHolds[0].EndObservation);Check.Equal(hold.LastReceiptAge,b.WozPoseHolds[0].LastReceiptAge);
+                    }
+#endif
+                }
+            });
             suite.Run("WoZ V2 timing evidence binds original participant roundtrip and actual transport budget",()=>{
                 foreach(string origin in new[]{"MEMORY","SOCKET","PHOTON_CLOUD"})
                 {
-                    var f=Fields();f["woz_schema"]=ViveLegacyWozRecordingSchema.SchemaVersion;f["woz_receipt_origin"]=origin;
+                    var f=Fields();f["woz_schema"]=ViveLegacyWozRecordingSchema.PreviousSchemaVersion;f["woz_receipt_origin"]=origin;
                     f["woz_network_visual_budget_seconds"]=Time(origin=="PHOTON_CLOUD"?.75:.15);
                     f["woz_task_roundtrip_seconds"]=Time(2);Validate(f);
                     // Historical accepted evidence can be too old to display;
@@ -132,13 +204,13 @@ namespace AvatarStroop.Tests
                 }
                 foreach(string kind in new[]{"LocalRevoke","LocalFailure","SafetyStopRequest"})
                 {
-                    var f=Fields(kind);f["woz_schema"]=ViveLegacyWozRecordingSchema.SchemaVersion;
+                    var f=Fields(kind);f["woz_schema"]=ViveLegacyWozRecordingSchema.PreviousSchemaVersion;
                     f["woz_network_visual_budget_seconds"]=Time(.15);f["woz_task_roundtrip_seconds"]=Missing;Validate(f);
                     f["woz_task_roundtrip_seconds"]=Time(2);Check.Throws<InvalidOperationException>(()=>Validate(f));
                 }
                 var old=Fields();Validate(old);old["woz_network_visual_budget_seconds"]=Time(.15);
                 Check.Throws<InvalidOperationException>(()=>Validate(old));
-                var previousCloud=Fields();previousCloud["woz_schema"]=ViveLegacyWozRecordingSchema.SchemaVersion;
+                var previousCloud=Fields();previousCloud["woz_schema"]=ViveLegacyWozRecordingSchema.PreviousSchemaVersion;
                 previousCloud["woz_receipt_origin"]="PHOTON_CLOUD";previousCloud["woz_network_visual_budget_seconds"]=Time(.5);
                 previousCloud["woz_task_roundtrip_seconds"]=Time(2);Validate(previousCloud);
             });
@@ -349,7 +421,7 @@ namespace AvatarStroop.Tests
             });
             suite.Run("VRAW4 codec and reader reject injected WoZ fields on ordinary events",()=>{
                 Experiment e;var m=Legacy(out e,false);var item=e.Events[0];var f=new Dictionary<string,string>();
-                foreach(var pair in item.Fields)f.Add(pair.Key,pair.Value);f.Add("woz_schema",ViveLegacyWozRecordingSchema.SchemaVersion);
+                foreach(var pair in item.Fields)f.Add(pair.Key,pair.Value);f.Add("woz_schema",ViveLegacyWozRecordingSchema.PreviousSchemaVersion);
                 var mixed=new JournalEvent(item.Sequence,item.Time,item.ClockId,item.SessionId,item.BlockIndex,item.Segment,item.TrialId,item.Kind,f,null,
                     legacyRecordingDesign:item.LegacyRecordingDesign,legacyRecordingIntent:item.LegacyRecordingIntent);
                 Check.Throws<InvalidOperationException>(()=>ViveRawSessionJournalCodec.RecordPayload(1,mixed,m));

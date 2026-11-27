@@ -157,7 +157,7 @@ namespace AvatarStroop.Core
         public bool RetainControlAcrossBlocks { get; private set; }
         public const string ProtocolVersion = "2026-10-28-prd-66dbdb5";
         public const string SoftwareVersion = "0.5.1-dev";
-        public const string ParticipantBuildVersion = "2.0.0";
+        public const string ParticipantBuildVersion = "2.0.1";
         public const string ParticipantSoftwareVersion = "vive-participant-" + ParticipantBuildVersion;
         public string RecordedSoftwareVersion { get { return ParticipantAssignment==null?SoftwareVersion:ParticipantSoftwareVersion; } }
         // New sessions explicitly use the approved English wording. Historical

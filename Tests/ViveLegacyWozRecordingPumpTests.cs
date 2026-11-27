@@ -40,7 +40,7 @@ namespace AvatarStroop.Tests
             internal ViveLegacyWozObservationOwner.SyntheticObservations Remote;
             internal readonly ViveLegacyWozProcessTransport.MemorySocket PS=new ViveLegacyWozProcessTransport.MemorySocket(),OS=new ViveLegacyWozProcessTransport.MemorySocket();
             long headSequence;int frame;long remoteSequence;
-            internal Fixture(bool downgrade=false,ViveRawSessionJournalSink.IntegrationFixtureScenario? nativeScenario=null,bool shareParticipantAvatar=false,int? participantTask=null)
+            internal Fixture(bool downgrade=false,ViveRawSessionJournalSink.IntegrationFixtureScenario? nativeScenario=null,bool shareParticipantAvatar=false,int? participantTask=null,bool photonTiming=false)
             {
                 InitializationStage=1;
                 var geometry=new AutomaticGazeGeometry(Rotation.Identity,new Vec3(0,0,1),new Rotation(0,Math.Sqrt(.5),0,Math.Sqrt(.5)),new Vec3(1,0,0),"woz-raw-geometry");
@@ -94,8 +94,8 @@ namespace AvatarStroop.Tests
                         try{payload[0]=1;token=("WOZPROC1."+Convert.ToBase64String(payload)).ToCharArray();}finally{Array.Clear(payload,0,payload.Length);}
                     }
                     try{using(var imported=ViveLegacyWozProcessPairing.Parse(token))
-                    {P=ViveLegacyWozParticipantProcess.Memory(offer,Owner,new IPEndPoint(IPAddress.Loopback,45311),new IPEndPoint(IPAddress.Loopback,45312),5,PS);
-                     O=ViveLegacyWozOperatorProcess.Synthetic(imported,RemoteClock,Remote,new IPEndPoint(IPAddress.Loopback,45312),new IPEndPoint(IPAddress.Loopback,45311),5,OS);
+                    {P=ViveLegacyWozParticipantProcess.Memory(offer,Owner,new IPEndPoint(IPAddress.Loopback,45311),new IPEndPoint(IPAddress.Loopback,45312),5,PS,photonTiming);
+                     O=ViveLegacyWozOperatorProcess.Synthetic(imported,RemoteClock,Remote,new IPEndPoint(IPAddress.Loopback,45312),new IPEndPoint(IPAddress.Loopback,45311),5,OS,photonTiming);
                      var creatorKey=offer.CopyKey();var importedKey=imported.CopyKey();try{Check.Equal(!downgrade,creatorKey.SequenceEqual(importedKey));}finally{Array.Clear(creatorKey,0,creatorKey.Length);Array.Clear(importedKey,0,importedKey.Length);}}}
                     finally{Array.Clear(token,0,token.Length);}
                 }
@@ -143,13 +143,21 @@ namespace AvatarStroop.Tests
                 Check.True(reserved,"reserve presentation "+trial.TrialId+" "+(Recording==null?"practice":Recording.LastPresentationIssue)+" "+Pump.FixtureDiagnosticsForTest());
                 if(Task.Phase==Phase.MainTask){Scene.Present();Check.True(token.WozEvidence!=null&&token.WozEvidence.Applied,"exact owned scene applied");}
                 Check.True(token.Search==null?Pump.CommitPresentation(token,frame,frame,trial.TrialId,token.Word,token.Ink,Clock.Now):
-                    Pump.CommitVisualSearchPresentation(token,frame,frame,trial.TrialId,token.Search.LayoutId,Clock.Now),"commit presentation");Drain();
+                    Pump.CommitVisualSearchPresentation(token,frame,frame,trial.TrialId,token.Search.LayoutId,Clock.Now),"commit presentation");
                 if(Task.Phase==Phase.MainTask)
                 {
                     // The real scene rechecks immediately after onset, before
                     // an answer or the next trial can obtain fresh authority.
-                    Scene.RecheckPresentation();Check.True(!Scene.Closed&&Scene.MayShowTask,"own onset preserves current presentation authority");
+                    double checkedAt=Clock.Now;var used=token.WozEvidence==null?null:token.WozEvidence.Pose;
+                    string timing=used==null?" no-avatar":" receipt_age="+(checkedAt-used.OriginalReceiptParticipantSeconds).ToString("R")+
+                        " task_age="+(checkedAt-used.OriginalTaskIssuedParticipantSeconds).ToString("R")+" cap="+P.LocalReceiptBudgetSeconds.ToString("R");
+                    Scene.RecheckPresentation();Check.True(!Scene.Closed&&Scene.MayShowTask,
+                        "own onset preserves current presentation authority;"+timing+" trial="+trial.TrialId+" process="+P.LastIssue+" raw="+Pump.FixtureDiagnosticsForTest());
                 }
+                // Unity does not synchronously wait for the writer before its
+                // presentation check. Drain only after checking that boundary;
+                // expiry during a slow flush is tested separately as a stop.
+                Drain();
                 if(trial.VisualSearch!=null)Mutate(()=>Task.SelectVisualSearchItem(trial.TrialId,trial.VisualSearch.TargetId));
                 else
                 {var c=trial.ExpectedResponse;Mutate(()=>Task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,true,c==Colour.Green?1:c==Colour.Yellow?-1:0,c==Colour.Red?1:c==Colour.Blue?-1:0)));}
@@ -308,10 +316,12 @@ namespace AvatarStroop.Tests
                 }
             });
         }
-        internal static void RegisterParticipant(TestSuite suite)
+        internal static void RegisterParticipant(TestSuite suite,int? onlyTask=null)
         {
+            if(!onlyTask.HasValue)RegisterDisplayTiming(suite);
             for(int mode=0;mode<3;mode++)
             {
+                if(onlyTask.HasValue&&onlyTask.Value!=mode)continue;
                 int captured=mode;
                 suite.Run("Assigned WoZ actual paired recording pump completes four blocks for task "+mode,()=>{
                     using(var f=new Fixture(participantTask:captured))
@@ -345,6 +355,56 @@ namespace AvatarStroop.Tests
                     }
                 });
             }
+        }
+        internal static void RegisterDisplayTiming(TestSuite suite)
+        {
+            foreach(bool failClear in new[]{true,false})
+            {
+                bool selected=failClear;
+                suite.Run("WoZ held display leaves an open endpoint after "+(selected?"failed sink clear":"recording source failure"),()=>{
+                    using(var f=new Fixture(participantTask:0,photonTiming:true))
+                    {
+                        f.BeginMain();f.Grant();f.Preflight();f.Pose();f.Stage();f.Scene.Present();
+                        Thread.Sleep(180);f.Stage();f.Scene.Present();f.Drain();
+                        if(selected)
+                        {f.Sink.FailClear=true;Check.True(!f.Scene.ClearForSafety());f.P.Dispose();}
+                        else
+                        {
+                            f.Pose();f.Stage();
+                            f.Sink.DuringApply=()=>{f.Worker.TryRequestStop();f.Source.Release();};
+                            f.Scene.Present();f.Scene.RecheckPresentation();
+                        }
+                        Check.True(!f.Recording.Current);Check.True(SpinWait.SpinUntil(()=>f.Pump.HasExited,3000));
+                        var a=new StudyAnalysis();using(var input=new MemoryStream(f.Writer.Snapshot(),false))
+                            Check.Equal("Incomplete",StudyDataReader.Read(input,"vraw",a.Accept,CancellationToken.None).Status);
+                        a.Finish();Check.Equal(1,a.WozPoseHolds.Count);Check.True(!a.WozPoseHolds[0].FollowingObservedTime.HasValue);
+                        Check.True(a.WozPoseHolds[0].EndObservation.StartsWith("OPEN_",StringComparison.Ordinal));
+                        Check.Equal(0,f.Writer.CompleteCalls);
+                    }
+                });
+            }
+            suite.Run("Owned Photon-timed scene records held display recovery and expiry through the actual raw admission",()=>{
+                using(var f=new Fixture(participantTask:0,photonTiming:true))
+                {
+                    f.BeginMain();f.Grant();f.Preflight();f.Pose();f.Stage();f.Scene.Present();
+                    Check.True(!f.Scene.Closed&&f.Scene.MayShowTask);
+                    Thread.Sleep(180);f.Stage();f.Scene.Present();f.Drain();
+                    f.Pose();f.Scene.Present();f.Drain();
+                    Thread.Sleep(180);f.Stage();f.Scene.Present();f.Drain();
+                    Thread.Sleep(160);f.Stage();f.Scene.RecheckPresentation();
+                    Check.True(f.P.Terminal&&f.Scene.Closed);Check.True(SpinWait.SpinUntil(()=>f.Pump.HasExited,3000));
+                    var a=new StudyAnalysis();using(var input=new MemoryStream(f.Writer.Snapshot(),false))
+                        Check.Equal("Incomplete",StudyDataReader.Read(input,"vraw",a.Accept,CancellationToken.None).Status);
+                    a.Finish();Check.Equal(2,a.WozPoseHolds.Count);
+                    Check.Equal("FRESH_POSE_OBSERVED",a.WozPoseHolds[0].EndObservation);
+                    // Immediate safety stop may discard queued clear evidence.
+                    // Never delay stopping or manufacture an endpoint to fill it.
+                    Check.True(a.WozPoseHolds[1].EndObservation=="DISPLAY_CLEARED_OBSERVED"||
+                        a.WozPoseHolds[1].EndObservation=="OPEN_NO_FOLLOWING_OBSERVATION");
+                    Check.True(a.WozPoseHolds.All(x=>x.ReceiptOrigin=="MEMORY"&&x.FirstReceiptAge>.15&&x.LastReceiptAge<=.3&&x.Cap==.3));
+                    Check.Equal(0,f.Writer.CompleteCalls); // Expiry never invents a completed capture.
+                }
+            });
         }
         public static void Register(TestSuite suite)
         {

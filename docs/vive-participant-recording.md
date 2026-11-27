@@ -9,6 +9,8 @@ Run one A/B/C/D task per session: Ink colour, Word meaning or Visual search. Aut
 
 Participant eye tracking loss does not stop answers or the task. The recorder marks unavailable intervals and recovery; inspect `eye_availability.csv` and sample validity before using eye measures. This does not bypass controller/headset readiness, operator source validity, network freshness or file-write failures. Operator eye/source requirements remain separate. Fine eye/face accuracy is still on TODO, not accepted by this software update.
 
+Photon may retain the last received operator pose for up to 300 ms. Display observations beyond 150 ms are recorded and reported in `woz_pose_holds.csv`; a fresh pose ends the hold. Beyond 300 ms the task stops, as it also does if the separate task lease or authority becomes invalid. This policy applies to the forward avatar shown to the participant. It does not extend manual LAN timing, extend the reverse participant-avatar display, or create participant eye samples. Both PCs need matching packages.
+
 ## Allocation
 
 The four Williams orders are ABDC, BCAD, CDBA and DACB. Within each consecutive enrollment group (P001–P004, P005–P008, and so on), each task uses all four orders. Each condition receives each of the four stimulus lists once. Across sixteen consecutive slots starting at P001 and each subsequent group of sixteen, each order is paired with all four list rotations. B's initial gaze is also balanced. A participant's code and selected task fully determine the plan, so repeating a task reproduces its allocation. Missed sessions and withdrawals can make the observed sample uneven. The researcher selects which of the three tasks to administer first.

@@ -20,6 +20,8 @@ Photon room traffic uses encrypted WSS through the third-party Photon cloud. Raw
 
 Version 5 adds the developer WoZ context and operator-pose provenance. Version 7 combines this WoZ provenance with the assigned participant ID, task, allocation and software version; assigned Automatic files retain version 6. Applied presentation evidence is committed through the existing participant-local recorder. Native file access retains the revocable admission, identity, budget, private-stage, close and independent-readback checks.
 
+Typed WoZ evidence v3 adds the observed software display time, original pose receipt age, 150 ms hold threshold, selected receipt cap and FRESH/HELD/CLEARED state. The approved Photon forward cap is 300 ms; original timestamps are retained while a pose is held. The analyzer exports `woz_pose_holds.csv` with observed bounds and explicit recovery/clear/open outcomes. A hold is not a new operator or participant eye acquisition. Evidence v1/v2 remain readable without inventing hold status for historical files.
+
 A short one- or two-trial stop produces at most a raw prefix. It is not normal session completion and cannot authorize a completed-session CSV. Do not run four blocks merely to check withdrawal. A later full session needs normal completion and successful local verification before a completed export. No claim of durable storage or remote operator cleanup acknowledgment is made.
 
 ## Public validation and boundaries

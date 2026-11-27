@@ -39,6 +39,22 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("WoZ pose hold table exports observed recovery and expiry bounds without adding eye samples",()=>{
+                using(var files=new Files())
+                foreach(bool clear in new[]{false,true})
+                {
+                    File.WriteAllBytes(files.Raw,ViveLegacyWozRawSchemaTests.DisplayJournal(clear));
+                    string output=Path.GetDirectoryName(StudyAnalysisFiles.Run(new[]{files.Raw},files.Output,null,CancellationToken.None));
+                    string csv=File.ReadAllText(Path.Combine(output,"woz_pose_holds.csv"));
+                    Check.Equal(2,File.ReadAllLines(Path.Combine(output,"woz_pose_holds.csv")).Length);
+                    Check.True(csv.Contains("original_receipt_local_seconds")&&csv.Contains("first_receipt_age_seconds")&&csv.Contains("\"PHOTON_CLOUD\""));
+                    Check.True(csv.Contains(clear?"DISPLAY_CLEARED_OBSERVED":"FRESH_POSE_OBSERVED"));
+                    Check.True(csv.Contains("SOFTWARE_OBSERVATION_BOUNDS_NOT_CONTINUOUS_DURATION"));
+                    Check.Equal(1,File.ReadAllLines(Path.Combine(output,"eye_quality.csv")).Length);
+                    Check.Equal(1,File.ReadAllLines(Path.Combine(output,"eye_availability.csv")).Length);
+                    Check.True(File.ReadAllText(Path.Combine(output,"report.html")).Contains("woz_pose_holds.csv"));
+                }
+            });
             suite.Run("participant analysis exports explicit control mode and identical raw CSV results for all three WoZ tasks",()=>{
                 using(var files=new Files())
                 for(int mode=0;mode<3;mode++)

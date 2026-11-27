@@ -43,6 +43,7 @@ namespace AvatarStroop.Runtime
         public string TimingProfile {get{return transport.Timing.Name;}}
         public double NetworkVisualBudgetSeconds {get{return transport.Timing.NetworkTaskLease;}}
         public double LocalReceiptBudgetSeconds {get{return transport.Timing.ReceivedPoseAge;}}
+        public double PoseHoldThresholdSeconds {get{return transport.Timing.PoseHoldThreshold;}}
         public double LocalCaptureBudgetSeconds {get{return transport.Timing.LocalCaptureAge;}}
         public double ControlProofBudgetSeconds {get{return transport.Timing.ControlProofLease;}}
         public bool Terminal {get{return terminal;}}
@@ -75,9 +76,25 @@ namespace AvatarStroop.Runtime
         {get{var proof=CurrentPreflight;return IsInstalledChannel&&IsActualNetworkEvidence(proof)&&!proof.SyntheticObservationsOnly&&ControlledEvidenceFresh(proof);}}
         internal static bool IsActualNetworkEvidence(Evidence value){return value is SocketEvidence||value is PhotonEvidence;}
         internal bool ControlledEvidenceFresh(Evidence value)
-        {return value!=null&&transport.Owns(value.OriginalReceipt)&&Guard(()=>transport.Timing.EvidenceFresh(value.Pose!=null,transport.Now,
+        {return value!=null&&Guard(()=>EvidenceFreshAt(value,transport.Now));}
+        bool EvidenceFreshAt(Evidence value,double at)
+        {return value!=null&&transport.Owns(value.OriginalReceipt)&&transport.Timing.EvidenceFresh(value.Pose!=null,at,
             value.OriginalTaskIssuedParticipantSeconds,value.OriginalReceiptParticipantSeconds,value.OriginalSendOperatorSeconds,
-            value.OriginalHeadObservedOperatorSeconds,value.OriginalEyeObservedOperatorSeconds));}
+            value.OriginalHeadObservedOperatorSeconds,value.OriginalEyeObservedOperatorSeconds);}
+        // Software display observation only. Use the original receipt and one
+        // owned-clock read; a held pose never gets a refreshed receipt/capture.
+        internal bool TryGetDisplayPoseTiming(out Evidence value,out double observedParticipantSeconds,out double receiptAgeSeconds,out bool held)
+        {
+            Evidence candidate=null;double at=-1,age=-1;bool isHeld=false;
+            bool valid=Guard(()=>{
+                candidate=DisplayPose;at=transport.Now;
+                if(candidate==null||candidate.Pose==null||!candidate.Pose.HeadValid||!candidate.Pose.EyeValid||
+                    !candidate.Pose.RawHeadRotation.IsUnit||!candidate.Pose.RawEyeDirection.IsUnit||!EvidenceFreshAt(candidate,at))return false;
+                age=at-candidate.OriginalReceiptParticipantSeconds;isHeld=transport.Timing.PoseHeld(at,candidate.OriginalReceiptParticipantSeconds);
+                return true;
+            });
+            value=valid?candidate:null;observedParticipantSeconds=valid?at:-1;receiptAgeSeconds=valid?age:-1;held=valid&&isHeld;return valid;
+        }
         public Evidence CurrentPreflight {get{if(!Guard(()=>Current()&&FreshPreflight()))preflight=null;return preflight;}}
         public Evidence CurrentPose {get{if(!Guard(()=>Current()&&FreshPreflight()&&task.Task.Phase==Phase.MainTask))pose=null;return pose;}}
 
@@ -373,11 +390,14 @@ namespace AvatarStroop.Runtime
         bool SafeLocal()
         {
             bool recordingStopped=true;
+            // Capture an observed clear while the exact recording admission is
+            // still current. A technical stop must not leave a displayed hold
+            // looking open solely because admission was revoked first.
+            bool cleared=scene==null||scene.ClearForSafety();
             try{if(owner.RecordingBinding!=null)owner.RecordingBinding.Stop();}
             catch{recordingStopped=false;owner.MarkCleanupUncertain();}
             preflight=null;pose=null;retainedPreflight=null;retainedPose=null;challenge=null;binding=null;task=null;owner.RevokeSourceChoice(choice);
             if(!locallyPaused)locallyPaused=owner.PauseAuthoritativeTask();
-            bool cleared=scene==null||scene.ClearForSafety();
             if(!locallyPaused||!cleared)owner.MarkCleanupUncertain();return recordingStopped&&locallyPaused&&cleared;
         }
         void End(string reason)
@@ -426,7 +446,7 @@ namespace AvatarStroop.Runtime
                 "receipt_participant_time","send_operator_time","head_operator_time","eye_operator_time","epoch_sample_sequence",
                 "head_qx","head_qy","head_qz","head_qw","eye_dx","eye_dy","eye_dz","failure_reason",
                 "network_visual_budget_seconds","task_roundtrip_seconds"})fields.Add("woz_"+name,missing);
-            fields["woz_schema"]=ViveLegacyWozRecordingSchema.SchemaVersion;fields["woz_event"]=kind;fields["woz_epoch"]=c.Epoch;
+            fields["woz_schema"]=ViveLegacyWozRecordingSchema.PreviousSchemaVersion;fields["woz_event"]=kind;fields["woz_epoch"]=c.Epoch;
             fields["woz_network_visual_budget_seconds"]=ViveLegacyWozRecordingSchema.EncodeTime(transport.Timing.NetworkTaskLease);
             fields["woz_source_binding"]=c.Operator.SourceId;fields["woz_mapping"]=c.Mapping;
             fields["woz_participant_clock_id"]=c.Participant.ClockId;fields["woz_operator_clock_id"]=c.Operator.ClockId;
@@ -503,8 +523,8 @@ namespace AvatarStroop.Runtime
             TickCore();return !terminal;
         });}
 #if STROOP_TEST_BUILD
-        internal static ViveLegacyWozParticipantProcess Memory(ViveLegacyWozProcessPairing p,ViveLegacyWozTaskOwner owner,IPEndPoint local,IPEndPoint remote,double age,ViveLegacyWozProcessTransport.MemorySocket socket)
-        {return new ViveLegacyWozParticipantProcess(p,owner,ViveLegacyWozProcessTransport.Memory(p,PeerRole.Participant,owner.Clock,local,remote,age,socket),age);}
+        internal static ViveLegacyWozParticipantProcess Memory(ViveLegacyWozProcessPairing p,ViveLegacyWozTaskOwner owner,IPEndPoint local,IPEndPoint remote,double age,ViveLegacyWozProcessTransport.MemorySocket socket,bool photonTiming=false)
+        {return new ViveLegacyWozParticipantProcess(p,owner,ViveLegacyWozProcessTransport.Memory(p,PeerRole.Participant,owner.Clock,local,remote,age,socket,photonTiming),age);}
         internal bool BeginCountdownForTest(ViveDevelopmentParticipant participant){return participant.BeginLegacyWozMemoryCountdown(owner,choice);}
 #endif
     }

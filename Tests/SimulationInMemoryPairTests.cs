@@ -18,6 +18,24 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("integration fault injection waits for each peer observation rather than elapsed windows",()=>{
+                var script=new AcknowledgedSimulationFaultScript();
+                var observed=new System.Collections.Generic.HashSet<string>();
+                for(int i=0;i<100;i++)script.Advance(false,observed.Contains);
+                Check.Equal(0,script.Stage);Check.True(script.EyeValid&&script.HeadValid&&!script.SuppressOutgoing);
+                script.Advance(true,observed.Contains);Check.Equal(1,script.Stage);Check.True(!script.EyeValid&&script.HeadValid);
+                // Unrelated/out-of-order evidence cannot skip the eye phase.
+                observed.Add("HeadInvalid");for(int i=0;i<100;i++)script.Advance(true,observed.Contains);
+                Check.Equal(1,script.Stage);observed.Clear();observed.Add("EyeInvalid");script.Advance(true,observed.Contains);
+                Check.Equal(2,script.Stage);Check.True(script.EyeValid&&!script.HeadValid);
+                for(int i=0;i<100;i++)script.Advance(true,observed.Contains);Check.Equal(2,script.Stage);
+                observed.Add("HeadInvalid");script.Advance(true,observed.Contains);Check.Equal(3,script.Stage);Check.True(script.SuppressOutgoing);
+                observed.Add("ConnectionStale");for(int i=0;i<100;i++)script.Advance(true,observed.Contains);
+                Check.Equal(3,script.Stage);Check.True(!script.Completed);
+                observed.Add("RecoveryDecisionRequired");script.Advance(true,observed.Contains);
+                Check.True(script.Completed&&!script.SuppressOutgoing&&script.HeadValid&&script.EyeValid);
+                for(int i=0;i<100;i++)script.Advance(true,observed.Contains);Check.Equal(4,script.Stage);
+            });
             suite.Run("in-memory paired simulation reaches source readiness and resume context",()=>{
                 var a=new IPEndPoint(IPAddress.Loopback,41001);var b=new IPEndPoint(IPAddress.Loopback,41002);
                 var left=new ViveInMemoryDatagramSocket(a);var right=new ViveInMemoryDatagramSocket(b);left.Other=right;right.Other=left;

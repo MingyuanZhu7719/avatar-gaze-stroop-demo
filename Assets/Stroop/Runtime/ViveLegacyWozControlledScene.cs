@@ -136,7 +136,8 @@ namespace AvatarStroop.Runtime
         {
             if(Owner.RecordingBinding!=null)Owner.RecordingBinding.InvalidateAppliedPresentation();
             if(clearUncertain)return false;
-            try{sink.Clear();return true;}catch{clearUncertain=true;Owner.MarkCleanupUncertain();return false;}
+            try{sink.Clear();if(Owner.RecordingBinding!=null)Owner.RecordingBinding.ObserveDisplayCleared();return true;}
+            catch{clearUncertain=true;Owner.MarkCleanupUncertain();return false;}
         }
         public void Dispose()
         {if(closed)return;closed=true;ClearForSafety();process.Dispose();}

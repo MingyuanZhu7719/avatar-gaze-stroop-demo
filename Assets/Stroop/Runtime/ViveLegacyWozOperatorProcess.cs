@@ -242,10 +242,10 @@ namespace AvatarStroop.Runtime
                 return new ViveLegacyWozOperatorProcess(p,clock,source,transport,age,false);}
             catch{transport.Dispose();if(source!=null)source.Dispose();throw;}
         }
-        internal static ViveLegacyWozOperatorProcess Synthetic(ViveLegacyWozProcessPairing p,MonotonicClock clock,ViveLegacyWozObservationOwner.SyntheticObservations provider,IPEndPoint local,IPEndPoint remote,double age,ViveLegacyWozProcessTransport.MemorySocket socket)
+        internal static ViveLegacyWozOperatorProcess Synthetic(ViveLegacyWozProcessPairing p,MonotonicClock clock,ViveLegacyWozObservationOwner.SyntheticObservations provider,IPEndPoint local,IPEndPoint remote,double age,ViveLegacyWozProcessTransport.MemorySocket socket,bool photonTiming=false)
         {
             if(p.Context.Operator.Source!=ControlSource.Simulator)throw new InvalidOperationException("Fixture requires explicit Simulator context");
-            var transport=socket==null?new ViveLegacyWozProcessTransport(p,PeerRole.Operator,clock,local,remote,age):ViveLegacyWozProcessTransport.Memory(p,PeerRole.Operator,clock,local,remote,age,socket);
+            var transport=socket==null?new ViveLegacyWozProcessTransport(p,PeerRole.Operator,clock,local,remote,age):ViveLegacyWozProcessTransport.Memory(p,PeerRole.Operator,clock,local,remote,age,socket,photonTiming);
             ViveLegacyWozObservationOwner source=null;
             try{source=ViveLegacyWozObservationOwner.BindSynthetic(p.Context.Participant.SessionId,p.EpochLabel,clock,provider,age);
                 return new ViveLegacyWozOperatorProcess(p,clock,source,transport,age,false);}

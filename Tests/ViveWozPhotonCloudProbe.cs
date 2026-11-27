@@ -196,7 +196,7 @@ namespace AvatarStroop.Tests
                             Require(p.CurrentPose is ViveLegacyWozParticipantProcess.PhotonEvidence&&p.CurrentPose.SyntheticObservationsOnly,"pose_evidence");
                             scene.Present();Require(scene.MayShowTask,"actual_scene_display");
                             task.MarkPresented(task.CurrentTrial.TrialId);scene.NotePresented(task.CurrentTrial.TrialId);scene.AfterTaskMutation();
-                            var sustained=Stopwatch.StartNew();int freshFrames=0,totalFrames=0,proofFrames=0,poseFrames=0,reverseFrames=0;double lastGap=-1,lastReverseSend=pc.Now,reverseGapStarted=0,maxReverseGap=0,previousMain=pc.Now;long lastCycle=-1;bool previousReverse=true;
+                            var sustained=Stopwatch.StartNew();int admissibleFrames=0,freshFrames=0,heldFrames=0,totalFrames=0,proofFrames=0,poseFrames=0,reverseFrames=0;double maxPoseReceiptAge=0,maxHeldAge=0,lastGap=-1,lastReverseSend=pc.Now,reverseGapStarted=0,maxReverseGap=0,previousMain=pc.Now;long lastCycle=-1;bool previousReverse=true;
                             while(sustained.Elapsed.TotalSeconds<12)
                             {
                                 if(serviceFirst)service();
@@ -213,8 +213,13 @@ namespace AvatarStroop.Tests
                                 // Every measured frame follows actual onset.
                                 // A stale formal frame must stop the scene.
                                 if(sustained.Elapsed.TotalSeconds>=0)
-                                {totalFrames++;bool proofFresh=p.ControlledEvidenceFresh(p.DisplayPreflight),poseFresh=p.ControlledEvidenceFresh(p.DisplayPose);
-                                    if(proofFresh)proofFrames++;if(poseFresh)poseFrames++;if(proofFresh&&poseFresh)freshFrames++;
+                                {totalFrames++;bool proofFresh=p.ControlledEvidenceFresh(p.DisplayPreflight);
+                                    ViveLegacyWozParticipantProcess.Evidence displayed;double displayedAt,receiptAge;bool held;
+                                    bool poseFresh=p.TryGetDisplayPoseTiming(out displayed,out displayedAt,out receiptAge,out held);
+                                    if(proofFresh)proofFrames++;if(poseFresh){poseFrames++;maxPoseReceiptAge=Math.Max(maxPoseReceiptAge,receiptAge);}
+                                    if(proofFresh&&poseFresh){admissibleFrames++;if(held){heldFrames++;maxHeldAge=Math.Max(maxHeldAge,receiptAge);
+                                            Require(receiptAge>p.PoseHoldThresholdSeconds&&receiptAge<=p.LocalReceiptBudgetSeconds,"held_pose_outside_explicit_budget");}
+                                        else freshFrames++;}
                                     Rotation reverseHead;Vec3 reverseEye;bool reverse=op.TryGetParticipantAvatarPose(out reverseHead,out reverseEye);if(reverse)reverseFrames++;
                                     if(!reverse){var flags=BindingFlags.NonPublic|BindingFlags.Instance;var type=typeof(ViveLegacyWozOperatorProcess);
                                         double remaining=(double)type.GetField("participantAvatarExpires",flags).GetValue(op)-oc.Now,sendAge=pc.Now-lastReverseSend;
@@ -235,8 +240,8 @@ namespace AvatarStroop.Tests
                                 if(p.TrySendParticipantAvatarPose(new Rotation(0,.6,0,.8),new Vec3(-.6,0,.8),pc.Now))lastReverseSend=pc.Now;
                                 Thread.Sleep(5);
                             }
-                            Console.WriteLine("photon_maintained_fresh_frames="+freshFrames+" total_frames="+totalFrames+" proof_frames="+proofFrames+" pose_frames="+poseFrames+" reverse_avatar_frames="+reverseFrames+" reverse_expiry_masked_frames="+(totalFrames-reverseFrames)+" max_reverse_gap_ms="+(int)(1000*maxReverseGap));
-                            Require(totalFrames>0&&freshFrames==totalFrames,"maintained_formal_display_gap");
+                            Console.WriteLine("photon_maintained_admissible_frames="+admissibleFrames+" fresh_frames="+freshFrames+" held_frames="+heldFrames+" max_pose_receipt_age_ms="+(int)(1000*maxPoseReceiptAge)+" max_held_age_ms="+(int)(1000*maxHeldAge)+" total_frames="+totalFrames+" proof_frames="+proofFrames+" pose_frames="+poseFrames+" reverse_avatar_frames="+reverseFrames+" reverse_expiry_masked_frames="+(totalFrames-reverseFrames)+" max_reverse_gap_ms="+(int)(1000*maxReverseGap));
+                            Require(totalFrames>0&&admissibleFrames==totalFrames&&freshFrames+heldFrames==totalFrames,"maintained_formal_display_gap");
                             Require(reverseFrames>0&&previousReverse,"reverse_avatar_did_not_recover");
                             Require(p.RevokeSource()&&task.Phase==Phase.Paused,"local_revoke");
                             Until(()=>p.SourceRevokeAcknowledged,()=>{service();op.Tick();p.Tick();},10,"revoke_ack");

@@ -14,7 +14,7 @@ namespace AvatarStroop.Runtime
     public sealed class ViveWozPhotonSession : IDisposable
     {
         const byte Hello=31,Confirm=32,ConfirmAck=33,Offer=34,OperatorStart=35,ParticipantStart=36,Datagram=37;
-        const string Version="avatar-woz-photon-2";
+        const string Version="avatar-woz-photon-3";
         readonly Thread thread=Thread.CurrentThread;
         readonly MonotonicClock clock;
         readonly bool participant;
@@ -70,6 +70,9 @@ namespace AvatarStroop.Runtime
         {return new AppSettings{AppIdRealtime=appId,AppVersion=Version,FixedRegion=region,
             Protocol=ConnectionProtocol.WebSocketSecure,EnableProtocolFallback=false,
             ClientLogging=LogLevel.Off,NetworkLogging=LogLevel.Off};}
+        internal static bool ValidPeerHello(string[] fields,bool participant)
+        {return fields!=null&&fields.Length==4&&fields[0]==Version&&fields[1]==(participant?"operator":"participant")&&
+            Nonce(fields[2])&&!String.IsNullOrEmpty(fields[3])&&fields[3].Length<=160;}
         void Owner(){if(!Object.ReferenceEquals(thread,Thread.CurrentThread))throw new InvalidOperationException("Photon owner thread required.");}
         double Now
         {get{Owner();double at;if(!clock.TryReadRecordingAdmissionTime(out at)||at<lastTime)throw new InvalidOperationException("Current monotonic clock required.");lastTime=at;return at;}}
@@ -154,8 +157,7 @@ namespace AvatarStroop.Runtime
             if(fields==null){Fail("setup_shape");return;}
             if(value.Code==Hello)
             {
-                if(fields.Length!=4||fields[0]!=Version||fields[1]!=(participant?"operator":"participant")||
-                    !Nonce(fields[2])||String.IsNullOrEmpty(fields[3])||fields[3].Length>160)
+                if(!ValidPeerHello(fields,participant))
                 {Fail("peer_hello");return;}
                 if(helloReceived){if(remoteNonce!=fields[2]||remoteClock!=fields[3])Fail("peer_hello_changed");return;}
                 remoteNonce=fields[2];remoteClock=fields[3];helloReceived=true;

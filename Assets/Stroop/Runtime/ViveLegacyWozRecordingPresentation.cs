@@ -29,7 +29,7 @@ namespace AvatarStroop.Runtime
             if(!absent&&(pose==null||!process.ControlledEvidenceFresh(pose)||pose.Pose==null||!pose.Pose.HeadValid||!pose.Pose.EyeValid||
                 (synthetic?!(pose is ViveLegacyWozParticipantProcess.MemoryEvidence):!ViveLegacyWozParticipantProcess.IsActualNetworkEvidence(pose)||pose.SyntheticObservationsOnly)))return false;
             LastPresentationIssue="owner_capture";ViveLegacyWozTaskOwner.Binding task;if(!owner.TryCapture(out task))return false;
-            LastPresentationIssue="pose_lineage";var fields=absent?null:process.CapturePresentationFields(pose);if(!absent&&fields==null)return false;
+            LastPresentationIssue="pose_lineage";var fields=absent?null:process.CapturePoseDisplayFields(pose,false,true);if(!absent&&fields==null)return false;
             result=new PresentationEvidence(this,absent?null:pose,task.Task.TrialId,task.WireRevision,fields);pendingPresentation=result;LastPresentationIssue=null;return true;
         }
         internal bool PresentationCurrent(PresentationEvidence value,bool requireApplied)
@@ -46,6 +46,7 @@ namespace AvatarStroop.Runtime
         // use, not physical HMD visibility or optical onset.
         internal void NoteSceneApplied(ViveLegacyWozControlledScene scene,ViveLegacyWozParticipantProcess.Evidence value)
         {
+            ObserveAppliedDisplay(scene,value);
             var pending=pendingPresentation;
             if(!owner.ControlledSceneCurrent(scene)||pending==null||!Object.ReferenceEquals(pending.Pose,value)||!PresentationCurrent(pending,false))return;
             pending.Applied=true;

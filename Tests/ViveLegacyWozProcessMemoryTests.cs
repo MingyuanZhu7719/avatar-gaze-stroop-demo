@@ -40,13 +40,13 @@ namespace AvatarStroop.Tests
             internal readonly ViveLegacyWozProcessTransport.MemorySocket PS=new ViveLegacyWozProcessTransport.MemorySocket(),OS=new ViveLegacyWozProcessTransport.MemorySocket();
             internal readonly IPEndPoint PE=new IPEndPoint(IPAddress.Loopback,45171),OE=new IPEndPoint(IPAddress.Loopback,45172);
             long sequence;
-            internal Fixture(double age=1,bool consent=true,bool shareParticipantAvatar=false,bool startWithD=false)
+            internal Fixture(double age=1,bool consent=true,bool shareParticipantAvatar=false,bool startWithD=false,bool photonTiming=false)
             {
                 Task=Prepare(PC,startWithD);Owner=Task.CreateLegacyWozTaskOwner(PC);Observations=new ViveLegacyWozObservationOwner.SyntheticObservations(OC);PS.Other=OS;OS.Other=PS;
                 using(var offer=ViveLegacyWozProcessPairing.CreateSyntheticOffer(Owner,"local-owner",OC.ClockId,shareParticipantAvatar))
                 {
                     char[] token=offer.RevealToken();try{using(var imported=ViveLegacyWozProcessPairing.Parse(token))
-                    {P=ViveLegacyWozParticipantProcess.Memory(offer,Owner,PE,OE,age,PS);O=ViveLegacyWozOperatorProcess.Synthetic(imported,OC,Observations,OE,PE,age,OS);}}
+                    {P=ViveLegacyWozParticipantProcess.Memory(offer,Owner,PE,OE,age,PS,photonTiming);O=ViveLegacyWozOperatorProcess.Synthetic(imported,OC,Observations,OE,PE,age,OS,photonTiming);}}
                     finally{Array.Clear(token,0,token.Length);}
                 }
                 Assert(P.Start(),P.LastIssue);Assert(O.Start(),O.LastIssue);if(consent)Assert(O.ConfirmLocalOperatorSource());
@@ -60,6 +60,7 @@ namespace AvatarStroop.Tests
         }
         public static int Main(string[] args)
         {
+            passed=0;failed=0;
             if(args.Length==1&&args[0]=="--two-process-loopback")return ViveLegacyWozTwoProcessLoopback.Coordinate();
             if(args.Length==4&&args[0]=="--role")return ViveLegacyWozTwoProcessLoopback.Role(args[1],args[2],args[3]);
             filter=args.Length==0||String.IsNullOrEmpty(args[0])?null:args[0];int baseline=0;
@@ -175,6 +176,44 @@ namespace AvatarStroop.Tests
             Test("MainTask pose requires fresh preflight and survives harmless Tick",()=>{
                 using(var f=new Fixture(5)){f.Main();f.Task.Tick();f.Pose();Eq(ControlSource.Simulator,f.P.CurrentPose.Pose.Source);Eq(1L,f.P.CurrentPose.Pose.Sequence);
                     Assert(!f.O.PollObservation(),"repeated native observation accepted");}
+            });
+            Test("Photon hold retains original pose receipt resets on a fresh pose and stops beyond300ms",()=>{
+                using(var f=new Fixture(5,photonTiming:true))
+                {
+                    f.Main();f.Pose();var original=f.P.DisplayPose;
+                    var sink=new ViveLegacyWozControlledScene.MemorySink();var scene=ViveLegacyWozControlledScene.CreateMemoryFixture(f.P,sink);
+                    scene.Present();Assert(sink.Output!=null&&scene.MayShowTask);f.Task.MarkPresented(f.Task.CurrentTrial.TrialId);scene.NotePresented(f.Task.CurrentTrial.TrialId);
+                    Thread.Sleep(180);
+                    ViveLegacyWozParticipantProcess.Evidence observed;double at,age;bool held;
+                    Assert(f.P.TryGetDisplayPoseTiming(out observed,out at,out age,out held));
+                    Assert(held&&age>.15&&age<=.30&&Object.ReferenceEquals(original,observed));
+                    Eq(at-original.OriginalReceiptParticipantSeconds,age);Assert(observed is ViveLegacyWozParticipantProcess.MemoryEvidence);
+                    scene.RecheckPresentation();Assert(!scene.Closed&&scene.MayShowTask,"explicit held pose should keep presented task running");
+                    f.Pose();Assert(f.P.TryGetDisplayPoseTiming(out observed,out at,out age,out held));
+                    Assert(!held&&!Object.ReferenceEquals(original,observed)&&observed.OriginalReceiptParticipantSeconds>original.OriginalReceiptParticipantSeconds);
+                    Thread.Sleep(315);Assert(!f.P.TryGetDisplayPoseTiming(out observed,out at,out age,out held));
+                    Assert(observed==null&&!held&&at==-1&&age==-1);scene.RecheckPresentation();
+                    Assert(scene.Closed&&f.P.Terminal&&sink.Output==null);Eq(Phase.Paused,f.Task.Phase);
+                }
+            });
+            Test("Photon hold never invents a missing pose or crosses a changed trial",()=>{
+                using(var f=new Fixture(5,photonTiming:true))
+                {
+                    f.Main();ViveLegacyWozParticipantProcess.Evidence value;double at,age;bool held;
+                    Assert(!f.P.TryGetDisplayPoseTiming(out value,out at,out age,out held)&&value==null&&!held);
+                    f.Pose();Thread.Sleep(180);Assert(f.P.TryGetDisplayPoseTiming(out value,out at,out age,out held)&&held);
+                    Respond(f.Task);Assert(!f.P.TryGetDisplayPoseTiming(out value,out at,out age,out held)&&value==null&&!held);
+                }
+            });
+            Test("Photon hold cannot accept a replayed or out-of-order source pose",()=>{
+                using(var f=new Fixture(5,photonTiming:true))
+                {
+                    f.Main();f.Fresh();Assert(f.O.PollObservation());var old=f.PS.Queue.Dequeue();
+                    f.Pose();f.PS.Queue.Enqueue(old);f.P.Tick();
+                    ViveLegacyWozParticipantProcess.Evidence value;double at,age;bool held;
+                    Assert(f.P.Terminal&&!f.P.TryGetDisplayPoseTiming(out value,out at,out age,out held)&&value==null&&!held);
+                    Eq(Phase.Paused,f.Task.Phase);
+                }
             });
             Test("participant avatar requires opt-in and a confirmed formal task",()=>{
                 var head=Rotation.Identity;var gaze=new Vec3(0,0,1);
