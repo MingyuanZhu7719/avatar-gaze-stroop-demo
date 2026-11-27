@@ -16,6 +16,38 @@ namespace AvatarStroop.Tests
     // no headset, recording, participant ID, filesystem data or user tracking.
     public static class ViveWozPhotonCloudProbe
     {
+        static readonly BindingFlags DiagnosticFlags=BindingFlags.NonPublic|BindingFlags.Instance;
+        static readonly FieldInfo DiagnosticTask=typeof(ViveLegacyWozParticipantProcess).GetField("task",DiagnosticFlags);
+        static readonly FieldInfo DiagnosticPreflight=typeof(ViveLegacyWozParticipantProcess).GetField("preflight",DiagnosticFlags);
+        static readonly FieldInfo DiagnosticPose=typeof(ViveLegacyWozParticipantProcess).GetField("pose",DiagnosticFlags);
+        static readonly FieldInfo DiagnosticRetainedPreflight=typeof(ViveLegacyWozParticipantProcess).GetField("retainedPreflight",DiagnosticFlags);
+        static readonly FieldInfo DiagnosticRetainedPose=typeof(ViveLegacyWozParticipantProcess).GetField("retainedPose",DiagnosticFlags);
+        static readonly FieldInfo DiagnosticRetainedIssued=typeof(ViveLegacyWozParticipantProcess).GetField("retainedTaskIssued",DiagnosticFlags);
+        static readonly FieldInfo DiagnosticPending=typeof(ViveLegacyWozParticipantProcess).GetField("pendingCycle",DiagnosticFlags);
+        static readonly FieldInfo DiagnosticAcknowledged=typeof(ViveLegacyWozParticipantProcess).GetField("taskAcknowledged",DiagnosticFlags);
+        // Capture immutable evidence references before the guard can dispose the
+        // process. Formatting only on failure avoids logging in the timed path.
+        struct FreshnessSnapshot
+        {
+            internal double Now,LoopMilliseconds,ServiceMilliseconds,RetainedIssued;
+            internal WozLanTaskContext Task;
+            internal ViveLegacyWozParticipantProcess.Evidence Proof,Pose,RetainedProof,RetainedPose;
+            internal bool Pending,Acknowledged;
+            internal static FreshnessSnapshot Capture(ViveLegacyWozParticipantProcess p,double now,double previous,double serviced)
+            {return new FreshnessSnapshot{Now=now,LoopMilliseconds=1000*(now-previous),ServiceMilliseconds=1000*(now-serviced),
+                Task=(WozLanTaskContext)DiagnosticTask.GetValue(p),Proof=(ViveLegacyWozParticipantProcess.Evidence)DiagnosticPreflight.GetValue(p),
+                Pose=(ViveLegacyWozParticipantProcess.Evidence)DiagnosticPose.GetValue(p),RetainedProof=(ViveLegacyWozParticipantProcess.Evidence)DiagnosticRetainedPreflight.GetValue(p),
+                RetainedPose=(ViveLegacyWozParticipantProcess.Evidence)DiagnosticRetainedPose.GetValue(p),RetainedIssued=(double)DiagnosticRetainedIssued.GetValue(p),
+                Pending=(bool)DiagnosticPending.GetValue(p),Acknowledged=(bool)DiagnosticAcknowledged.GetValue(p)};}
+            string Evidence(string label,ViveLegacyWozParticipantProcess.Evidence e)
+            {return label+"="+(e==null?"none":"seq:"+e.TaskPacketSequence+",task_ms:"+(int)(1000*(Now-e.OriginalTaskIssuedParticipantSeconds))+
+                ",receipt_ms:"+(int)(1000*(Now-e.OriginalReceiptParticipantSeconds))+",head_capture_ms:"+(int)(1000*(e.OriginalSendOperatorSeconds-e.OriginalHeadObservedOperatorSeconds))+
+                ",eye_capture_ms:"+(int)(1000*(e.OriginalSendOperatorSeconds-e.OriginalEyeObservedOperatorSeconds)));}
+            internal string Describe()
+            {return "loop_ms="+(int)LoopMilliseconds+" service_age_ms="+(int)ServiceMilliseconds+" current_task_seq="+(Task==null?-1:Task.ParticipantSequence)+
+                " current_task_ms="+(Task==null?-1:(int)(1000*(Now-Task.ParticipantSentSeconds)))+" retained_task_ms="+(int)(1000*(Now-RetainedIssued))+
+                " pending="+Pending+" ack="+Acknowledged+" "+Evidence("proof",Proof)+" "+Evidence("pose",Pose)+" "+Evidence("retained_proof",RetainedProof)+" "+Evidence("retained_pose",RetainedPose);}
+        }
         static void Require(bool value,string reason){if(!value)throw new InvalidOperationException(reason);}
         static ViveDevelopmentParticipant Prepare(MonotonicClock clock)
         {
@@ -67,13 +99,16 @@ namespace AvatarStroop.Tests
             string region=Regex.Match(config,"\"region\"\\s*:\\s*\"([^\"]+)\"").Groups[1].Value;
             var pc=new MonotonicClock("synthetic-p-"+Guid.NewGuid().ToString("N"));
             var oc=new MonotonicClock("synthetic-o-"+Guid.NewGuid().ToString("N"));
+            bool serviceFirst=Environment.GetEnvironmentVariable("STROOP_PHOTON_PROBE_SERVICE_FIRST")=="1";
+            Console.WriteLine("photon_probe_service_first="+(serviceFirst?1:0));
             using(var opRoom=ViveWozPhotonSession.CreateOperator(appId,region,oc))
             {
                 Action opService=()=>{opRoom.Service();Require(!opRoom.Terminal,"operator_setup:"+opRoom.FailureReason);};
                 Until(()=>opRoom.RoomReady,opService,20,"create_room");
                 using(var pRoom=ViveWozPhotonSession.JoinParticipant(appId,region,pc,opRoom.RoomCode))
                 {
-                    Action service=()=>{opRoom.Service();pRoom.Service();Require(!opRoom.Terminal,"operator_room:"+opRoom.FailureReason);Require(!pRoom.Terminal,"participant_room:"+pRoom.FailureReason);};
+                    double lastServiced=pc.Now;
+                    Action service=()=>{opRoom.Service();pRoom.Service();lastServiced=pc.Now;Require(!opRoom.Terminal,"operator_room:"+opRoom.FailureReason);Require(!pRoom.Terminal,"participant_room:"+pRoom.FailureReason);};
                     Until(()=>opRoom.PeerConnected&&pRoom.PeerConnected,service,20,"join_room");
                     Require(!pRoom.ReadyForOffer&&!opRoom.PeerConfirmed,"no_implicit_accept");
                     opRoom.ConfirmPeer();Until(()=>pRoom.ReadyForOffer&&opRoom.PeerConfirmed,service,10,"peer_confirm");
@@ -141,11 +176,15 @@ namespace AvatarStroop.Tests
                             Until(()=>scene.CanBeginCountdown,()=>{scene.PumpBeforeTask();pump();Require(!scene.Closed,"readiness_scene_closed");},10,"wait_current_countdown_proof");
                             Require(scene.BeginCountdown(),"actual_scene_countdown");
                             Console.WriteLine("photon_stage=countdown_started");
-                            long countdownCycle=-1;
+                            long countdownCycle=-1;double previousCountdown=pc.Now;
                             Until(()=>task.Phase==Phase.MainTask,()=>{
+                                if(serviceFirst)service();
+                                var diagnostic=FreshnessSnapshot.Capture(p,pc.Now,previousCountdown,lastServiced);previousCountdown=pc.Now;
                                 var before=task.Phase;var beforeProof=p.DisplayPreflight;double proofAge=beforeProof==null?-1:pc.Now-beforeProof.OriginalTaskIssuedParticipantSeconds;
                                 double retainedAge=pc.Now-(double)typeof(ViveLegacyWozParticipantProcess).GetField("retainedTaskIssued",BindingFlags.NonPublic|BindingFlags.Instance).GetValue(p);
-                                bool ready=scene.PumpBeforeTask();Require(!scene.Closed,"countdown_scene_closed before="+before+" after="+task.Phase+" proof_age_ms="+(int)(proofAge*1000)+" retained_task_ms="+(int)(retainedAge*1000));pump();
+                                bool ready=scene.PumpBeforeTask();
+                                if(scene.Closed)Console.WriteLine("photon_failure_freshness stage=countdown "+diagnostic.Describe());
+                                Require(!scene.Closed,"countdown_scene_closed before="+before+" after="+task.Phase+" proof_age_ms="+(int)(proofAge*1000)+" retained_task_ms="+(int)(retainedAge*1000));pump();
                                 var proof=p.CurrentPreflight;if(proof!=null&&proof.TaskPacketSequence!=countdownCycle){countdownCycle=proof.TaskPacketSequence;Console.WriteLine("photon_countdown_cycle_ms="+(int)(1000*(proof.OriginalReceiptParticipantSeconds-proof.OriginalTaskIssuedParticipantSeconds)));}
                                 if(ready){task.Tick();scene.AfterTaskMutation();}
                             },8,"countdown_wait");
@@ -157,10 +196,18 @@ namespace AvatarStroop.Tests
                             Require(p.CurrentPose is ViveLegacyWozParticipantProcess.PhotonEvidence&&p.CurrentPose.SyntheticObservationsOnly,"pose_evidence");
                             scene.Present();Require(scene.MayShowTask,"actual_scene_display");
                             task.MarkPresented(task.CurrentTrial.TrialId);scene.NotePresented(task.CurrentTrial.TrialId);scene.AfterTaskMutation();
-                            var sustained=Stopwatch.StartNew();int freshFrames=0,totalFrames=0,proofFrames=0,poseFrames=0,reverseFrames=0;double lastGap=-1,lastReverseSend=pc.Now,reverseGapStarted=0,maxReverseGap=0;long lastCycle=-1;bool previousReverse=true;
+                            var sustained=Stopwatch.StartNew();int freshFrames=0,totalFrames=0,proofFrames=0,poseFrames=0,reverseFrames=0;double lastGap=-1,lastReverseSend=pc.Now,reverseGapStarted=0,maxReverseGap=0,previousMain=pc.Now;long lastCycle=-1;bool previousReverse=true;
                             while(sustained.Elapsed.TotalSeconds<12)
                             {
-                                scene.PumpBeforeTask();pump();Require(!scene.Closed,"maintained_scene_closed");scene.Present();scene.RecheckPresentation();
+                                if(serviceFirst)service();
+                                var diagnostic=FreshnessSnapshot.Capture(p,pc.Now,previousMain,lastServiced);previousMain=pc.Now;
+                                scene.PumpBeforeTask();
+                                if(scene.Closed)Console.WriteLine("photon_failure_freshness stage=main_before_pump "+diagnostic.Describe());
+                                Require(!scene.Closed,"maintained_scene_closed_before_pump:"+p.LastIssue);pump();
+                                diagnostic=FreshnessSnapshot.Capture(p,pc.Now,previousMain,lastServiced);
+                                scene.Present();scene.RecheckPresentation();
+                                if(scene.Closed)Console.WriteLine("photon_failure_freshness stage=main_after_pump "+diagnostic.Describe());
+                                Require(!scene.Closed,"maintained_scene_closed_after_pump:"+p.LastIssue);
                                 var cycle=p.CurrentPreflight;
                                 if(cycle!=null&&cycle.TaskPacketSequence!=lastCycle){lastCycle=cycle.TaskPacketSequence;double elapsed=cycle.OriginalReceiptParticipantSeconds-cycle.OriginalTaskIssuedParticipantSeconds;maxCycle=Math.Max(maxCycle,elapsed);Console.WriteLine("photon_renewal_cycle_ms="+(int)(1000*elapsed));}
                                 // Every measured frame follows actual onset.
