@@ -38,6 +38,9 @@ namespace AvatarStroop.Unity.Editor
                 Require(!owner.NetworkOpen&&!owner.Configured&&!owner.CanRecordOrExport&&!owner.CanEnterLiveCountdown,
                     "operator form must not gain task, recording or countdown authority");
 
+                Require(!(bool)Get(owner,"showManualPairing")&&!(bool)Call(owner,"ConnectionSettingsValid"),
+                    "default Photon form must require an actual confirmed room");
+                Set(owner,"showManualPairing",true);
                 Set(owner,"localIp","192.168.50.2");Set(owner,"remoteIp","192.168.50.3");
                 Require((bool)Call(owner,"ConnectionSettingsValid"),"valid isolated LAN form rejected");
                 Set(owner,"remoteIp","not-an-address");Require(!(bool)Call(owner,"ConnectionSettingsValid"),"invalid address accepted");

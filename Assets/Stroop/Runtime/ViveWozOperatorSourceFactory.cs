@@ -60,7 +60,7 @@ namespace AvatarStroop.Runtime
             }
             lastLocalTime=now;
             if(task==null||task.SessionId!=sessionId||task.Phase!=Phase.MainTask||task.BlockIndex<0||task.Segment<0||
-                !task.Condition.HasValue||task.Condition==Condition.D||String.IsNullOrWhiteSpace(task.TrialId)||!task.Word.HasValue||!task.Ink.HasValue)
+                !task.Condition.HasValue||task.Condition==Condition.D||String.IsNullOrWhiteSpace(task.TrialId)||!task.HasStimulus)
                 throw new InvalidOperationException("A matching active visible task context is required");
             if(task.BlockIndex<block||(task.BlockIndex==block&&task.Segment<segment))
                 throw new InvalidOperationException("Older block or segment requires a new explicit epoch");

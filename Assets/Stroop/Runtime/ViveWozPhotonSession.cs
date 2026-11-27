@@ -14,7 +14,7 @@ namespace AvatarStroop.Runtime
     public sealed class ViveWozPhotonSession : IDisposable
     {
         const byte Hello=31,Confirm=32,ConfirmAck=33,Offer=34,OperatorStart=35,ParticipantStart=36,Datagram=37;
-        const string Version="avatar-woz-photon-1";
+        const string Version="avatar-woz-photon-2";
         readonly Thread thread=Thread.CurrentThread;
         readonly MonotonicClock clock;
         readonly bool participant;

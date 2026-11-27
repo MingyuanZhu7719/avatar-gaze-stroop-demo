@@ -39,6 +39,30 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("participant analysis exports explicit control mode and identical raw CSV results for all three WoZ tasks",()=>{
+                using(var files=new Files())
+                for(int mode=0;mode<3;mode++)
+                {
+                    Experiment experiment;byte[] bytes=TutorialRecordingRoundtripTests.Fixture(true,mode,out experiment,true,"P017",true);
+                    File.WriteAllBytes(files.Raw,bytes);
+                    using(var input=new MemoryStream(bytes,false))using(var output=new MemoryStream())
+                    {
+                        Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,
+                            ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,8388608,5000,134217728,CancellationToken.None));
+                        File.WriteAllBytes(files.Csv,output.ToArray());
+                    }
+                    string raw=Path.GetDirectoryName(StudyAnalysisFiles.Run(new[]{files.Raw},files.Output,null,CancellationToken.None));
+                    string csv=Path.GetDirectoryName(StudyAnalysisFiles.Run(new[]{files.Csv},files.Output,null,CancellationToken.None));
+                    foreach(string table in new[]{"trials","blocks","contrasts","training_attempts","visual_search_items","visual_search_events","ratings","eye_quality","eye_availability","aoi_observations","event_counts"})
+                    {
+                        string content=File.ReadAllText(Path.Combine(raw,table+".csv"));
+                        Check.True(content.Split('\n')[0].Contains("control_mode"),table);
+                        Check.Equal(content,File.ReadAllText(Path.Combine(csv,table+".csv")),table);
+                    }
+                    Check.True(File.ReadAllText(Path.Combine(raw,"trials.csv")).Contains("\"P017\",\""+experiment.Configuration.ParticipantAssignment.TaskKey+"\",\"OperatorWoZ\""));
+                    Check.True(File.ReadAllText(Path.Combine(raw,"sources.csv")).Contains("control_mode"));
+                }
+            });
             suite.Run("study availability CSV exports client failures and software observation bounds without filled gaze",()=>{
                 using(var files=new Files())
                 {

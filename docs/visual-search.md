@@ -1,6 +1,6 @@
 # Visual search development task
 
-Visual search v1 is an additional task in the existing Vive classroom. Select **Visual search** before configuring a session. It uses the existing Legacy A/B/C/D **Automatic** flow, a task-specific tutorial and practice exam, five-second countdowns, block-end fireworks, questionnaire, rests and final thank-you. Named and live WoZ search are not enabled in this first version. Existing Ink colour and Word meaning sessions remain separate task modes.
+Visual search is an additional task in the existing Vive classroom. Select **Visual search** before configuring a session. It uses the A/B/C/D flow with Automatic or explicitly enabled WoZ, a task-specific tutorial and practice exam, five-second countdowns, block-end fireworks, questionnaire, rests and final thank-you. Named designs are not enabled. Ink colour and Word meaning remain separate task modes.
 
 ## Search and selection
 
@@ -15,9 +15,13 @@ The development timeout for exam and formal trials is **30 seconds from the reco
 - Tutorial: unlimited questions using the same object-matching and controller rules, with feedback after each answer. The participant explicitly chooses when to enter the exam.
 - Practice exam: ten trials, five with 12 objects and five with 24. At least eight correct first responses passes. Failure returns to tutorial, and a new exam can be attempted without a fixed retry limit. This is `tutorial-exam-v1`; historical eight-item, six-correct practice recordings remain readable under their original protocol.
 - Formal task: four blocks of 24 trials, each containing 12 trials at each set size; 96 formal trials in total.
-- The current development condition order remains **B, C, A, D**, with stimulus lists 0–3. Search does not silently introduce a different study counterbalancing schedule.
+- The development condition order remains **B, C, A, D**, with stimulus lists 0–3. The [participant build](vive-participant-recording.md) instead assigns balanced orders and lists from the participant ID and task, identically for Automatic and WoZ.
 - The four lists use distinct deterministic layouts. Each formal list visits all 24 target slots once; the assignment of set size balances rows, columns and board halves. Object size stays fixed across set sizes.
-- The avatar follows the existing Automatic A/B/C/D rules. Search difficulty and target position are not used to drive its gaze, so its task-directed gaze is not an answer cue.
+- Automatic uses the existing A/B/C/D rules. WoZ uses the paired operator source under the existing condition contract. Search difficulty and target position do not automatically drive avatar gaze.
+
+## WoZ task display
+
+Both computers must use matching builds with the new wire protocol. The participant sends the immutable target and complete 12/24-object layout, including item slots, colours and patterns. The operator renders that exact layout rather than generating another one, and cannot submit an answer through this view. Answers, reaction times, questionnaires and raw participant eye samples stay local. The operator must follow the condition instructions and avoid using knowledge of the target to cue the participant.
 
 ## Recording and analysis
 

@@ -29,8 +29,7 @@ namespace AvatarStroop.Runtime
         {
             if(b==null)return false;var a=Task;var t=b.Task;
             return Selection==b.Selection&&OwnerId==b.OwnerId&&ChoiceActive==b.ChoiceActive&&PausedFrom==b.PausedFrom&&
-                a.SessionId==t.SessionId&&a.BlockIndex==t.BlockIndex&&a.Segment==t.Segment&&a.TrialId==t.TrialId&&
-                a.Word==t.Word&&a.Ink==t.Ink&&a.Phase==t.Phase&&a.Condition==t.Condition;
+                TaskSnapshot.Same(a,t);
         }
     }
     public sealed class ViveMutationStepCandidate

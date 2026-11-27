@@ -10,7 +10,7 @@ namespace AvatarStroop.Tests
 {
     public static class TutorialRecordingRoundtripTests
     {
-        static SessionConfiguration Configuration(bool legacy,int mode,bool formalOnly=false,string participantId=null)
+        static SessionConfiguration Configuration(bool legacy,int mode,bool formalOnly=false,string participantId=null,bool operatorWoz=false)
         {
             SessionConfiguration config;
             if(participantId!=null)
@@ -18,7 +18,7 @@ namespace AvatarStroop.Tests
                 ParticipantAssignment assignment;
                 Check.True(ParticipantAssignment.TryCreate(participantId,mode==2?TaskKind.VisualSearch:TaskKind.Stroop,
                     mode==1?ResponseRule.WordMeaning:ResponseRule.InkColor,out assignment));
-                var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,"fixture-design",assignment,"training-geometry",ViveFixedTrackpadMapping.Version);
+                var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,"fixture-design",assignment,"training-geometry",ViveFixedTrackpadMapping.Version,operatorWoz);
                 var basis=new SessionConfiguration(Guid.NewGuid().ToString("N"),ParticipantAssignment.StimulusSeed,assignment.Allocation,RunKind.Apparatus,"en",5,30,true,0,true,true,true);
                 basis=SessionConfiguration.WithTaskKind(basis,assignment.TaskKind);
                 basis=SessionConfiguration.WithResponseRule(basis,assignment.ResponseRule);
@@ -53,9 +53,9 @@ namespace AvatarStroop.Tests
             else
             {var colour=correct?trial.ExpectedResponse:(Colour)(((int)trial.ExpectedResponse+1)%4);Check.True(e.ButtonChanged(colour,true));e.ButtonChanged(colour,false);}
         }
-        static byte[] Fixture(bool legacy,int mode,out Experiment experiment,bool formalOnly=false,string participantId=null)
+        internal static byte[] Fixture(bool legacy,int mode,out Experiment experiment,bool formalOnly=false,string participantId=null,bool operatorWoz=false)
         {
-            var config=Configuration(legacy,mode,formalOnly,participantId);var clock=new ManualClock();var e=new Experiment(config,clock);experiment=e;
+            var config=Configuration(legacy,mode,formalOnly,participantId,operatorWoz);var clock=new ManualClock();var e=new Experiment(config,clock);experiment=e;
             e.RecordRawSoftwareChoices(clock.ClockId,0,0);
             Check.Throws<InvalidOperationException>(()=>e.PrepareRawRecordingBlockPlan(Actor.Owner,true));
             e.BeginFamiliarization(Actor.Owner);e.BeginTutorial(Actor.Owner);Answer(e,clock,false);e.ContinueTutorial();
@@ -80,12 +80,26 @@ namespace AvatarStroop.Tests
                 Check.Equal(Phase.PracticeExamResult,e.Phase);Check.Equal(score,e.PracticeCorrect);
                 e.ContinuePracticeExamResult();Check.Equal(attempt<3?Phase.Tutorial:Phase.BlockPreparation,e.Phase);
             }
-            if(legacy)e.LockBlock(Actor.Owner,ControlSelection.Automatic,"synthetic-owner");else e.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");
+            if(legacy)
+            {
+                if(participantId!=null)
+                    Check.Throws<InvalidOperationException>(()=>e.LockBlock(Actor.Owner,operatorWoz?ControlSelection.Automatic:ControlSelection.LiveWoz,"synthetic-owner"));
+                e.LockBlock(Actor.Owner,operatorWoz?ControlSelection.LiveWoz:ControlSelection.Automatic,"synthetic-owner");
+            }
+            else e.ConfirmNamedPlan(Actor.Owner,"synthetic-owner");
             for(int block=0;block<4;block++)
             {
                 e.PrepareRawRecordingBlockPlan(Actor.Owner,false);
                 if(block==0)e.BeginCountdown(Actor.Owner,true);else Check.True(e.TryBeginRetainedBlockCountdown(true));
                 clock.Advance(5);e.Tick();Check.Equal(Phase.MainTask,e.Phase);
+                if(operatorWoz)
+                {
+                    // Explicitly synthetic schema evidence, not transport or
+                    // device proof; exercises the typed-event assignment path.
+                    var evidence=ViveLegacyWozRawSchemaTests.Fields(participant:clock.Now-3);
+                    evidence["woz_participant_clock_id"]=clock.ClockId;
+                    e.RecordLegacyWozEvidence(evidence);
+                }
                 for(int i=0;i<24;i++)Answer(e,clock,true);
                 Check.Equal(Phase.Questionnaire,e.Phase);Check.True(e.AcknowledgeQuestionnaireInstruction());
                 for(int i=0;i<Questionnaire.Count;i++)e.Rate(3);
@@ -96,32 +110,47 @@ namespace AvatarStroop.Tests
             var manifest=new ViveNamedSessionFrameAdmission.Manifest(context,clock.ClockId,true,0,0);manifest.SealChoiceTime(0,0);
             using(var output=new MemoryStream())
             {
-                byte[] previous=new byte[32];long ordinal=0,tasks=0;
+                byte[] previous=new byte[32];long ordinal=0,tasks=0,quality=0;
                 Action<byte[],bool> append=(payload,magic)=>
-                {byte[] digest;byte[] framed=participantId!=null?ViveRawSessionJournalCodec.FrameV6(payload,previous,magic,out digest):legacy?ViveRawSessionJournalCodec.FrameV4(payload,previous,magic,out digest):ViveRawSessionJournalCodec.FrameV3(payload,previous,magic,out digest);
+                {byte[] digest;byte[] framed=operatorWoz?ViveRawSessionJournalCodec.FrameV7(payload,previous,magic,out digest):participantId!=null?ViveRawSessionJournalCodec.FrameV6(payload,previous,magic,out digest):legacy?ViveRawSessionJournalCodec.FrameV4(payload,previous,magic,out digest):ViveRawSessionJournalCodec.FrameV3(payload,previous,magic,out digest);
                     output.Write(framed,0,framed.Length);previous=digest;};
                 append(ViveRawSessionJournalCodec.CurrentManifestPayload(manifest),true);
                 foreach(var item in e.Events.Skip(1))
-                {append(ViveRawSessionJournalCodec.RecordPayload(++ordinal,item,manifest),false);tasks++;}
-                append(ViveRawSessionJournalCodec.TerminalPayloadV3(ordinal+1,e.Events.Last().Sequence,tasks,0,0,tasks,clock.Now),false);
+                {
+                    append(ViveRawSessionJournalCodec.RecordPayload(++ordinal,item,manifest),false);tasks++;
+                    if(operatorWoz&&item.Kind=="first_response"&&item.BlockIndex==0&&quality<2)
+                    {
+                        // A missing-client observation is independent of a
+                        // completed behavioural response; no gaze is invented.
+                        append(ViveRawSessionJournalCodec.EyeObservationPayload(++ordinal,
+                            new ViveRawEyeObservation(item.Time,ViveRawEyeObservation.Reason.ClientFaulted,item.Sequence)),false);quality++;
+                    }
+                }
+                append(ViveRawSessionJournalCodec.TerminalPayloadV3(ordinal+1,e.Events.Last().Sequence,tasks,0,0,tasks+quality,clock.Now,quality),false);
                 return output.ToArray();
             }
         }
         public static void Register(TestSuite suite)
         {
-            suite.Run("Participant VRAW6 retains the same person across three tasks and independent attempts",()=>
+            suite.Run("Participant VRAW6 and VRAW7 retain assignment across three tasks and explicit control modes",()=>
             {
                 var sessions=new System.Collections.Generic.HashSet<string>();
+                foreach(bool woz in new[]{false,true})
                 for(int mode=0;mode<3;mode++)
                 {
-                    Experiment e;byte[] bytes=Fixture(true,mode,out e,true,"P017");
+                    Experiment e;byte[] bytes=Fixture(true,mode,out e,true,"P017",woz);
                     var assignment=e.Configuration.ParticipantAssignment;
                     Check.True(sessions.Add(e.Configuration.SessionId));
-                    Check.Equal("VRAW0006",Encoding.ASCII.GetString(bytes,0,8));
+                    Check.Equal(woz?"VRAW0007":"VRAW0006",Encoding.ASCII.GetString(bytes,0,8));
                     var analysis=new StudyAnalysis();
                     using(var input=new MemoryStream(bytes,false))
                         Check.Equal("Complete",StudyDataReader.Read(input,"vraw",analysis.Accept,CancellationToken.None).Status);
                     analysis.Finish();Check.Equal("P017",analysis.ParticipantId);Check.Equal(assignment.TaskKey,analysis.ParticipantTask);
+                    Check.Equal(woz?"OperatorWoZ":"Automatic",analysis.ControlMode);
+                    if(woz)Check.True(analysis.EyeAvailability.Any(x=>x.State=="MISSING"&&x.Reason=="CLIENT_FAULTED"&&x.ObservationRows==2));
+                    Check.Equal(woz?4:0,e.Events.Count(x=>x.Kind==ViveLegacyWozRecordingSchema.EventKind));
+                    var sources=e.Events.Where(x=>x.Kind=="block_configuration_locked").ToArray();
+                    Check.Equal(4,sources.Length);Check.True(sources.All(x=>x.Fields["selection"]==(woz?"LiveWoz":"Automatic")));
                     Check.Equal(SessionConfiguration.ParticipantSoftwareVersion,analysis.SoftwareVersion);
                     Check.Equal("PARTICIPANT_APPARATUS",analysis.RunKind);Check.Equal(String.Concat(assignment.Allocation.Order),analysis.ConditionOrder);
                     Check.Equal(ParticipantAssignment.SchemeVersion,analysis.AllocationScheme);Check.Equal(assignment.Allocation.AllocationId,analysis.AllocationId);
@@ -138,6 +167,7 @@ namespace AvatarStroop.Tests
                         fromCsv.Finish();Check.Equal(analysis.SoftwareVersion,fromCsv.SoftwareVersion);Check.Equal(analysis.SessionId,fromCsv.SessionId);Check.Equal(analysis.ParticipantId,fromCsv.ParticipantId);
                         Check.Equal(analysis.ParticipantTask,fromCsv.ParticipantTask);Check.Equal(analysis.ConditionOrder,fromCsv.ConditionOrder);
                         Check.Equal(analysis.ListByBlock,fromCsv.ListByBlock);Check.Equal(analysis.BInitialTarget,fromCsv.BInitialTarget);
+                        Check.Equal(analysis.ControlMode,fromCsv.ControlMode);
                     }
 #endif
                 }

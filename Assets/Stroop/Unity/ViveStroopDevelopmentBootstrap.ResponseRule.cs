@@ -16,7 +16,7 @@ namespace AvatarStroop.Unity
             int choice=ViveOwnerDesktopLayout.Selection("response-rule",selectedTaskKind==TaskKind.VisualSearch?2:(int)selectedResponseRule,
                 new[]{"Ink colour","Word meaning","Visual search (12 / 24 items)"},1);
             if(choice==0||choice==1){selectedTaskKind=TaskKind.Stroop;selectedResponseRule=(ResponseRule)choice;}
-            else if(choice==2){selectedTaskKind=TaskKind.VisualSearch;selectedDesign=0;legacyWozRecordingSelected=false;ownerPreviewWoz=false;observationOptIn=false;}
+            else if(choice==2){selectedTaskKind=TaskKind.VisualSearch;selectedDesign=0;ownerPreviewWoz=false;observationOptIn=false;}
             GUI.enabled=previous;
             GUILayout.Label(selectedTaskKind==TaskKind.VisualSearch?
                 "Find the matching backpack. Point with the controller and pull the trigger. Each block: 12 trials with 12 items, 12 with 24 items. 30 seconds per trial.":selectedResponseRule==ResponseRule.WordMeaning?

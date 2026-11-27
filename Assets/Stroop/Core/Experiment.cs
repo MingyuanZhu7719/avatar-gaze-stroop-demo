@@ -286,10 +286,11 @@ namespace AvatarStroop.Core
         void LockBlockCore(Actor actor, ControlSelection selection, string ownerId)
         {
             RequireOwner(actor); Require(Phase.BlockPreparation);
-            if(Configuration.ParticipantAssignment!=null&&selection!=ControlSelection.Automatic)
-                throw new InvalidOperationException("Participant recording requires Automatic avatar control.");
-            if(Configuration.TaskKind==TaskKind.VisualSearch&&selection!=ControlSelection.Automatic)
-                throw new InvalidOperationException("Visual search v1 requires Automatic avatar control");
+            bool explicitWoz=Configuration.LegacyRecordingDesign!=null&&Configuration.LegacyRecordingDesign.OperatorWozRequested;
+            if(Configuration.ParticipantAssignment!=null&&selection!=(explicitWoz?ControlSelection.LiveWoz:ControlSelection.Automatic))
+                throw new InvalidOperationException("Participant recording requires its selected avatar control mode.");
+            if(Configuration.TaskKind==TaskKind.VisualSearch&&selection!=ControlSelection.Automatic&&!(explicitWoz&&selection==ControlSelection.LiveWoz))
+                throw new InvalidOperationException("Visual search requires Automatic or explicitly selected WoZ avatar control");
             if(Configuration.NamedPlan!=null)throw new InvalidOperationException("Confirm the complete named plan instead of locking one source");
             if(String.IsNullOrWhiteSpace(ownerId) || !Enum.IsDefined(typeof(ControlSelection),selection)) throw new ArgumentException("Owner and source required");
             if(Configuration.NamedOption!=null && (Configuration.NamedOption.Option!=ViveNamedOption.Automatic||selection!=ControlSelection.Automatic))
@@ -759,6 +760,7 @@ namespace AvatarStroop.Core
                 ResponseRule=Configuration.ResponseRule,
                 TaskKind=Configuration.TaskKind,
                 VisualSearch=Configuration.TaskKind==TaskKind.VisualSearch&&current!=null&&(task||Phase==Phase.PracticeCorrection||Phase==Phase.TutorialFeedback)?current.VisualSearch:null,
+                VisualSearchArrayPresented=task&&current!=null&&current.Stimulus.IsVisualSearch&&current.Onset.HasValue,
                 UsesTutorial=UsesTutorial,TrainingSchema=Configuration.TrainingSchema,TutorialFeedback=actor==Actor.Participant?TutorialFeedbackText:null,
                 TutorialCorrect=actor==Actor.Participant&&Phase==Phase.TutorialFeedback&&current!=null?current.Correct:null,
                 TutorialExpectedAnswer=actor==Actor.Participant&&Phase==Phase.TutorialFeedback?TutorialExpectedAnswer:null,

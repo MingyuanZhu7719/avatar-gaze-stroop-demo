@@ -480,9 +480,7 @@ namespace AvatarStroop.Runtime
             string snapshotKey=Experiment.Phase+"/"+taskView.TrialId+"/"+Experiment.Segment;
             if(Clock.Now>=nextSnapshot||snapshotKey!=previousSnapshotKey)
             {
-                var view=taskView;var stimulus=view.Stimulus;
-                Send(WirePacket.Task(Identity,NextPacketSequence(),Clock.Now,new TaskSnapshot(Identity.SessionId,Experiment.BlockIndex,Experiment.Segment,
-                    view.TrialId,stimulus==null?(Colour?)null:stimulus.Word,stimulus==null?(Colour?)null:stimulus.Ink,Experiment.Phase,Experiment.CurrentCondition)));
+                Send(WirePacket.Task(Identity,NextPacketSequence(),Clock.Now,TaskSnapshot.FromView(Identity.SessionId,taskView,Experiment.CurrentCondition)));
                 nextSnapshot=Clock.Now+.01;previousSnapshotKey=snapshotKey;
             }
         }

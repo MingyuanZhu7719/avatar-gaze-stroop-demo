@@ -30,7 +30,7 @@ namespace AvatarStroop.Unity
         double visualSearchCueElapsed,visualSearchCueLastRender=-1,visualSearchCueFirstRender=-1;
         bool visualSearchRawArrayHeld;
         readonly HashSet<int> visualSearchCueObserved=new HashSet<int>();
-        internal bool VisualSearchCuePending {get{return IsVisualSearchTrial&&shownVisualSearch!=null&&
+        internal bool VisualSearchCuePending {get{return role==Actor.Participant&&IsVisualSearchTrial&&shownVisualSearch!=null&&
             currentView.TrialId==visualSearchCueTrial&&visualSearchCueElapsed<VisualSearchTrial.TargetPreviewSeconds;}}
         internal double VisualSearchCueFirstRenderSeconds {get{return visualSearchCueFirstRender;}}
         internal double VisualSearchCueElapsedSeconds {get{return visualSearchCueElapsed;}}
@@ -62,6 +62,7 @@ namespace AvatarStroop.Unity
         {
             if(visualSearchRoot!=null)return;
             visualSearchRoot=Child("VisualSearchBoard",contentRoot,TaskDisplayPosition+new Vector3(0,0,-.012f));
+            AlignWozVisualSearchBoard();
             Primitive("SearchBoardBacking",PrimitiveType.Cube,visualSearchRoot,new Vector3(0,0,.012f),
                 new Vector3(1.34f,1.02f,.008f),new Color(.93f,.94f,.91f));
             visualSearchInstruction=Text("SearchInstruction",visualSearchRoot,new Vector3(-.13f,.456f,-.03f),.0070f,64,new Color(.10f,.14f,.18f));
@@ -83,6 +84,12 @@ namespace AvatarStroop.Unity
             visualSearchReticle=Primitive("PointerTip",PrimitiveType.Sphere,visualSearchPointerRoot,Vector3.zero,
                 Vector3.one*.010f,new Color(.05f,.32f,.42f)).transform;
             visualSearchRoot.gameObject.SetActive(false);visualSearchPointerRoot.gameObject.SetActive(false);
+        }
+        void AlignWozVisualSearchBoard()
+        {
+            if(role!=Actor.Operator||!wozOperatorViewPlaced||visualSearchRoot==null)return;
+            visualSearchRoot.SetPositionAndRotation(stimulusText.transform.position+stimulusText.transform.rotation*new Vector3(0,0,-.012f),
+                stimulusText.transform.rotation);
         }
         VisualSearchBag BuildSearchBag(string name,Transform parent,Vector3 position)
         {
@@ -216,10 +223,15 @@ namespace AvatarStroop.Unity
         void RefreshVisualSearchArrayVisibility()
         {
             if(shownVisualSearch==null||visualSearchBags==null)return;
-            bool cue=VisualSearchCuePending;
+            bool cue=role==Actor.Operator?!currentView.VisualSearchArrayPresented:VisualSearchCuePending;
             foreach(var item in shownVisualSearch.Items)visualSearchBags[item.Slot].Root.gameObject.SetActive(!cue&&!visualSearchRawArrayHeld);
             visualSearchCueMessage.gameObject.SetActive(cue);
-            if(viveTaskPreview&&role==Actor.Participant&&currentView.Phase==Phase.Tutorial)
+            if(role==Actor.Operator)
+            {
+                visualSearchControls.text=cue?"Participant is viewing the target | View only":"Participant's search layout | View only";
+                visualSearchCueMessage.text="Participant is viewing the target.\nWaiting for the search array.";
+            }
+            else if(viveTaskPreview&&role==Actor.Participant&&currentView.Phase==Phase.Tutorial)
                 FitBoardInstruction(visualSearchControls,cue?"The search starts shortly.":"Point at the match and pull the trigger.",.0095f,1.24f,.072f);
             else
                 visualSearchControls.text=cue?"Look at the example. Selection begins with the search array.":(currentView.Phase==Phase.Tutorial?"Point at a backpack, then pull the trigger. Take your time.":"Point at a backpack, then pull the trigger.");

@@ -77,7 +77,7 @@ namespace AvatarStroop.Core
                 if(ratingSnapshot!=null&&!ratingSnapshot.IsPrefixOf(ratings))throw new InvalidOperationException("Unexpected rating mutation");
                 if(!budget.TryReserve(512L+ratings.Count*16L))return null;ratingSnapshot=new ExperimentIncrementalRatings(ratings);
             }
-            return previous==null?new ExperimentIncrementalSnapshot(baseline,scalars,practiceSnapshot,ratingSnapshot,vector):
+            return previous==null?new ExperimentIncrementalSnapshot(baseline,scalars,practiceSnapshot,ratingSnapshot,vector,Configuration.TaskKind,Configuration.ResponseRule):
                 previous.Next(scalars,practiceSnapshot,ratingSnapshot,vector);
         }
     }

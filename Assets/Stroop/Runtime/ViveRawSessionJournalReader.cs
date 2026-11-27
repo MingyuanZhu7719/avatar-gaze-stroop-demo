@@ -71,6 +71,7 @@ namespace AvatarStroop.Runtime
         static readonly byte[] MagicV4=Encoding.ASCII.GetBytes("VRAW0004");
         static readonly byte[] MagicV5=Encoding.ASCII.GetBytes("VRAW0005");
         static readonly byte[] MagicV6=Encoding.ASCII.GetBytes("VRAW0006");
+        static readonly byte[] MagicV7=Encoding.ASCII.GetBytes("VRAW0007");
         static readonly UTF8Encoding Utf8=new UTF8Encoding(false,true);
         sealed class Limit:Exception {}
         sealed class Invalid:Exception {}
@@ -226,7 +227,7 @@ namespace AvatarStroop.Runtime
                 var rows=new Rows(ordinal,kind==0?"manifest":kind==1?"task":kind==2?"observation":kind==3?"eye_status":kind==5?"eye_observation":kind==6?"eye_acquisition":"capture_terminal");
                 if(kind==0)
                 {
-                    if(Text(r,rows,"schema",true)!=(context.V6?"VRAW0006":context.V5?"VRAW0005":context.V4?"VRAW0004":context.V3?"VRAW0003":"VRAW0002"))throw new Invalid();
+                    if(Text(r,rows,"schema",true)!=(context.V6?(context.V5?"VRAW0007":"VRAW0006"):context.V5?"VRAW0005":context.V4?"VRAW0004":context.V3?"VRAW0003":"VRAW0002"))throw new Invalid();
                     string source=Text(r,rows,"source",true);if(source!="SYNTHETIC_ONLY"&&source!="INSTALLED_SDK_CODE_PATH_ONLY")throw new Invalid();
                     if(Text(r,rows,"run_kind",true)!=(context.V6?"PARTICIPANT_APPARATUS":"SIMULATION_DEVELOPMENT_NOT_RESEARCH"))throw new Invalid();
                     if(Text(r,rows,"native_time",true)!="NATIVE_TIME_OPAQUE"||Text(r,rows,"eye_coverage",true)!="EYE_COVERAGE_UNKNOWN"||
@@ -281,8 +282,13 @@ namespace AvatarStroop.Runtime
                         ValidateLegacyFields(fields,context,block);
                         if(context.V6)
                         {
-                            if(context.Assignment.TaskKind==TaskKind.VisualSearch)Field(fields,"task_kind","VisualSearch");
-                            else Field(fields,"response_rule",context.Assignment.TaskKey);
+                            // Typed network evidence is validated above and has no
+                            // task payload. Its allocation context is still checked.
+                            if(eventKind!=ViveLegacyWozRecordingSchema.EventKind)
+                            {
+                                if(context.Assignment.TaskKind==TaskKind.VisualSearch)Field(fields,"task_kind","VisualSearch");
+                                else Field(fields,"response_rule",context.Assignment.TaskKey);
+                            }
                             if(eventKind=="session_created")
                             {
                                 Field(fields,"participant_id",context.Assignment.ParticipantId);
@@ -530,7 +536,8 @@ namespace AvatarStroop.Runtime
                 cancellation.ThrowIfCancellationRequested();
                 if(input==null||!input.CanRead||input.CanWrite){result.Status=ViveRawSessionReadStatus.ReadFailure;return result;}
                 var source=new Bounded(input,maximumBytes,cancellation);byte[] magic=new byte[8];if(source.Fill(magic)!=8)throw new Invalid();
-                bool version6=ContinuousJournal.Equal(magic,MagicV6);bool version5=ContinuousJournal.Equal(magic,MagicV5);bool version4=version6||version5||ContinuousJournal.Equal(magic,MagicV4);bool version3=version4||ContinuousJournal.Equal(magic,MagicV3);if(!version3&&!ContinuousJournal.Equal(magic,Magic))throw new Invalid();
+                bool version7=ContinuousJournal.Equal(magic,MagicV7);
+                bool version6=version7||ContinuousJournal.Equal(magic,MagicV6);bool version5=version7||ContinuousJournal.Equal(magic,MagicV5);bool version4=version6||version5||ContinuousJournal.Equal(magic,MagicV4);bool version3=version4||ContinuousJournal.Equal(magic,MagicV3);if(!version3&&!ContinuousJournal.Equal(magic,Magic))throw new Invalid();
                 if(privateStage!=null)privateStage.OfferMagic(magic);
                 byte[] prior=new byte[32];bool truncated=false;long ordinal=0;var context=new Context{V3=version3,V4=version4,V5=version5,V6=version6,TrialAccumulator=projectTrials?new ViveRawTrialAccumulator():null,WithholdObservedWithdrawal=withholdObservedWithdrawal};
                 long verifiedBytes=0,taskCount=0,observationCount=0;int pageCount=0;

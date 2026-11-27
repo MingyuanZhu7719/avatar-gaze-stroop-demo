@@ -127,7 +127,7 @@ namespace AvatarStroop.Runtime
 
     public sealed partial class StudyAnalysis
     {
-        public const string Version="1.3.1";
+        public const string Version="1.4.0";
         static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
         readonly Dictionary<string,StudyTrial> byId=new Dictionary<string,StudyTrial>(StringComparer.Ordinal);
         readonly Dictionary<string,StudyEyeGroup> eye=new Dictionary<string,StudyEyeGroup>(StringComparer.Ordinal);
@@ -149,6 +149,7 @@ namespace AvatarStroop.Runtime
         public string BInitialTarget {get;private set;}
         public string Design {get;private set;}
         public string Source {get;private set;}
+        public string ControlMode {get;private set;}="LegacyOrUndeclared";
         public string RunKind {get;private set;}
         public string SoftwareVersion {get;private set;}
         public string SessionEndReason {get;private set;}
@@ -172,6 +173,7 @@ namespace AvatarStroop.Runtime
                 if(SessionId!=null&&SessionId!=session)throw new InvalidDataException("Multiple sessions in one source.");
                 SessionId=session;Design=Get(f,"design_variant");Source=Get(f,"source");RunKind=Get(f,"run_kind");
                 SoftwareVersion=Get(f,"software_version");
+                if(Get(f,"legacy_control_mode")=="OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING")ControlMode="OperatorWoZ";
                 ReadParticipantManifest(f);
                 int blocks;if(Int32.TryParse(Get(f,"block_count"),out blocks))
                 {
@@ -206,12 +208,16 @@ namespace AvatarStroop.Runtime
 
         void ReadParticipantManifest(IDictionary<string,string> f)
         {
-            if(Get(f,"schema")!="VRAW0006")
+            bool woz=Get(f,"schema")=="VRAW0007";
+            if(Get(f,"schema")!="VRAW0006"&&!woz)
             {
                 if(RunKind=="PARTICIPANT_APPARATUS"||f.ContainsKey("participant_id"))
-                    throw new InvalidDataException("Participant identity requires a VRAW0006 allocation manifest.");
+                    throw new InvalidDataException("Participant identity requires a VRAW0006 or VRAW0007 allocation manifest.");
                 return;
             }
+            if(woz?Get(f,"legacy_control_mode")!="OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING":f.ContainsKey("legacy_control_mode"))
+                throw new InvalidDataException("Participant control mode differs from its recording format.");
+            ControlMode=woz?"OperatorWoZ":"Automatic";
             ParticipantAssignment assignment;
             if(!ViveRawSessionJournalCodec.TryReadParticipantAssignment(Get(f,"participant_id"),Get(f,"participant_task"),out assignment)||
                 Get(f,"allocation_scheme")!=ParticipantAssignment.SchemeVersion||RunKind!="PARTICIPANT_APPARATUS"||
@@ -237,6 +243,14 @@ namespace AvatarStroop.Runtime
             TaskEvents++;string kind=Get(f,"event_kind")??"Unknown";StudyEyeGroup.Count(EventCounts,kind);
             string session=Get(f,"session_id");if(SessionId!=null&&session!=SessionId)throw new InvalidDataException("Task session does not match manifest.");
             var p=Payload(f);int block=Int(f,"block",-1),segment=Int(f,"segment",-1);
+            bool networkEvidence=kind==ViveLegacyWozRecordingSchema.EventKind;
+            if(networkEvidence)
+            {
+                double? time=Number(f,"event_local_time");
+                if(!time.HasValue)throw new InvalidDataException("Network evidence requires its local event time.");
+                try{ViveLegacyWozRecordingSchema.Validate(kind,p,Get(f,"clock_id"),time.Value,ControlMode=="OperatorWoZ");}
+                catch(InvalidOperationException e){throw new InvalidDataException("Invalid network evidence.",e);}
+            }
             string phase=Get(p,"legacy_phase")??Get(p,"named_phase")??currentPhase;
             if(kind=="phase_changed")currentPhase=Get(p,"to")??phase;else currentPhase=phase;
             string condition=Get(p,"legacy_condition")??Get(p,"named_option");if(condition!=null&&block>=0)conditions[block]=condition;
@@ -250,7 +264,12 @@ namespace AvatarStroop.Runtime
             }
             if(ParticipantId!=null)
             {
-                if((taskKind=="VisualSearch"?"VisualSearch":rule)!=ParticipantTask||
+                if(ControlMode=="OperatorWoZ"?Get(p,"legacy_control_mode")!="OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING":p.ContainsKey("legacy_control_mode"))
+                    throw new InvalidDataException("Task control mode differs from the participant manifest.");
+                if((kind=="block_configuration_locked"||kind=="session_source_confirmed")&&
+                    Get(p,"selection")!=(ControlMode=="OperatorWoZ"?"LiveWoz":"Automatic"))
+                    throw new InvalidDataException("Task source selection differs from the participant manifest.");
+                if((!networkEvidence&&(taskKind=="VisualSearch"?"VisualSearch":rule)!=ParticipantTask)||
                     (block>=0&&(block>=ConditionOrder.Length||condition!=ConditionOrder[block].ToString()||
                     Int(p,"legacy_list_index",-1)!=assignedLists[block])))
                     throw new InvalidDataException("Task event differs from the recorded participant assignment.");
@@ -367,6 +386,7 @@ namespace AvatarStroop.Runtime
             foreach(int block in endedBlocks)
                 if(Ratings.Count(x=>x.Block==block&&String.IsNullOrEmpty(x.Flags))!=5)Warn("Block "+block+" does not have five unflagged questionnaire item responses.");
             Warn("Eye/face spatial accuracy validation is deferred. AOI counts are descriptive observation proportions, not validated fixations or dwell time.");
+            if(ControlMode=="OperatorWoZ")Warn("WoZ A/B/C labels are assigned conditions; live operator gaze is not proof that the Automatic gaze schedule was delivered. Keep control_mode separate in comparisons.");
         }
 
         public IEnumerable<StudyBlockSummary> Summaries()

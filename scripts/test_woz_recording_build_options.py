@@ -19,16 +19,17 @@ SPEC.loader.exec_module(build)
 EDITOR = (ROOT / "Assets/Stroop/Unity/Editor/ViveStroopPreviewBuild.cs").read_text(encoding="utf-8-sig")
 BUILDER = (ROOT / "scripts/build-vive-stroop-preview.py").read_text(encoding="utf-8-sig")
 MODES = ((False, False, False), (True, False, False), (True, True, False), (True, True, True))
-ENV_NAMES = ("STROOP_VIVE_CONTROLLED_RECORDING_DEVELOPMENT", "STROOP_VIVE_LEGACY_RAW_RECORDING_DEVELOPMENT", "STROOP_VIVE_LEGACY_WOZ_RECORDING_DEVELOPMENT")
-FLAG_NAMES = ("controlled_recording_development", "legacy_raw_recording_development", "legacy_woz_recording_development")
+ALL_MODES = tuple(mode + (False,) for mode in MODES) + ((True, True, False, True), (True, True, True, True))
+ENV_NAMES = ("STROOP_VIVE_CONTROLLED_RECORDING_DEVELOPMENT", "STROOP_VIVE_LEGACY_RAW_RECORDING_DEVELOPMENT", "STROOP_VIVE_LEGACY_WOZ_RECORDING_DEVELOPMENT", "STROOP_VIVE_PARTICIPANT_RECORDING")
+FLAG_NAMES = ("controlled_recording_development", "legacy_raw_recording_development", "legacy_woz_recording_development", "participant_recording")
 
 
 def editor_manifest(controlled, legacy, woz, participant=False):
-    """Decode only literals and the three boolean substitutions in the JSON source."""
+    """Decode only literals and named boolean substitutions in the JSON source."""
     expression = EDITOR.split('File.WriteAllText(Path.Combine(output,"vive-classroom-scene-validation.json"),', 1)[1].split(");", 1)[0]
-    token = re.compile(r'\s*(?:(?P<literal>"(?:\\.|[^"\\])*")|\((?P<flag>controlled|legacy|woz|participant|named|unrecordedWoz)\?"true":"false"\)|(?P<plus>\+))')
+    token = re.compile(r'\s*(?:(?P<literal>"(?:\\.|[^"\\])*")|\((?P<flag>controlled|legacy|woz|participant|named|unrecordedWoz|photonWoz)\?"true":"false"\)|(?P<plus>\+))')
     values = dict(controlled=controlled, legacy=legacy, woz=woz, participant=participant,
-                  named=controlled and not participant, unrecordedWoz=not participant)
+                  named=controlled and not participant, unrecordedWoz=not participant, photonWoz=not participant or woz)
     offset, parts, need_value = 0, [], True
     while offset < len(expression):
         match = token.match(expression, offset)
@@ -46,32 +47,44 @@ def editor_manifest(controlled, legacy, woz, participant=False):
 
 
 class WozRecordingBuildOptionsTests(unittest.TestCase):
-    def test_participant_package_is_automatic_and_requires_explicit_build_intent(self):
+    def test_participant_woz_is_optional_and_requires_explicit_build_intent(self):
         with patch.dict(os.environ, {"STROOP_VIVE_PARTICIPANT_RECORDING": "1"}):
             self.assertNotIn("STROOP_VIVE_PARTICIPANT_RECORDING", build.editor_environment(ROOT, True, True))
             self.assertEqual("1", build.editor_environment(ROOT, True, True, participant=True)["STROOP_VIVE_PARTICIPANT_RECORDING"])
-        with self.assertRaises(ValueError):
-            build.build_intent(ROOT, ROOT, True, True, woz=True, participant=True)
-        self.assertTrue(build.build_intent(ROOT, ROOT, True, True, participant=True)["participant_recording"])
-        package = build.recording_manifest(True, True, participant=True)
-        scene = editor_manifest(True, True, False, participant=True)
-        for manifest in (package, scene):
-            self.assertTrue(manifest["participant_recording"])
-            self.assertFalse(manifest["named_explicit_recording_requested"])
-            self.assertFalse(manifest["network_recording_available"])
-        self.assertFalse(scene["unrecorded_legacy_woz_available"])
-        self.assertEqual("participant guide", build.start_here_text(True, True, "participant guide", participant=True))
+        for woz in (False, True):
+            with self.subTest(woz=woz):
+                intent = build.build_intent(ROOT, ROOT, True, True, woz=woz, participant=True)
+                self.assertTrue(intent["participant_recording"])
+                self.assertIs(woz, intent["legacy_woz_recording_development"])
+                package = build.recording_manifest(True, True, woz=woz, participant=True)
+                scene = editor_manifest(True, True, woz, participant=True)
+                for manifest in (package, scene):
+                    self.assertTrue(manifest["participant_recording"])
+                    self.assertFalse(manifest["named_explicit_recording_requested"])
+                    self.assertFalse(manifest["unrecorded_legacy_woz_available"])
+                    self.assertFalse(manifest["recording_default"])
+                    for capability in ("network_recording_available", "participant_local_woz_recording_available", "photon_woz_available"):
+                        self.assertIs(woz, manifest[capability])
+                text = build.start_here_text(True, True, "participant guide", woz=woz, participant=True)
+                self.assertTrue(text.endswith("participant guide"))
+                self.assertIn("Recording and network connections are OFF by default", text)
+                if woz:
+                    self.assertIn("same participant ID, assigned task lists and A/B/C/D order", text)
+                    self.assertIn("Both headset recording choices", text)
+                    self.assertNotIn("supports Automatic only", text)
+                else:
+                    self.assertIn("supports Automatic only", text)
 
     def test_all_helpers_reject_missing_prerequisites_before_launch(self):
         with patch.object(build.subprocess, "run", side_effect=AssertionError("No process allowed")) as run:
-            for controlled, legacy, woz in itertools.product((False, True), repeat=3):
-                valid = (controlled, legacy, woz) in MODES
+            for controlled, legacy, woz, participant in itertools.product((False, True), repeat=4):
+                valid = (controlled, legacy, woz, participant) in ALL_MODES
                 actions = (
-                    lambda: build.validate_recording_options(controlled, legacy, woz),
-                    lambda: build.editor_environment(ROOT, controlled, legacy, woz),
-                    lambda: build.recording_manifest(controlled, legacy, woz),
-                    lambda: build.build_intent(ROOT, ROOT, controlled, legacy, woz),
-                    lambda: build.start_here_text(controlled, legacy, "", woz),
+                    lambda: build.validate_recording_options(controlled, legacy, woz, participant),
+                    lambda: build.editor_environment(ROOT, controlled, legacy, woz, participant),
+                    lambda: build.recording_manifest(controlled, legacy, woz, participant),
+                    lambda: build.build_intent(ROOT, ROOT, controlled, legacy, woz, participant),
+                    lambda: build.start_here_text(controlled, legacy, "", woz, participant),
                 )
                 for action in actions:
                     with self.subTest(mode=(controlled, legacy, woz), helper=action):
@@ -82,13 +95,13 @@ class WozRecordingBuildOptionsTests(unittest.TestCase):
                                 action()
                 if not valid:
                     with self.assertRaises(ValueError):
-                        build.run_editor("NEVER-LAUNCHED", ROOT, ROOT, "Configure", controlled, legacy, woz)
+                        build.run_editor("NEVER-LAUNCHED", ROOT, ROOT, "Configure", controlled, legacy, woz, participant)
             run.assert_not_called()
 
     def test_ambient_flags_are_scrubbed_and_only_explicit_options_forwarded(self):
         ambient = dict.fromkeys(ENV_NAMES, "1")
         ambient["KEEP_SYNTHETIC_VALUE"] = "kept"
-        for mode in MODES:
+        for mode in ALL_MODES:
             with self.subTest(mode=mode), patch.dict(os.environ, ambient):
                 result = build.editor_environment(ROOT, *mode)
                 for name, requested in zip(ENV_NAMES, mode):
@@ -146,7 +159,7 @@ class WozRecordingBuildOptionsTests(unittest.TestCase):
 
     def test_every_editor_action_receives_only_explicit_environment(self):
         markers = {"Configure": "VIVE_CLASSROOM_CONFIGURED:", "BuildWindowsPreview": "VIVE_CLASSROOM_BUILD_COMPLETE:", "RenderFixture": "VIVE_CLASSROOM_FIXTURE_COMPLETE:"}
-        for mode in MODES:
+        for mode in ALL_MODES:
             for action, marker in markers.items():
                 with self.subTest(mode=mode, action=action), patch.dict(os.environ, dict.fromkeys(ENV_NAMES, "1")), patch.object(build.subprocess, "run") as run, patch.object(Path, "is_file", return_value=True), patch.object(Path, "read_text", return_value=marker), contextlib.redirect_stdout(io.StringIO()):
                     run.return_value.returncode = 0
@@ -176,13 +189,14 @@ class WozRecordingBuildOptionsTests(unittest.TestCase):
                 mkdir.assert_not_called()
 
     def test_cli_default_and_opt_in_wire_all_outputs_in_memory_only(self):
-        for mode in MODES:
+        for mode in ALL_MODES:
             for check_only in (False, True):
                 with self.subTest(mode=mode, check_only=check_only), contextlib.ExitStack() as stack:
                     source = ROOT.parent / "synthetic-woz-source-only" / "source"
                     project, output = source.parent / "project", source.parent / "output"
                     args = ["build", "--editor", "NEVER-LAUNCHED", "--project", str(project), "--output", str(output), "--render-fixture"]
-                    args += ["--" + name.replace("_", "-") for name, enabled in zip(FLAG_NAMES, mode) if enabled]
+                    args += ["--" + name.replace("_", "-") for index, (name, enabled) in enumerate(zip(FLAG_NAMES, mode))
+                             if enabled and not (mode[3] and index < 2)]
                     if check_only:
                         args.append("--check-only")
                     written = []
@@ -227,6 +241,7 @@ class WozRecordingBuildOptionsTests(unittest.TestCase):
                     for call in editor.call_args_list:
                         self.assertEqual(mode[:2], call.args[4:])
                         self.assertEqual(mode[2], call.kwargs.get("woz", False))
+                        self.assertEqual(mode[3], call.kwargs.get("participant", False))
                     self.assertEqual(3, len(written))
                     intent, initial, final = [value for path, value in written]
                     for name, requested in zip(FLAG_NAMES, mode):
@@ -237,11 +252,12 @@ class WozRecordingBuildOptionsTests(unittest.TestCase):
                     self.assertFalse(final["network_default"])
                     self.assertFalse(final["recording_default"])
                     self.assertEqual("built", final["status"])
-                    self.assertTrue(final["photon_woz_available"])
+                    self.assertIs(not mode[3] or mode[2], final["photon_woz_available"])
+                    self.assertIs(not mode[3], final["unrecorded_legacy_woz_available"])
                     self.assertEqual("SYNTHETIC-HASH", final["photon_sdk"]["runtime_sha256"])
                     text_write.assert_called_once()
                     self.assertEqual(output / "START-HERE.txt", text_write.call_args.args[0])
-                    self.assertEqual(build.start_here_text(mode[0], mode[1], "SYNTHETIC GUIDE" if mode[0] else "", mode[2]), text_write.call_args.args[1])
+                    self.assertEqual(build.start_here_text(mode[0], mode[1], "SYNTHETIC GUIDE" if mode[0] else "", mode[2], mode[3]), text_write.call_args.args[1])
 
     def test_editor_request_is_bound_to_environment_and_isolated_intent(self):
         reader = EDITOR.split("static string[] ReadRecordingBuildDefines(string project)", 1)[1].split("public static void BuildWindowsPreview()", 1)[0]
@@ -257,12 +273,12 @@ class WozRecordingBuildOptionsTests(unittest.TestCase):
     def test_editor_helper_requires_dependencies_exact_intent_and_no_persisted_opt_in(self):
         helper = EDITOR.split("// BEGIN PURE RECORDING BUILD REQUEST", 1)[1].split("// END PURE RECORDING BUILD REQUEST", 1)[0]
         self.assertIn('string woz=null,bool intentWoz=false', helper)
-        for name in ("control", "legacy", "woz"):
+        for name in ("control", "legacy", "woz", "participant"):
             self.assertIn('!(String.IsNullOrEmpty(' + name + ')||' + name + '=="1")', helper)
         self.assertIn("if(wozRequested&&(!controlled||!legacyRequested))", helper)
         self.assertIn("if(legacyRequested&&!controlled)", helper)
         self.assertIn("controlled!=intentControlled||legacyRequested!=intentLegacy||wozRequested!=intentWoz", helper)
-        for define in ("STROOP_CONTROLLED_RECORDING_DEVELOPMENT", "STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT", "STROOP_LEGACY_WOZ_RECORDING_DEVELOPMENT"):
+        for define in ("STROOP_CONTROLLED_RECORDING_DEVELOPMENT", "STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT", "STROOP_LEGACY_WOZ_RECORDING_DEVELOPMENT", "STROOP_PARTICIPANT_RECORDING"):
             self.assertIn('define.Trim()=="' + define + '"', helper)
         self.assertIn('return wozRequested?new[]{"STROOP_CONTROLLED_RECORDING_DEVELOPMENT","STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT","STROOP_LEGACY_WOZ_RECORDING_DEVELOPMENT"}', helper)
         self.assertIn('legacyRequested?new[]{"STROOP_CONTROLLED_RECORDING_DEVELOPMENT","STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT"}', helper)

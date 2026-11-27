@@ -178,7 +178,8 @@ namespace AvatarStroop.Unity
         internal static bool LegacyRecordingAvailable
         {get{return ViveControlledRecordingBuildPolicy.Available&&ViveLegacyRawRecordingBuildPolicy.Available;}}
         bool SelectedRecordingAvailable
-        {get{return ViveStroopRecordingScopePresentation.DesignAvailable(selectedDesign,ViveNamedRecordingUiAdmission.RecordingAvailable,LegacyRecordingAvailable);}}
+        {get{return (!legacyWozRecordingSelected||ViveLegacyWozRecordingBuildPolicy.Available)&&
+            ViveStroopRecordingScopePresentation.DesignAvailable(selectedDesign,ViveNamedRecordingUiAdmission.RecordingAvailable,LegacyRecordingAvailable);}}
         bool RecordingSetupDesignMatches
         {get{return recordingSetup!=null&&ViveStroopRecordingScopePresentation.SetupMatches(selectedDesign,recordingSetupDesign);}}
         bool RecordingSetupEligible
@@ -916,8 +917,8 @@ namespace AvatarStroop.Unity
             if(!ControlledRecordingNoticeCurrent){message="Read and accept the local recording notice first.";return;}
             if(configured||rig==null||rig.ViewRunning||selectedDesign!=(legacy?0:3)||!RecordingKindAvailable(legacy))return;
             var assignment=ParticipantBuild?EntryAssignment:null;
-            if(ParticipantBuild&&(!legacy||legacyWozRecordingSelected||assignment==null))
-            {message="Choose a participant ID (P001 to P999) and a supported Automatic task.";return;}
+            if(ParticipantBuild&&(!legacy||assignment==null))
+            {message="Choose a participant ID (P001 to P999) and a task.";return;}
             string reason;
             var choice=ViveNamedRecordingSetup.TryPrepare(RecordingKindAvailable(legacy)&&ViveRawRelativeFileCapability.ProductionGateOpen,
                 recordingDirectory,recordingBudgetMiB,System.IO.Directory.Exists,out reason);
@@ -990,9 +991,9 @@ namespace AvatarStroop.Unity
             {
                 bool selected=fromParticipantChoice&&RecordingSetupEligible&&rig.HeadReady&&
                     SelectedRecordingAvailable&&ViveRawRelativeFileCapability.ProductionGateOpen;
-                if(ParticipantBuild&&(!selected||selectedDesign!=0||legacyWozRecordingSelected||
+                if(ParticipantBuild&&(!selected||selectedDesign!=0||
                     preparedAssignment==null||!object.ReferenceEquals(preparedAssignment,EntryAssignment)))
-                    throw new InvalidOperationException("Participant recording requires a prepared Automatic assignment and both headset choices.");
+                    throw new InvalidOperationException("Participant recording requires a prepared assignment and both headset choices.");
                 if(configured||(rig.ViewRunning&&!selected))throw new InvalidOperationException("Configure once before starting XR.");
                 // The legacy bounded observation rehearsal implements the old
                 // eight-trial practice protocol. New Tutorial sessions use the
@@ -1030,7 +1031,7 @@ namespace AvatarStroop.Unity
                 SessionConfiguration config;
                 if(ParticipantBuild)
                     config=ViveLegacySceneConfiguration.CreateParticipantRecording(session,preparedAssignment,geometry.Version,
-                        ViveFixedTrackpadMapping.Version,"participant-design-"+Guid.NewGuid().ToString("N"),"participant-intent-"+Guid.NewGuid().ToString("N"));
+                        ViveFixedTrackpadMapping.Version,"participant-design-"+Guid.NewGuid().ToString("N"),"participant-intent-"+Guid.NewGuid().ToString("N"),legacyWozRecordingSelected);
                 else if(selectedDesign==1)
                     config=SessionConfiguration.NamedAutomaticDevelopment(session,20261028,
                         ViveNamedOptionProvenance.Select(Actor.Owner,ViveNamedOption.Automatic,namedListIndex,geometry.Version));
@@ -2573,13 +2574,14 @@ namespace AvatarStroop.Unity
     internal static class ViveLegacySceneConfiguration
     {
         internal static SessionConfiguration CreateParticipantRecording(string session,ParticipantAssignment assignment,string geometryVersion,
-            string mappingVersion,string designId,string intentId)
+            string mappingVersion,string designId,string intentId,bool operatorWoz=false)
         {
             if(assignment==null)throw new ArgumentNullException("assignment");
+            if(operatorWoz&&!ViveLegacyWozRecordingBuildPolicy.Available)throw new InvalidOperationException("Controlled WoZ recording build required.");
             var config=new SessionConfiguration(session,ParticipantAssignment.StimulusSeed,assignment.Allocation,RunKind.Apparatus,
                 "en",5,30,true,0,true,true,true,assignment.ResponseRule);
             config=SessionConfiguration.WithTaskKind(config,assignment.TaskKind);
-            var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,designId,assignment,geometryVersion,mappingVersion);
+            var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,designId,assignment,geometryVersion,mappingVersion,operatorWoz);
             return SessionConfiguration.ParticipantRecording(config,design,ViveLegacyRecordingIntent.Select(Actor.Owner,intentId,true,true));
         }
         internal static SessionConfiguration CreatePreview(string session)

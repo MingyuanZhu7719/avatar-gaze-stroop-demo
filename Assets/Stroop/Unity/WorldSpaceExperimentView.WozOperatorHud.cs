@@ -60,7 +60,8 @@ namespace AvatarStroop.Unity
         {
             bool live=currentView!=null&&currentView.Phase==Phase.MainTask;
             string phase=currentView==null||currentView.Phase==Phase.Preparation?"Setup":
-                currentView.Phase==Phase.MainTask?"Participant is answering":
+                currentView.Phase==Phase.MainTask?(currentView.TaskKind==TaskKind.VisualSearch&&!currentView.VisualSearchArrayPresented?
+                    "Participant is viewing the target":"Participant is answering"):
                 currentView.Phase==Phase.Questionnaire?"Participant questionnaire":
                 currentView.Phase==Phase.Countdown?"Block starting":
                 currentView.Phase==Phase.Rest?"Between blocks":

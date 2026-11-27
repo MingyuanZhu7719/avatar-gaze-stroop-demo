@@ -56,6 +56,7 @@ namespace AvatarStroop.Unity
             board.position+=target-board.TransformPoint(stimulusOnBoard);
             stimulusText.transform.rotation=face;
             wozOperatorViewPlaced=true;
+            AlignWozVisualSearchBoard();
         }
 
         static bool FiniteWozPosition(Vector3 value)

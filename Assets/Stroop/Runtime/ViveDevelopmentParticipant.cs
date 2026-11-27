@@ -1182,9 +1182,8 @@ namespace AvatarStroop.Runtime
                 Owner();if(participant.ObservationBlocked)return null;
                 ViveSyntheticAggregateHead head;
                 if(!participant.observation.TryGet(out head)||head==null||head.Task==null)return null;
-                var e=participant.experiment;var view=e.View(Actor.Operator);var stimulus=view.Stimulus;
-                return new TaskSnapshot(e.Configuration.SessionId,e.BlockIndex,e.Segment,view.TrialId,
-                    stimulus==null?(Colour?)null:stimulus.Word,stimulus==null?(Colour?)null:stimulus.Ink,e.Phase,e.CurrentCondition);
+                var e=participant.experiment;
+                return TaskSnapshot.FromView(e.Configuration.SessionId,e.View(Actor.Operator),e.CurrentCondition);
             }
             public ViveWozSourceLocalState ReadCurrent()
             {

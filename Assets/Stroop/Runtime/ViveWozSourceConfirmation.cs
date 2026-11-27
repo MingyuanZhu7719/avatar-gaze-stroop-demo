@@ -33,8 +33,7 @@ namespace AvatarStroop.Runtime
         internal static int PhaseOrder(Phase phase)
         {return phase==Phase.BlockReady?0:phase==Phase.Countdown?1:phase==Phase.MainTask?2:-1;}
         internal static bool SameTask(TaskSnapshot a,TaskSnapshot b)
-        {return a!=null&&b!=null&&a.SessionId==b.SessionId&&a.BlockIndex==b.BlockIndex&&a.Segment==b.Segment&&a.Phase==b.Phase&&
-            a.Condition==b.Condition&&a.TrialId==b.TrialId&&a.Word==b.Word&&a.Ink==b.Ink;}
+        {return TaskSnapshot.Same(a,b);}
         internal static bool Read(IViveWozSourceStateReader reader,ViveWozSourceContext context,out TaskSnapshot task,out long revision)
         {
             task=null;revision=-1;try

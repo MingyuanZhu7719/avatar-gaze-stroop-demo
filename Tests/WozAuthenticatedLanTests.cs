@@ -11,7 +11,7 @@ namespace AvatarStroop.Tests
     // No sockets, SDK, Unity player, file recording, reflection or process probes.
     public static class WozAuthenticatedLanTests
     {
-        const string Golden = "V09aTEFOMDEBAI9m+RwmQ92BzajzeitgEQ9TocW9HgAcuTrzDUtksSDnAAAAcwBBU1d8MnxUaW1lUmVxdWVzdHxiR0Z1TFhSbGMzUT18YjNCbGNtRjBiM0k9fE9wZXJhdG9yfGIzQmxjbUYwYjNJdGMzUnlaV0Z0fExpdmVPcGVyYXRvcnxieTFqYkc5amF3PT18N3wxMi41fGMzbHVZeTB4n9263YNN6HLIq7aXQUwab2iGKuTDl6UdJgoO3P8Mp+s=";
+        const string Golden = "V09aTEFOMDEBAI9m+RwmQ92BzajzeitgEQ9TocW9HgAcuTrzDUtksSDnAAAAcwBBU1d8M3xUaW1lUmVxdWVzdHxiR0Z1TFhSbGMzUT18YjNCbGNtRjBiM0k9fE9wZXJhdG9yfGIzQmxjbUYwYjNJdGMzUnlaV0Z0fExpdmVPcGVyYXRvcnxieTFqYkc5amF3PT18N3wxMi41fGMzbHVZeTB4eHmtNbNo63u/kUM96KMFGwVS4hqpvmKwmw1Z49Ermhc=";
         static byte[] Key() { var b = new byte[32]; for (int i = 0; i < b.Length; i++) b[i] = (byte)i; return b; }
         static byte[] Epoch() { var b = new byte[16]; for (int i = 0; i < b.Length; i++) b[i] = (byte)(i + 1); return b; }
         static PeerIdentity P(string session = "lan-test", string peer = "participant", string source = "task-host", string clock = "p-clock", ControlSource kind = ControlSource.LiveOperator)
@@ -61,7 +61,7 @@ namespace AvatarStroop.Tests
             Run("independent full envelope known answer and immutable original receipt", () => {
                 // Golden was serialized independently in PowerShell from the
                 // documented spec, not obtained from this encoder. Full 32-byte
-                // expected tag: 9fddbadd834de872c8abb697414c1a6f68862ae4c397a51d260a0edcff0ca7eb.
+                // expected tag: 7879ad35b368eb7bbf91433de8a3051b0552e21aa9be62b09b0d59e3d12b9a17.
                 byte[] bytes = Protect(Sync()); Eq(Golden, Convert.ToBase64String(bytes)); Eq(194, bytes.Length);
                 using (var receiver = End(PeerRole.Participant)) {
                     var message = Receive(receiver, bytes); Eq(20.0, message.OriginalLocalReceiptSeconds); Eq("p-clock", message.ReceiptClockId);
@@ -103,7 +103,7 @@ namespace AvatarStroop.Tests
             Run("validly MACed invalid header direction lengths version and malformed payload", () => {
                 var bytes = Protect(Sync()); using (var receiver = End(PeerRole.Participant)) {
                     foreach (int offset in new[] { 0, 8, 9, 10, 42, 43, 44, 45, 46 }) { var bad = Copy(bytes); bad[offset] ^= 128; Rejected(receiver, Resign(bad)); }
-                    Rejected(receiver, ReplacePayload(bytes, Payload(bytes).Replace("ASW|2|", "ASW|3|")));
+                    Rejected(receiver, ReplacePayload(bytes, Payload(bytes).Replace("ASW|3|", "ASW|2|")));
                     Rejected(receiver, ReplacePayload(bytes, Payload(bytes).Replace("TimeRequest", "NotAllowed")));
                     Rejected(receiver, ReplacePayload(bytes, Payload(bytes) + "|extra")); Receive(receiver, bytes);
                 }

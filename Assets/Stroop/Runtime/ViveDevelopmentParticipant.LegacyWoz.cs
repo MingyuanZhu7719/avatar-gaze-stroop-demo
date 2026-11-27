@@ -22,8 +22,8 @@ namespace AvatarStroop.Runtime
         {
             if(Thread.CurrentThread.ManagedThreadId!=namedViewOwnerThread||sharedClock==null||
                 !Object.ReferenceEquals(eventClock,sharedClock)||experiment.Configuration.IsNamedDesign||
-                experiment.Configuration.RunKind!=RunKind.Simulation||NamedRecordingWithdrawalRequested||NamedViewWithdrawalRequested||legacyWozCleanupUncertain)
-                throw new InvalidOperationException("Actual Legacy simulation owner and exact sealed task clock required.");
+                (experiment.Configuration.RunKind!=RunKind.Simulation&&experiment.Configuration.ParticipantAssignment==null)||NamedRecordingWithdrawalRequested||NamedViewWithdrawalRequested||legacyWozCleanupUncertain)
+                throw new InvalidOperationException("Actual Legacy task owner and exact sealed task clock required.");
             if(legacyWozOwner!=null&&!legacyWozOwner.Terminal)
                 throw new InvalidOperationException("The participant already owns a Legacy bridge binding.");
             legacyWozOwner=new ViveLegacyWozTaskOwner(this,sharedClock);
@@ -34,9 +34,7 @@ namespace AvatarStroop.Runtime
             !ObservationBlocked&&!NamedRecordingAuthorityFaulted;}
         internal TaskSnapshot ReadLegacyWozTask()
         {
-            var view=experiment.View(Actor.Operator);var stimulus=view.Stimulus;
-            return new TaskSnapshot(SessionId,experiment.BlockIndex,experiment.Segment,view.TrialId,
-                stimulus==null?(Colour?)null:stimulus.Word,stimulus==null?(Colour?)null:stimulus.Ink,experiment.Phase,experiment.CurrentCondition);
+            return TaskSnapshot.FromView(SessionId,experiment.View(Actor.Operator),experiment.CurrentCondition);
         }
         internal string LegacyWozSourceOwner {get{return experiment.LegacyWozSourceOwner;}}
         internal long LegacyWozSourceGeneration {get{return experiment.LegacyWozSourceGeneration;}}
@@ -91,8 +89,7 @@ namespace AvatarStroop.Runtime
             if(depth==0&&OnOwnerThread){if(RecordingBinding!=null)RecordingBinding.ObserveActualTaskCompletion();InvalidateSourceChoiceAfterSafety();}
         }
         static bool SameTask(TaskSnapshot a,TaskSnapshot b)
-        {return a!=null&&b!=null&&a.SessionId==b.SessionId&&a.Phase==b.Phase&&a.BlockIndex==b.BlockIndex&&a.Segment==b.Segment&&
-            a.TrialId==b.TrialId&&a.Word==b.Word&&a.Ink==b.Ink&&a.Condition==b.Condition;}
+        {return TaskSnapshot.SameAuthority(a,b);}
         public sealed class Binding
         {
             internal readonly ViveLegacyWozTaskOwner Owner;

@@ -2,6 +2,8 @@
 
 两台电脑都需联网，使用同一版、已配置的 Participant / Operator 完整程序包。无需同一路由器，也无需填写 IP、端口或 clock ID。先分别打开 SteamVR，确认头显和眼动客户端可用。
 
+Vive-Study 参与者版输入匿名 ID 后，Ink colour、Word meaning、Visual search 均可选择 WoZ（需要启用 WoZ 的完整包）。新版同步协议包含背包布局和目标预览／搜索阶段，与旧版不兼容；必须同时更新两端。参与者眼动缺失会记录在本地数据中并允许任务继续；这不取消实验者源、手柄、头部追踪和网络就绪要求。
+
 1. 实验者端打开头显和眼动，点击 **Create room**。
 2. 参与者选择 WoZ，完成 tutorial / practice。在正式实验准备页填写房间码，点击 **Join room**。
 3. 核对对应参与者电脑显示同一房间码。实验者点击 **Accept this participant**。

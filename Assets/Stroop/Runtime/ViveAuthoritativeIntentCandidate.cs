@@ -108,10 +108,7 @@ namespace AvatarStroop.Runtime
                 Field(source,"selection_origin")!=expectedOrigin||Field(source,"confirmation_block_index")!=originalBlock.ToString(CultureInfo.InvariantCulture)||
                 Field(recorded,"owner")!=owner||Field(recorded,"selection")!=ControlSelection.LiveWoz.ToString())
                 throw new InvalidOperationException("Source confirmation cannot be verified from actual task events");
-            var view=experiment.View(Actor.Operator);var stimulus=view.Stimulus;
-            var task=new TaskSnapshot(experiment.Configuration.SessionId,experiment.BlockIndex,experiment.Segment,
-                view.TrialId,stimulus==null?(Colour?)null:stimulus.Word,stimulus==null?(Colour?)null:stimulus.Ink,
-                experiment.Phase,experiment.CurrentCondition);
+            var task=TaskSnapshot.FromView(experiment.Configuration.SessionId,experiment.View(Actor.Operator),experiment.CurrentCondition);
             Phase? pausedFrom=null;bool next=false;int segment=task.Segment;
             ViveCountdownIntent intent;
             if(task.Phase==Phase.BlockReady)

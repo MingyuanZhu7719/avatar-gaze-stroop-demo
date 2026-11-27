@@ -21,7 +21,7 @@ namespace AvatarStroop.Tests
             "woz_eye_dx","woz_eye_dy","woz_eye_dz"};
         static string Time(double value){return ViveLegacyWozRecordingSchema.EncodeTime(value);}
         static string Number(double value){return ViveLegacyWozRecordingSchema.EncodeNumber(value);}
-        static Dictionary<string,string> Fields(string eventName="Pose",double participant=10,double op=1000000000)
+        internal static Dictionary<string,string> Fields(string eventName="Pose",double participant=10,double op=1000000000)
         {
             var f=new Dictionary<string,string>(StringComparer.Ordinal)
             {

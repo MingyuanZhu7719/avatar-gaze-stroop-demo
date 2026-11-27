@@ -617,7 +617,8 @@ namespace AvatarStroop.Runtime
             }
         }
         byte[] FrameForDesign(byte[] payload,byte[] previousDigest,bool first,out byte[] digest)
-        {return admission.SessionContext.IsParticipant?ViveRawSessionJournalCodec.FrameV6(payload,previousDigest,first,out digest):
+        {return admission.SessionContext.IsParticipant?(admission.SessionContext.IsLegacyWoz?
+            ViveRawSessionJournalCodec.FrameV7(payload,previousDigest,first,out digest):ViveRawSessionJournalCodec.FrameV6(payload,previousDigest,first,out digest)):
             admission.SessionContext.IsLegacyWoz?ViveRawSessionJournalCodec.FrameV5(payload,previousDigest,first,out digest):
             admission.IsLegacy?ViveRawSessionJournalCodec.FrameV4(payload,previousDigest,first,out digest):ViveRawSessionJournalCodec.FrameV3(payload,previousDigest,first,out digest);}
         void Fail(ViveNamedSessionFrameAdmission.ConsumerReceipt receipt)

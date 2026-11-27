@@ -60,7 +60,7 @@ namespace AvatarStroop.Runtime
         }
         static bool UsableTask(TaskSnapshot task,string expectedSession)
         {return task!=null&&task.SessionId==expectedSession&&task.Phase==Phase.MainTask&&task.BlockIndex>=0&&
-            task.TrialId!=null&&task.Word.HasValue&&task.Ink.HasValue&&task.Condition.HasValue&&task.Condition.Value!=Condition.D;}
+            task.TrialId!=null&&task.HasStimulus&&task.Condition.HasValue&&task.Condition.Value!=Condition.D;}
 
         // This is an explicit owner decision. It does not initialize or start a
         // provider. Disable clears the last published pose as soon as possible.

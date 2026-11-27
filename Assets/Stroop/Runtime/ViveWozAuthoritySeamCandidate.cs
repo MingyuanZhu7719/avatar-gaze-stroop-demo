@@ -46,8 +46,7 @@ namespace AvatarStroop.Runtime
             if(a==null||b==null||a.Task==null||b.Task==null||!a.Same(b)||a.Selection!=b.Selection||a.SourceOwner!=b.SourceOwner||
                 a.SourceConfirmationSequence!=b.SourceConfirmationSequence||a.PausedFrom!=b.PausedFrom)return false;
             var x=a.Task;var y=b.Task;
-            return x.SessionId==y.SessionId&&x.BlockIndex==y.BlockIndex&&x.Segment==y.Segment&&x.Phase==y.Phase&&
-                x.Condition==y.Condition&&x.TrialId==y.TrialId&&x.Word==y.Word&&x.Ink==y.Ink;
+            return TaskSnapshot.Same(x,y);
         }
         // Advancing head without its commits makes choice evidence unavailable.
         // Backlog is not itself confirmation, consent, or a fresh task state.

@@ -157,7 +157,7 @@ namespace AvatarStroop.Core
         public bool RetainControlAcrossBlocks { get; private set; }
         public const string ProtocolVersion = "2026-10-28-prd-66dbdb5";
         public const string SoftwareVersion = "0.5.1-dev";
-        public const string ParticipantBuildVersion = "1.0.0";
+        public const string ParticipantBuildVersion = "2.0.0";
         public const string ParticipantSoftwareVersion = "vive-participant-" + ParticipantBuildVersion;
         public string RecordedSoftwareVersion { get { return ParticipantAssignment==null?SoftwareVersion:ParticipantSoftwareVersion; } }
         // New sessions explicitly use the approved English wording. Historical
@@ -202,8 +202,8 @@ namespace AvatarStroop.Core
             if(!Enum.IsDefined(typeof(TaskKind),taskKind))throw new ArgumentOutOfRangeException("taskKind");
             if(configuration.ParticipantAssignment!=null&&configuration.ParticipantAssignment.TaskKind!=taskKind)
                 throw new InvalidOperationException("The participant assignment fixes the task.");
-            if(taskKind==TaskKind.VisualSearch&&(configuration.IsNamedDesign||configuration.LegacyRecordingDesign!=null&&configuration.LegacyRecordingDesign.OperatorWozRequested))
-                throw new InvalidOperationException("Visual search v1 requires Legacy A/B/C/D with Automatic control");
+            if(taskKind==TaskKind.VisualSearch&&configuration.IsNamedDesign)
+                throw new InvalidOperationException("Visual search requires the A/B/C/D task design");
             var copy=(SessionConfiguration)configuration.MemberwiseClone();copy.TaskKind=taskKind;return copy;
         }
         public static SessionConfiguration WithTrainingProtocol(SessionConfiguration configuration,TrainingProtocol protocol)
@@ -242,7 +242,6 @@ namespace AvatarStroop.Core
             if(intent==null||configuration.IsNamedDesign||configuration.HasRawRecordingIntent||
                 !Object.ReferenceEquals(configuration.Allocation,design.Allocation))
                 throw new ArgumentException("Exact legacy configuration, design and intent are required.");
-            if(configuration.TaskKind==TaskKind.VisualSearch&&design.OperatorWozRequested)throw new InvalidOperationException("Visual search v1 does not support WoZ");
             var result=(SessionConfiguration)configuration.MemberwiseClone();
             result.LegacyRecordingDesign=design;result.LegacyRecordingIntent=intent;return result;
         }
@@ -412,6 +411,7 @@ namespace AvatarStroop.Core
         public ResponseRule ResponseRule { get; internal set; }
         public TaskKind TaskKind {get;internal set;}
         public VisualSearchTrial VisualSearch {get;internal set;}
+        public bool VisualSearchArrayPresented {get;internal set;}
         public bool OperatorAvatarVisible { get; internal set; }
         public bool ParticipantAvatarVisible { get; internal set; }
         public bool OperatorViewProvisional { get; internal set; }

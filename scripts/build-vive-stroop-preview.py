@@ -22,8 +22,8 @@ rehearsal = load("vive_rehearsal_build", "build-vive-eye-preview.py")
 photon = load("vive_woz_photon_sdk", "photon-sdk.py")
 
 def validate_recording_options(controlled, legacy, woz=False, participant=False):
-    if participant and (not controlled or not legacy or woz):
-        raise ValueError("Participant recording requires the local A/B/C/D recorder and Automatic control.")
+    if participant and (not controlled or not legacy):
+        raise ValueError("Participant recording requires the local A/B/C/D recorder.")
     if woz and not (controlled and legacy):
         raise ValueError("--legacy-woz-recording-development requires both --controlled-recording-development and --legacy-raw-recording-development.")
     if legacy and not controlled:
@@ -55,15 +55,19 @@ def recording_manifest(controlled=False, legacy=False, woz=False, participant=Fa
             "legacy_raw_recording_development": legacy,
             "legacy_woz_recording_development": woz,
             "participant_recording": participant,
+            "unrecorded_legacy_woz_available": not participant,
+            "photon_woz_available": not participant or woz,
             "network_recording_available": woz,
             "participant_local_woz_recording_available": woz,
             "woz_recording_scope": ("participant-local storage after explicit choices; hardware, LAN and session coverage unvalidated" if woz else
+                                    "unavailable in this Automatic-only participant package" if participant else
                                     "unavailable; Legacy WoZ remains unrecorded"),
             "named_explicit_recording_requested": controlled and not participant,
             "legacy_explicit_recording_requested": legacy,
             "preview_configuration_records": False,
             "preview_task_records": "preview unavailable" if participant else "memory only until close; no task or eye files",
-            "recording_scope": ("participant A/B/C/D with assigned orders and local Automatic recording" if participant else
+            "recording_scope": ("participant A/B/C/D with assigned orders and local Automatic or explicitly paired WoZ recording" if participant and woz else
+                                "participant A/B/C/D with assigned orders and local Automatic recording" if participant else
                                 "named and legacy explicit self-tests; optional participant-local Legacy WoZ recording" if woz else
                                 "named and legacy explicit self-tests" if legacy else
                                 "named explicit self-tests only; legacy is memory-only" if controlled else
@@ -76,7 +80,8 @@ def recording_manifest(controlled=False, legacy=False, woz=False, participant=Fa
 def build_intent(source, output, controlled=False, legacy=False, woz=False, participant=False):
     validate_recording_options(controlled, legacy, woz, participant)
     return {"source": str(source), "output": str(output),
-            "purpose": "VIVE Automatic participant recording" if participant else "VIVE development task preview",
+            "purpose": ("VIVE participant recording with Automatic and optional WoZ" if participant and woz else
+                        "VIVE Automatic participant recording" if participant else "VIVE development task preview"),
             "participant_recording": participant,
             "controlled_recording_development": controlled, "legacy_raw_recording_development": legacy,
             "legacy_woz_recording_development": woz}
@@ -85,7 +90,18 @@ def build_intent(source, output, controlled=False, legacy=False, woz=False, part
 def start_here_text(controlled=False, legacy=False, guide="", woz=False, participant=False):
     scope = recording_manifest(controlled, legacy, woz, participant)["recording_scope"]
     if participant:
-        return guide
+        heading = ("VIVE PARTICIPANT STUDY\nPackage scope: " + scope + ".\n"
+                   "Recording and network connections are OFF by default. Opening this package starts no task, XR, eye source or file capture.\n")
+        if woz:
+            heading += ("This package includes optional participant-local WoZ recording. Choose Automatic for one-PC use, or explicitly select WoZ for a paired operator.\n"
+                        "Ink colour, Word meaning and Visual search are available in either mode.\n"
+                        "Both modes use the same participant ID, assigned task lists and A/B/C/D order.\n"
+                        + photon.room_guide() +
+                        "The operator must confirm forwarding and participant-local storage. Both headset recording choices and explicit recording start remain required.\n"
+                        "Participant raw eyes, answers, timings and ratings are not sent to the operator. Optional live avatar sharing has a separate headset choice.\n")
+        else:
+            heading += "This package supports Automatic only. WoZ and Photon room connection are unavailable; WoZ instructions below apply only to a separately enabled package.\n"
+        return heading + "\n" + guide
     heading = ("VIVE DEVELOPMENT PREVIEW / LOCAL SELF-TEST\nPackage scope: " + scope + ".\n"
                "Recording is OFF by default. Building or opening the package starts no task, XR, eye source or file capture.\n"
                "Choose Preview (no files) for a non-recording run. Task records stay in memory until close, with no task or eye files.\n")
@@ -150,7 +166,7 @@ def main():
     parser.add_argument("--controlled-recording-development", action="store_true", help="Build a separately marked Development player with explicit opt-in local test recording; never starts it.")
     parser.add_argument("--legacy-raw-recording-development", action="store_true", help="Also opt into legacy A/B/C/D raw recording capability; requires --controlled-recording-development. No recording starts automatically.")
     parser.add_argument("--legacy-woz-recording-development", action="store_true", help="Also opt into participant-local Legacy WoZ recording; requires both existing recording flags. No network or recording starts automatically.")
-    parser.add_argument("--participant-recording", action="store_true", help="Build the Automatic A/B/C/D participant package with pseudonymous IDs and assigned stimulus lists.")
+    parser.add_argument("--participant-recording", action="store_true", help="Build the A/B/C/D participant package with pseudonymous IDs and assigned stimulus lists. Automatic only unless --legacy-woz-recording-development is also explicit.")
     parser.add_argument("--render-fixture", action="store_true", help="Render a synthetic Editor image; no XR or eye capture.")
     parser.add_argument("--photon-config", type=Path, help="Private Photon config to copy beside the inner player; never printed or committed.")
     args = parser.parse_args()
@@ -186,7 +202,7 @@ def main():
                       "source_files": record["source_files"], "packages": prepare.PACKAGES, "status": "configuring",
                       "explicit_xr_start": True, "explicit_eye_start": True, "development_task_requires_configuration": True,
                       "separate_eye_and_task_choices_required": True, "existing_local_directory_required": True,
-                      "network_default": False, "unrecorded_legacy_woz_available": not args.participant_recording,
+                      "network_default": False,
                       "network_requires_explicit_pairing": True, "network_recording_available": False, "input_configured": False,
                       "headset_validated": False, "eye_accuracy_validated": False, "system_runtime_changed": False}
         provenance.update(recording_manifest(args.controlled_recording_development, args.legacy_raw_recording_development, **mode_options))
@@ -211,7 +227,7 @@ def main():
         (output / "START-HERE.txt").write_text(start_here_text(args.controlled_recording_development, args.legacy_raw_recording_development, guide, **mode_options), encoding="utf-8")
         provenance.update(status="built", executable=launcher.name, executable_sha256=prepare.digest(launcher),
                           player=player.relative_to(output).as_posix(), player_sha256=prepare.digest(player),
-                          photon_woz_available=not args.participant_recording, photon_sdk=photon_package,
+                          photon_sdk=photon_package,
                           scene_checks=prepare.read_json(output / "vive-classroom-scene-validation.json"))
         prepare.write_json(marker, provenance)
         print("Built VIVE development preview: " + str(launcher) + "; not headset validated.")

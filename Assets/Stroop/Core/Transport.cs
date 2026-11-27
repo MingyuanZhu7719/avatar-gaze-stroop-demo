@@ -35,18 +35,52 @@ namespace AvatarStroop.Core
         public string TrialId { get; private set; }
         public Colour? Word { get; private set; }
         public Colour? Ink { get; private set; }
+        public TaskKind TaskKind { get; private set; }
+        public ResponseRule ResponseRule { get; private set; }
+        public VisualSearchTrial VisualSearch { get; private set; }
+        public bool VisualSearchArrayPresented { get; private set; }
+        public bool HasStimulus { get { return TaskKind==TaskKind.VisualSearch?VisualSearch!=null:Word.HasValue&&Ink.HasValue; } }
         public Phase Phase { get; private set; }
         public Condition? Condition { get; private set; }
-        public TaskSnapshot(string sessionId,int blockIndex,int segment,string trialId,Colour? word,Colour? ink,Phase phase,Condition? condition)
+        public TaskSnapshot(string sessionId,int blockIndex,int segment,string trialId,Colour? word,Colour? ink,Phase phase,Condition? condition,
+            TaskKind taskKind=TaskKind.Stroop,ResponseRule responseRule=ResponseRule.InkColor,VisualSearchTrial visualSearch=null,bool visualSearchArrayPresented=false)
         {
             WireCodec.RequireIdentity(sessionId);
             if(trialId!=null) WireCodec.RequireIdentity(trialId);
             if(blockIndex < -1 || blockIndex > 3 || segment < 0 || !Enum.IsDefined(typeof(Phase),phase) ||
                 (condition.HasValue && !Enum.IsDefined(typeof(Condition),condition.Value)) ||
                 (word.HasValue && !Enum.IsDefined(typeof(Colour),word.Value)) || (ink.HasValue && !Enum.IsDefined(typeof(Colour),ink.Value)) ||
-                word.HasValue!=ink.HasValue || (word.HasValue && trialId==null)) throw new ArgumentException("Invalid task snapshot");
+                word.HasValue!=ink.HasValue || (word.HasValue && trialId==null) ||
+                !Enum.IsDefined(typeof(TaskKind),taskKind)||!Enum.IsDefined(typeof(ResponseRule),responseRule)||
+                (taskKind==TaskKind.VisualSearch?(word.HasValue||responseRule!=ResponseRule.InkColor):visualSearch!=null)||
+                (visualSearch!=null&&(trialId==null||phase!=Phase.MainTask))||
+                (visualSearchArrayPresented&&visualSearch==null)) throw new ArgumentException("Invalid task snapshot");
             SessionId=sessionId; BlockIndex=blockIndex; Segment=segment; TrialId=trialId; Word=word; Ink=ink; Phase=phase; Condition=condition;
+            TaskKind=taskKind;ResponseRule=responseRule;VisualSearch=visualSearch;VisualSearchArrayPresented=visualSearchArrayPresented;
         }
+        public static TaskSnapshot FromView(string sessionId,TaskView view,Condition? condition)
+        {
+            if(view==null)throw new ArgumentNullException("view");
+            var stimulus=view.Stimulus;
+            return new TaskSnapshot(sessionId,view.BlockIndex,view.Segment,view.TrialId,
+                stimulus==null||stimulus.IsVisualSearch?(Colour?)null:stimulus.Word,
+                stimulus==null||stimulus.IsVisualSearch?(Colour?)null:stimulus.Ink,view.Phase,condition,
+                view.TaskKind,view.ResponseRule,stimulus==null?null:stimulus.VisualSearch,view.VisualSearchArrayPresented);
+        }
+        // Every visible layout attribute is part of task identity, including
+        // changes which reuse a layout ID. Never re-generate a peer's layout.
+        public static bool Same(TaskSnapshot a,TaskSnapshot b)
+        {return SameAuthority(a,b)&&a.VisualSearchArrayPresented==b.VisualSearchArrayPresented;}
+        // Array presentation reports the participant's already-admitted onset.
+        // It does not change the stimulus or require a new gaze-source lease.
+        // The authenticated channel separately enforces one-way stage progress.
+        internal static bool SameAuthority(TaskSnapshot a,TaskSnapshot b)
+        {return a!=null&&b!=null&&a.SessionId==b.SessionId&&a.BlockIndex==b.BlockIndex&&a.Segment==b.Segment&&
+            a.TrialId==b.TrialId&&a.Word==b.Word&&a.Ink==b.Ink&&a.Phase==b.Phase&&a.Condition==b.Condition&&
+            a.TaskKind==b.TaskKind&&a.ResponseRule==b.ResponseRule&&
+            (a.VisualSearch==null?b.VisualSearch==null:b.VisualSearch!=null&&a.VisualSearch.Serialize()==b.VisualSearch.Serialize());}
+        internal TaskSnapshot AuthoritySnapshot()
+        {return !VisualSearchArrayPresented?this:new TaskSnapshot(SessionId,BlockIndex,Segment,TrialId,Word,Ink,Phase,Condition,TaskKind,ResponseRule,VisualSearch);}
     }
 
     public sealed class WirePacket
@@ -111,7 +145,7 @@ namespace AvatarStroop.Core
 
     public static class WireCodec
     {
-        public const string Version = "2";
+        public const string Version = "3";
         public const int MaxPacketBytes = 2048;
         static readonly CultureInfo Invariant=CultureInfo.InvariantCulture;
         static readonly UTF8Encoding StrictUtf8=new UTF8Encoding(false,true);
@@ -173,6 +207,16 @@ namespace AvatarStroop.Core
         }
         static string Optional<T>(T? value) where T:struct {return value.HasValue?value.Value.ToString():"~";}
         static T? ReadOptional<T>(string value) where T:struct {return value=="~"?(T?)null:ReadEnum<T>(value);}
+        static string Search(VisualSearchTrial value)
+        {return value==null?"~":Convert.ToBase64String(StrictUtf8.GetBytes(value.Serialize()));}
+        static VisualSearchTrial ReadSearch(string value)
+        {
+            if(value=="~")return null;
+            if(value.Length>1536)throw new FormatException("Search layout exceeds the wire bound");
+            var result=VisualSearchTrial.Parse(StrictUtf8.GetString(Convert.FromBase64String(value)));
+            if(Search(result)!=value)throw new FormatException("Noncanonical search layout token");
+            return result;
+        }
 
         public static byte[] Encode(WirePacket packet)
         {
@@ -188,7 +232,7 @@ namespace AvatarStroop.Core
                     payload=String.Join("|",new[]{s.Sequence.ToString(Invariant),Id(s.DeviceId),s.Role.ToString(),s.BlockIndex.ToString(Invariant),s.Segment.ToString(Invariant),Number(s.CaptureLocalSeconds),s.HeadReportedValid?"1":"0",s.EyeReportedValid?"1":"0",Number(s.RawHeadRotation.X),Number(s.RawHeadRotation.Y),Number(s.RawHeadRotation.Z),Number(s.RawHeadRotation.W),Number(s.RawEyeDirection.X),Number(s.RawEyeDirection.Y),Number(s.RawEyeDirection.Z)}); break;
                 case WireKind.Task:
                     var v=packet.Snapshot;
-                    payload=String.Join("|",new[]{v.BlockIndex.ToString(Invariant),v.Segment.ToString(Invariant),v.TrialId==null?"~":Id(v.TrialId),Optional(v.Word),Optional(v.Ink),v.Phase.ToString(),Optional(v.Condition)}); break;
+                    payload=String.Join("|",new[]{v.BlockIndex.ToString(Invariant),v.Segment.ToString(Invariant),v.TrialId==null?"~":Id(v.TrialId),Optional(v.Word),Optional(v.Ink),v.Phase.ToString(),Optional(v.Condition),v.TaskKind.ToString(),v.ResponseRule.ToString(),Search(v.VisualSearch),v.VisualSearchArrayPresented?"1":"0"}); break;
                 case WireKind.TimeRequest: payload=Id(packet.ExchangeId); break;
                 case WireKind.TimeReply: payload=String.Join("|",new[]{Id(packet.ExchangeId),Id(packet.RequestClockId),Number(packet.RequestSentSeconds),Number(packet.RemoteReceivedSeconds)}); break;
                 case WireKind.SafetyStopRequest:
@@ -210,7 +254,7 @@ namespace AvatarStroop.Core
             try
             {
                 var kind=ReadEnum<WireKind>(f[2]);
-                int fields=kind==WireKind.HeadEye?26:kind==WireKind.Task?18:kind==WireKind.TimeReply?15:12;
+                int fields=kind==WireKind.HeadEye?26:kind==WireKind.Task?22:kind==WireKind.TimeReply?15:12;
                 if(f.Length!=fields) {error="field_count";return false;}
                 var peer=new PeerIdentity(ReadId(f[3]),ReadId(f[4]),ReadEnum<PeerRole>(f[5]),ReadId(f[6]),ReadEnum<ControlSource>(f[7]),ReadId(f[8]));
                 long seq=ReadLong(f[9]); double sent=ReadNumber(f[10]);
@@ -225,7 +269,7 @@ namespace AvatarStroop.Core
                         var sample=new HeadEyeSample(peer.SessionId,peer.SourceId,ReadId(f[12]),peer.ClockId,block,segment,sampleSequence,capture,sent,peer.Source,ReadEnum<StreamRole>(f[13]),new Rotation(ReadNumber(f[19]),ReadNumber(f[20]),ReadNumber(f[21]),ReadNumber(f[22])),new Vec3(ReadNumber(f[23]),ReadNumber(f[24]),ReadNumber(f[25])),ReadBool(f[17]),ReadBool(f[18]));
                         packet=WirePacket.Tracking(peer,seq,sample);break;
                     case WireKind.Task:
-                        packet=WirePacket.Task(peer,seq,sent,new TaskSnapshot(peer.SessionId,ReadInt(f[11]),ReadInt(f[12]),f[13]=="~"?null:ReadId(f[13]),ReadOptional<Colour>(f[14]),ReadOptional<Colour>(f[15]),ReadEnum<Phase>(f[16]),ReadOptional<Condition>(f[17])));break;
+                        packet=WirePacket.Task(peer,seq,sent,new TaskSnapshot(peer.SessionId,ReadInt(f[11]),ReadInt(f[12]),f[13]=="~"?null:ReadId(f[13]),ReadOptional<Colour>(f[14]),ReadOptional<Colour>(f[15]),ReadEnum<Phase>(f[16]),ReadOptional<Condition>(f[17]),ReadEnum<TaskKind>(f[18]),ReadEnum<ResponseRule>(f[19]),ReadSearch(f[20]),ReadBool(f[21])));break;
                     case WireKind.TimeRequest: packet=WirePacket.TimeRequest(peer,seq,sent,ReadId(f[11]));break;
                     case WireKind.TimeReply: packet=WirePacket.TimeReply(peer,seq,sent,ReadId(f[11]),ReadId(f[12]),ReadNumber(f[13]),ReadNumber(f[14]));break;
                     case WireKind.SafetyStopRequest: packet=WirePacket.SafetyStopRequest(peer,seq,sent,ReadId(f[11]));break;

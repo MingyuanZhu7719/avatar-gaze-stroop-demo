@@ -21,7 +21,8 @@ namespace AvatarStroop.Runtime
             {if(admission==null||!admission.SyntheticOnly||!admission.SessionContext.IsLegacyWoz)throw new InvalidOperationException("Synthetic WoZ admission required");this.admission=admission;}
             internal byte[] Snapshot(){lock(gate)return bytes.ToArray();}
             void Write(byte[] payload,bool first=false)
-            {byte[] next;var frame=ViveRawSessionJournalCodec.FrameV5(payload,digest,first,out next);bytes.Write(frame,0,frame.Length);digest=next;}
+            {byte[] next;var frame=admission.SessionContext.IsParticipant?ViveRawSessionJournalCodec.FrameV7(payload,digest,first,out next):
+                ViveRawSessionJournalCodec.FrameV5(payload,digest,first,out next);bytes.Write(frame,0,frame.Length);digest=next;}
             internal override bool Append(ViveNamedSessionFrameAdmission.ConsumerReceipt receipt)
             {
                 ViveNamedSessionFrameAdmission.Manifest manifest;

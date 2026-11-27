@@ -117,6 +117,7 @@ namespace AvatarStroop.Core
         long lastSentSample = -1, lastReceivedSample = -1;
         double lastSentHead = -1, lastSentEye = -1, lastReceivedHead = -1, lastReceivedEye = -1;
         byte[] lastSentTask, lastReceivedTask;
+        bool lastSentArrayPresented,lastReceivedArrayPresented;
         double lastSent = -1, lastRemoteSent = -1, lastReceipt = -1, lastNow = -1;
         bool disposed;
 
@@ -178,7 +179,7 @@ namespace AvatarStroop.Core
         byte[] Mac(byte[] bytes, int count)
         { using (var hmac = new HMACSHA256(key)) return hmac.ComputeHash(bytes, 0, count); }
         byte[] TaskState(WozLanTaskContext task)
-        { return WireCodec.Encode(WirePacket.Task(context.Participant, 0, 0, task.Task)); }
+        { return WireCodec.Encode(WirePacket.Task(context.Participant, 0, 0, task.Task.AuthoritySnapshot())); }
 
         bool Validate(WirePacket packet, PeerRole sender, WozLanTaskContext task, WozLanPoseObservation pose, out string error)
         {
@@ -195,7 +196,7 @@ namespace AvatarStroop.Core
                     if (sender != PeerRole.Operator || task == null || pose == null) return Reject("pose_context", out error);
                     var t = task.Task; var s = packet.Sample;
                     if (t.SessionId != context.Participant.SessionId || t.Phase != Phase.MainTask || t.BlockIndex < 0 ||
-                        t.TrialId == null || !t.Word.HasValue || !t.Ink.HasValue || !t.Condition.HasValue || t.Condition == Condition.D ||
+                        t.TrialId == null || !t.HasStimulus || !t.Condition.HasValue || t.Condition == Condition.D ||
                         s.BlockIndex != t.BlockIndex || s.Segment != t.Segment || s.DeviceId != context.OperatorDevice ||
                         s.Role != StreamRole.OperatorControl || !s.HeadValid || !s.EyeValid ||
                         pose.HeadObservedOperatorSeconds > packet.SentLocalSeconds || pose.EyeObservedOperatorSeconds > packet.SentLocalSeconds ||
@@ -236,6 +237,8 @@ namespace AvatarStroop.Core
                     byte[] taskState = packet.Kind == WireKind.Task ? TaskState(task) : null;
                     if (taskState != null && (task.Revision < lastSentTaskRevision ||
                         (task.Revision == lastSentTaskRevision && !Equal(taskState, lastSentTask)))) return Reject("task_revision", out error);
+                    if(taskState!=null&&Equal(taskState,lastSentTask)&&lastSentArrayPresented&&!task.Task.VisualSearchArrayPresented)
+                        return Reject("task_presentation_regressed",out error);
                     byte[] payload = WireCodec.Encode(packet), taskBytes = task == null ? new byte[0] : task.Encode(context.Participant);
                     WirePacket decoded; string decodeError;
                     if (!WireCodec.TryDecode(payload, out decoded, out decodeError) || !Equal(payload, WireCodec.Encode(decoded))) return Reject("payload_not_canonical", out error);
@@ -251,7 +254,7 @@ namespace AvatarStroop.Core
                     Buffer.BlockCopy(payload, 0, result, offset + observationLength, payload.Length);
                     byte[] tag = Mac(result, contentLength); Buffer.BlockCopy(tag, 0, result, contentLength, Tag);
                     lastProtected = packet.Sequence; lastSent = packet.SentLocalSeconds;
-                    if (taskState != null) { lastSentTaskRevision = task.Revision; lastSentTask = taskState; }
+                    if (taskState != null) { lastSentTaskRevision = task.Revision; lastSentTask = taskState; lastSentArrayPresented=task.Task.VisualSearchArrayPresented; }
                     if (pose != null) { lastSentSample = packet.Sample.Sequence; lastSentHead = pose.HeadObservedOperatorSeconds; lastSentEye = pose.EyeObservedOperatorSeconds; }
                     bytes = result; return true;
                 }
@@ -315,11 +318,13 @@ namespace AvatarStroop.Core
                     byte[] taskState = packet.Kind == WireKind.Task ? TaskState(task) : null;
                     if (taskState != null && (task.Revision < lastReceivedTaskRevision ||
                         (task.Revision == lastReceivedTaskRevision && !Equal(taskState, lastReceivedTask)))) return Reject("task_revision", out error);
+                    if(taskState!=null&&Equal(taskState,lastReceivedTask)&&lastReceivedArrayPresented&&!task.Task.VisualSearchArrayPresented)
+                        return Reject("task_presentation_regressed",out error);
                     // No external calls after this commit. Dispose and all operations
                     // serialize on gate; no result can commit once disposed is true.
                     var verified = VerifiedMessage.Create(this, verificationToken, packet, task, pose, context.Peer(localRole).ClockId, originalLocalReceipt);
                     lastReceived = packet.Sequence; lastRemoteSent = packet.SentLocalSeconds; lastReceipt = originalLocalReceipt; lastNow = nowLocal;
-                    if (taskState != null) { lastReceivedTaskRevision = task.Revision; lastReceivedTask = taskState; }
+                    if (taskState != null) { lastReceivedTaskRevision = task.Revision; lastReceivedTask = taskState; lastReceivedArrayPresented=task.Task.VisualSearchArrayPresented; }
                     if (pose != null) { lastReceivedSample = packet.Sample.Sequence; lastReceivedHead = pose.HeadObservedOperatorSeconds; lastReceivedEye = pose.EyeObservedOperatorSeconds; }
                     message = verified; return true;
                 }

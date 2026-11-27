@@ -1,6 +1,6 @@
 # Current Legacy WoZ participant-local recording
 
-This is development source for an explicitly selected Legacy WoZ mode, including the earlier authenticated, role-local process and controlled-scene dependencies. It is not a validated study release.
+This is the explicitly selected A/B/C/D WoZ path, including authenticated, role-local processes and controlled-scene dependencies. It is available for Ink colour, Word meaning and Visual search in a WoZ-enabled [Vive-Study participant package](vive-participant-recording.md), as well as the developer package. Software/build checks do not establish hardware or study validation.
 
 ## Data flow and consent
 
@@ -18,7 +18,7 @@ Photon room traffic uses encrypted WSS through the third-party Photon cloud. Raw
 
 ## Local records
 
-Version 5 adds a separate Legacy WoZ context and operator-pose provenance while preserving the named and Legacy-local formats. Applied presentation evidence is committed through the existing participant-local recorder. Native file access retains the revocable admission, identity, budget, private-stage, close and independent-readback checks.
+Version 5 adds the developer WoZ context and operator-pose provenance. Version 7 combines this WoZ provenance with the assigned participant ID, task, allocation and software version; assigned Automatic files retain version 6. Applied presentation evidence is committed through the existing participant-local recorder. Native file access retains the revocable admission, identity, budget, private-stage, close and independent-readback checks.
 
 A short one- or two-trial stop produces at most a raw prefix. It is not normal session completion and cannot authorize a completed-session CSV. Do not run four blocks merely to check withdrawal. A later full session needs normal completion and successful local verification before a completed export. No claim of durable storage or remote operator cleanup acknowledgment is made.
 
@@ -37,5 +37,7 @@ Build both roles from the same reviewed revision and retain their generated mani
 
 ## Wire compatibility
 
-WoZ wire v2 requires the same serialization runtime and build on both computers. `WireCodec.Number` preserves round-trip `R` spellings only when invariant parsing returns the original double bits; otherwise it uses a verified `G17` spelling. Signed zeros normalize to `0`. This addresses the [.NET Framework round-trip formatting limitation](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-numeric-format-strings#round-trip-format-specifier-r). Canonical-byte checks, authentication and replay rejection remain unchanged. Do not mix builds across this contract. `Tests/WozAuthenticatedLanTests.cs` and `Tests/WozAuthenticatedControlTests.cs` retain the executable compatibility regressions.
+WoZ wire v3 requires matching builds on both computers. It carries task kind, response rule and the complete frozen Visual search layout, plus the participant's array-presentation stage. The operator first sees the target, then the array after the participant's software onset has been acknowledged and synchronized. Network transit delays still apply; this is not an optical simultaneity guarantee. New Photon rooms use a separate app version from older builds, which cannot pair with them.
+
+`WireCodec.Number` preserves round-trip `R` spellings only when invariant parsing returns the original double bits; otherwise it uses a verified `G17` spelling. Signed zeros normalize to `0`. This addresses the [.NET Framework round-trip formatting limitation](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-numeric-format-strings#round-trip-format-specifier-r). Canonical-byte checks, authentication and replay rejection remain. `Tests/WozAuthenticatedLanTests.cs` and `Tests/WozAuthenticatedControlTests.cs` retain the executable compatibility regressions.
 

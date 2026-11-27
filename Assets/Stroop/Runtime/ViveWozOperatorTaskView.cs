@@ -14,7 +14,11 @@ namespace AvatarStroop.Runtime
                 BlockIndex=task==null?-1:task.BlockIndex,
                 Segment=task==null?0:task.Segment,
                 TrialId=task==null?null:task.TrialId,
-                Stimulus=task!=null&&task.Word.HasValue?new Stimulus(task.Word.Value,task.Ink.Value):null,
+                TaskKind=task==null?TaskKind.Stroop:task.TaskKind,
+                ResponseRule=task==null?ResponseRule.InkColor:task.ResponseRule,
+                VisualSearch=task==null?null:task.VisualSearch,
+                VisualSearchArrayPresented=task!=null&&task.VisualSearchArrayPresented,
+                Stimulus=task==null?null:task.VisualSearch!=null?new Stimulus(task.VisualSearch):task.Word.HasValue?new Stimulus(task.Word.Value,task.Ink.Value):null,
                 ParticipantAvatarVisible=task!=null&&task.Phase==Phase.MainTask,
                 OperatorViewProvisional=task==null||task.Phase!=Phase.MainTask||task.Condition==Condition.D,
                 SourceLabel="DEVELOPMENT TASK DISPLAY - LIVE SOURCE NOT VERIFIED"

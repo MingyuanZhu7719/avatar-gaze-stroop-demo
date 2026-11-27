@@ -44,6 +44,118 @@ namespace AvatarStroop.Unity.Editor
             }
             finally{camera.targetTexture=old;RenderTexture.active=prior;UnityEngine.Object.DestroyImmediate(pixels);UnityEngine.Object.DestroyImmediate(target);}
         }
+        static Color32[] ReadPixels(Camera camera,RenderTexture target,Texture2D pixels)
+        {
+            camera.Render();RenderTexture.active=target;
+            pixels.ReadPixels(new Rect(0,0,target.width,target.height),0,0);pixels.Apply();return pixels.GetPixels32();
+        }
+        static void RenderOperatorBoard(Camera camera,WorldSpaceExperimentView view,Transform root,VisualSearchTrial layout,bool array)
+        {
+            var target=new RenderTexture(1600,1000,24,RenderTextureFormat.ARGB32);
+            var pixels=new Texture2D(target.width,target.height,TextureFormat.RGB24,false);
+            var old=camera.targetTexture;var prior=RenderTexture.active;
+            try
+            {
+                camera.targetTexture=target;
+                var shown=ReadPixels(camera,target,pixels);
+                string name="visual-search-operator-"+layout.SetSize+(array?"-array.png":"-target.png");
+                string path=Path.Combine(Path.GetDirectoryName(Application.dataPath),name);
+                File.WriteAllBytes(path,pixels.EncodeToPNG());Debug.Log("VISUAL_SEARCH_OPERATOR_SCREENSHOT: "+path);
+                // Freeze the production layout only after the first actual
+                // render. A differential render proves each required bag is
+                // visible from the operator seat, not merely active in Unity.
+                Call(view,"OnDisable");view.enabled=false;
+                var bags=new List<Transform>{root.Find("TargetExample")};
+                if(array)foreach(var item in layout.Items)bags.Add(root.Find("SearchSlot"+item.Slot));
+                foreach(var bag in bags)
+                {
+                    bag.gameObject.SetActive(false);var hidden=ReadPixels(camera,target,pixels);int changed=0;
+                    for(int i=0;i<shown.Length;i++)
+                        if(Math.Abs(shown[i].r-hidden[i].r)+Math.Abs(shown[i].g-hidden[i].g)+Math.Abs(shown[i].b-hidden[i].b)>90)changed++;
+                    bag.gameObject.SetActive(true);
+                    Require(changed>=20,"operator cannot see "+bag.name+" in "+layout.SetSize+" items ("+changed+" pixels)");
+                }
+            }
+            finally
+            {
+                view.enabled=true;Call(view,"OnDisable");Call(view,"OnEnable");camera.targetTexture=old;RenderTexture.active=prior;
+                UnityEngine.Object.DestroyImmediate(pixels);UnityEngine.Object.DestroyImmediate(target);
+            }
+        }
+        public static void ValidateOperator()
+        {
+            checks=0;ViveSyntheticFixtureIsolation.OpenKnownSavedAnchor();
+            Require(SystemInfo.graphicsDeviceType!=UnityEngine.Rendering.GraphicsDeviceType.Null,"operator render fixture requires graphics; omit -nographics");
+            var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Additive);
+            var cameraObject=new GameObject("OperatorVisualSearchCamera");var viewObject=new GameObject("OperatorVisualSearchView");
+            SceneManager.MoveGameObjectToScene(cameraObject,scene);SceneManager.MoveGameObjectToScene(viewObject,scene);
+            try
+            {
+                var camera=cameraObject.AddComponent<Camera>();var view=viewObject.AddComponent<WorldSpaceExperimentView>();
+                camera.transform.position=new Vector3(.2f,1.6f,-.1f);camera.fieldOfView=70;camera.aspect=1.6f;
+                camera.cullingMask=1<<28;camera.nearClipPlane=.05f;camera.farClipPlane=20;
+                camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=new Color(.09f,.12f,.15f);
+                view.Initialize(camera,Actor.Operator);Call(view,"OnDisable");Call(view,"OnEnable");
+                view.PlaceWozOperatorView(camera.transform.position);view.ConfigureWozOperatorHeadsetPresentation();
+                view.SetFaults(new string[0]);view.SetPresentationAvailable(true);
+                var plans=VisualSearchPlans.MainList(20261116,0);
+                foreach(int count in new[]{12,24})
+                {
+                    VisualSearchTrial layout=null;foreach(var stimulus in plans)if(stimulus.VisualSearch.SetSize==count){layout=stimulus.VisualSearch;break;}
+                    Require(layout!=null,"missing frozen "+count+"-item source layout");
+                    foreach(bool array in new[]{false,true})
+                    {
+                        var snapshot=new TaskSnapshot("operator-search-fixture",0,0,"frozen-trial-"+count,null,null,
+                            Phase.MainTask,Condition.A,TaskKind.VisualSearch,ResponseRule.InkColor,layout,array);
+                        var task=ViveWozOperatorTaskView.FromFreshTask(snapshot);
+                        Require(System.Object.ReferenceEquals(task.VisualSearch,layout)&&task.VisualSearchArrayPresented==array,"adapter regenerated layout or lost participant stage");
+                        view.ApplyTaskView(task);
+                        foreach(var child in viewObject.GetComponentsInChildren<Transform>(true))child.gameObject.layer=28;
+                        var root=view.transform.Find("WorldSpaceContent/VisualSearchBoard");
+                        Require(root!=null&&root.gameObject.activeInHierarchy&&!CuePending(view),"operator invented a local cue countdown or hid current task");
+                        Require(System.Object.ReferenceEquals(Field(view,"shownVisualSearch"),layout),"operator did not retain exact received layout");
+                        Require(root.Find("SearchCueMessage").gameObject.activeSelf==!array,"operator stage differs from participant stage");
+                        Require(root.Find("SearchControls").GetComponent<TextMesh>().text.Contains("View only"),"operator controls invite answering");
+                        Require(root.Find("SearchTargetName").GetComponent<TextMesh>().text==layout.TargetLabel,"target label differs from received layout");
+                        var expected=new HashSet<int>();foreach(var item in layout.Items)expected.Add(item.Slot);
+                        for(int slot=0;slot<24;slot++)
+                            Require(root.Find("SearchSlot"+slot).gameObject.activeSelf==(array&&expected.Contains(slot)),"wrong active operator slot "+slot);
+                        foreach(var item in layout.Items)
+                        {
+                            var bag=root.Find("SearchSlot"+item.Slot);
+                            Require(Vector3.Distance(bag.localPosition,WorldSpaceExperimentView.VisualSearchSlotPosition(item.Slot))<.00001f,"received slot moved");
+                            foreach(VisualSearchPattern pattern in Enum.GetValues(typeof(VisualSearchPattern)))
+                                Require(bag.Find("Pattern"+pattern).gameObject.activeSelf==(pattern==item.Pattern),"received pattern changed");
+                            int index;string id;Vector3 hit;var aim=bag.position-camera.transform.position;
+                            Require(!view.TryHitVisualSearch(camera.transform.position,aim,out index,out id,out hit),"operator acquired a participant picker");
+                            view.SetVisualSearchPointer(camera.transform.position,aim,true);
+                            Require(!bag.Find("HoverOutline").gameObject.activeSelf,"operator created a hover outline");
+                        }
+                        Require(!view.transform.Find("WorldSpaceContent/VisualSearchPointer").gameObject.activeSelf,"operator pointer became visible");
+                        Require(Quaternion.Angle(root.rotation,view.transform.Find("WorldSpaceContent/Stimulus").rotation)<.01f,"search board does not face operator writing surface");
+                        camera.transform.LookAt(root.position);RenderOperatorBoard(camera,view,root,layout,array);
+                        if(array)
+                        {
+                            var previous=root.position;var shift=new Vector3(.3f,-.2f,.1f);
+                            camera.transform.position+=shift;view.PlaceWozOperatorView(camera.transform.position);
+                            Require(Vector3.Distance(root.position,previous+shift)<.0001f&&
+                                Quaternion.Angle(root.rotation,view.transform.Find("WorldSpaceContent/Stimulus").rotation)<.01f,
+                                "explicit view re-placement did not preserve search alignment");
+                            view.ApplyTaskView(task);Require(!CuePending(view)&&root.Find("SearchSlot"+layout.Items[0].Slot).gameObject.activeSelf,
+                                "repeated task update restarted a local cue or regenerated array");
+                        }
+                    }
+                }
+                view.ApplyTaskView(ViveWozOperatorTaskView.FromFreshTask(null));
+                Require(!view.transform.Find("WorldSpaceContent/VisualSearchBoard").gameObject.activeSelf,"expired task retained an operator search layout");
+            }
+            finally
+            {
+                if(viewObject!=null){var view=viewObject.GetComponent<WorldSpaceExperimentView>();if(view!=null)Call(view,"OnDisable");}
+                UnityEngine.Object.DestroyImmediate(viewObject);UnityEngine.Object.DestroyImmediate(cameraObject);EditorSceneManager.CloseScene(scene,true);
+            }
+            Debug.Log("VISUAL_SEARCH_OPERATOR_FIXTURE_PASSED: "+checks+" checks; received 12/24 layouts, target/array stages, view-only controls and actual operator-seat renders. Synthetic mono only.");
+        }
         public static void Validate()
         {
             checks=0;ViveSyntheticFixtureIsolation.OpenKnownSavedAnchor();

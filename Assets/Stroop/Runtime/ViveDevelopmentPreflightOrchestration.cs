@@ -240,8 +240,7 @@ namespace AvatarStroop.Runtime
             preflightActive=true;lastFreshTaskAt=status.LocalReceivedSeconds;lastTaskPacketSequence=status.PacketSequence;lastTask=task;return true;
         }
         static bool SameTask(TaskSnapshot a,TaskSnapshot b)
-        {return a!=null&&b!=null&&a.SessionId==b.SessionId&&a.BlockIndex==b.BlockIndex&&a.Segment==b.Segment&&a.Phase==b.Phase&&
-            a.Condition==b.Condition&&a.TrialId==b.TrialId&&a.Word==b.Word&&a.Ink==b.Ink;}
+        {return TaskSnapshot.Same(a,b);}
         public bool AcceptChallenge(byte[] bytes,IPEndPoint sender,VivePreflightOperatorTask task)
         {
             if(!confirmed||stopped||recovery)return Reject("inactive_or_recovery");

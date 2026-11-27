@@ -22,8 +22,10 @@ namespace AvatarStroop.Runtime
         {return ManifestPayloadFor(manifest,true,true,true);}
         internal static byte[] ManifestPayloadV6(ViveNamedSessionFrameAdmission.Manifest manifest)
         {return ManifestPayloadFor(manifest,true,true,false,true);}
+        internal static byte[] ManifestPayloadV7(ViveNamedSessionFrameAdmission.Manifest manifest)
+        {return ManifestPayloadFor(manifest,true,true,true,true);}
         internal static byte[] CurrentManifestPayload(ViveNamedSessionFrameAdmission.Manifest manifest)
-        {return manifest.Context!=null&&manifest.Context.IsParticipant?ManifestPayloadV6(manifest):
+        {return manifest.Context!=null&&manifest.Context.IsParticipant?(manifest.Context.IsLegacyWoz?ManifestPayloadV7(manifest):ManifestPayloadV6(manifest)):
             manifest.Context!=null&&manifest.Context.IsLegacyWoz?ManifestPayloadV5(manifest):
             manifest.Context!=null&&manifest.Context.IsLegacy?ManifestPayloadV4(manifest):ManifestPayloadV3(manifest);}
         static byte[] ManifestPayloadFor(ViveNamedSessionFrameAdmission.Manifest manifest,bool version3,bool legacy=false,bool woz=false,bool participant=false)
@@ -33,7 +35,7 @@ namespace AvatarStroop.Runtime
             if(woz!=(manifest.Context!=null&&manifest.Context.IsLegacyWoz))throw new InvalidOperationException("WoZ recording mode requires its own manifest format.");
             if(participant!=(manifest.Context!=null&&manifest.Context.IsParticipant))throw new InvalidOperationException("Participant recording requires its own manifest format.");
             return Build(w=>{
-                w.Write(0L);w.Write((byte)0);Text(w,participant?"VRAW0006":woz?"VRAW0005":legacy?"VRAW0004":version3?"VRAW0003":"VRAW0002");Text(w,manifest.Synthetic?"SYNTHETIC_ONLY":"INSTALLED_SDK_CODE_PATH_ONLY");
+                w.Write(0L);w.Write((byte)0);Text(w,participant?(woz?"VRAW0007":"VRAW0006"):woz?"VRAW0005":legacy?"VRAW0004":version3?"VRAW0003":"VRAW0002");Text(w,manifest.Synthetic?"SYNTHETIC_ONLY":"INSTALLED_SDK_CODE_PATH_ONLY");
                 Text(w,participant?"PARTICIPANT_APPARATUS":"SIMULATION_DEVELOPMENT_NOT_RESEARCH");Text(w,"NATIVE_TIME_OPAQUE");Text(w,"EYE_COVERAGE_UNKNOWN");
                 Text(w,"INGEST_CONTEXT_NOT_SAMPLE_ALIGNMENT");Text(w,"SRANIPAL_SDK_VERSION_UNKNOWN");Text(w,"RAW_EYE_SPACE_UNVERIFIED");
                 Text(w,"MAPPING_NOT_APPLIED;REHEARSAL="+ViveProEyeRehearsalCoordinates.MappingVersion);
@@ -120,6 +122,8 @@ namespace AvatarStroop.Runtime
         {var result=FrameFor(payload,previous,magic,true,out digest);if(magic)Buffer.BlockCopy(Encoding.ASCII.GetBytes("VRAW0005"),0,result,0,8);return result;}
         internal static byte[] FrameV6(byte[] payload,byte[] previous,bool magic,out byte[] digest)
         {var result=FrameFor(payload,previous,magic,true,out digest);if(magic)Buffer.BlockCopy(Encoding.ASCII.GetBytes("VRAW0006"),0,result,0,8);return result;}
+        internal static byte[] FrameV7(byte[] payload,byte[] previous,bool magic,out byte[] digest)
+        {var result=FrameFor(payload,previous,magic,true,out digest);if(magic)Buffer.BlockCopy(Encoding.ASCII.GetBytes("VRAW0007"),0,result,0,8);return result;}
         static byte[] FrameFor(byte[] payload,byte[] previous,bool magic,bool version3,out byte[] digest)
         {
             if(payload==null||payload.Length==0||payload.Length>1048576||previous==null||previous.Length!=32)throw new InvalidOperationException("Frame limit.");

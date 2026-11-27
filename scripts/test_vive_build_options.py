@@ -206,6 +206,32 @@ static class RequestChecks {
             }
             checks++;
         }
+        string[] options={null,"1","0"," 1"};
+        string[] isolated={"STROOP_XR_PREVIEW","STROOP_CONTROLLED_RECORDING_DEVELOPMENT",
+            "STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT","STROOP_LEGACY_WOZ_RECORDING_DEVELOPMENT",
+            "STROOP_PARTICIPANT_RECORDING"," STROOP_XR_PREVIEW ; STROOP_PARTICIPANT_RECORDING "};
+        foreach(string c in options)foreach(string l in options)foreach(string w in options)foreach(string participant in options)
+        for(int intent=0;intent<16;intent++)for(int p=0;p<isolated.Length;p++) {
+            bool ic=(intent&1)!=0,il=(intent&2)!=0,iw=(intent&4)!=0,ip=(intent&8)!=0;
+            bool requested=c=="1",legacy=l=="1",woz=w=="1",study=participant=="1";
+            bool expected=(String.IsNullOrEmpty(c)||requested)&&(String.IsNullOrEmpty(l)||legacy)&&
+                (String.IsNullOrEmpty(w)||woz)&&(String.IsNullOrEmpty(participant)||study)&&
+                (!legacy||requested)&&(!woz||(requested&&legacy))&&(!study||(requested&&legacy))&&
+                ic==requested&&il==legacy&&iw==woz&&ip==study&&p==0;
+            bool accepted=false;string[] result=null;
+            try {result=ViveRecordingBuildRequest.Defines(c,l,ic,il,isolated[p],w,iw,participant,ip);accepted=true;}
+            catch(InvalidOperationException) {}
+            if(accepted!=expected)throw new Exception("participant/WoZ build request acceptance mismatch");
+            if(accepted) {
+                var desired=new System.Collections.Generic.List<string>();
+                if(requested)desired.Add("STROOP_CONTROLLED_RECORDING_DEVELOPMENT");
+                if(legacy)desired.Add("STROOP_LEGACY_RAW_RECORDING_DEVELOPMENT");
+                if(study)desired.Add("STROOP_PARTICIPANT_RECORDING");
+                if(woz)desired.Add("STROOP_LEGACY_WOZ_RECORDING_DEVELOPMENT");
+                if(String.Join(";",result)!=String.Join(";",desired.ToArray()))throw new Exception("participant/WoZ per-build define mismatch");
+            }
+            checks++;
+        }
         Console.WriteLine("PASS "+checks+" pure build-request cases; no Unity/player/runtime execution.");
         return 0;
     }
@@ -220,7 +246,7 @@ static class RequestChecks {
         result = subprocess.run([str(executable)], capture_output=True, text=True)
         (CHECK / "build-request-tests.log").write_text(result.stdout + result.stderr, encoding="utf-8")
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        self.assertIn("PASS 1024 pure build-request cases", result.stdout)
+        self.assertIn("PASS 25600 pure build-request cases", result.stdout)
 
 
 if __name__ == "__main__":

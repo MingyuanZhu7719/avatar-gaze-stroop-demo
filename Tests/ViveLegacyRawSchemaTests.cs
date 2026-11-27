@@ -42,6 +42,32 @@ namespace AvatarStroop.Tests
         }
         public static void Register(TestSuite suite)
         {
+            suite.Run("Participant WoZ VRAW7 binds identity task allocation and mode without changing Automatic VRAW6",()=>{
+                foreach(string task in new[]{"InkColor","WordMeaning","VisualSearch"})
+                {
+                    ParticipantAssignment assignment;
+                    Check.True(ViveRawSessionJournalCodec.TryReadParticipantAssignment("P009",task,out assignment));
+                    var design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,"test-design",assignment,"geometry","mapping",true);
+                    var basis=new SessionConfiguration("test-attempt",ParticipantAssignment.StimulusSeed,assignment.Allocation,RunKind.Apparatus,"en",5,30,true,0,true,true,true,assignment.ResponseRule);
+                    basis=SessionConfiguration.WithTaskKind(basis,assignment.TaskKind);
+                    var config=SessionConfiguration.ParticipantRecording(basis,design,ViveLegacyRecordingIntent.Select(Actor.Owner,"test-intent",true,true));
+                    var context=ViveRawSessionContext.FromConfiguration(config);Check.True(context.IsParticipant&&context.IsLegacyWoz);
+                    var manifest=new ViveNamedSessionFrameAdmission.Manifest(context,"test-clock",true,1,2);manifest.SealChoiceTime(2,0);
+                    byte[] digest;var payload=ViveRawSessionJournalCodec.CurrentManifestPayload(manifest);
+                    Func<byte[],ViveRawSessionReadStatus> status=bytes=>Read(ViveRawSessionJournalCodec.FrameV7(bytes,new byte[32],true,out digest)).Status;
+                    Check.Equal(ViveRawSessionReadStatus.VerifiedPrefix,status(payload));
+                    Check.Equal(ViveRawSessionReadStatus.Invalid,status(Replace(payload,"P009","P008")));
+                    Check.Equal(ViveRawSessionReadStatus.Invalid,status(Replace(payload,task,new string('X',task.Length))));
+                    Check.Equal(ViveRawSessionReadStatus.Invalid,status(Replace(payload,"OPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING","XPERATOR_WOZ_PARTICIPANT_LOCAL_RECORDING")));
+                    Check.Equal(ViveRawSessionReadStatus.Invalid,Read(ViveRawSessionJournalCodec.FrameV6(payload,new byte[32],true,out digest)).Status);
+                    Check.Equal(ViveRawSessionReadStatus.Invalid,Read(ViveRawSessionJournalCodec.FrameV5(payload,new byte[32],true,out digest)).Status);
+                    Check.Equal(ViveRawSessionReadStatus.Invalid,status(Replace(payload,"VRAW0007","VRAW0008")));
+                    var future=ViveRawSessionJournalCodec.FrameV7(payload,new byte[32],true,out digest);future[7]=(byte)'8';
+                    Check.Equal(ViveRawSessionReadStatus.Invalid,Read(future).Status);
+                    Check.Throws<InvalidOperationException>(()=>ViveRawSessionJournalCodec.ManifestPayloadV6(manifest));
+                    Check.Throws<InvalidOperationException>(()=>ViveRawSessionJournalCodec.ManifestPayloadV5(manifest));
+                }
+            });
             suite.Run("Participant manifest rejects a changed ID task condition or list and a legacy discriminator",()=>{
                 ParticipantAssignment assignment;
                 Check.True(ParticipantAssignment.TryCreate("P009",TaskKind.Stroop,ResponseRule.WordMeaning,out assignment));

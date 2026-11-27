@@ -40,7 +40,7 @@ namespace AvatarStroop.Tests
             internal ViveLegacyWozObservationOwner.SyntheticObservations Remote;
             internal readonly ViveLegacyWozProcessTransport.MemorySocket PS=new ViveLegacyWozProcessTransport.MemorySocket(),OS=new ViveLegacyWozProcessTransport.MemorySocket();
             long headSequence;int frame;long remoteSequence;
-            internal Fixture(bool downgrade=false,ViveRawSessionJournalSink.IntegrationFixtureScenario? nativeScenario=null,bool shareParticipantAvatar=false)
+            internal Fixture(bool downgrade=false,ViveRawSessionJournalSink.IntegrationFixtureScenario? nativeScenario=null,bool shareParticipantAvatar=false,int? participantTask=null)
             {
                 InitializationStage=1;
                 var geometry=new AutomaticGazeGeometry(Rotation.Identity,new Vec3(0,0,1),new Rotation(0,Math.Sqrt(.5),0,Math.Sqrt(.5)),new Vec3(1,0,0),"woz-raw-geometry");
@@ -48,6 +48,16 @@ namespace AvatarStroop.Tests
                 var design=ViveLegacyRecordingDesign.SelectOperatorWoz(Actor.Owner,"woz-raw-design",allocation,geometry.Version,ViveFixedTrackpadMapping.Version);
                 var config=SessionConfiguration.LegacyRecordingDevelopment(new SessionConfiguration("woz-raw-session",73,allocation,RunKind.Simulation,"en",3,30,true,0,true,true,true),
                     design,ViveLegacyRecordingIntent.Select(Actor.Owner,"woz-raw-intent",true,true));
+                if(participantTask.HasValue)
+                {
+                    ParticipantAssignment assignment;
+                    Check.True(ParticipantAssignment.TryCreate("P017",participantTask==2?TaskKind.VisualSearch:TaskKind.Stroop,
+                        participantTask==1?ResponseRule.WordMeaning:ResponseRule.InkColor,out assignment));
+                    design=ViveLegacyRecordingDesign.SelectParticipant(Actor.Owner,"woz-study-design",assignment,geometry.Version,ViveFixedTrackpadMapping.Version,true);
+                    var basis=new SessionConfiguration("woz-study-"+participantTask,ParticipantAssignment.StimulusSeed,assignment.Allocation,RunKind.Apparatus,"en",3,30,true,0,true,true,true,assignment.ResponseRule);
+                    basis=SessionConfiguration.WithTaskKind(basis,assignment.TaskKind);
+                    config=SessionConfiguration.ParticipantRecording(basis,design,ViveLegacyRecordingIntent.Select(Actor.Owner,"woz-study-intent",true,true));
+                }
                 Task=new ViveDevelopmentParticipant(config,Clock,geometry,ViveFixedTrackpadMapping.Create(),.5,true);
                 double taskChoice=Clock.Now,eyeChoice=Clock.Now;
                 Worker=new ViveProEyeWorker(Clock,()=>new ViveHeadFrame(++headSequence,Clock.Now,true,true,Rotation.Identity),()=>Source);
@@ -132,8 +142,18 @@ namespace AvatarStroop.Tests
                 bool reserved=Pump.TryPreparePresentation(frame,frame,out token);
                 Check.True(reserved,"reserve presentation "+trial.TrialId+" "+(Recording==null?"practice":Recording.LastPresentationIssue)+" "+Pump.FixtureDiagnosticsForTest());
                 if(Task.Phase==Phase.MainTask){Scene.Present();Check.True(token.WozEvidence!=null&&token.WozEvidence.Applied,"exact owned scene applied");}
-                Check.True(Pump.CommitPresentation(token,frame,frame,trial.TrialId,trial.Stimulus.Word,trial.Stimulus.Ink,Clock.Now),"commit presentation");Drain();
-                var c=trial.Stimulus.Ink;Mutate(()=>Task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,true,c==Colour.Green?1:c==Colour.Yellow?-1:0,c==Colour.Red?1:c==Colour.Blue?-1:0)));Neutral();
+                Check.True(token.Search==null?Pump.CommitPresentation(token,frame,frame,trial.TrialId,token.Word,token.Ink,Clock.Now):
+                    Pump.CommitVisualSearchPresentation(token,frame,frame,trial.TrialId,token.Search.LayoutId,Clock.Now),"commit presentation");Drain();
+                if(Task.Phase==Phase.MainTask)
+                {
+                    // The real scene rechecks immediately after onset, before
+                    // an answer or the next trial can obtain fresh authority.
+                    Scene.RecheckPresentation();Check.True(!Scene.Closed&&Scene.MayShowTask,"own onset preserves current presentation authority");
+                }
+                if(trial.VisualSearch!=null)Mutate(()=>Task.SelectVisualSearchItem(trial.TrialId,trial.VisualSearch.TargetId));
+                else
+                {var c=trial.ExpectedResponse;Mutate(()=>Task.UpdateTrackpad(true,new VivePreviewTrackpadSample(true,true,c==Colour.Green?1:c==Colour.Yellow?-1:0,c==Colour.Red?1:c==Colour.Blue?-1:0)));}
+                Neutral();
             }
             internal void Grant()
             {Stage();Check.True(P.PublishCurrentTask(),P.LastIssue);Check.True(P.ConfirmCurrentSource(),P.LastIssue);O.Tick();P.Tick();Check.True(P.CurrentTaskAcknowledged,P.LastIssue);}
@@ -288,8 +308,47 @@ namespace AvatarStroop.Tests
                 }
             });
         }
+        internal static void RegisterParticipant(TestSuite suite)
+        {
+            for(int mode=0;mode<3;mode++)
+            {
+                int captured=mode;
+                suite.Run("Assigned WoZ actual paired recording pump completes four blocks for task "+mode,()=>{
+                    using(var f=new Fixture(participantTask:captured))
+                    {
+                        f.Complete();byte[] bytes=f.Writer.Snapshot();
+                        Check.Equal("VRAW0007",Encoding.ASCII.GetString(bytes,0,8));
+                        AssertPoseUsedRows(bytes);
+                        var analysis=new StudyAnalysis();
+                        using(var input=new MemoryStream(bytes,false))
+                        {var read=StudyDataReader.Read(input,"vraw",analysis.Accept,CancellationToken.None);Check.Equal("Complete",read.Status,read.Message);}
+                        analysis.Finish();Check.Equal("P017",analysis.ParticipantId);Check.Equal("OperatorWoZ",analysis.ControlMode);
+                        Check.Equal(new[]{"InkColor","WordMeaning","VisualSearch"}[captured],analysis.ParticipantTask);
+                        Check.Equal(96,analysis.Trials.Count(x=>x.Scope=="Formal"));Check.Equal(4,analysis.EndedBlocks);Check.Equal(20,analysis.Ratings.Count);
+                        Check.True(analysis.Trials.Where(x=>x.Scope=="Formal").All(x=>x.Correct==true));
+                        Check.True(analysis.EventCounts[ViveLegacyWozRecordingSchema.EventKind]>0);
+                        if(captured==2)
+                        {
+                            Check.Equal(48,analysis.Trials.Count(x=>x.Scope=="Formal"&&x.SetSize==12));
+                            Check.Equal(48,analysis.Trials.Count(x=>x.Scope=="Formal"&&x.SetSize==24));
+                        }
+                        using(var input=new MemoryStream(bytes,false))using(var output=new MemoryStream())
+                        {
+                            Check.Equal(ViveRawReadableAnalysisCsv.Outcome.WrittenAndFlushed,
+                                ViveRawReadableAnalysisCsv.WriteSyntheticForTest(input,output,16777216,20000,268435456,CancellationToken.None));
+                            var csv=new StudyAnalysis();using(var readOnly=new MemoryStream(output.ToArray(),false))
+                            {var read=StudyDataReader.Read(readOnly,"csv",csv.Accept,CancellationToken.None);Check.Equal("Complete",read.Status,read.Message);}
+                            csv.Finish();Check.Equal(analysis.ParticipantId,csv.ParticipantId);Check.Equal(analysis.ParticipantTask,csv.ParticipantTask);
+                            Check.Equal(analysis.ConditionOrder,csv.ConditionOrder);Check.Equal(analysis.ListByBlock,csv.ListByBlock);
+                            Check.Equal(analysis.ControlMode,csv.ControlMode);Check.Equal(analysis.Trials.Count,csv.Trials.Count);
+                        }
+                    }
+                });
+            }
+        }
         public static void Register(TestSuite suite)
         {
+            RegisterParticipant(suite);
             RegisterFocusHoldTests(suite);
             suite.Run("WoZ recorded duplex renders participant gaze without a reverse journal event",()=>{
                 using(var f=new Fixture(shareParticipantAvatar:true))

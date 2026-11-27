@@ -31,7 +31,7 @@ namespace AvatarStroop.Runtime
             var assignment=configuration.ParticipantAssignment;
             if(assignment==null ? configuration.RunKind!=RunKind.Simulation :
                 configuration.RunKind!=RunKind.Apparatus||configuration.LegacyRecordingDesign==null||
-                configuration.LegacyRecordingDesign.OperatorWozRequested||!Object.ReferenceEquals(assignment.Allocation,configuration.Allocation)||
+                !Object.ReferenceEquals(assignment.Allocation,configuration.Allocation)||
                 assignment.TaskKind!=configuration.TaskKind||assignment.ResponseRule!=configuration.ResponseRule||configuration.Seed!=ParticipantAssignment.StimulusSeed)
                 throw new InvalidOperationException("Raw recording configuration and allocation do not match.");
             bool named=configuration.NamedRecordingIntent!=null,legacy=configuration.LegacyRecordingIntent!=null;

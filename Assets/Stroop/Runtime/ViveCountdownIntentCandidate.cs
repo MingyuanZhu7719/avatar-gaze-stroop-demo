@@ -67,8 +67,7 @@ namespace AvatarStroop.Runtime
             return Intent==other.Intent&&PausedFrom==other.PausedFrom&&ExpectedCountdownSegment==other.ExpectedCountdownSegment&&
                 SourceConfirmationSequence==other.SourceConfirmationSequence&&SourceOwner==other.SourceOwner&&Epoch==other.Epoch&&PreviousEpoch==other.PreviousEpoch&&
                 OperatorStream==other.OperatorStream&&MappingVersion==other.MappingVersion&&ParticipantClock==other.ParticipantClock&&OperatorClock==other.OperatorClock&&
-                a.SessionId==b.SessionId&&a.BlockIndex==b.BlockIndex&&a.Segment==b.Segment&&a.Phase==b.Phase&&a.Condition==b.Condition&&
-                a.TrialId==b.TrialId&&a.Word==b.Word&&a.Ink==b.Ink;
+                TaskSnapshot.Same(a,b);
         }
     }
 

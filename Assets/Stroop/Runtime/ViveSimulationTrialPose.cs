@@ -68,6 +68,8 @@ namespace AvatarStroop.Runtime
         static T? ReadOptional<T>(string s) where T:struct {if(s=="-")return null;long n=ReadN(s);if(n>Int32.MaxValue||!Enum.IsDefined(typeof(T),(int)n))throw new FormatException("enum");return (T)Enum.ToObject(typeof(T),(int)n);}
         static string[] TaskFields(ViveSimulationTrialTask t)
         {
+            if(t.Task.TaskKind!=TaskKind.Stroop||t.Task.ResponseRule!=ResponseRule.InkColor)
+                throw new ArgumentException("The legacy synthetic VSTP1 transport supports Ink colour only; use the typed WoZ transport for other tasks.");
             var s=t.Task;return new[]{Id(s.SessionId),Id(t.Epoch),Id(t.Mapping),Id(t.ParticipantClock),N(t.Revision),N(t.PacketSequence),D(t.SentLocalSeconds),
                 N(s.BlockIndex+1),N(s.Segment),s.TrialId==null?"-":Id(s.TrialId),Optional(s.Word),Optional(s.Ink),N((int)s.Phase),Optional(s.Condition)};
         }
@@ -214,7 +216,7 @@ namespace AvatarStroop.Runtime
             participantClock=clock.ClockId;this.maximumAge=maximumAge;capacity=ledgerCapacity;
         }
         internal static bool SameTask(TaskSnapshot a,TaskSnapshot b)
-        {return a!=null&&b!=null&&a.SessionId==b.SessionId&&a.BlockIndex==b.BlockIndex&&a.Segment==b.Segment&&a.TrialId==b.TrialId&&a.Word==b.Word&&a.Ink==b.Ink&&a.Phase==b.Phase&&a.Condition==b.Condition;}
+        {return TaskSnapshot.Same(a,b);}
         double Now()
         {
             try

@@ -40,7 +40,8 @@ namespace AvatarStroop.Unity
         FirstBlockRequest firstBlockRequest;
         string firstBlockRequestNotice;
         bool ParticipantFirstBlockReady
-        {get{return participant!=null&&participant.IsResearchSession&&participant.Phase==Phase.BlockReady&&participant.BlockIndex==0;}}
+        {get{return participant!=null&&participant.IsResearchSession&&!participant.LegacyWozRecordingDeclared&&
+            participant.Phase==Phase.BlockReady&&participant.BlockIndex==0;}}
         bool FirstBlockRequestAvailable
         {get{return ParticipantFirstBlockReady&&isActiveAndEnabled&&configured&&participant.LockedControl==ControlSelection.Automatic&&
             namedRawPump!=null&&sharedClock!=null&&!rawSafetyLatched&&!rawInstallFailed&&!faultLatched&&!rawWithdrawalRequested&&

@@ -82,7 +82,8 @@ namespace AvatarStroop.Core
             vals.Add(events.Count);
             bool display=Phase==Phase.MainTask&&current!=null;var condition=CurrentCondition;
             var task=new TaskSnapshot(Configuration.SessionId,BlockIndex,Segment,display?current.TrialId:null,
-                display&&!current.Stimulus.IsVisualSearch?(Colour?)current.Stimulus.Word:null,display&&!current.Stimulus.IsVisualSearch?(Colour?)current.Stimulus.Ink:null,Phase,condition);
+                display&&!current.Stimulus.IsVisualSearch?(Colour?)current.Stimulus.Word:null,display&&!current.Stimulus.IsVisualSearch?(Colour?)current.Stimulus.Ink:null,Phase,condition,
+                Configuration.TaskKind,Configuration.ResponseRule,display?current.Stimulus.VisualSearch:null,display&&current.Stimulus.IsVisualSearch&&current.Onset.HasValue);
             var copiedTrials=new ExperimentMutationTrialSnapshot[trials.Count];
             for(int i=0;i<trials.Count;i++)copiedTrials[i]=new ExperimentMutationTrialSnapshot(trials[i]);
             return new ExperimentMutationSnapshot(task,LockedControl,sourceConfirmationOwner,sourceConfirmationSequence,

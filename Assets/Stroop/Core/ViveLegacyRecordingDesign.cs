@@ -32,12 +32,13 @@ namespace AvatarStroop.Core
         {var result=Select(actor,id,allocation,geometryVersion,mappingVersion);result.OperatorWozRequested=true;return result;}
 
         public static ViveLegacyRecordingDesign SelectParticipant(Actor actor,string id,ParticipantAssignment assignment,
-            string geometryVersion,string mappingVersion)
+            string geometryVersion,string mappingVersion,bool operatorWoz=false)
         {
             if(actor!=Actor.Owner)throw new UnauthorizedAccessException("Owner selection is required.");
             if(assignment==null||String.IsNullOrWhiteSpace(id)||String.IsNullOrWhiteSpace(geometryVersion)||String.IsNullOrWhiteSpace(mappingVersion))
                 throw new ArgumentException("Participant assignment, design, geometry and mapping are required.");
-            return new ViveLegacyRecordingDesign(id,assignment.Allocation,geometryVersion,mappingVersion) {ParticipantAssignment=assignment};
+            return new ViveLegacyRecordingDesign(id,assignment.Allocation,geometryVersion,mappingVersion)
+                {ParticipantAssignment=assignment,OperatorWozRequested=operatorWoz};
         }
     }
     public sealed class ViveLegacyRecordingIntent

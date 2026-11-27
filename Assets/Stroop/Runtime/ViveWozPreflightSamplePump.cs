@@ -172,8 +172,7 @@ namespace AvatarStroop.Runtime
                 status.PacketSequence>=0&&Finite(status.LocalReceivedSeconds)&&status.LocalReceivedSeconds>=0&&status.LocalReceivedSeconds<=now&&now-status.LocalReceivedSeconds<=maxAge;
         }
         static bool SameTask(TaskSnapshot a,TaskSnapshot b)
-        {return a!=null&&b!=null&&a.SessionId==b.SessionId&&a.BlockIndex==b.BlockIndex&&a.Segment==b.Segment&&a.Phase==b.Phase&&
-            a.Condition==b.Condition&&a.TrialId==b.TrialId&&a.Word==b.Word&&a.Ink==b.Ink;}
+        {return TaskSnapshot.Same(a,b);}
         void Owner(){if(Thread.CurrentThread.ManagedThreadId!=ownerThread)throw new InvalidOperationException("Preflight pump belongs to its creating thread.");}
         void Fault(string issue){faulted=true;LastIssue=issue;}
         static bool ExplicitInvalid(ViveProEyePoll poll)

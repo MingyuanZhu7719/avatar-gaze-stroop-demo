@@ -134,7 +134,7 @@ namespace AvatarStroop.Unity.Editor
                     var sceneConfig=typeof(ViveStroopDevelopmentBootstrap).Assembly.GetType("AvatarStroop.Unity.ViveLegacySceneConfiguration",true);
                     rawConfig=SessionConfiguration.WithFormalEyeRecordingOnly(SessionConfiguration.WithTrainingProtocol(
                         (SessionConfiguration)Factory(sceneConfig,"CreateParticipantRecording","participant-ui-fixture",assignment,geometry.Version,
-                        ViveFixedTrackpadMapping.Version,"test-design","test-intent"),TrainingProtocol.TutorialExamV1));
+                        ViveFixedTrackpadMapping.Version,"test-design","test-intent",false),TrainingProtocol.TutorialExamV1));
                 }
                 var recorded=new ViveDevelopmentParticipant(rawConfig,clock,geometry,ViveFixedTrackpadMapping.Create(),ViveFixedTrackpadMapping.SectorThreshold,true);
                 var runtime=typeof(ViveDevelopmentParticipant).Assembly;
@@ -159,7 +159,9 @@ namespace AvatarStroop.Unity.Editor
                 experiment.GetType().GetProperty("Phase",Instance).SetValue(experiment,Phase.BlockReady,null);
                 Set(owner,"participant",recorded);
                 Require(!(bool)Property(owner,"FormalEyeReadyForFirstBlock"),"recorded formal block accepted a dormant eye source");
-                Require(((string)Property(owner,"FormalEyeFirstBlockNotice")).Contains("No formal block"),"missing eye readiness has no actionable notice");
+                string formalNotice=(string)Property(owner,"FormalEyeFirstBlockNotice");
+                Require(formalNotice.Contains("task input service")&&formalNotice.Contains("optional"),
+                    "formal service preparation notice must distinguish optional eye data from required task input");
                 Set(owner,"namedRawPump",rawPump);
                 if(participantMode)
                 {

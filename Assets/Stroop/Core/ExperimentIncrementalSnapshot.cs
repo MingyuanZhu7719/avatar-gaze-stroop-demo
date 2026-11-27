@@ -55,6 +55,7 @@ namespace AvatarStroop.Core
     public sealed class ExperimentIncrementalSnapshot
     {
         readonly object[] baseline;readonly ExperimentIncrementalScalars scalars;
+        readonly TaskKind taskKind;readonly ResponseRule responseRule;
         readonly ExperimentIncrementalPractice practice;readonly ExperimentIncrementalRatings ratings;readonly ExperimentPersistentTrials trials;
         public TaskSnapshot Task {get;private set;} public ControlSelection? Selection {get{return scalars.Selection;}}
         public string SourceOwner {get{return scalars.Owner;}} public long SourceConfirmationSequence {get{return scalars.Confirmation;}}
@@ -66,18 +67,20 @@ namespace AvatarStroop.Core
         internal ExperimentIncrementalRatings Ratings {get{return ratings;}}
         internal ExperimentPersistentTrials TrialVector {get{return trials;}}
         internal ExperimentIncrementalSnapshot(object[] baseline,ExperimentIncrementalScalars scalars,ExperimentIncrementalPractice practice,
-            ExperimentIncrementalRatings ratings,ExperimentPersistentTrials trials)
+            ExperimentIncrementalRatings ratings,ExperimentPersistentTrials trials,TaskKind taskKind,ResponseRule responseRule)
         {
-            this.baseline=baseline;this.scalars=scalars;this.practice=practice;this.ratings=ratings;this.trials=trials;
+            this.baseline=baseline;this.scalars=scalars;this.practice=practice;this.ratings=ratings;this.trials=trials;this.taskKind=taskKind;this.responseRule=responseRule;
             bool display=scalars.Phase==Phase.MainTask&&scalars.Current.HasValue;
             Condition? condition=scalars.Block>=0&&scalars.Block<4?(Condition?)((Condition)baseline[14+scalars.Block]):null;
             Task=new TaskSnapshot((string)baseline[0],scalars.Block,scalars.Segment,display?scalars.Current.Value.TrialId:null,
                 display&&scalars.Current.Value.TaskKind==TaskKind.Stroop?(Colour?)scalars.Current.Value.Word:null,
-                display&&scalars.Current.Value.TaskKind==TaskKind.Stroop?(Colour?)scalars.Current.Value.Ink:null,scalars.Phase,condition);
+                display&&scalars.Current.Value.TaskKind==TaskKind.Stroop?(Colour?)scalars.Current.Value.Ink:null,scalars.Phase,condition,taskKind,responseRule,
+                display&&scalars.Current.Value.TaskKind==TaskKind.VisualSearch?VisualSearchTrial.Parse(scalars.Current.Value.SearchLayout):null,
+                display&&scalars.Current.Value.TaskKind==TaskKind.VisualSearch&&scalars.Current.Value.Onset.HasValue);
         }
         internal ExperimentIncrementalSnapshot Next(ExperimentIncrementalScalars next,ExperimentIncrementalPractice nextPractice,
             ExperimentIncrementalRatings nextRatings,ExperimentPersistentTrials nextTrials)
-        {return new ExperimentIncrementalSnapshot(baseline,next,nextPractice,nextRatings,nextTrials);}
+        {return new ExperimentIncrementalSnapshot(baseline,next,nextPractice,nextRatings,nextTrials,taskKind,responseRule);}
         public bool TryGetTrial(int index,out ExperimentMutationTrialSnapshot trial){return trials.TryGet(index,out trial);}
         static void AddTrial(List<object> values,ExperimentMutationTrialSnapshot? value)
         {

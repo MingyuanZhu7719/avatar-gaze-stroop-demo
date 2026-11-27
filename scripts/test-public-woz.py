@@ -104,7 +104,10 @@ def main():
                 declaration = (ROOT / relative).read_text(encoding="utf-8-sig").splitlines()[int(match[2])-1].strip()
                 if declaration not in allowed.get(relative, []):
                     raise RuntimeError("Unreviewed fixture warning: " + relative + ":" + match[2])
-            run([str(binary)] if os.name == "nt" else [str(mono), str(binary)], out / (name + "-tests.log"), 240)
+            # The recording suite includes three complete assigned-participant
+            # sessions (96 formal trials each), with raw/CSV verification.
+            run([str(binary)] if os.name == "nt" else [str(mono), str(binary)], out / (name + "-tests.log"),
+                600 if name == "recording-memory" else 240)
             result["managed"].append({"name": name, "core_runtime_sources": len(core), "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest()})
         compile_run("unrecorded-memory", "ordinary", BASE_TESTS, "AvatarStroop.Tests.ViveLegacyWozSceneTests")
         compile_run("recording-memory", "recording", RECORDED_TESTS, "AvatarStroop.Tests.ViveLegacyWozRecordingPumpTests")

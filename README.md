@@ -2,9 +2,9 @@
 
 Unity development software for a VR Stroop task with automatic or live operator-controlled avatar gaze, participant-local eye tracking, and post-block ratings.
 
-The [VIVE participant package](docs/vive-participant-recording.md) links the three Automatic tasks using a pseudonymous participant code. It assigns A/B/C/D orders and stimulus lists by enrollment slot and saves the assignment with each recording.
+The [VIVE participant package](docs/vive-participant-recording.md) links Ink colour, Word meaning and Visual search using a pseudonymous participant code. It assigns A/B/C/D orders and stimulus lists by enrollment slot and saves the assignment with each recording. A WoZ-enabled package supports Automatic or paired operator control for all three tasks and records which mode was used.
 
-The [Visual search task](docs/visual-search.md) adds target-backpack search with controller-ray selection to the Automatic A/B/C/D flow. Each 24-trial block mixes twelve 12-object and twelve 24-object trials; local raw/CSV records preserve layouts, object selections and explicit timeouts. The analyzer keeps search results separate from Stroop.
+The [Visual search task](docs/visual-search.md) adds target-backpack search with controller-ray selection to the A/B/C/D flow. Each 24-trial block mixes twelve 12-object and twelve 24-object trials; local raw/CSV records preserve layouts, object selections and explicit timeouts. WoZ sends the same frozen layout and target/search display stage to the matching operator. The analyzer keeps search results separate from Stroop.
 
 Start with the [VIVE owner workflow](docs/vive-owner-workflow.md) to run a built package, or the [development guide](docs/development.md) to build and test the source. The [documentation index](docs/README.md) separates operating instructions, implementation details, and research requirements.
 

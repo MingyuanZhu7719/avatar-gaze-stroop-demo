@@ -253,20 +253,22 @@ namespace AvatarStroop.Unity
                     {GUILayout.Label(missing,recordingWrap,GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));ViveOwnerDesktopLayout.Observe("block-"+i+"-validation",GUILayoutUtility.GetLastRect());}
                 }
             }
-            if(!ParticipantBuild&&selectedDesign==0&&selectedTaskKind!=TaskKind.VisualSearch)
+            if(selectedDesign==0)
             {
                 if(local&&ViveLegacyWozRecordingBuildPolicy.Available)
                 {
+                    if(ParticipantBuild)OwnerHeading("3  Avatar control");
                     bool next=GUILayout.Toggle(legacyWozRecordingSelected,"Use a second-PC WoZ operator");
                     if(next!=legacyWozRecordingSelected){legacyWozRecordingSelected=next;controlledRecordingNoticeAccepted=false;}
+                    if(ParticipantBuild)GUILayout.Label(legacyWozRecordingSelected?"WoZ: connect to the operator's Photon room after training.":"Automatic: the program controls the avatar. No second computer is required.",recordingWrap);
                 }
-                else if(!local)ownerPreviewWoz=GUILayout.Toggle(ownerPreviewWoz,"Use a second-PC WoZ operator (unrecorded)");
+                else if(!local&&selectedTaskKind!=TaskKind.VisualSearch)ownerPreviewWoz=GUILayout.Toggle(ownerPreviewWoz,"Use a second-PC WoZ operator (unrecorded)");
             }
             GUILayout.Space(6);GUILayout.Label("Controller: automatic. Keep exactly one VIVE wand connected.");
             GUILayout.Label(selectedTaskKind==TaskKind.VisualSearch?"Point at a backpack and pull the trigger. Ratings: trackpad up/down, trigger to confirm.":ViveFixedTrackpadMapping.Label);
             if(local)
             {
-                OwnerHeading("3  Local output");
+                OwnerHeading(ParticipantBuild&&ViveLegacyWozRecordingBuildPolicy.Available?"4  Local output":"3  Local output");
                 EnsureDefaultSessionDirectoryOffer();
                 GUILayout.Label("Session output folder (a new folder is offered for each launch)");
                 recordingDirectory=GUILayout.TextField(recordingDirectory,GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
@@ -289,12 +291,12 @@ namespace AvatarStroop.Unity
                     csvCleanupSeconds=GUILayout.TextField(csvCleanupSeconds,GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
                 }
                 GUILayout.Label("The offered folder is created only when you explicitly prepare. Custom paths must already exist. The writer checks access again after both choices.",recordingWrap);
-                GUILayout.Label("Task responses are saved during training and the experiment. Eye data begins with the first formal countdown. No upload. Eye data may identify you.",recordingWrap);
+                GUILayout.Label("Task responses are saved during training and the experiment. Eye data begins with the first formal countdown. Raw files stay on this computer. Eye data may identify you.",recordingWrap);
                 if(legacyWozRecordingSelected)GUILayout.Label("WoZ also saves mapped operator poses locally. The headset asks separately about sharing live head turns and gaze direction with the operator. Answers and ratings stay local.",recordingWrap);
                 GUILayout.Label(ParticipantBuild?"Withdrawal stops further recording and keeps the files already written. Study consent is handled separately.":
                     "Withdrawal stops further work, but does not delete existing files. Failures leave output unconfirmed. Not validated for study use.",recordingWrap);
                 controlledRecordingNoticeAccepted=GUILayout.Toggle(controlledRecordingNoticeAccepted,ParticipantBuild?
-                    "I have checked the participant ID and task for this session.":"I request a local development self-test (not a study participant session).",GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
+                    "I have checked the participant ID, task and control mode for this session.":"I request a local development self-test (not a study participant session).",GUILayout.Width(ViveOwnerDesktopLayout.ContentWidth));
                 long bytes;int timeout;
                 bool csvValid=TryParseCsvLimits(csvBudgetMiB,csvCleanupSeconds,out bytes,out timeout);
                 bool available=SelectedRecordingAvailable&&ViveRawRelativeFileCapability.ProductionGateOpen;

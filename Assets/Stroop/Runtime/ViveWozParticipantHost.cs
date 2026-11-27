@@ -73,11 +73,7 @@ namespace AvatarStroop.Runtime
         {
             RequireOwnerThread();
             if(namedParticipant!=null)throw new InvalidOperationException("Legacy task snapshots cannot represent named context");
-            var view=experiment.View(Actor.Operator);
-            var stimulus=view.Stimulus;
-            return new TaskSnapshot(experiment.Configuration.SessionId,experiment.BlockIndex,experiment.Segment,
-                view.TrialId,stimulus==null?(Colour?)null:stimulus.Word,stimulus==null?(Colour?)null:stimulus.Ink,
-                experiment.Phase,experiment.CurrentCondition);
+            return TaskSnapshot.FromView(experiment.Configuration.SessionId,experiment.View(Actor.Operator),experiment.CurrentCondition);
         }
 
         public void ClearLivePose()
